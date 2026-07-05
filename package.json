@@ -16,7 +16,7 @@
   },
   "scripts": {
     "build": "rimraf lib && node node_modules/ttsc/lib/launcher/ttsc.js -p tsconfig.json",
-    "test": "npm run build && node --test test/*.test.js"
+    "test": "npm run build && node --disable-warning=ExperimentalWarning --experimental-transform-types test/src/index.ts"
   },
   "keywords": [
     "mcp",
@@ -37,6 +37,7 @@
     "typia": "13.0.0-rc.1"
   },
   "devDependencies": {
+    "@nestia/e2e": "12.0.0-rc.2",
     "@types/node": "^22.18.0",
     "rimraf": "^6.0.1",
     "ttsc": "^0.16.12",

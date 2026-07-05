@@ -10,6 +10,10 @@ const {
   SamchonGraphApplication,
   buildGraphDump,
 } = require("../lib");
+const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
+const {
+  StdioClientTransport,
+} = require("@modelcontextprotocol/sdk/client/stdio.js");
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-"));
@@ -105,4 +109,42 @@ test("CLI dump prints graph JSON", () => {
   const dump = JSON.parse(output);
   assert.equal(dump.indexer, "static");
   assert.ok(dump.nodes.length > 0);
+});
+
+test("MCP server exposes inspect_code_graph and answers a tool call", async () => {
+  const root = fixture();
+  const client = new Client({ name: "samchon-graph-test", version: "1.0.0" });
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [
+      path.join(__dirname, "..", "lib", "bin.js"),
+      "--mode",
+      "static",
+      "--cwd",
+      root,
+    ],
+    stderr: "pipe",
+  });
+  await client.connect(transport);
+  try {
+    const tools = await client.listTools();
+    assert.ok(tools.tools.some((tool) => tool.name === "inspect_code_graph"));
+
+    const result = await client.callTool({
+      name: "inspect_code_graph",
+      arguments: {
+        question: "Show project overview",
+        draft: { reason: "Overview is the smallest project map.", type: "overview" },
+        review: "Overview is appropriate.",
+        request: { type: "overview" },
+      },
+    });
+    const text = result.content?.find((item) => item.type === "text")?.text;
+    assert.ok(text);
+    const parsed = JSON.parse(text);
+    assert.equal(parsed.result.type, "overview");
+    assert.ok(parsed.result.counts.nodes > 0);
+  } finally {
+    await client.close();
+  }
 });

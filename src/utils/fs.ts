@@ -13,6 +13,7 @@ const DEFAULT_IGNORES = new Set([
   "bower_components",
   "vendor",
   "dist",
+  "lib",
   "build",
   "target",
   "out",

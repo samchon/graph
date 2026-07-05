@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 
 import {
@@ -375,6 +376,13 @@ function languageIdOf(language: GraphLanguage): string {
 }
 
 function hasCommand(command: string): boolean {
+  if (
+    path.isAbsolute(command) ||
+    command.includes("/") ||
+    command.includes("\\")
+  ) {
+    return fs.existsSync(command);
+  }
   const lookup = process.platform === "win32" ? "where.exe" : "command";
   const args = process.platform === "win32" ? [command] : ["-v", command];
   const result = spawnSync(lookup, args, {

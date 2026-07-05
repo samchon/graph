@@ -58,18 +58,6 @@ export function buildStaticGraph(options: IBuildGraphOptions = {}): IGraphDump {
     }
   }
 
-  for (const declarations of declarationsByFile.values()) {
-    declarations.sort((a, b) => a.startIndex - b.startIndex);
-    for (let i = 0; i < declarations.length; i++) {
-      const current = declarations[i]!;
-      const next = declarations[i + 1];
-      current.endIndex =
-        current.node.evidence?.endLine === undefined
-          ? (next?.startIndex ?? current.endIndex)
-          : current.node.evidence.endLine - 1;
-    }
-  }
-
   for (const [rel, declarations] of declarationsByFile) {
     const abs = path.join(root, rel);
     const lines = readLines(abs);
@@ -105,15 +93,15 @@ function declarationsOf(
   lines: readonly string[],
 ): IDeclaration[] {
   const declarations: IDeclaration[] = [];
-  const ownerStack: Array<{ name: string; braceDepth: number }> = [];
-  let braceDepth = 0;
+  const ownerStack: Array<{ name: string; endIndex: number }> = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
-    while (ownerStack.length > 0 && braceDepth < ownerStack[ownerStack.length - 1]!.braceDepth) {
+    while (ownerStack.length > 0 && i > ownerStack[ownerStack.length - 1]!.endIndex) {
       ownerStack.pop();
     }
     const parsed = parseDeclaration(language, line, ownerStack.length > 0);
     if (parsed !== undefined) {
+      const endIndex = declarationEndIndex(lines, i);
       const owner = ownerStack.map((entry) => entry.name).join(".");
       const qualifiedName = owner === "" ? parsed.name : `${owner}.${parsed.name}`;
       const node: IGraphNode = {
@@ -137,16 +125,15 @@ function declarationsOf(
       declarations.push({
         node,
         startIndex: i,
-        endIndex: Math.min(lines.length - 1, i + 40),
+        endIndex,
       });
-      if (isContainer(parsed.kind)) {
+      if (isContainer(parsed.kind) && endIndex > i) {
         ownerStack.push({
           name: parsed.name,
-          braceDepth: braceDepth + braceDelta(line),
+          endIndex,
         });
       }
     }
-    braceDepth += braceDelta(stripStringsAndComments(line));
   }
   return declarations;
 }
@@ -223,8 +210,9 @@ function kindOf(token: string): GraphNodeKind {
     case "enum":
       return "enum";
     case "namespace":
-    case "module":
       return "namespace";
+    case "module":
+      return "module";
     case "func":
     case "fn":
     case "function":
@@ -346,11 +334,44 @@ function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
 }
 
 function isContainer(kind: GraphNodeKind): boolean {
-  return kind === "class" || kind === "interface" || kind === "namespace" || kind === "module";
+  return (
+    kind === "class" ||
+    kind === "interface" ||
+    kind === "namespace" ||
+    kind === "module" ||
+    kind === "function" ||
+    kind === "method" ||
+    kind === "constructor"
+  );
 }
 
-function braceDelta(line: string): number {
-  return (line.match(/\{/g)?.length ?? 0) - (line.match(/\}/g)?.length ?? 0);
+function declarationEndIndex(lines: readonly string[], start: number): number {
+  let depth = 0;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let entered = false;
+  for (let i = start; i < lines.length; i++) {
+    const text = stripStringsAndComments(lines[i] ?? "");
+    for (const char of text) {
+      if (char === "(") {
+        parenDepth++;
+      } else if (char === ")") {
+        parenDepth = Math.max(0, parenDepth - 1);
+      } else if (char === "[") {
+        bracketDepth++;
+      } else if (char === "]") {
+        bracketDepth = Math.max(0, bracketDepth - 1);
+      } else if (char === "{" && parenDepth === 0 && bracketDepth === 0) {
+        depth++;
+        entered = true;
+      } else if (char === "}" && parenDepth === 0 && bracketDepth === 0) {
+        depth = Math.max(0, depth - 1);
+      }
+    }
+    if (entered && depth === 0) return i;
+    if (!entered && text.trimEnd().endsWith(";")) return i;
+  }
+  return start;
 }
 
 function stripStringsAndComments(line: string): string {

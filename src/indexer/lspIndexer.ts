@@ -34,37 +34,71 @@ export async function buildLspGraph(
   const edges: IGraphEdge[] = [];
   const diagnostics: IGraphDiagnostic[] = [];
   const warnings: string[] = [];
+  const staticFallbackLanguages: GraphLanguage[] = [];
+  let lspNodeCount = 0;
 
   for (const language of languages) {
+    const files = walkSourceFiles(root, {
+      extensions: allExtensions([language]),
+      maxFiles: options.maxFiles,
+    });
+    if (files.length === 0) continue;
     const spec = specOf(language);
     if (spec?.lsp === undefined) {
       warnings.push(`${language}: no built-in LSP server is configured.`);
+      staticFallbackLanguages.push(language);
       continue;
     }
     const command = options.server ?? spec.lsp.command;
     const args = options.serverArgs ?? spec.lsp.args;
     if (!hasCommand(command)) {
       warnings.push(`${language}: LSP server not found on PATH: ${command}`);
+      staticFallbackLanguages.push(language);
       continue;
     }
-    const files = walkSourceFiles(root, {
-      extensions: allExtensions([language]),
-      maxFiles: options.maxFiles,
-    });
-    if (files.length === 0) continue;
     try {
       const result = await collectLanguageGraph(root, language, command, args, files, options);
-      nodes.push(...result.nodes);
-      edges.push(...result.edges);
-      diagnostics.push(...result.diagnostics);
-      warnings.push(...result.warnings);
+      if (result.nodes.length === 0) {
+        warnings.push(`${language}: LSP returned no symbols; using static fallback.`);
+        staticFallbackLanguages.push(language);
+      } else {
+        nodes.push(...result.nodes);
+        edges.push(...result.edges);
+        diagnostics.push(...result.diagnostics);
+        warnings.push(...result.warnings);
+        lspNodeCount += result.nodes.length;
+      }
     } catch (error) {
       warnings.push(
         `${language}: LSP indexing failed: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
+      staticFallbackLanguages.push(language);
     }
+  }
+
+  if (staticFallbackLanguages.length > 0) {
+    const fallback = buildStaticGraph({
+      ...options,
+      cwd: root,
+      mode: "static",
+      languages: staticFallbackLanguages,
+    });
+    if (lspNodeCount === 0) {
+      return {
+        dump: {
+          ...fallback,
+          indexer: "static",
+          warnings: [...(fallback.warnings ?? []), ...warnings],
+        },
+        warnings,
+      };
+    }
+    nodes.push(...fallback.nodes);
+    edges.push(...fallback.edges);
+    diagnostics.push(...(fallback.diagnostics ?? []));
+    warnings.push(...(fallback.warnings ?? []));
   }
 
   if (nodes.length === 0) {

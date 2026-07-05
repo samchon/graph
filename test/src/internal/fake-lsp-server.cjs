@@ -1,7 +1,14 @@
 const fs = require("node:fs");
 
 let buffer = Buffer.alloc(0);
-let requestId = 0;
+const failLanguages = new Set();
+const languageByUri = new Map();
+
+for (const arg of process.argv.slice(2)) {
+  if (arg.startsWith("--fail-language=")) {
+    failLanguages.add(arg.slice("--fail-language=".length));
+  }
+}
 
 process.stdin.on("data", (chunk) => {
   buffer = Buffer.concat([buffer, chunk]);
@@ -37,6 +44,10 @@ function handle(message) {
   }
   if (message.method === "initialized") return;
   if (message.method === "textDocument/didOpen") {
+    languageByUri.set(
+      message.params.textDocument.uri,
+      message.params.textDocument.languageId,
+    );
     notify("textDocument/publishDiagnostics", {
       uri: message.params.textDocument.uri,
       diagnostics: [
@@ -55,6 +66,11 @@ function handle(message) {
     return;
   }
   if (message.method === "textDocument/documentSymbol") {
+    const uri = message.params.textDocument.uri;
+    const languageId = languageByUri.get(uri);
+    if (failLanguages.has(languageId)) {
+      return respondError(message.id, `forced ${languageId} failure`);
+    }
     return respond(message.id, [
       {
         name: "LspService",
@@ -123,6 +139,10 @@ function handle(message) {
 
 function respond(id, result) {
   write({ jsonrpc: "2.0", id, result });
+}
+
+function respondError(id, message) {
+  write({ jsonrpc: "2.0", id, error: { code: -32000, message } });
 }
 
 function notify(method, params) {

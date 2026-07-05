@@ -56,6 +56,10 @@ npx @samchon/graph dump --language go --mode lsp --server gopls
 
 The default `auto` mode tries an LSP server when one is configured or found on
 `PATH`, then falls back to the static indexer if the server is missing or fails.
+When a mixed-language repository has only some language servers available, the
+available LSP graphs are preserved and the failed languages are filled by the
+static fallback; the dump is marked as `hybrid` and carries warnings explaining
+which language fell back.
 
 ## Supported Language Defaults
 
@@ -74,6 +78,10 @@ The built-in registry knows the usual file extensions and server commands for:
 
 Static fallback handles declarations and imports for the same families and keeps
 the output useful even before language servers are installed.
+
+The language servers are not bundled. Install the matching server in the target
+repository environment when compiler/LSP diagnostics and reference edges are
+required.
 
 ## Programmatic API
 
@@ -96,3 +104,26 @@ The source-linked design target is the same one described for `@ttsc/graph`:
 keep the graph as an index, make the agent select one request through a typed
 contract, and trust resolved compiler/LSP facts enough to stop reading files
 after graph evidence answers the question.
+
+## Verification
+
+The repository test suite uses `@nestia/e2e@rc` and runs against the `ttsc`-built
+package output under `lib/`.
+
+```bash
+npm run build
+npm test
+npm run coverage
+```
+
+The e2e suite covers:
+
+- every advertised language through static fallback fixtures;
+- every graph node kind, edge kind, and request branch through a contract graph;
+- the MCP stdio server and CLI dump command;
+- the LSP JSON-RPC path through a fake language server, including diagnostics,
+  references, missing-server fallback, and per-language hybrid fallback;
+- the actual `@samchon/graph` repository as a real-codebase fixture.
+
+GitHub Actions runs build, e2e, and coverage gates on Linux, Windows, and macOS
+for every push and pull request to `master`.

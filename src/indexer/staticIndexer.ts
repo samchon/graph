@@ -109,10 +109,10 @@ function declarationsOf(
   let braceDepth = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
-    while (ownerStack.length > 0 && braceDepth <= ownerStack[ownerStack.length - 1]!.braceDepth) {
+    while (ownerStack.length > 0 && braceDepth < ownerStack[ownerStack.length - 1]!.braceDepth) {
       ownerStack.pop();
     }
-    const parsed = parseDeclaration(language, line);
+    const parsed = parseDeclaration(language, line, ownerStack.length > 0);
     if (parsed !== undefined) {
       const owner = ownerStack.map((entry) => entry.name).join(".");
       const qualifiedName = owner === "" ? parsed.name : `${owner}.${parsed.name}`;
@@ -154,9 +154,19 @@ function declarationsOf(
 function parseDeclaration(
   language: GraphLanguage,
   line: string,
+  inContainer: boolean,
 ): { kind: GraphNodeKind; name: string; exported?: boolean } | undefined {
   const text = line.trim();
   if (text === "" || text.startsWith("//") || text.startsWith("*")) return undefined;
+  if (inContainer) {
+    const method =
+      /^(?:(?:public|private|protected|internal|static|abstract|final|open|override|async|pub|pub\(crate\))\s+)*([A-Za-z_$][\w$]*)\s*\([^;]*\)\s*(?::|->|\{|$)/.exec(
+        text,
+      );
+    if (method !== null && !CONTROL_WORDS.has(method[1]!)) {
+      return { kind: "method", name: method[1]! };
+    }
+  }
   const generic = /^(?:export\s+)?(?:(?:public|private|protected|internal|static|abstract|final|open|override|async|pub|pub\(crate\))\s+)*(class|interface|struct|enum|trait|type|namespace|module|object|protocol|extension|func|fn|function|def|fun|method|const|let|var)\s+([A-Za-z_$][\w$]*)/.exec(text);
   const cppFunction = /^(?:[\w:<>,~*&\s]+)\s+([A-Za-z_]\w*)\s*\([^;]*\)\s*(?:const\s*)?\{?\s*$/.exec(text);
   const goFunc = /^func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)\s*\(/.exec(text);
@@ -354,3 +364,12 @@ function isCapitalized(name: string): boolean {
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+const CONTROL_WORDS = new Set([
+  "for",
+  "if",
+  "switch",
+  "while",
+  "catch",
+  "return",
+]);

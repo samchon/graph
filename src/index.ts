@@ -12,22 +12,25 @@ export * from "./structures";
 const VERSION: string = (require("../package.json") as { version: string }).version;
 
 export function runGraph(argv: readonly string[] = process.argv.slice(2)): number | void {
-  if (argv[0] === "dump") {
-    void runDump(argv.slice(1));
-    return;
-  }
-  if (argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
-    process.stdout.write(helpText());
-    return 0;
-  }
+  try {
+    if (argv[0] === "dump") {
+      void runDump(argv.slice(1));
+      return;
+    }
+    if (argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
+      process.stdout.write(helpText());
+      return 0;
+    }
 
-  const options = parseArgs(argv);
-  void startServer({ ...options, version: VERSION }).catch((error: unknown) => {
-    process.stderr.write(
-      `@samchon/graph: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
-    process.exit(1);
-  });
+    const options = parseArgs(argv);
+    void startServer({ ...options, version: VERSION }).catch((error: unknown) => {
+      writeError(error);
+      process.exit(1);
+    });
+  } catch (error) {
+    writeError(error);
+    return 1;
+  }
 }
 
 async function runDump(argv: readonly string[]): Promise<void> {
@@ -35,9 +38,7 @@ async function runDump(argv: readonly string[]): Promise<void> {
     const dump = await buildGraphDump(parseArgs(argv));
     process.stdout.write(`${JSON.stringify(dump, null, 2)}\n`);
   } catch (error) {
-    process.stderr.write(
-      `@samchon/graph: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
+    writeError(error);
     process.exitCode = 1;
   }
 }
@@ -46,7 +47,11 @@ function parseArgs(argv: readonly string[]) {
   const options: Parameters<typeof buildGraph>[0] = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
-    const next = (): string | undefined => argv[++i];
+    const next = (): string => {
+      const value = argv[++i];
+      if (value === undefined) throw new Error(`Missing value for ${arg}`);
+      return value;
+    };
     if (arg === "--cwd") options.cwd = next();
     else if (arg.startsWith("--cwd=")) options.cwd = arg.slice("--cwd=".length);
     else if (arg === "--mode") options.mode = parseMode(next());
@@ -73,6 +78,8 @@ function parseArgs(argv: readonly string[]) {
       options.lspTimeoutMs = parseInteger(next());
     } else if (arg.startsWith("--lsp-timeout-ms=")) {
       options.lspTimeoutMs = parseInteger(arg.slice("--lsp-timeout-ms=".length));
+    } else {
+      throw new Error(`Unknown argument: ${arg}`);
     }
   }
   return options;
@@ -125,4 +132,10 @@ Options:
   --max-files N             Cap source files indexed.
   --lsp-timeout-ms N        Per-request LSP timeout.
 `;
+}
+
+function writeError(error: unknown): void {
+  process.stderr.write(
+    `@samchon/graph: ${error instanceof Error ? error.message : String(error)}\n`,
+  );
 }

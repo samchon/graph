@@ -29,6 +29,10 @@ exports.test_static_graph_indexes_declarations_and_dependencies = async () => {
         edge.from.includes("OrderService.create"),
     ),
   );
+  TestValidator.predicate(
+    "side-effect imports produce import edges",
+    dump.edges.some((edge) => edge.kind === "imports" && edge.to.endsWith(":./setup")),
+  );
 };
 
 exports.test_application_lookup_details_and_tour_use_resident_graph = async () => {

@@ -235,8 +235,8 @@ function importsOf(
     const text = lines[i]?.trim() ?? "";
     const names: string[] = [];
     if (language === "typescript" || language === "javascript") {
-      for (const match of text.matchAll(/\bfrom\s+["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/g)) {
-        names.push(match[1] ?? match[2] ?? "");
+      for (const match of text.matchAll(/\bfrom\s+["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)|^import\s+["']([^"']+)["']/g)) {
+        names.push(match[1] ?? match[2] ?? match[3] ?? "");
       }
     } else if (language === "go") {
       const match = /^import\s+(?:\w+\s+)?["`]([^"`]+)["`]/.exec(text);

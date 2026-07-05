@@ -54,6 +54,7 @@ exports.createOrderFixture = () => {
   fs.writeFileSync(
     path.join(root, "src", "service.ts"),
     [
+      "import \"./setup\";",
       "export class OrderService {",
       "  create(input: CreateOrder): Order {",
       "    return makeOrder(input);",
@@ -66,6 +67,7 @@ exports.createOrderFixture = () => {
       "}",
     ].join("\n"),
   );
+  fs.writeFileSync(path.join(root, "src", "setup.ts"), "export const ready = true;\n");
   fs.writeFileSync(
     path.join(root, "src", "main.go"),
     [

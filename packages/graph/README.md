@@ -93,11 +93,11 @@ The source-linked design target is the same one described for `@ttsc/graph`: kee
 
 The source layout follows the `@ttsc/graph` file discipline: one TypeScript file may define and export only one top-level symbol, and the filename must exactly match that symbol. Files that only re-export other files are the only exception.
 
-The e2e suite scans `packages/graph/src/**/*.ts` and `test/src/**/*.ts` and fails when this convention is broken.
+The e2e suite scans `packages/graph/src/**/*.ts` and `tests/test-graph/src/**/*.ts` and fails when this convention is broken.
 
 ## Verification
 
-The repository is a pnpm workspace with `packages/graph` for the published package and `test` for e2e coverage.
+The repository is a pnpm workspace with `packages/graph` for the published package, `tests/test-graph` for coverage-gated graph tests, `tests/experiment` for real language-server experiments, and `tests/benchmark` for benchmark harness work.
 
 ```bash
 pnpm install

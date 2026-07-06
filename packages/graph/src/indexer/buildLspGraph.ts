@@ -167,6 +167,7 @@ async function collectLanguageGraph(
     await client.request("initialize", {
       processId: process.pid,
       rootUri: fileUri(root),
+      initializationOptions: options.initializationOptions,
       capabilities: {
         textDocument: {
           documentSymbol: { hierarchicalDocumentSymbolSupport: true },

@@ -6,6 +6,7 @@ export interface IBuildGraphOptions {
   languages?: GraphLanguage[];
   server?: string;
   serverArgs?: string[];
+  initializationOptions?: unknown;
   maxFiles?: number;
   lspReferenceLimit?: number;
   lspTimeoutMs?: number;

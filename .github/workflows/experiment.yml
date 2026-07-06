@@ -1,0 +1,90 @@
+name: experiment
+
+on:
+  workflow_dispatch:
+    inputs:
+      language:
+        description: "Single language to run, or all."
+        required: false
+        default: "all"
+  pull_request:
+    branches: [master]
+    paths:
+      - ".github/workflows/experiment.yml"
+      - "packages/graph/**"
+      - "tests/experiment/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+
+jobs:
+  experiment:
+    name: ${{ matrix.language }} LSP
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        language:
+          - typescript
+          - javascript
+          - go
+          - rust
+          - cpp
+          - c
+          - java
+          - csharp
+          - kotlin
+          - swift
+          - scala
+          - zig
+
+    steps:
+      - name: Skip unselected language
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.language != 'all' && inputs.language != matrix.language }}
+        run: echo "Skipping ${{ matrix.language }}"
+
+      - name: Checkout
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language }}
+        uses: actions/checkout@v4
+
+      - name: Enable pnpm
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language }}
+        run: corepack enable
+
+      - name: Setup Node
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Swift
+        if: ${{ matrix.language == 'swift' && (github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language) }}
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.0"
+
+      - name: Install
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Build package
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language }}
+        run: pnpm build
+
+      - name: Install language server
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language }}
+        run: pnpm --filter @samchon/graph-experiment run setup -- --language ${{ matrix.language }}
+
+      - name: Run LSP experiment
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language }}
+        run: pnpm --filter @samchon/graph-experiment start -- --language ${{ matrix.language }}
+
+      - name: Upload result
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-lsp-${{ matrix.language }}
+          path: tests/experiment/results/${{ matrix.language }}.json
+          if-no-files-found: ignore

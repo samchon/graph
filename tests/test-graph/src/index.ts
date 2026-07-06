@@ -47,7 +47,7 @@ const main = async (): Promise<void> => {
   if (files.length === 0) {
     const reason = include.length
       ? `No tests matched --include=${include.join(",")}`
-      : "No tests were discovered under test/src/features";
+      : "No tests were discovered under tests/test-graph/src/features";
     console.error(reason);
     process.exit(1);
   }

@@ -1,0 +1,13 @@
+# `@samchon/graph` Language Server Experiments
+
+This workspace runs real LSP smoke experiments outside the coverage-gated test suite.
+
+Each language job installs the actual language server, clones a representative public project, builds a graph in `mode: "lsp"`, and fails if the result falls back to static indexing or produces no language symbols.
+
+Use the workflow in `.github/workflows/experiment.yml` for the full matrix.
+
+```bash
+pnpm --filter @samchon/graph-experiment list
+pnpm --filter @samchon/graph-experiment run setup -- --language typescript
+pnpm --filter @samchon/graph-experiment start -- --language typescript
+```

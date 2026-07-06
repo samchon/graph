@@ -1,0 +1,23 @@
+{
+  "private": true,
+  "name": "@samchon/graph-test",
+  "version": "0.1.0",
+  "description": "@samchon/graph end-to-end tests.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "pnpm --filter @samchon/graph build && pnpm build && node lib/index.mjs",
+    "coverage": "pnpm --workspace-root coverage"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@nestia/e2e": "catalog:samchon",
+    "@samchon/graph": "workspace:*",
+    "@ttsc/unplugin": "catalog:samchon",
+    "@types/node": "catalog:utils",
+    "c8": "catalog:utils",
+    "esbuild": "catalog:bundler",
+    "rimraf": "catalog:utils",
+    "typescript": "catalog:typescript"
+  }
+}

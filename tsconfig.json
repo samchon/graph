@@ -7,14 +7,12 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "lib": ["ESNext"],
-    "outDir": "lib",
-    "rootDir": "src",
+    "sourceMap": true,
     "resolveJsonModule": true,
     "types": ["node"],
     "strict": true,
     "noImplicitReturns": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true
-  },
-  "include": ["src/**/*.ts"]
+  }
 }

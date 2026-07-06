@@ -24,21 +24,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
-      - name: Configure npm
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Configure pnpm
         run: |
-          npm config set fetch-retries 5
-          npm config set fetch-retry-factor 2
-          npm config set fetch-retry-mintimeout 20000
-          npm config set fetch-retry-maxtimeout 120000
-          npm config set registry https://registry.npmjs.org/
+          pnpm config set fetch-retries 5
+          pnpm config set fetch-retry-factor 2
+          pnpm config set fetch-retry-mintimeout 20000
+          pnpm config set fetch-retry-maxtimeout 120000
+          pnpm config set registry https://registry.npmjs.org/
 
       - name: Install
         shell: pwsh
         run: |
           for ($attempt = 1; $attempt -le 3; $attempt++) {
-            npm ci
+            pnpm install --frozen-lockfile
             if ($LASTEXITCODE -eq 0) {
               exit 0
             }
@@ -52,10 +56,10 @@ jobs:
           }
 
       - name: Build
-        run: npm run build
+        run: pnpm run build
 
       - name: Test
-        run: npm test
+        run: pnpm test
 
       - name: Coverage
-        run: npm run coverage
+        run: pnpm coverage

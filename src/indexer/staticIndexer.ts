@@ -231,6 +231,7 @@ function importsOf(
   lines: readonly string[],
 ): Array<{ name: string; evidence: IGraphEvidence }> {
   const out: Array<{ name: string; evidence: IGraphEvidence }> = [];
+  let goImportBlock = false;
   for (let i = 0; i < lines.length; i++) {
     const text = lines[i]?.trim() ?? "";
     const names: string[] = [];
@@ -239,8 +240,19 @@ function importsOf(
         names.push(match[1] ?? match[2] ?? match[3] ?? "");
       }
     } else if (language === "go") {
-      const match = /^import\s+(?:\w+\s+)?["`]([^"`]+)["`]/.exec(text);
-      if (match !== null) names.push(match[1]!);
+      if (goImportBlock) {
+        if (text.startsWith(")")) {
+          goImportBlock = false;
+        } else {
+          const match = /^(?:(?:[._]|\w+)\s+)?["`]([^"`]+)["`]/.exec(text);
+          if (match !== null) names.push(match[1]!);
+        }
+      } else if (/^import\s*\(/.test(text)) {
+        goImportBlock = true;
+      } else {
+        const match = /^import\s+(?:(?:[._]|\w+)\s+)?["`]([^"`]+)["`]/.exec(text);
+        if (match !== null) names.push(match[1]!);
+      }
     } else if (language === "rust") {
       const match = /^use\s+([^;]+);?/.exec(text);
       if (match !== null) names.push(match[1]!);

@@ -1,0 +1,15 @@
+export type GraphEdgeKind =
+  | "contains"
+  | "exports"
+  | "imports"
+  | "calls"
+  | "accesses"
+  | "instantiates"
+  | "type_ref"
+  | "extends"
+  | "implements"
+  | "overrides"
+  | "decorates"
+  | "renders"
+  | "tests"
+  | "references";

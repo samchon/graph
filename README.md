@@ -105,6 +105,11 @@ keep the graph as an index, make the agent select one request through a typed
 contract, and trust resolved compiler/LSP facts enough to stop reading files
 after graph evidence answers the question.
 
+The source layout follows the `@ttsc/graph` file discipline: one TypeScript file
+may define and export only one top-level symbol, and the filename must exactly
+match that symbol. Files that only re-export other files are the only exception.
+The e2e suite scans `src/**/*.ts` and fails when this convention is broken.
+
 ## Verification
 
 The repository test suite uses `@nestia/e2e@rc` and runs against the `ttsc`-built

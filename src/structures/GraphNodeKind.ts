@@ -1,0 +1,17 @@
+export type GraphNodeKind =
+  | "file"
+  | "package"
+  | "namespace"
+  | "module"
+  | "function"
+  | "class"
+  | "interface"
+  | "type"
+  | "enum"
+  | "variable"
+  | "method"
+  | "property"
+  | "parameter"
+  | "field"
+  | "constructor"
+  | "external_symbol";

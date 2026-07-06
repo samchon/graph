@@ -26,9 +26,9 @@ exports.test_real_codebase_static_dump_indexes_source_not_build_output = async (
     dump.nodes.every((node) => !node.file.startsWith("lib/")),
   );
   for (const expected of [
-    ["src/application.ts", "SamchonGraphApplication"],
-    ["src/indexer/buildGraph.ts", "buildGraphDump"],
-    ["src/indexer/lspIndexer.ts", "buildLspGraph"],
+    ["src/SamchonGraphApplication.ts", "SamchonGraphApplication"],
+    ["src/indexer/buildGraphDump.ts", "buildGraphDump"],
+    ["src/indexer/buildLspGraph.ts", "buildLspGraph"],
     ["src/model/GraphMemory.ts", "GraphMemory"],
     ["src/operations/runTrace.ts", "runTrace"],
   ]) {
@@ -62,7 +62,7 @@ exports.test_real_codebase_operations_answer_about_package_symbols = async () =>
     lookup.hits.some(
       (hit) =>
         hit.name === "SamchonGraphApplication" &&
-        hit.file === "src/application.ts",
+        hit.file === "src/SamchonGraphApplication.ts",
     ),
   );
 
@@ -125,7 +125,7 @@ exports.test_real_codebase_cli_and_mcp_run_against_repository_root = async () =>
   TestValidator.predicate(
     "real codebase CLI dump has source nodes",
     dump.nodes.some(
-      (node) => node.file === "src/application.ts" && node.name === "SamchonGraphApplication",
+      (node) => node.file === "src/SamchonGraphApplication.ts" && node.name === "SamchonGraphApplication",
     ),
   );
 
@@ -162,7 +162,7 @@ exports.test_real_codebase_cli_and_mcp_run_against_repository_root = async () =>
       parsed.result.hits.some(
         (hit) =>
           hit.name === "buildGraphDump" &&
-          hit.file === "src/indexer/buildGraph.ts",
+          hit.file === "src/indexer/buildGraphDump.ts",
       ),
     );
   } finally {

@@ -42,5 +42,16 @@ exports.test_static_fallback_indexes_every_advertised_language = async () => {
           node.language === fixture.language && node.name === fixture.symbol,
       ),
     );
+    if (fixture.package !== undefined) {
+      TestValidator.predicate(
+        `${fixture.language} package ${fixture.package} is indexed`,
+        dump.nodes.some(
+          (node) =>
+            node.language === fixture.language &&
+            node.kind === "package" &&
+            node.name === fixture.package,
+        ),
+      );
+    }
   }
 };

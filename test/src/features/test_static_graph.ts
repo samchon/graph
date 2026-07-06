@@ -22,6 +22,12 @@ exports.test_static_graph_indexes_declarations_and_dependencies = async () => {
     dump.nodes.some((node) => node.name === "LoadOrder"),
   );
   TestValidator.predicate(
+    "Go package declaration is indexed",
+    dump.nodes.some(
+      (node) => node.language === "go" && node.kind === "package" && node.name === "main",
+    ),
+  );
+  TestValidator.predicate(
     "class method produces dependency evidence",
     dump.edges.some(
       (edge) =>

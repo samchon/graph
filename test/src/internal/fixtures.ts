@@ -286,7 +286,8 @@ exports.languageFixtures = [
     language: "java",
     file: "Entry.java",
     symbol: "JavaEntry",
-    source: "public class JavaEntry {\n}\n",
+    package: "com.samchon.graph.java",
+    source: "package com.samchon.graph.java;\npublic class JavaEntry {\n}\n",
   },
   {
     language: "csharp",
@@ -298,7 +299,8 @@ exports.languageFixtures = [
     language: "kotlin",
     file: "Entry.kt",
     symbol: "kotlinEntry",
-    source: "fun kotlinEntry(): Int {\n  return 1\n}\n",
+    package: "com.samchon.graph.kotlin",
+    source: "package com.samchon.graph.kotlin\nfun kotlinEntry(): Int {\n  return 1\n}\n",
   },
   {
     language: "swift",
@@ -310,7 +312,8 @@ exports.languageFixtures = [
     language: "scala",
     file: "Entry.scala",
     symbol: "scalaEntry",
-    source: "def scalaEntry(): Int = 1\n",
+    package: "com.samchon.graph.scala",
+    source: "package com.samchon.graph.scala\ndef scalaEntry(): Int = 1\n",
   },
   {
     language: "zig",

@@ -145,6 +145,14 @@ function parseDeclaration(
 ): { kind: GraphNodeKind; name: string; exported?: boolean } | undefined {
   const text = line.trim();
   if (text === "" || text.startsWith("//") || text.startsWith("*")) return undefined;
+  const packageDeclaration = /^package\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*;?/.exec(text);
+  if (packageDeclaration !== null) {
+    return {
+      kind: "package",
+      name: packageDeclaration[1]!,
+      exported: true,
+    };
+  }
   if (inContainer) {
     const method =
       /^(?:(?:public|private|protected|internal|static|abstract|final|open|override|async|pub|pub\(crate\))\s+)*([A-Za-z_$][\w$]*)\s*\([^;]*\)\s*(?::|->|\{|$)/.exec(

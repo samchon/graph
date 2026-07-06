@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "name": "@samchon/graph-benchmark",
+  "version": "0.1.0",
+  "description": "Benchmark harness scaffold for @samchon/graph.",
+  "type": "module",
+  "scripts": {
+    "list": "node src/list-fixtures.mjs",
+    "start": "node src/run-benchmark.mjs"
+  },
+  "dependencies": {
+    "@samchon/graph": "workspace:*"
+  }
+}

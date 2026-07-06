@@ -1,0 +1,19 @@
+{
+  "private": true,
+  "name": "@samchon/graph-experiment",
+  "version": "0.1.0",
+  "description": "Real language-server experiments for @samchon/graph.",
+  "type": "module",
+  "scripts": {
+    "list": "node src/list-languages.mjs",
+    "setup": "node src/setup-language.mjs",
+    "start": "node src/run-language.mjs"
+  },
+  "dependencies": {
+    "@samchon/graph": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "catalog:lsp",
+    "typescript-language-server": "catalog:lsp"
+  }
+}

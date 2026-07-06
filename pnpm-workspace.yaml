@@ -1,6 +1,6 @@
 packages:
   - "packages/*"
-  - "test"
+  - "tests/*"
 catalogs:
   typescript:
     typescript: 7.0.1-rc
@@ -12,6 +12,9 @@ catalogs:
     typia: 13.0.0-rc.1
   bundler:
     esbuild: ^0.25.12
+  lsp:
+    typescript: 6.0.3
+    typescript-language-server: ^5.0.0
   utils:
     "@types/node": ^22.18.0
     c8: ^10.1.3

@@ -17,7 +17,7 @@ const walk = (dir: string): string[] => {
 export const test_source_files_export_only_their_matching_symbol = () => {
   const roots = [
     path.join(GraphPaths.graphPackageRoot, "src"),
-    path.join(GraphPaths.repositoryRoot, "test", "src"),
+    path.join(GraphPaths.repositoryRoot, "tests", "test-graph", "src"),
   ];
   const violations: string[] = [];
   for (const root of roots) {

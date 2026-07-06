@@ -9,6 +9,13 @@ catalogs:
     esbuild:
       specifier: ^0.25.12
       version: 0.25.12
+  lsp:
+    typescript:
+      specifier: 6.0.3
+      version: 6.0.3
+    typescript-language-server:
+      specifier: ^5.0.0
+      version: 5.3.0
   samchon:
     '@nestia/e2e':
       specifier: 12.0.0-rc.2
@@ -69,7 +76,26 @@ importers:
         specifier: catalog:typescript
         version: 7.0.1-rc
 
-  test:
+  tests/benchmark:
+    dependencies:
+      '@samchon/graph':
+        specifier: workspace:*
+        version: link:../../packages/graph
+
+  tests/experiment:
+    dependencies:
+      '@samchon/graph':
+        specifier: workspace:*
+        version: link:../../packages/graph
+    devDependencies:
+      typescript:
+        specifier: catalog:lsp
+        version: 6.0.3
+      typescript-language-server:
+        specifier: catalog:lsp
+        version: 5.3.0
+
+  tests/test-graph:
     devDependencies:
       '@modelcontextprotocol/sdk':
         specifier: ^1.26.0
@@ -79,7 +105,7 @@ importers:
         version: 12.0.0-rc.2
       '@samchon/graph':
         specifier: workspace:*
-        version: link:../packages/graph
+        version: link:../../packages/graph
       '@ttsc/unplugin':
         specifier: catalog:samchon
         version: 0.16.12
@@ -1196,6 +1222,16 @@ packages:
     resolution: {integrity: sha512-faYHw0anBbc/kWF3zFTEnxSFOAGUX9GFbOBthvDdLsIlEoWOFOtS0zgCiQYwIskL9iGXZL3kAXD8OoZ4GmMATA==}
     engines: {node: '>= 18'}
 
+  typescript-language-server@5.3.0:
+    resolution: {integrity: sha512-5puofxZHgFdAYtfNpmwCAvgtaYgg8wrUnH30m7Ze3QuguId5RNRadKASpOpyDxTyUdAF51FjhTdjntLw/EuWcQ==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
   typescript@7.0.1-rc:
     resolution: {integrity: sha512-drEP77wK7CCDlPfXZH4e008UUQOsw1DFmHmZOZjuNA+yoDLLnSNMZRXi90NbV/1LVo7SbNLq1bs3jjvk49TEqQ==}
     engines: {node: '>=16.20.0'}
@@ -1226,6 +1262,20 @@ packages:
   vary@1.1.2:
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
     engines: {node: '>= 0.8'}
+
+  vscode-jsonrpc@5.0.1:
+    resolution: {integrity: sha512-JvONPptw3GAQGXlVV2utDcHx0BiY34FupW/kI6mZ5x06ER5DdPG/tXWMVHjTNULF5uKPOUUD0SaXg5QaubJL0A==}
+    engines: {node: '>=8.0.0 || >=10.0.0'}
+
+  vscode-jsonrpc@9.0.1:
+    resolution: {integrity: sha512-rfuA6T75H6m5EkbhtEPzre9pT0HPcDI2MMy4+nPFIBks5J8JBAUHD4tRYSgaBOijIEC7SRkC1kKyXTLqbmh9jw==}
+    engines: {node: '>=14.0.0'}
+
+  vscode-languageserver-protocol@3.18.2:
+    resolution: {integrity: sha512-XRyDbT0Pp3sSNti3JmxVEUMySWCSi1hhM+/KUlCy1hV1zmrqpM1OwO12EAki8blhmLuIMpaJrYbo0OzGVfK2Qg==}
+
+  vscode-languageserver-types@3.18.0:
+    resolution: {integrity: sha512-8TsGPNMIMiiBdkORgRSvLjuiEIiAFtO+KssmYWxQ+uSVvlf7RjK8YKCOjPzZ+YA04jXEV7+7LvkSmHkhpNS99g==}
 
   wcwidth@1.0.1:
     resolution: {integrity: sha512-XHPEwS0q6TaxcvG85+8EYkbiCux2XtWG2mkc47Ng2A77BQu9+DqIOJldST4HgPkuea7dvKSj5VgX3P1d4rW8Tg==}
@@ -2270,6 +2320,13 @@ snapshots:
       media-typer: 1.1.0
       mime-types: 3.0.2
 
+  typescript-language-server@5.3.0:
+    dependencies:
+      vscode-jsonrpc: 5.0.1
+      vscode-languageserver-protocol: 3.18.2
+
+  typescript@6.0.3: {}
+
   typescript@7.0.1-rc:
     optionalDependencies:
       '@typescript/typescript-aix-ppc64': 7.0.1-rc
@@ -2325,6 +2382,17 @@ snapshots:
       convert-source-map: 2.0.0
 
   vary@1.1.2: {}
+
+  vscode-jsonrpc@5.0.1: {}
+
+  vscode-jsonrpc@9.0.1: {}
+
+  vscode-languageserver-protocol@3.18.2:
+    dependencies:
+      vscode-jsonrpc: 9.0.1
+      vscode-languageserver-types: 3.18.0
+
+  vscode-languageserver-types@3.18.0: {}
 
   wcwidth@1.0.1:
     dependencies:

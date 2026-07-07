@@ -6,7 +6,10 @@
   "type": "module",
   "scripts": {
     "list": "node src/list-fixtures.mjs",
-    "start": "node src/run-benchmark.mjs"
+    "start": "node src/run-benchmark.mjs",
+    "corpus": "node src/list-corpus.mjs",
+    "agent-ab": "node src/agent-ab.mjs",
+    "suite": "node src/run-suite.mjs"
   },
   "dependencies": {
     "@samchon/graph": "workspace:*"

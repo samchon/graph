@@ -24,6 +24,7 @@ import { projectRelative, readText, walkSourceFiles } from "../utils/fs";
 import { fileFromUri, fileUri, isSubPath } from "../utils/path";
 import { allExtensions, languageOf, specOf } from "./languages";
 import { buildStaticGraph } from "./staticIndexer";
+import { decoratorsAbove } from "./decoratorsAbove";
 import { resolveType } from "./resolveType";
 import { supertypesOf } from "./supertypesOf";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
@@ -316,6 +317,16 @@ async function collectLanguageGraph(
         if (seen.has(key)) continue;
         seen.add(key);
         edges.push({ from: node.id, to: target.id, kind: supertype.relation, evidence: node.evidence });
+      }
+    }
+    // Decorators sit on the lines directly above a declaration; link the
+    // decorated symbol to the decorator it names.
+    for (const node of nodes) {
+      const fileLines = linesByFile.get(node.file)!;
+      for (const name of decoratorsAbove(fileLines, node.evidence!.startLine - 1)) {
+        const target = resolveType(name, node, byName);
+        if (target === undefined) continue;
+        edges.push({ from: node.id, to: target.id, kind: "decorates", evidence: node.evidence });
       }
     }
 

@@ -33,6 +33,13 @@ export const test_static_indexes_inheritance_and_containment = async () => {
   TestValidator.predicate("scala with is an implements", has("implements", "Foo:class", "Baz:interface"));
   TestValidator.predicate("scala extends", has("extends", "Foo:class", "Bar:class"));
 
+  // A decorator directly above a declaration links to the decorator symbol.
+  TestValidator.predicate("decorator becomes a decorates edge", has("decorates", "Service:class", "Injectable:function"));
+  TestValidator.predicate(
+    "unresolved decorator dropped",
+    dump.edges.every((edge) => edge.kind !== "decorates" || !edge.to.includes("Missing")),
+  );
+
   // Unresolved supertypes never produce an edge.
   TestValidator.predicate(
     "unresolved supertype is dropped",

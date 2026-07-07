@@ -277,6 +277,22 @@ async function collectLanguageGraph(
       }
     }
 
+    // Make the document-symbol hierarchy explicit: every nested symbol is
+    // contained by its owner. The owner is the node whose path is this node's
+    // qualified name without its last segment.
+    const nodeByPath = new Map<string, IGraphNode>();
+    for (const node of nodes) {
+      nodeByPath.set(`${node.file}\0${node.qualifiedName ?? node.name}`, node);
+    }
+    for (const node of nodes) {
+      if (node.qualifiedName === undefined) continue;
+      const parent = nodeByPath.get(
+        `${node.file}\0${node.qualifiedName.slice(0, node.qualifiedName.lastIndexOf("."))}`,
+      );
+      if (parent === undefined) continue;
+      edges.push({ from: parent.id, to: node.id, kind: "contains", evidence: node.evidence });
+    }
+
     return {
       nodes,
       edges,

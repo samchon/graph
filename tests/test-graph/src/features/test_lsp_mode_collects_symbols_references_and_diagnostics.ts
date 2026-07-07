@@ -33,6 +33,15 @@ export const test_lsp_mode_collects_symbols_references_and_diagnostics = async (
     ),
   );
   TestValidator.predicate(
+    "LSP nesting becomes contains edges",
+    dump.edges.some(
+      (edge) =>
+        edge.kind === "contains" &&
+        edge.from.includes("LspService") &&
+        edge.to.includes("LspService.run"),
+    ),
+  );
+  TestValidator.predicate(
     "LSP diagnostics are captured",
     dump.diagnostics?.some(
       (diagnostic) =>

@@ -33,6 +33,15 @@ export const test_static_indexes_inheritance_and_containment = async () => {
   TestValidator.predicate("scala with is an implements", has("implements", "Foo:class", "Baz:interface"));
   TestValidator.predicate("scala extends", has("extends", "Foo:class", "Bar:class"));
 
+  // Defining a member is not calling it, and calls inside a method body belong
+  // to the method — the class must not emit call edges for either.
+  TestValidator.predicate(
+    "a class does not call the members it defines",
+    dump.edges.every(
+      (edge) => edge.kind !== "calls" || !edge.from.endsWith("Service:class"),
+    ),
+  );
+
   // A subclass method with the same name as a supertype method overrides it.
   TestValidator.predicate("override across files", has("overrides", "Service.run:method", "Base.run:method"));
   TestValidator.predicate(

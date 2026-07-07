@@ -11,6 +11,7 @@ const options = {
   messageLessError: false,
   minimalDiagnostics: false,
   nullReferences: false,
+  referenceError: false,
   nullSymbols: false,
   classify: false,
   inheritance: false,
@@ -43,6 +44,8 @@ for (const arg of process.argv.slice(2)) {
     options.minimalDiagnostics = true;
   } else if (arg === "--null-references") {
     options.nullReferences = true;
+  } else if (arg === "--reference-error") {
+    options.referenceError = true;
   } else if (arg === "--null-symbols") {
     options.nullSymbols = true;
   } else if (arg === "--classify") {
@@ -313,6 +316,7 @@ function handle(message) {
     ]);
   }
   if (message.method === "textDocument/references") {
+    if (options.referenceError) return respondError(message.id, "content modified");
     if (options.nullReferences) return respond(message.id, null);
     if (options.classify) {
       const uri = message.params.textDocument.uri;

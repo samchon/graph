@@ -232,17 +232,27 @@ async function collectLanguageGraph(
     const referenceTargets = [...nodes]
       .sort((a, b) => Number(isTestPath(a.file)) - Number(isTestPath(b.file)))
       .slice(0, referenceLimit);
-    for (const target of referenceTargets) {
-      const evidence = target.evidence!;
-      const abs = path.join(root, target.file);
-      const refs = await client.request<ILocation[] | null>("textDocument/references", {
-        textDocument: { uri: fileUri(abs) },
-        position: {
-          line: evidence.startLine - 1,
-          character: Math.max(0, evidence.startCol! - 1),
-        },
-        context: { includeDeclaration: false },
-      });
+    // Reference requests are independent, so keep several in flight at once;
+    // results stay indexed by target order to keep edge output deterministic.
+    const referenceResults = await mapWithConcurrency(
+      referenceTargets,
+      options.lspConcurrency ?? 16,
+      (target) => {
+        const evidence = target.evidence!;
+        const abs = path.join(root, target.file);
+        return client.request<ILocation[] | null>("textDocument/references", {
+          textDocument: { uri: fileUri(abs) },
+          position: {
+            line: evidence.startLine - 1,
+            character: Math.max(0, evidence.startCol! - 1),
+          },
+          context: { includeDeclaration: false },
+        });
+      },
+    );
+    for (let index = 0; index < referenceTargets.length; index++) {
+      const target = referenceTargets[index]!;
+      const refs = referenceResults[index];
       for (const ref of refs ?? []) {
         const refFile = fileFromUri(ref.uri);
         if (!isSubPath(root, refFile)) continue;
@@ -310,6 +320,25 @@ function referenceKind(
     default:
       return "references";
   }
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const run = async (): Promise<void> => {
+    for (;;) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index]!);
+    }
+  };
+  const lanes = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: lanes }, run));
+  return results;
 }
 
 async function waitForIndexing(

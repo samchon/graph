@@ -78,8 +78,18 @@ export function buildStaticGraph(options: IBuildGraphOptions = {}): IGraphDump {
     /* c8 ignore next */
     if (lines === undefined) continue;
     for (const declaration of declarations) {
+      // Scan only the lines that belong to this declaration itself: lines inside
+      // nested declarations are attributed to those declarations, and their
+      // signature lines are definitions, not calls. Without this exclusion a
+      // class "calls" every method it merely defines, and every call inside a
+      // method body is double-attributed to the class.
+      const nested = declarations.filter((child) => child.ownerId === declaration.node.id);
       const body = lines
         .slice(declaration.startIndex, Math.max(declaration.startIndex + 1, declaration.endIndex + 1))
+        .filter((_, offset) => {
+          const index = declaration.startIndex + offset;
+          return !nested.some((child) => index >= child.startIndex && index <= child.endIndex);
+        })
         .join("\n");
       for (const edge of dependencyEdges(declaration.node, body, byName)) {
         edges.push(edge);

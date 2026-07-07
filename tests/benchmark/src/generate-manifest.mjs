@@ -13,7 +13,11 @@ const questionsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 
 const sha256 = (text) => crypto.createHash("sha256").update(text, "utf8").digest("hex");
 const entryOf = (id, family, file, repo) => {
-  const text = fs.readFileSync(path.join(questionsDir, file), "utf8").trim();
+  // Normalize CRLF so the hash matches lib.mjs's reader on every host.
+  const text = fs
+    .readFileSync(path.join(questionsDir, file), "utf8")
+    .replace(/\r\n/g, "\n")
+    .trim();
   return { id, family, ...(repo ? { repo } : {}), file, questionSha256: sha256(text) };
 };
 

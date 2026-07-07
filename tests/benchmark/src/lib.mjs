@@ -34,7 +34,12 @@ export function resolvePrompt({ promptId, family, repo }) {
         : `no manifest prompt for family ${family}${repo ? ` repo ${repo}` : ""}`,
     );
   }
-  const text = fs.readFileSync(path.join(questionsDir, entry.file), "utf8").trim();
+  // Normalize CRLF so git's line-ending conversion on a different host can
+  // never flip the hash or the prompt bytes.
+  const text = fs
+    .readFileSync(path.join(questionsDir, entry.file), "utf8")
+    .replace(/\r\n/g, "\n")
+    .trim();
   const actual = sha256(text);
   if (actual !== entry.questionSha256) {
     throw new Error(

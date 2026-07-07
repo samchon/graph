@@ -14,4 +14,7 @@ pnpm-debug.log*
 tests/experiment/.work/
 tests/experiment/results/
 tests/benchmark/.work/
-tests/benchmark/results/
+# Benchmark reports and rendered charts are committed as the measurement
+# record; only the raw per-run agent traces (full transcripts) stay out.
+tests/benchmark/results/*.traces/
+tests/benchmark/results/preflight.json

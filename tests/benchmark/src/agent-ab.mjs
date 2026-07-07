@@ -29,14 +29,20 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CORPUS, findCorpus } from "./corpus.mjs";
+import {
+  benchmarkDir,
+  clonePinned,
+  ensureInstalled,
+  graphLauncher,
+  parseArgs as parseArgsShared,
+  preflightGraph,
+  resolvePrompt,
+} from "./lib.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const benchmarkDir = path.resolve(here, "..");
-const repoRoot = path.resolve(benchmarkDir, "..", "..");
-const graphLauncher = path.join(repoRoot, "packages", "graph", "lib", "bin.js");
-const commonQuestionPath = path.join(benchmarkDir, "questions", "common.md");
+void here;
 
-const args = parseArgs(process.argv.slice(2));
+const args = parseArgsShared(process.argv.slice(2));
 const repoKey = args.repo ?? CORPUS[0].name;
 const spec = findCorpus(repoKey);
 const runs = Number(args.runs ?? 2);
@@ -46,11 +52,12 @@ const promptFamily = args["prompt-family"] ?? "dedicated";
 if (promptFamily !== "common" && promptFamily !== "dedicated") {
   throw new Error("--prompt-family must be 'common' or 'dedicated'");
 }
-const question =
-  args.question ??
-  (promptFamily === "common"
-    ? fs.readFileSync(commonQuestionPath, "utf8").trim()
-    : spec.question);
+const prompt = resolvePrompt({
+  promptId: args["prompt-id"],
+  family: promptFamily,
+  repo: repoKey,
+});
+const question = prompt.text;
 
 const claudeRunTimeoutMs = Number(args["claude-run-timeout-ms"] ?? 900000);
 const claudeStartupGraceMs = Number(args["claude-startup-grace-ms"] ?? 5000);
@@ -79,14 +86,24 @@ if (armsRequested.graph && !serena && !fs.existsSync(graphLauncher)) {
   );
 }
 
-// 2. Shallow-clone the target repo if absent.
+// 2. Pinned checkout + dependencies, then the graph-arm preflight gate: a host
+// missing the language server would silently measure the static fallback.
 if (args["repo-dir"] && !fs.existsSync(repoDir)) {
   throw new Error(`--repo-dir does not exist: ${repoDir}`);
 }
-if (!args["repo-dir"] && !fs.existsSync(repoDir)) {
+if (!args["repo-dir"]) {
   fs.mkdirSync(corpusRoot, { recursive: true });
-  console.log(`Cloning ${spec.url} (shallow) -> ${repoDir} ...`);
-  runOrThrow("git", ["clone", "--depth", "1", spec.url, repoDir], corpusRoot);
+  clonePinned(spec, corpusRoot);
+}
+ensureInstalled(repoDir, { noInstall: args["no-install"] === "1" });
+if (armsRequested.graph && !serena) {
+  const flight = preflightGraph(spec, repoDir);
+  if (!flight.ok && args["allow-static"] !== "1") {
+    throw new Error(
+      `preflight: ${repoKey} (${spec.language}) produced indexer="${flight.indexer}" — install ` +
+        `the language server or pass --allow-static=1.\nwarnings: ${flight.warnings.join("; ")}`,
+    );
+  }
 }
 
 // 3. WITH = @samchon/graph (or a comparator); WITHOUT = empty config. Both under
@@ -158,6 +175,8 @@ const thunks = arms.flatMap((arm) =>
         );
       }
     }
+    m.promptId = prompt.entry.id;
+    m.questionSha256 = prompt.entry.questionSha256;
     m.run = r + 1;
     m.attempts = attempts;
     samples[arm.name].push(m);
@@ -202,13 +221,17 @@ fs.writeFileSync(
   reportPath,
   `${JSON.stringify(
     {
+      harness: "claude-code",
       tool: serena ? "serena" : "samchon-graph",
       repo: repoKey,
       language: spec.language,
+      commit: spec.commit,
       repoDir,
       model,
       effort,
+      promptId: prompt.entry.id,
       promptFamily,
+      questionSha256: prompt.entry.questionSha256,
       runs,
       question,
       traceDir,

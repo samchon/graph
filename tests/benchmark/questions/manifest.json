@@ -1,0 +1,115 @@
+{
+  "prompts": [
+    {
+      "id": "common-v1",
+      "family": "common",
+      "file": "common.md",
+      "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517"
+    },
+    {
+      "id": "excalidraw-dedicated-v1",
+      "family": "dedicated",
+      "repo": "excalidraw",
+      "file": "excalidraw.md",
+      "questionSha256": "e4f3b02a5d3a1e86a9136d90a4b8bd9c73774733f9f1c021faee61b3ea6e83b5"
+    },
+    {
+      "id": "express-dedicated-v1",
+      "family": "dedicated",
+      "repo": "express",
+      "file": "express.md",
+      "questionSha256": "63ddb8c8745d0f8aec2a33f077c73e8f4e9c4bcb39d811db063ac7b5aafe07ea"
+    },
+    {
+      "id": "gin-dedicated-v1",
+      "family": "dedicated",
+      "repo": "gin",
+      "file": "gin.md",
+      "questionSha256": "ea28874c63f02a58bf5862775c042fc716a09a7803e817397344b0d09a430a98"
+    },
+    {
+      "id": "flask-dedicated-v1",
+      "family": "dedicated",
+      "repo": "flask",
+      "file": "flask.md",
+      "questionSha256": "2d8b7adf6cdf24ad01e969707e2d05089259ca7894fc9705bda9f53280f8e581"
+    },
+    {
+      "id": "tokio-dedicated-v1",
+      "family": "dedicated",
+      "repo": "tokio",
+      "file": "tokio.md",
+      "questionSha256": "477616f7f4b75b503f953427b71e79b26cf83e3a32f2c3386e0f19bce7c19c70"
+    },
+    {
+      "id": "gson-dedicated-v1",
+      "family": "dedicated",
+      "repo": "gson",
+      "file": "gson.md",
+      "questionSha256": "808a7b9d8d684cdd2b01cc8391f94893b330d4495a70b0894f9b8a16dab3d2c5"
+    },
+    {
+      "id": "redis-dedicated-v1",
+      "family": "dedicated",
+      "repo": "redis",
+      "file": "redis.md",
+      "questionSha256": "7d7224ec9b14aa58dec9e698196586ef6bd14b4f7eb10b154cec9a3025daaa3f"
+    },
+    {
+      "id": "json-dedicated-v1",
+      "family": "dedicated",
+      "repo": "json",
+      "file": "json.md",
+      "questionSha256": "73bbc49219fdffcc474289efa4abde52d16d6f09fa61d0d81e06ce4076f1d094"
+    },
+    {
+      "id": "sinatra-dedicated-v1",
+      "family": "dedicated",
+      "repo": "sinatra",
+      "file": "sinatra.md",
+      "questionSha256": "104c57cd376b264daac828a6f3e71d347947bbd4b3fa21267006dc71c2bba508"
+    },
+    {
+      "id": "slim-dedicated-v1",
+      "family": "dedicated",
+      "repo": "slim",
+      "file": "slim.md",
+      "questionSha256": "5b8775bb84f2629a2413bf4bb522281d344c7781020660b739814c751c5cc0f5"
+    },
+    {
+      "id": "serilog-dedicated-v1",
+      "family": "dedicated",
+      "repo": "serilog",
+      "file": "serilog.md",
+      "questionSha256": "7d62480b359adb6589a227379c027498961053eec56c14eabfb8a9961a147b2c"
+    },
+    {
+      "id": "koin-dedicated-v1",
+      "family": "dedicated",
+      "repo": "koin",
+      "file": "koin.md",
+      "questionSha256": "03f32f552a7d88639cf9fd27ff334e0532d0bd3a979f05a6ad5e432c636afeb7"
+    },
+    {
+      "id": "alamofire-dedicated-v1",
+      "family": "dedicated",
+      "repo": "alamofire",
+      "file": "alamofire.md",
+      "questionSha256": "d30a924b3cb058eaccb90772a7c82d9a501f294aa8e7e603c8ee6e9f488f23f4"
+    },
+    {
+      "id": "lualine-dedicated-v1",
+      "family": "dedicated",
+      "repo": "lualine",
+      "file": "lualine.md",
+      "questionSha256": "709c330ccc5210a69034a9fd99e8b4f2a5edbe722721b597197a5180116d0db3"
+    },
+    {
+      "id": "flutter-dedicated-v1",
+      "family": "dedicated",
+      "repo": "flutter",
+      "file": "flutter.md",
+      "questionSha256": "95bd65e487a7c436fc6bf56e26cd40b589b7923b35e78d4aa60a676e490a7dd1"
+    }
+  ]
+}

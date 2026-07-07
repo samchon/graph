@@ -67,6 +67,12 @@ The built-in registry knows the usual file extensions and server commands for:
 - Swift: `sourcekit-lsp`
 - Scala: `metals`
 - Zig: `zls`
+- Python: `pyright-langserver --stdio`
+- Ruby: `ruby-lsp`
+- PHP: `intelephense --stdio`
+- Lua: `lua-language-server`
+- Bash: `bash-language-server start`
+- Dart: `dart language-server`
 
 Static fallback handles declarations and imports for the same families and keeps the output useful even before language servers are installed.
 

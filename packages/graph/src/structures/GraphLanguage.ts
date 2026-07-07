@@ -11,4 +11,10 @@ export type GraphLanguage =
   | "swift"
   | "scala"
   | "zig"
+  | "python"
+  | "ruby"
+  | "php"
+  | "lua"
+  | "bash"
+  | "dart"
   | "unknown";

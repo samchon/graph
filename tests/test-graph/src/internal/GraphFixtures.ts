@@ -140,7 +140,12 @@ const createInheritanceFixture = () => {
   // TypeScript: extends + implements keywords, a member (contains), a generic
   // supertype (angle brackets stripped), and an unresolved supertype (skipped).
   // Base lives in another file to exercise cross-file resolution.
-  write("base.ts", ["export class Base {}", "export class Container {}"]);
+  write("base.ts", [
+    "export class Base {",
+    "  run(): void {}",
+    "}",
+    "export class Container {}",
+  ]);
   write("service.ts", [
     "export interface Runner {}",
     "export interface Loggable {}",
@@ -149,8 +154,11 @@ const createInheritanceFixture = () => {
     "@Missing()",
     "export class Service extends Base implements Runner, Loggable {",
     "  run(): void {}",
+    "  extra(): void {}",
     "}",
-    "export class Generic extends Container<Item> {}",
+    "export class Generic extends Container<Item> {",
+    "  gen(): void {}",
+    "}",
     "export class Orphan extends Missing {}",
   ]);
   // C#: colon supertypes with modifiers, a duplicate supertype (deduped), and a

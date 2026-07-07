@@ -13,6 +13,7 @@ import { projectRelative, readLines, walkSourceFiles } from "../utils/fs";
 import { allExtensions, languageOf } from "./languages";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { decoratorsAbove } from "./decoratorsAbove";
+import { overrideEdges } from "./overrideEdges";
 import { resolveType } from "./resolveType";
 import { supertypesOf } from "./supertypesOf";
 
@@ -98,6 +99,8 @@ export function buildStaticGraph(options: IBuildGraphOptions = {}): IGraphDump {
       }
     }
   }
+
+  edges.push(...overrideEdges(nodes, edges));
 
   if (files.length === 0) {
     warnings.push("No supported source files were found.");

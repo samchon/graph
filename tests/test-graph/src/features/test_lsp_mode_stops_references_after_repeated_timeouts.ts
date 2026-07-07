@@ -28,7 +28,9 @@ export const test_lsp_mode_stops_references_after_repeated_timeouts = async () =
     languages: ["typescript"],
     server: process.execPath,
     serverArgs: [GraphPaths.fakeLspServer, "--hang-method=textDocument/references"],
-    lspTimeoutMs: 300,
+    // Generous enough that initialize/documentSymbol survive a cold CI runner;
+    // only the hung references requests consume it.
+    lspTimeoutMs: 2_000,
     lspConcurrency: 1,
   });
   const elapsed = Date.now() - started;
@@ -43,7 +45,7 @@ export const test_lsp_mode_stops_references_after_repeated_timeouts = async () =
     "the breaker reports itself",
     dump.warnings?.some((warning) => warning.includes("repeated timeouts")) === true,
   );
-  // 3 timeouts x 300ms, no retries, remaining targets skipped — far below the
-  // 9 x 300ms x 3-retry grind the old behavior would have produced.
-  TestValidator.predicate("the pass stops instead of grinding", elapsed < 4_000);
+  // 3 timeouts x 2s, no retries, remaining targets skipped — far below the
+  // 6-target x 3-retry x 2s (36s+) grind the old behavior would have produced.
+  TestValidator.predicate("the pass stops instead of grinding", elapsed < 15_000);
 };

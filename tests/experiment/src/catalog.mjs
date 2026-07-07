@@ -104,6 +104,9 @@ export const LANGUAGE_EXPERIMENTS = [
     maxFiles: 120,
     minNodes: 1,
     minEdges: 0,
+    // ruby-lsp composes a bundle from the project's Gemfile; the dependencies
+    // must be installed or the server exits at launch.
+    prepare: "bundle install",
   },
   {
     language: "php",

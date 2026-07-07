@@ -43,6 +43,7 @@ const dump = await buildGraphDump({
   mode: "lsp",
   languages: [experiment.language],
   maxFiles: experiment.maxFiles,
+  ...(experiment.timeoutMs !== undefined ? { lspTimeoutMs: experiment.timeoutMs } : {}),
   ...serverFor(experiment.language),
 });
 const elapsedMs = Math.round(performance.now() - started);

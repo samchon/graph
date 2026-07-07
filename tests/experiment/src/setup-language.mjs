@@ -93,10 +93,28 @@ const installZls = async () => {
   await downloadFile(url, archive);
   fs.rmSync(target, { force: true, recursive: true });
   ensureDir(target);
-  run("tar", ["-xf", archive, "-C", target, "--strip-components=1"]);
+  // Recent zls tarballs extract the `zls` binary at the archive root, so no
+  // `--strip-components`; locate the binary wherever it lands.
+  run("tar", ["-xf", archive, "-C", target]);
+  const binary = findFile(target, "zls");
+  if (binary === undefined) throw new Error("zls binary not found after extraction");
+  fs.chmodSync(binary, 0o755);
   const link = path.join(binRoot, "zls");
   fs.rmSync(link, { force: true });
-  fs.symlinkSync(path.join(target, "zls"), link);
+  fs.symlinkSync(binary, link);
+};
+
+const findFile = (dir, name) => {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const abs = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const nested = findFile(abs, name);
+      if (nested !== undefined) return nested;
+    } else if (entry.name === name) {
+      return abs;
+    }
+  }
+  return undefined;
 };
 
 switch (experiment.language) {
@@ -151,6 +169,9 @@ switch (experiment.language) {
     shell("bash /tmp/dotnet-install.sh --channel 9.0");
     appendGithubPath(dotnetHome);
     appendGithubPath(path.join(dotnetHome, "tools"));
+    // A corrupted NuGet cache surfaces as "DotnetToolSettings.xml not found";
+    // clear it before installing csharp-ls.
+    shell(`"${dotnet}" nuget locals all --clear`);
     shell(`"${dotnet}" tool update --global csharp-ls || "${dotnet}" tool install --global csharp-ls`);
     break;
   }

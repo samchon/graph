@@ -103,13 +103,21 @@ export class LspClient {
       if (this.buffer.length < bodyEnd) return;
       const body = this.buffer.slice(bodyStart, bodyEnd).toString("utf8");
       this.buffer = this.buffer.slice(bodyEnd);
-      this.handleMessage(JSON.parse(body) as {
-        id?: number;
-        method?: string;
-        params?: unknown;
-        result?: unknown;
-        error?: { message?: string };
-      });
+      // A malformed frame must not throw out of the stdout `data` listener as an
+      // uncaught exception; drop it and keep draining the buffer.
+      let message;
+      try {
+        message = JSON.parse(body) as {
+          id?: number;
+          method?: string;
+          params?: unknown;
+          result?: unknown;
+          error?: { message?: string };
+        };
+      } catch {
+        continue;
+      }
+      this.handleMessage(message);
     }
   }
 

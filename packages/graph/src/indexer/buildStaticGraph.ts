@@ -123,13 +123,16 @@ function declarationsOf(
   lines: readonly string[],
 ): IDeclaration[] {
   const declarations: IDeclaration[] = [];
-  const ownerStack: Array<{ name: string; endIndex: number; id: string }> = [];
+  const ownerStack: Array<{ name: string; endIndex: number; id: string; kind: GraphNodeKind }> = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     while (ownerStack.length > 0 && i > ownerStack[ownerStack.length - 1]!.endIndex) {
       ownerStack.pop();
     }
-    const parsed = parseDeclaration(language, line, ownerStack.length > 0);
+    // Methods are only declared directly inside a type container. Detecting them
+    // inside a function/method body turns bare call statements (`doThing(x)`
+    // with no trailing `;`, as in Go and ASI JS/TS) into phantom method nodes.
+    const parsed = parseDeclaration(language, line, isTypeContainer(ownerStack[ownerStack.length - 1]?.kind));
     if (parsed !== undefined) {
       const endIndex = declarationEndIndex(lines, i);
       const owner = ownerStack.map((entry) => entry.name).join(".");
@@ -163,6 +166,7 @@ function declarationsOf(
           name: parsed.name,
           endIndex,
           id: node.id,
+          kind: parsed.kind,
         });
       }
     }
@@ -408,6 +412,13 @@ function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const bucket = map.get(key);
   if (bucket === undefined) map.set(key, [value]);
   else bucket.push(value);
+}
+
+// A container whose direct children can be methods (unlike a function body).
+// A method nested under a namespace/module still resolves because its direct
+// owner is the class, not the namespace.
+function isTypeContainer(kind: GraphNodeKind | undefined): boolean {
+  return kind === "class" || kind === "interface";
 }
 
 function isContainer(kind: GraphNodeKind): boolean {

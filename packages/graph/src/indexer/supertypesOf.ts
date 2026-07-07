@@ -28,6 +28,9 @@ export function supertypesOf(
 function splitTypeList(text: string): string[] {
   const names: string[] = [];
   for (const part of text.split(",")) {
+    // Skip Python keyword-argument bases (`metaclass=Meta`) and `*args`/`**kw`
+    // unpacking, which are not supertypes.
+    if (part.includes("=") || part.trim().startsWith("*")) continue;
     const cleaned = part
       .trim()
       .replace(/^(?:public|private|protected|virtual|final|open|sealed|abstract)\s+/, "")

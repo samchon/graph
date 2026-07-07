@@ -6,6 +6,7 @@ const languageByUri = new Map();
 const options = {
   allSymbolKinds: false,
   badHeader: false,
+  badJson: false,
   emptySymbols: false,
   exitOnInitialize: false,
   messageLessError: false,
@@ -34,6 +35,8 @@ for (const arg of process.argv.slice(2)) {
     options.allSymbolKinds = true;
   } else if (arg === "--bad-header") {
     options.badHeader = true;
+  } else if (arg === "--bad-json") {
+    options.badJson = true;
   } else if (arg === "--empty-symbols") {
     options.emptySymbols = true;
   } else if (arg === "--exit-on-initialize") {
@@ -105,6 +108,10 @@ function handle(message) {
     if (options.exitOnInitialize) process.exit(7);
     if (options.stderr) process.stderr.write("fake-lsp progress\n");
     if (options.badHeader) process.stdout.write("Missing-Length\r\n\r\n");
+    if (options.badJson) {
+      const bad = "{ not json";
+      process.stdout.write(`Content-Length: ${Buffer.byteLength(bad)}\r\n\r\n${bad}`);
+    }
     if (options.unknownResponse) respond(999999, { ignored: true });
     return respond(message.id, {
       capabilities: {

@@ -57,13 +57,27 @@ export async function buildLspGraph(
     }
     const command = options.server ?? spec.lsp.command;
     const args = options.serverArgs ?? spec.lsp.args;
-    if (!hasCommand(command)) {
+    const resolved = resolveCommand(command);
+    if (resolved === undefined) {
       warnings.push(`${language}: LSP server not found on PATH: ${command}`);
       staticFallbackLanguages.push(language);
       continue;
     }
+    // npm installs Windows servers as .cmd shims, which CreateProcess cannot
+    // spawn directly; run those through cmd.exe so typescript-language-server,
+    // pyright-langserver, and friends work from a plain global install.
+    const spawnable = /\.(cmd|bat)$/i.test(resolved)
+      ? { command: "cmd.exe", args: ["/d", "/s", "/c", resolved, ...args] }
+      : { command, args: [...args] };
     try {
-      const result = await collectLanguageGraph(root, language, command, args, files, options);
+      const result = await collectLanguageGraph(
+        root,
+        language,
+        spawnable.command,
+        spawnable.args,
+        files,
+        options,
+      );
       if (result.nodes.length === 0) {
         warnings.push(`${language}: LSP returned no symbols; using static fallback.`);
         staticFallbackLanguages.push(language);
@@ -618,23 +632,28 @@ function languageIdOf(language: GraphLanguage): string {
   return language;
 }
 
-function hasCommand(command: string): boolean {
+// Resolve a server command to the concrete path PATH lookup would run, so the
+// caller can see whether it is a .cmd/.bat shim that needs a cmd.exe wrapper.
+function resolveCommand(command: string): string | undefined {
   if (
     path.isAbsolute(command) ||
     command.includes("/") ||
     command.includes("\\")
   ) {
-    return fs.existsSync(command);
+    return fs.existsSync(command) ? command : undefined;
   }
   /* c8 ignore next 2 */
   const lookup = process.platform === "win32" ? "where.exe" : "command";
   const args = process.platform === "win32" ? [command] : ["-v", command];
   const result = spawnSync(lookup, args, {
-    stdio: "ignore",
+    encoding: "utf8",
     shell: process.platform !== "win32",
     windowsHide: true,
   });
-  return result.status === 0;
+  if (result.status !== 0) return undefined;
+  const first = result.stdout.split(/\r?\n/)[0]!.trim();
+  /* c8 ignore next */
+  return first === "" ? undefined : first;
 }
 
 function dedupeNodes(nodes: IGraphNode[]): IGraphNode[] {

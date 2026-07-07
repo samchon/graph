@@ -162,11 +162,12 @@ function handle(message) {
         children: [],
       });
       return respond(message.id, [
-        cls("Parent", 5, 0),
-        cls("Iface", 11, 1),
-        cls("Child", 5, 2),
-        cls("Solo", 5, 3),
-        cls("Dup", 5, 4),
+        cls("Deco", 12, 0),
+        cls("Parent", 5, 1),
+        cls("Iface", 11, 2),
+        cls("Child", 5, 5),
+        cls("Solo", 5, 6),
+        cls("Dup", 5, 7),
       ]);
     }
     if (options.classify) {

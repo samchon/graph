@@ -22,6 +22,9 @@ export const test_lsp_mode_extracts_inheritance = async () => {
   // Supertypes are parsed from the declaration line and resolved to reported symbols.
   TestValidator.predicate("extends resolved", has("extends", "Child:class", "Parent:class"));
   TestValidator.predicate("implements resolved", has("implements", "Child:class", "Iface:interface"));
+  // A decorator above the class links to the decorator symbol.
+  TestValidator.predicate("decorator becomes a decorates edge", has("decorates", "Child:class", "Deco:function"));
+
   // An unresolved supertype produces no edge.
   TestValidator.predicate(
     "unresolved supertype dropped",

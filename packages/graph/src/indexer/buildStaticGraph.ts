@@ -12,6 +12,7 @@ import {
 import { projectRelative, readLines, walkSourceFiles } from "../utils/fs";
 import { allExtensions, languageOf } from "./languages";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
+import { decoratorsAbove } from "./decoratorsAbove";
 import { resolveType } from "./resolveType";
 import { supertypesOf } from "./supertypesOf";
 
@@ -84,6 +85,16 @@ export function buildStaticGraph(options: IBuildGraphOptions = {}): IGraphDump {
       }
       for (const edge of inheritanceEdges(declaration.node, byName)) {
         edges.push(edge);
+      }
+      for (const name of decoratorsAbove(lines, declaration.startIndex)) {
+        const target = resolveType(name, declaration.node, byName);
+        if (target === undefined) continue;
+        edges.push({
+          from: declaration.node.id,
+          to: target.id,
+          kind: "decorates",
+          evidence: declaration.node.evidence,
+        });
       }
     }
   }

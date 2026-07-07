@@ -144,6 +144,9 @@ const createInheritanceFixture = () => {
   write("service.ts", [
     "export interface Runner {}",
     "export interface Loggable {}",
+    "export function Injectable() {}",
+    "@Injectable()",
+    "@Missing()",
     "export class Service extends Base implements Runner, Loggable {",
     "  run(): void {}",
     "}",
@@ -180,8 +183,11 @@ const createLspInheritanceFixture = () => {
   fs.writeFileSync(
     path.join(root, "src", "inh.ts"),
     [
+      "export function Deco() {}",
       "export class Parent {}",
       "export interface Iface {}",
+      "@Ghost()",
+      "@Deco()",
       "export class Child extends Parent implements Iface {}",
       "export class Solo extends Missing {}",
       "export class Dup extends Parent, Parent {}",

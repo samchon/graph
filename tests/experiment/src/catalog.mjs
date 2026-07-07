@@ -54,6 +54,7 @@ export const LANGUAGE_EXPERIMENTS = [
     maxFiles: 120,
     minNodes: 1,
     minEdges: 0,
+    timeoutMs: 60000,
   },
   {
     language: "csharp",

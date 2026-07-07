@@ -10,4 +10,17 @@ export interface IBuildGraphOptions {
   maxFiles?: number;
   lspReferenceLimit?: number;
   lspTimeoutMs?: number;
+  /**
+   * Maximum time to wait for a language server to finish its initial indexing
+   * (reported through `$/progress`) before collecting references. Servers such
+   * as rust-analyzer, clangd, and jdtls answer reference requests with nothing
+   * until indexing completes, so skipping this wait yields zero edges.
+   */
+  lspReadyTimeoutMs?: number;
+  /**
+   * How long the server must stay silent on `$/progress` before its initial
+   * indexing is treated as settled. Also bounds the wait for servers that never
+   * report progress at all.
+   */
+  lspReadyQuietMs?: number;
 }

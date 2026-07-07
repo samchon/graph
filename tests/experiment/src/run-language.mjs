@@ -57,6 +57,11 @@ if (dump.languages.includes(experiment.language) === false) {
 if (dump.nodes.length < experiment.minNodes) {
   throw new Error(`${experiment.language}: expected at least ${experiment.minNodes} nodes, got ${dump.nodes.length}`);
 }
+const minEdges = experiment.minEdges ?? 0;
+if (dump.edges.length < minEdges) {
+  throw new Error(`${experiment.language}: expected at least ${minEdges} relationship edges, got ${dump.edges.length}`);
+}
+console.log(`${experiment.language}: ${dump.nodes.length} nodes, ${dump.edges.length} edges (indexer=${dump.indexer}).`);
 if (warnings.some((warning) => /LSP indexing failed|LSP returned no symbols|server not found/.test(warning))) {
   throw new Error(`${experiment.language}: LSP warning failed experiment: ${warnings.join("; ")}`);
 }

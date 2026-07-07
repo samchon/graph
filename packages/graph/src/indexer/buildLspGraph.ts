@@ -152,6 +152,10 @@ async function collectLanguageGraph(
 }> {
   const client = new LspClient(command, args, options.lspTimeoutMs ?? 10_000);
   const diagnostics: IGraphDiagnostic[] = [];
+  let lastProgressAt = 0;
+  client.onNotification("$/progress", () => {
+    lastProgressAt = Date.now();
+  });
   client.onNotification("textDocument/publishDiagnostics", (params) => {
     const typed = params as { uri?: string; diagnostics?: IDiagnostic[] };
     /* c8 ignore next */
@@ -169,6 +173,7 @@ async function collectLanguageGraph(
       rootUri: fileUri(root),
       initializationOptions: options.initializationOptions,
       capabilities: {
+        window: { workDoneProgress: true },
         textDocument: {
           documentSymbol: { hierarchicalDocumentSymbolSupport: true },
           references: { dynamicRegistration: false },
@@ -206,6 +211,12 @@ async function collectLanguageGraph(
       byFile.set(openedFile.rel, converted);
       nodes.push(...converted);
     }
+
+    await waitForIndexing(
+      () => lastProgressAt,
+      options.lspReadyQuietMs ?? 1_500,
+      options.lspReadyTimeoutMs ?? 30_000,
+    );
 
     const edges: IGraphEdge[] = [];
     const referenceLimit = options.lspReferenceLimit ?? 250;
@@ -255,6 +266,28 @@ async function collectLanguageGraph(
     };
   } finally {
     await client.close();
+  }
+}
+
+async function waitForIndexing(
+  lastProgressAt: () => number,
+  quietMs: number,
+  timeoutMs: number,
+): Promise<void> {
+  const start = Date.now();
+  // Give a server that reports `$/progress` a brief window to begin before we
+  // conclude it never will; without this a fast documentSymbol phase could race
+  // ahead of the first indexing notification.
+  await new Promise((resolve) => setTimeout(resolve, Math.min(300, timeoutMs)));
+  // A server that never emits progress (lastProgressAt stays 0) is treated as
+  // ready immediately; one that does is awaited until it stays quiet for
+  // `quietMs` or the overall `timeoutMs` cap elapses.
+  while (
+    lastProgressAt() !== 0 &&
+    Date.now() - lastProgressAt() < quietMs &&
+    Date.now() - start < timeoutMs
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }
 

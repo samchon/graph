@@ -120,6 +120,14 @@ export class LspClient {
     result?: unknown;
     error?: { message?: string };
   }): void {
+    // A server-initiated request carries both an id and a method. It must be
+    // answered or some servers block: gopls, for instance, withholds
+    // documentSymbol until its `window/workDoneProgress/create` request is
+    // acknowledged. A null result satisfies the acknowledgements we advertise.
+    if (message.id !== undefined && message.method !== undefined) {
+      this.write({ jsonrpc: "2.0", id: message.id, result: null });
+      return;
+    }
     if (message.id !== undefined) {
       const pending = this.pending.get(message.id);
       if (pending === undefined) return;

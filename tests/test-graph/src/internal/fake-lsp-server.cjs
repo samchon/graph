@@ -13,6 +13,7 @@ const options = {
   nullReferences: false,
   nullSymbols: false,
   omitChildren: false,
+  progress: false,
   specialReferences: false,
   stderr: false,
   shutdownError: false,
@@ -44,6 +45,8 @@ for (const arg of process.argv.slice(2)) {
     options.nullSymbols = true;
   } else if (arg === "--omit-children") {
     options.omitChildren = true;
+  } else if (arg === "--progress") {
+    options.progress = true;
   } else if (arg === "--special-references") {
     options.specialReferences = true;
   } else if (arg === "--stderr") {
@@ -109,6 +112,15 @@ function handle(message) {
       message.params.textDocument.uri,
       message.params.textDocument.languageId,
     );
+    if (options.progress) {
+      // Mirror a real server: ask the client to create a progress token (a
+      // server-initiated request that must be answered), then report indexing.
+      request("window/workDoneProgress/create", { token: "fake-index" });
+      notify("$/progress", {
+        token: "fake-index",
+        value: { kind: "report", message: "indexing" },
+      });
+    }
     notify("textDocument/publishDiagnostics", {
       uri: message.params.textDocument.uri,
       diagnostics: diagnosticSeverities.map((severity, index) => ({
@@ -315,6 +327,11 @@ function respondBareError(id) {
 
 function notify(method, params) {
   write({ jsonrpc: "2.0", method, params });
+}
+
+let serverRequestId = 100000;
+function request(method, params) {
+  write({ jsonrpc: "2.0", id: serverRequestId++, method, params });
 }
 
 function write(message) {

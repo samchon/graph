@@ -24,10 +24,10 @@ export const test_lsp_mode_collects_symbols_references_and_diagnostics = async (
       dump.nodes.some((node) => node.name === "helper"),
   );
   TestValidator.predicate(
-    "LSP references become graph edges",
+    "LSP references become graph edges classified by the call site",
     dump.edges.some(
       (edge) =>
-        edge.kind === "references" &&
+        edge.kind === "calls" &&
         edge.from.includes("LspService.run") &&
         edge.to.includes("helper"),
     ),
@@ -55,7 +55,7 @@ export const test_lsp_mode_collects_symbols_references_and_diagnostics = async (
   });
   TestValidator.predicate(
     "progress-reporting server still yields reference edges",
-    progressDump.edges.some((edge) => edge.kind === "references"),
+    progressDump.edges.some((edge) => edge.kind === "calls"),
   );
 
   // The overall readiness cap releases the wait even while progress keeps

@@ -108,6 +108,30 @@ const createLspFixture = () => {
   return root;
 };
 
+const createClassifyFixture = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-classify-"));
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  // The fake server points references at line 1 (an invocation — `(` right
+  // after column 4), line 2 (a bare member access), and a line beyond the file
+  // (no text) so the reference classifier exercises every branch.
+  fs.writeFileSync(
+    path.join(root, "src", "classify.ts"),
+    [
+      "class Owner {",
+      "aabb(call);",
+      "aabb.member;",
+      "  filler0;",
+      "  filler1;",
+      "  filler2;",
+      "  filler3;",
+      "  filler4;",
+      "  filler5;",
+      "}",
+    ].join("\n"),
+  );
+  return root;
+};
+
 const createContractFixture = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-contract-"));
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
@@ -327,6 +351,7 @@ export const GraphFixtures = {
   GRAPH_EDGE_KINDS,
   GRAPH_NODE_KINDS,
   GRAPH_REQUEST_TYPES,
+  createClassifyFixture,
   createContractFixture,
   createLspFixture,
   createOrderFixture,

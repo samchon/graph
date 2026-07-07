@@ -19,6 +19,7 @@ import {
   ISymbolInformation,
   isDocumentSymbol,
 } from "../lsp/types";
+import { isTestPath } from "../operations/isTestPath";
 import { projectRelative, readText, walkSourceFiles } from "../utils/fs";
 import { fileFromUri, fileUri, isSubPath } from "../utils/path";
 import { allExtensions, languageOf, specOf } from "./languages";
@@ -218,9 +219,19 @@ async function collectLanguageGraph(
       options.lspReadyTimeoutMs ?? 30_000,
     );
 
+    const linesByFile = new Map<string, string[]>();
+    for (const openedFile of opened) {
+      linesByFile.set(openedFile.rel, openedFile.text.split(/\r?\n/));
+    }
+
     const edges: IGraphEdge[] = [];
     const referenceLimit = options.lspReferenceLimit ?? 250;
-    const referenceTargets = nodes.slice(0, referenceLimit);
+    // When the reference budget is smaller than the symbol count, spend it on
+    // product code first: test files (spec callbacks and the like) otherwise
+    // crowd out the API surface an agent actually asks about.
+    const referenceTargets = [...nodes]
+      .sort((a, b) => Number(isTestPath(a.file)) - Number(isTestPath(b.file)))
+      .slice(0, referenceLimit);
     for (const target of referenceTargets) {
       const evidence = target.evidence!;
       const abs = path.join(root, target.file);
@@ -240,10 +251,11 @@ async function collectLanguageGraph(
         if (owners === undefined) continue;
         const owner = ownerAt(owners, ref.range.start.line + 1);
         if (owner === undefined || owner.id === target.id) continue;
+        const refLine = linesByFile.get(rel)?.[ref.range.start.line];
         edges.push({
           from: owner.id,
           to: target.id,
-          kind: "references",
+          kind: referenceKind(target.kind, refLine, ref.range.end.character),
           evidence: {
             file: rel,
             startLine: ref.range.start.line + 1,
@@ -266,6 +278,37 @@ async function collectLanguageGraph(
     };
   } finally {
     await client.close();
+  }
+}
+
+// Classify a reference the same way the static indexer does, but with the
+// language server's exact position: an identifier immediately followed by `(`
+// is an invocation (a class becomes an instantiation, anything else a call);
+// otherwise the target's kind decides between a type reference, a member
+// access, and a generic reference.
+function referenceKind(
+  targetKind: GraphNodeKind,
+  refLine: string | undefined,
+  endCol: number,
+): IGraphEdge["kind"] {
+  const after = refLine === undefined ? "" : refLine.slice(endCol).trimStart();
+  if (after.startsWith("(")) {
+    return targetKind === "class" || targetKind === "constructor"
+      ? "instantiates"
+      : "calls";
+  }
+  switch (targetKind) {
+    case "class":
+    case "interface":
+    case "type":
+    case "enum":
+      return "type_ref";
+    case "property":
+    case "field":
+    case "variable":
+      return "accesses";
+    default:
+      return "references";
   }
 }
 

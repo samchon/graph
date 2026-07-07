@@ -12,6 +12,7 @@ const options = {
   minimalDiagnostics: false,
   nullReferences: false,
   nullSymbols: false,
+  classify: false,
   omitChildren: false,
   progress: false,
   specialReferences: false,
@@ -43,6 +44,8 @@ for (const arg of process.argv.slice(2)) {
     options.nullReferences = true;
   } else if (arg === "--null-symbols") {
     options.nullSymbols = true;
+  } else if (arg === "--classify") {
+    options.classify = true;
   } else if (arg === "--omit-children") {
     options.omitChildren = true;
   } else if (arg === "--progress") {
@@ -146,6 +149,37 @@ function handle(message) {
     }
     if (options.messageLessError) return respondBareError(message.id);
     if (options.emptySymbols) return respond(message.id, []);
+    if (options.classify) {
+      const leaf = (name, kind, line) => ({
+        name,
+        detail: "",
+        kind,
+        range: { start: { line, character: 0 }, end: { line, character: 5 } },
+        selectionRange: { start: { line, character: 0 }, end: { line, character: 1 } },
+        children: [],
+      });
+      return respond(message.id, [
+        {
+          name: "Owner",
+          detail: "",
+          kind: 5,
+          range: { start: { line: 0, character: 0 }, end: { line: 999, character: 1 } },
+          selectionRange: { start: { line: 0, character: 6 }, end: { line: 0, character: 11 } },
+          children: [
+            leaf("method", 6, 3),
+            leaf("iface", 11, 4),
+            leaf("value", 13, 5),
+            leaf("ctor", 9, 6),
+            leaf("fn", 12, 7),
+            leaf("nested", 5, 8),
+            leaf("alias", 23, 9),
+            leaf("mode", 10, 10),
+            leaf("prop", 7, 11),
+            leaf("count", 8, 12),
+          ],
+        },
+      ]);
+    }
     if (options.nullSymbols) return respond(message.id, null);
     if (options.unknownParent) {
       return respond(message.id, [
@@ -259,6 +293,19 @@ function handle(message) {
   }
   if (message.method === "textDocument/references") {
     if (options.nullReferences) return respond(message.id, null);
+    if (options.classify) {
+      const uri = message.params.textDocument.uri;
+      const at = (line) => ({
+        uri,
+        range: {
+          start: { line, character: 0 },
+          end: { line, character: 4 },
+        },
+      });
+      // line 1: invocation (`(` after col 4), line 2: bare access, line 500:
+      // beyond the file so the classifier sees no source text.
+      return respond(message.id, [at(1), at(2), at(500)]);
+    }
     const line = message.params.position.line;
     if (line === 6) {
       if (options.specialReferences) {

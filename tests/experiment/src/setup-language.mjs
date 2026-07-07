@@ -195,6 +195,42 @@ switch (experiment.language) {
   case "zig":
     await installZls();
     break;
+  case "python":
+    shell("npm install -g pyright");
+    break;
+  case "ruby":
+    shell("sudo gem install ruby-lsp");
+    break;
+  case "php":
+    shell("npm install -g intelephense");
+    break;
+  case "lua": {
+    const url = await latestAsset("LuaLS/lua-language-server", /linux-x64\.tar\.gz$/);
+    const archive = path.join(toolsRoot, "lua-language-server.tar.gz");
+    const target = path.join(toolsRoot, "lua-language-server");
+    await downloadFile(url, archive);
+    fs.rmSync(target, { force: true, recursive: true });
+    ensureDir(target);
+    run("tar", ["-xzf", archive, "-C", target]);
+    appendGithubPath(path.join(target, "bin"));
+    break;
+  }
+  case "bash":
+    shell("npm install -g bash-language-server");
+    break;
+  case "dart": {
+    const archive = path.join(toolsRoot, "dartsdk.zip");
+    const target = path.join(toolsRoot, "dart-sdk-root");
+    await downloadFile(
+      "https://storage.googleapis.com/dart-archive/channels/stable/release/latest/sdk/dartsdk-linux-x64-release.zip",
+      archive,
+    );
+    fs.rmSync(target, { force: true, recursive: true });
+    ensureDir(target);
+    run("unzip", ["-q", archive, "-d", target]);
+    appendGithubPath(path.join(target, "dart-sdk", "bin"));
+    break;
+  }
   default:
     throw new Error(`No setup recipe for ${experiment.language}`);
 }

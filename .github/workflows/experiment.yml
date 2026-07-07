@@ -37,6 +37,12 @@ jobs:
           - swift
           - scala
           - zig
+          - python
+          - ruby
+          - php
+          - lua
+          - bash
+          - dart
 
     steps:
       - name: Skip unselected language

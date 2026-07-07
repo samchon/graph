@@ -781,6 +781,9 @@ export const test_coverage_edge_cases = async () => {
   const { fileFromUri } = await importLib<{ fileFromUri: (uri: string) => string }>("utils/fileFromUri.js");
   TestValidator.equals("non-file URI returns as-is", fileFromUri("untouched"), "untouched");
   TestValidator.equals("file URI decodes slash paths", fileFromUri("file:///tmp/samchon%20graph"), "/tmp/samchon graph");
+  TestValidator.equals("file URI decodes encoded drive colon", fileFromUri("file:///c%3A/repo/app.ts"), "c:\\repo\\app.ts");
+  TestValidator.equals("file URI decodes uppercase encoded drive colon", fileFromUri("file:///D%3A/repo/app.ts"), "D:\\repo\\app.ts");
+  TestValidator.equals("file URI keeps plain drive colon", fileFromUri("file:///C:/repo/app.ts"), "C:\\repo\\app.ts");
 
   const { readText } = await importLib<{ readText: (file: string) => string | undefined }>("utils/readText.js");
   TestValidator.equals("missing text file returns undefined", readText(path.join(orderRoot, "missing.ts")), undefined);

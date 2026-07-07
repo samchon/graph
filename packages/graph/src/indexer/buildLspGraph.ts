@@ -24,6 +24,8 @@ import { projectRelative, readText, walkSourceFiles } from "../utils/fs";
 import { fileFromUri, fileUri, isSubPath } from "../utils/path";
 import { allExtensions, languageOf, specOf } from "./languages";
 import { buildStaticGraph } from "./staticIndexer";
+import { resolveType } from "./resolveType";
+import { supertypesOf } from "./supertypesOf";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IIndexerResult } from "./IIndexerResult";
 
@@ -291,6 +293,30 @@ async function collectLanguageGraph(
       );
       if (parent === undefined) continue;
       edges.push({ from: parent.id, to: node.id, kind: "contains", evidence: node.evidence });
+    }
+
+    // Inheritance: the language server does not report supertypes uniformly
+    // (typescript-language-server, for one, has no typeHierarchy), so parse the
+    // declaration line the same way the static indexer does and resolve the
+    // supertypes against the symbols the server did report.
+    const byName = new Map<string, IGraphNode[]>();
+    for (const node of nodes) {
+      const list = byName.get(node.name);
+      if (list === undefined) byName.set(node.name, [node]);
+      else list.push(node);
+    }
+    for (const node of nodes) {
+      if (node.kind !== "class" && node.kind !== "interface") continue;
+      const line = linesByFile.get(node.file)![node.evidence!.startLine - 1]!;
+      const seen = new Set<string>();
+      for (const supertype of supertypesOf(line)) {
+        const target = resolveType(supertype.name, node, byName);
+        if (target === undefined) continue;
+        const key = `${supertype.relation}\0${target.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        edges.push({ from: node.id, to: target.id, kind: supertype.relation, evidence: node.evidence });
+      }
     }
 
     return {

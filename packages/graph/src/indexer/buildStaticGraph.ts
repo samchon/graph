@@ -12,6 +12,8 @@ import {
 import { projectRelative, readLines, walkSourceFiles } from "../utils/fs";
 import { allExtensions, languageOf } from "./languages";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
+import { resolveType } from "./resolveType";
+import { supertypesOf } from "./supertypesOf";
 
 interface IDeclaration {
   node: IGraphNode;
@@ -354,60 +356,6 @@ function inheritanceEdges(
     });
   }
   return out;
-}
-
-function supertypesOf(
-  rawSignature: string,
-): Array<{ name: string; relation: "extends" | "implements" }> {
-  const out: Array<{ name: string; relation: "extends" | "implements" }> = [];
-  const signature = rawSignature.replace(
-    /^\s*(?:(?:export|public|private|protected|internal|abstract|final|open|sealed|static|data)\s+)+/,
-    "",
-  );
-  const extendsMatch = /\bextends\s+([^{]+?)(?:\bimplements\b|\bwith\b|\{|$)/.exec(signature);
-  if (extendsMatch !== null)
-    for (const name of splitTypeList(extendsMatch[1]!)) out.push({ name, relation: "extends" });
-  const implementsMatch = /\b(?:implements|with)\s+([^{]+?)(?:\{|$)/.exec(signature);
-  if (implementsMatch !== null)
-    for (const name of splitTypeList(implementsMatch[1]!)) out.push({ name, relation: "implements" });
-  const pythonMatch = /^class\s+\w+\s*\(([^)]*)\)/.exec(signature);
-  if (pythonMatch !== null)
-    for (const name of splitTypeList(pythonMatch[1]!)) out.push({ name, relation: "extends" });
-  const rubyMatch = /^class\s+\w+\s*<\s*([A-Za-z_][\w.]*)/.exec(signature);
-  if (rubyMatch !== null) out.push({ name: rubyMatch[1]!, relation: "extends" });
-  if (out.length === 0) {
-    const colonMatch = /^(?:class|struct|interface)\s+\w+\s*:\s*([^{]+)/.exec(signature);
-    if (colonMatch !== null)
-      for (const name of splitTypeList(colonMatch[1]!)) out.push({ name, relation: "extends" });
-  }
-  return out;
-}
-
-function splitTypeList(text: string): string[] {
-  const names: string[] = [];
-  for (const part of text.split(",")) {
-    const cleaned = part
-      .trim()
-      .replace(/^(?:public|private|protected|virtual|final|open|sealed|abstract)\s+/, "")
-      .replace(/<[^>]*>/g, "")
-      .replace(/\(.*$/, "");
-    const match = /^[A-Za-z_][\w.]*/.exec(cleaned.trim());
-    if (match !== null) names.push(match[0]);
-  }
-  return names;
-}
-
-function resolveType(
-  name: string,
-  source: IGraphNode,
-  byName: Map<string, IGraphNode[]>,
-): IGraphNode | undefined {
-  const candidates = byName.get(name.split(".").pop()!);
-  if (candidates === undefined) return undefined;
-  return (
-    candidates.find((node) => node.id !== source.id && node.file === source.file) ??
-    candidates.find((node) => node.id !== source.id)
-  );
 }
 
 function externalNode(

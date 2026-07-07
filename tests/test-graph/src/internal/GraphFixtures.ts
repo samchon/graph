@@ -171,6 +171,25 @@ const createInheritanceFixture = () => {
   return root;
 };
 
+const createLspInheritanceFixture = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-lsp-inherit-"));
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  // Line numbers here must match the selectionRanges the fake server reports in
+  // `--inheritance` mode, since the LSP indexer reads the declaration line back
+  // from the source to parse supertypes.
+  fs.writeFileSync(
+    path.join(root, "src", "inh.ts"),
+    [
+      "export class Parent {}",
+      "export interface Iface {}",
+      "export class Child extends Parent implements Iface {}",
+      "export class Solo extends Missing {}",
+      "export class Dup extends Parent, Parent {}",
+    ].join("\n"),
+  );
+  return root;
+};
+
 const createContractFixture = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-contract-"));
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
@@ -429,6 +448,7 @@ export const GraphFixtures = {
   createClassifyFixture,
   createContractFixture,
   createInheritanceFixture,
+  createLspInheritanceFixture,
   createLspFixture,
   createOrderFixture,
   languageFixtures,

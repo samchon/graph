@@ -245,13 +245,18 @@ async function collectLanguageGraph(
       .slice(0, referenceLimit);
     // Reference requests are independent, so keep several in flight at once;
     // results stay indexed by target order to keep edge output deterministic.
+    // A server that cannot answer references at all would burn the full request
+    // timeout per target; after a few timeouts, stop asking and keep the
+    // symbols, containment, and inheritance the server did provide.
+    let referenceTimeouts = 0;
     const referenceResults = await mapWithConcurrency(
       referenceTargets,
       options.lspConcurrency ?? 16,
-      (target) => {
+      async (target) => {
+        if (referenceTimeouts >= 3) return null;
         const evidence = target.evidence!;
         const abs = path.join(root, target.file);
-        return safeReferences(client, {
+        const refs = await safeReferences(client, {
           textDocument: { uri: fileUri(abs) },
           position: {
             line: evidence.startLine - 1,
@@ -259,6 +264,11 @@ async function collectLanguageGraph(
           },
           context: { includeDeclaration: false },
         });
+        if (refs === "timeout") {
+          referenceTimeouts += 1;
+          return null;
+        }
+        return refs;
       },
     );
     for (let index = 0; index < referenceTargets.length; index++) {
@@ -343,10 +353,14 @@ async function collectLanguageGraph(
       nodes,
       edges,
       diagnostics,
-      warnings:
-        nodes.length > referenceLimit
+      warnings: [
+        ...(nodes.length > referenceLimit
           ? [`${language}: reference collection capped at ${referenceLimit} symbols.`]
-          : [],
+          : []),
+        ...(referenceTimeouts >= 3
+          ? [`${language}: reference collection stopped after repeated timeouts.`]
+          : []),
+      ],
     };
   } finally {
     await client.close();
@@ -386,16 +400,19 @@ function referenceKind(
 
 // Language servers such as rust-analyzer answer requests made during indexing
 // with a `ContentModified` error; letting that reject would drop the whole
-// language to the static fallback. Retry a few times, then treat this target as
-// having no references rather than failing the language.
+// language to the static fallback. Retry those fast rejections a few times,
+// then treat this target as having no references rather than failing the
+// language. A TIMEOUT is different: it already burned the full request timeout,
+// so retrying triples the damage — report it so the caller can stop asking.
 async function safeReferences(
   client: LspClient,
   params: unknown,
-): Promise<ILocation[] | null> {
+): Promise<ILocation[] | null | "timeout"> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await client.request<ILocation[] | null>("textDocument/references", params);
-    } catch {
+    } catch (error) {
+      if ((error as Error).message.startsWith("LSP request timed out")) return "timeout";
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }

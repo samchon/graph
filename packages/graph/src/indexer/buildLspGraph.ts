@@ -243,7 +243,7 @@ async function collectLanguageGraph(
       (target) => {
         const evidence = target.evidence!;
         const abs = path.join(root, target.file);
-        return client.request<ILocation[] | null>("textDocument/references", {
+        return safeReferences(client, {
           textDocument: { uri: fileUri(abs) },
           position: {
             line: evidence.startLine - 1,
@@ -373,6 +373,24 @@ function referenceKind(
     default:
       return "references";
   }
+}
+
+// Language servers such as rust-analyzer answer requests made during indexing
+// with a `ContentModified` error; letting that reject would drop the whole
+// language to the static fallback. Retry a few times, then treat this target as
+// having no references rather than failing the language.
+async function safeReferences(
+  client: LspClient,
+  params: unknown,
+): Promise<ILocation[] | null> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await client.request<ILocation[] | null>("textDocument/references", params);
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  return null;
 }
 
 async function mapWithConcurrency<T, R>(

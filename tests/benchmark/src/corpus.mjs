@@ -119,6 +119,9 @@ export const CORPUS = [
     url: "https://github.com/flutter/flutter.git",
     commit: "23815692ac0dfd036fed2f58ccc9f947bc7df9c3",
     maxFiles: 400,
+    // The Dart analysis server scans the package before answering; the default
+    // 10s per-request timeout is not enough on a tree this size.
+    lspTimeoutMs: 60000,
   },
 ];
 

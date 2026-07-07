@@ -258,7 +258,14 @@ function makeCodexHome(tag, withServer) {
       ];
       toml += `\n[mcp_servers.serena]\ncommand = '${serenaCommand}'\nargs = [${serenaArgs.map((a) => `'${a}'`).join(", ")}]\nrequired = true\n`;
     } else {
-      const launcherArgs = [graphLauncher, "--cwd", repoDir, "--max-files", String(spec.maxFiles)];
+      const launcherArgs = [
+        graphLauncher,
+        "--cwd",
+        repoDir,
+        "--max-files",
+        String(spec.maxFiles),
+        ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
+      ];
       toml += `\n[mcp_servers.samchon_graph]\ncommand = '${process.execPath}'\nargs = [${launcherArgs.map((a) => `'${a}'`).join(", ")}]\nrequired = true\n`;
     }
   }

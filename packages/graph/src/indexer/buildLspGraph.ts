@@ -651,9 +651,16 @@ function resolveCommand(command: string): string | undefined {
     windowsHide: true,
   });
   if (result.status !== 0) return undefined;
-  const first = result.stdout.split(/\r?\n/)[0]!.trim();
-  /* c8 ignore next */
-  return first === "" ? undefined : first;
+  // `where` lists every shim: npm emits an extensionless sh script FIRST, then
+  // the .cmd Windows can actually run. Rank Windows-executable extensions ahead
+  // of the rest (branchlessly, so every platform exercises the same lines) and
+  // take the winner.
+  const lines = result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  const executable = lines.filter((line) => /\.(exe|cmd|bat)$/i.test(line));
+  return [...executable, ...lines][0];
 }
 
 function dedupeNodes(nodes: IGraphNode[]): IGraphNode[] {

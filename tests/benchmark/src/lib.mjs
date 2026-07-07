@@ -122,6 +122,7 @@ export function preflightGraph(spec, repoDir, { maxFiles = 25 } = {}) {
     "lsp",
     "--max-files",
     String(maxFiles),
+    ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
   ]);
   const dump = JSON.parse(out);
   return {

@@ -126,6 +126,7 @@ if (withCfg) {
             "--cwd",
             repoDir,
             ...(graphMaxFiles ? ["--max-files", String(graphMaxFiles)] : []),
+            ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
           ],
         },
       };

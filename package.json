@@ -20,5 +20,8 @@
     "url": "https://github.com/samchon/graph/issues"
   },
   "homepage": "https://github.com/samchon/graph#readme",
-  "packageManager": "pnpm@10.10.0"
+  "packageManager": "pnpm@10.10.0",
+  "devDependencies": {
+    "c8": "catalog:utils"
+  }
 }

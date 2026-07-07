@@ -1,0 +1,74 @@
+{
+  "harness": "codex",
+  "tool": "samchon-graph",
+  "repo": "excalidraw",
+  "language": "typescript",
+  "commit": "dd8296af1802d4920a645591e0de88b9272745fa",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\excalidraw",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-excalidraw-common-samchon-graph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 1578967,
+        "cached": 1336832,
+        "reasoning": 9842,
+        "tokensWithReasoning": 1588809,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 1560574,
+            "cachedInput": 1336832,
+            "output": 18393,
+            "reasoning": 9842
+          }
+        ],
+        "tools": 67,
+        "shell": 67,
+        "graph": 0,
+        "web": 0,
+        "sourceTouches": 66,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-ChildItem packages\\\\element -Force\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"store\\\\.schedule|scheduleMicroAction|scheduleAction|onStoreIncrementEmitter|onDurableIncrementEmitter\\\" packages\\\\element packages\\\\excalidraw\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content packages\\\\element\\\\src\\\\store.ts | Select-Object -First 420 | Select-Object -Skip 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content packages\\\\element\\\\src\\\\Scene.ts | Select-Object -First 240\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content packages\\\\element\\\\src\\\\store.ts | Select-Object -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"replaceAllElements\\\\(|mutateElement\\\\(|triggerUpdate\\\\(|onUpdate\\\\(\\\" packages\\\\element\\\\src\\\\Scene.ts\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content packages\\\\element\\\\src\\\\Scene.ts | Select-Object -First 760 | Select-Object -Skip 520\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content packages\\\\element\\\\src\\\\Scene.ts | Select-Object -First 520 | Select-Object -Skip 240\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content packages\\\\element\\\\package.json\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"describe\\\\(|it\\\\(|test\\\\(\\\" packages\\\\element\\\\tests -g \\\"*.test.ts\\\" -g \\\"*.test.tsx\\\"\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg --files packages\\\\element\\\\tests | sort\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"export .*renderStaticScene|export .*renderInteractiveScene|function renderStaticScene|function renderInteractiveScene\\\" packages\\\\excalidraw\\\\renderer\\\\staticScene.ts packages\\\\excalidraw\\\\renderer\\\\interactiveScene.ts\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content packages\\\\excalidraw\\\\renderer\\\\interactiveScene.ts | Select-Object -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content packages\\\\excalidraw\\\\renderer\\\\staticScene.ts | Select-Object -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content packages\\\\element\\\\tests\\\\selection.test.ts | Select-Object -First 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content packages\\\\element\\\\tests\\\\delta.test.tsx | Select-Object -First 140\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content packages\\\\excalidraw\\\\history.ts | Select-Object -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"class ActionManager|export class ActionManager|registerAll\\\\(|executeAction\\\\(\\\" packages\\\\excalidraw\\\\actions\\\\manager.tsx\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content packages\\\\excalidraw\\\\actions\\\\index.ts | Select-Object -First 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content packages\\\\excalidraw\\\\actions\\\\manager.tsx | Select-Object -First 220\""
+        ],
+        "types": {
+          "agent_message": 16,
+          "command_execution": 67
+        },
+        "durMs": 309179,
+        "ok": true,
+        "answer": "**Runtime Flow**\n1. Public API starts in [`packages/excalidraw/index.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/index.tsx#L67). `ExcalidrawBase` normalizes `UIOptions` and `imageOptions`, wires the external API callback, then renders `InitializeApp` and the internal `<App>`. The memo wrapper is at [`index.tsx#L238`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/index.tsx#L238), and the exported component is at [`index.tsx#L310`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/index.tsx#L310).\n\n2. Loading is gated by [`packages/excalidraw/components/InitializeApp.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/InitializeApp.tsx#L1). It loads the language pack, shows `LoadingMessage`, and only then lets the editor tree mount.\n\n3. The real runtime object graph is built in [`packages/excalidraw/components/App.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L837). The constructor creates `Scene`, `Store`, `History`, `Renderer`, and `ActionManager`; render is at [`App.tsx#L2139`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L2139); initialization/mount lifecycle is at [`App.tsx#L3183`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L3183) and [`App.tsx#L3276`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L3276). The general mutation gateway is [`App.tsx#L4717`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L4717), and the action-result bridge is [`App.tsx#L2825`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L2825).\n\n4. The work happens in the model layer under `packages/element`. [`packages/element/src/Scene.ts`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/element/src/Scene.ts#L108) owns the in-memory scene and exposes `replaceAllElements`, `triggerUpdate`, `onUpdate`, and `mutateElement` around [`Scene.ts#L271`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/element/src/Scene.ts#L271) and [`Scene.ts#L427`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/element/src/Scene.ts#L427). [`packages/element/src/store.ts`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/element/src/store.ts#L78) turns those changes into durable/ephemeral increments. Undo/redo sits in [`packages/excalidraw/history.ts`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/history.ts#L90).\n\n5. Rendering is split between a scene-derived element set and the canvas painters. [`packages/excalidraw/scene/Renderer.ts`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/scene/Renderer.ts#L40) decides what is visible and what belongs on the “new element” canvas. The actual bitmap drawing is in [`packages/excalidraw/renderer/staticScene.ts`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/renderer/staticScene.ts#L489) and [`packages/excalidraw/renderer/interactiveScene.ts`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/renderer/interactiveScene.ts#L2081).\n\n6. Pointer interaction is the main user-action loop. Start at [`App.tsx#L7997`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L7997) for `handleCanvasPointerDown`, then follow [`App.tsx#L10028`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L10028) for move handling and [`App.tsx#L8458`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L8458) for pointer-up finalization. That is where selection, drag, resize, creation, and commit all diverge.\n\n**Read Next**\n1. Public API and startup behavior: [`packages/excalidraw/tests/excalidraw.test.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/tests/excalidraw.test.tsx#L21) and [`packages/excalidraw/tests/App.test.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/tests/App.test.tsx#L12). These cover prop-driven UI, mount-time behavior, and the exposed component contract.\n\n2. Shape creation from pointer flow: [`packages/excalidraw/tests/dragCreate.test.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/tests/dragCreate.test.tsx#L37). This is the best match for `handleCanvasPointerDown` -> move -> up -> `syncActionResult` -> `Scene` updates.\n\n3. Dragging and duplication: [`packages/excalidraw/tests/move.test.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/tests/move.test.tsx#L37). It shows how selected elements move, how bindings get adjusted, and how modifier keys alter the flow.\n\n4. Selection invariants: [`packages/excalidraw/tests/selection.test.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/tests/selection.test.tsx#L62). Read this alongside the pointer handlers if you plan to touch box select, lasso, group selection, or selection stability.\n\n5. History and undo/redo: [`packages/excalidraw/tests/history.test.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/tests/history.test.tsx#L120). This is the best companion to `Store` and `History` if your behavior change affects when updates become undoable.\n\n6. Low-level model invariants: [`packages/element/tests/delta.test.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/element/tests/delta.test.tsx#L9) and [`packages/element/tests/selection.test.ts`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/element/tests/selection.test.ts#L3). These are useful when you need to understand how diffs and selection identity are preserved underneath the React app.\n\n7. If your change is menu/shortcut driven instead of pointer-driven, also read [`packages/excalidraw/actions/manager.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/actions/manager.tsx#L52) and [`packages/excalidraw/actions/index.ts`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/actions/index.ts#L1). That is the command dispatch path into the same `syncActionResult`/`Store` machinery.\n\nIf you want, I can turn this into a narrower tour for one first change target, like “add a new toolbar action,” “change drag behavior,” or “adjust undo/redo semantics.”",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

@@ -2,7 +2,7 @@
 
 `@samchon/graph` is the language-neutral successor to `@ttsc/graph`.
 
-It exposes one MCP tool, `inspect_code_graph`, that returns a bounded source-free index of a repository: declarations, source spans, imports, call/type edges, diagnostics when the language server can provide them, and a `next` contract that tells the agent whether to answer, inspect once more, leave the graph, or ask for clarification.
+It exposes one MCP tool, `inspect_code_graph`, that returns a bounded source-free index of a repository: declarations, source spans, and the relationships between them — imports, calls, type references, member access, containment, inheritance, decorators, and overrides — plus diagnostics when the language server can provide them, and a `next` contract that tells the agent whether to answer, inspect once more, leave the graph, or ask for clarification.
 
 The package follows the `@ttsc/graph` architecture:
 
@@ -77,6 +77,25 @@ The built-in registry knows the usual file extensions and server commands for:
 Static fallback handles declarations and imports for the same families and keeps the output useful even before language servers are installed.
 
 The language servers are not bundled. Install the matching server in the target repository environment when compiler/LSP diagnostics and reference edges are required.
+
+## Relationships
+
+Both the LSP and static indexers emit the same relationship kinds, so operations behave identically regardless of which produced the graph:
+
+- **Structure**: `contains` (owner → member), `imports`.
+- **Execution**: `calls`, `instantiates`, `accesses`, `references`.
+- **Types**: `type_ref`, `extends`, `implements`, `overrides`, `decorates`.
+
+Inheritance, decorators, and overrides are parsed from the declaration and decorator lines and resolved against the indexed symbols, so they are captured even for language servers that do not expose a type hierarchy (typescript-language-server among them).
+
+## Tuning
+
+`buildGraph` / `buildGraphDump` accept a few knobs for the LSP path:
+
+- `lspConcurrency` (default 16) — how many `textDocument/references` requests to keep in flight.
+- `lspReferenceLimit` (default 250) — the reference budget; product-code symbols are prioritized over test files.
+- `lspReadyQuietMs` (default 1500) / `lspReadyTimeoutMs` (default 30000) — how long to wait for a server's initial indexing (`$/progress`) to settle before collecting references.
+- `lspTimeoutMs` (default 10000) — per-request timeout.
 
 ## Programmatic API
 

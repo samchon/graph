@@ -98,6 +98,9 @@ export const CORPUS = [
     url: "https://github.com/InsertKoinIO/koin.git",
     commit: "dc86ef8dd8fbe8564fb7453c03f5b738da3450bb",
     maxFiles: 300,
+    // kotlin-language-server boots a JVM and imports the build before
+    // answering; initialize alone exceeds the default 10s.
+    lspTimeoutMs: 60000,
   },
   {
     name: "alamofire",

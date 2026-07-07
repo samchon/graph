@@ -82,10 +82,10 @@ export async function buildLspGraph(
         warnings.push(`${language}: LSP returned no symbols; using static fallback.`);
         staticFallbackLanguages.push(language);
       } else {
-        nodes.push(...result.nodes);
-        edges.push(...result.edges);
-        diagnostics.push(...result.diagnostics);
-        warnings.push(...result.warnings);
+        appendAll(nodes, result.nodes);
+        appendAll(edges, result.edges);
+        appendAll(diagnostics, result.diagnostics);
+        appendAll(warnings, result.warnings);
         lspNodeCount += result.nodes.length;
       }
     } catch (error) {
@@ -113,9 +113,9 @@ export async function buildLspGraph(
         warnings,
       };
     }
-    nodes.push(...fallback.nodes);
-    edges.push(...fallback.edges);
-    warnings.push(...fallback.warnings!);
+    appendAll(nodes, fallback.nodes);
+    appendAll(edges, fallback.edges);
+    appendAll(warnings, fallback.warnings!);
   }
 
   if (nodes.length === 0) {
@@ -185,7 +185,7 @@ async function collectLanguageGraph(
     /* c8 ignore next */
     if (!isSubPath(root, file)) return;
     const rel = projectRelative(root, file);
-    diagnostics.push(...typed.diagnostics.map((diagnostic) => convertDiagnostic(rel, diagnostic)));
+    appendAll(diagnostics, typed.diagnostics.map((diagnostic) => convertDiagnostic(rel, diagnostic)));
   });
 
   try {
@@ -241,7 +241,7 @@ async function collectLanguageGraph(
       );
       const converted = convertSymbols(language, openedFile.rel, symbols);
       byFile.set(openedFile.rel, converted);
-      nodes.push(...converted);
+      appendAll(nodes, converted);
     }
 
     const linesByFile = new Map<string, string[]>();
@@ -361,7 +361,7 @@ async function collectLanguageGraph(
         edges.push({ from: node.id, to: target.id, kind: "decorates", evidence: node.evidence });
       }
     }
-    edges.push(...overrideEdges(nodes, edges));
+    appendAll(edges, overrideEdges(nodes, edges));
 
     return {
       nodes,
@@ -431,6 +431,14 @@ async function safeReferences(
     }
   }
   return null;
+}
+
+// Array spread (`push(...items)`) passes every element as a call argument and
+// blows the call stack on the item counts a real language server can produce —
+// the Dart analysis server emitted enough diagnostics on the flutter tree to
+// crash the whole build. Append by loop, which has no such limit.
+function appendAll<T>(target: T[], items: readonly T[]): void {
+  for (const item of items) target.push(item);
 }
 
 async function mapWithConcurrency<T, R>(

@@ -202,7 +202,9 @@ switch (experiment.language) {
     shell("npm install -g pyright");
     break;
   case "ruby":
-    shell("sudo gem install ruby-lsp");
+    // The runner ships ruby but not bundler, which both the fixture's
+    // `bundle install` prepare step and ruby-lsp's composed bundle need.
+    shell("sudo gem install bundler ruby-lsp");
     break;
   case "php":
     shell("npm install -g intelephense");

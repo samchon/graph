@@ -132,6 +132,45 @@ const createClassifyFixture = () => {
   return root;
 };
 
+const createInheritanceFixture = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-inherit-"));
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  const write = (name, lines) =>
+    fs.writeFileSync(path.join(root, "src", name), `${lines.join("\n")}\n`);
+  // TypeScript: extends + implements keywords, a member (contains), a generic
+  // supertype (angle brackets stripped), and an unresolved supertype (skipped).
+  // Base lives in another file to exercise cross-file resolution.
+  write("base.ts", ["export class Base {}", "export class Container {}"]);
+  write("service.ts", [
+    "export interface Runner {}",
+    "export interface Loggable {}",
+    "export class Service extends Base implements Runner, Loggable {",
+    "  run(): void {}",
+    "}",
+    "export class Generic extends Container<Item> {}",
+    "export class Orphan extends Missing {}",
+  ]);
+  // C#: colon supertypes with modifiers, a duplicate supertype (deduped), and a
+  // trailing comma (empty entry skipped).
+  write("Models.cs", [
+    "public class Entity {}",
+    "public class User : Entity {}",
+    "public class Dup : Entity, Entity, {}",
+  ]);
+  // C++: access-modifier-prefixed base list.
+  write("derived.cpp", [
+    "class Helper {};",
+    "class CppBase {};",
+    "class Derived : public CppBase, private Helper {};",
+  ]);
+  // Python parenthesised bases, Ruby `<`, Kotlin constructor call, Scala `with`.
+  write("pet.py", ["class Animal:", "    pass", "class Dog(Animal, object):", "    pass"]);
+  write("car.rb", ["class Vehicle", "end", "class Car < Vehicle", "end"]);
+  write("KFoo.kt", ["class KBase", "class KFoo : KBase()"]);
+  write("Mixin.scala", ["class Bar", "trait Baz", "class Foo extends Bar with Baz"]);
+  return root;
+};
+
 const createContractFixture = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-contract-"));
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
@@ -389,6 +428,7 @@ export const GraphFixtures = {
   GRAPH_REQUEST_TYPES,
   createClassifyFixture,
   createContractFixture,
+  createInheritanceFixture,
   createLspFixture,
   createOrderFixture,
   languageFixtures,

@@ -5,12 +5,15 @@ import path from "node:path";
 import { buildGraphDump } from "@samchon/graph";
 
 import { findExperiment } from "./catalog.mjs";
-import { cloneRepository, ensureDir, parseArgs, resultsRoot } from "./process.mjs";
+import { cloneRepository, ensureDir, parseArgs, resultsRoot, shell } from "./process.mjs";
 
 const require = createRequire(import.meta.url);
 const args = parseArgs(process.argv.slice(2));
 const experiment = findExperiment(args.language);
 const cwd = cloneRepository(experiment, { refresh: args.refresh === "true" });
+// Some language servers need the checkout prepared before they can boot —
+// ruby-lsp, for one, composes a bundle from the project's Gemfile.
+if (experiment.prepare !== undefined) shell(experiment.prepare, { cwd });
 
 const typescriptLanguageServerEntry = () =>
   path.join(

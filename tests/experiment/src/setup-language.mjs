@@ -166,13 +166,16 @@ switch (experiment.language) {
     const dotnetHome = path.join(os.homedir(), ".dotnet");
     const dotnet = path.join(dotnetHome, "dotnet");
     shell("curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh");
+    // 8.0 runs csharp-ls 0.20.0 (a net8 tool); 9.0 stays for newer versions
+    // once the upstream package is fixed.
+    shell("bash /tmp/dotnet-install.sh --channel 8.0");
     shell("bash /tmp/dotnet-install.sh --channel 9.0");
     appendGithubPath(dotnetHome);
     appendGithubPath(path.join(dotnetHome, "tools"));
-    // A corrupted NuGet cache surfaces as "DotnetToolSettings.xml not found";
-    // clear it before installing csharp-ls.
-    shell(`"${dotnet}" nuget locals all --clear`);
-    shell(`"${dotnet}" tool update --global csharp-ls || "${dotnet}" tool install --global csharp-ls`);
+    // csharp-ls 0.21.0 ships a broken package ("DotnetToolSettings.xml was not
+    // found", razzmatazz/csharp-language-server#305); pin the last version that
+    // installs.
+    shell(`"${dotnet}" tool install --global csharp-ls --version 0.20.0 || "${dotnet}" tool update --global csharp-ls --version 0.20.0`);
     break;
   }
   case "kotlin":

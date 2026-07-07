@@ -21,9 +21,10 @@ export function referencesFromEdges(
     const node = graph.node(end === "from" ? edge.from : edge.to);
     if (node === undefined) continue;
     if (!includeExternal && node.external) continue;
-    const key = `${edge.kind}:${node.id}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    // One entry per node; edges are pre-sorted by compareEdges, so the first
+    // (highest-ranked) relation to a node wins.
+    if (seen.has(node.id)) continue;
+    seen.add(node.id);
     const ref: IGraphDetails.IReference = {
       ...summaryOf(node),
       relation: edge.kind,

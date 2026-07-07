@@ -77,16 +77,17 @@ export function runDetails(
       .map((edge) => graph.node(edge.to))
       .filter((member) => member !== undefined)
       .slice(0, memberLimit)
-      .map((member) => ({
-        name: member.qualifiedName ?? member.name,
-        kind: member.kind,
-        ...(member.evidence?.startLine !== undefined
-          ? { line: member.evidence.startLine }
-          : {}),
-        ...(signatureOf(graph.project, member) !== undefined
-          ? { signature: signatureOf(graph.project, member) }
-          : {}),
-      }));
+      .map((member) => {
+        const signature = signatureOf(graph.project, member);
+        return {
+          name: member.qualifiedName ?? member.name,
+          kind: member.kind,
+          ...(member.evidence?.startLine !== undefined
+            ? { line: member.evidence.startLine }
+            : {}),
+          ...(signature !== undefined ? { signature } : {}),
+        };
+      });
     if (members.length > 0) detail.members = members;
 
     if (props.neighbors === true) {

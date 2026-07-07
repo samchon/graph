@@ -13,6 +13,24 @@ export const repoRoot = path.resolve(benchmarkDir, "..", "..");
 export const graphLauncher = path.join(repoRoot, "packages", "graph", "lib", "bin.js");
 export const questionsDir = path.join(benchmarkDir, "questions");
 
+// Language servers provisioned for the benchmark live under .work/tools/<name>
+// (gitignored). Prepend each tool's bin (or root) to PATH so every child this
+// process spawns — the preflight dump, codex, and the MCP servers codex spawns
+// in turn — can resolve them without machine-global installs.
+const toolsRoot = path.join(benchmarkDir, ".work", "tools");
+if (fs.existsSync(toolsRoot)) {
+  const extra = fs
+    .readdirSync(toolsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const bin = path.join(toolsRoot, entry.name, "bin");
+      return fs.existsSync(bin) ? bin : path.join(toolsRoot, entry.name);
+    });
+  if (extra.length > 0) {
+    process.env.PATH = `${extra.join(path.delimiter)}${path.delimiter}${process.env.PATH ?? ""}`;
+  }
+}
+
 export function sha256(text) {
   return crypto.createHash("sha256").update(text, "utf8").digest("hex");
 }

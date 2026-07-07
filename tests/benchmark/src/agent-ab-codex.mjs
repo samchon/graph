@@ -238,7 +238,7 @@ function makeCodexHome(tag, withServer) {
         "--path",
         repoDir,
       ]);
-      toml += `\n[mcp_servers.codegraph]\ncommand = '${command}'\nargs = [${cgArgs.map((a) => `'${a}'`).join(", ")}]\nenv = { CODEGRAPH_NO_DAEMON = "1" }\nrequired = true\n`;
+      toml += `\n[mcp_servers.codegraph]\ncommand = '${command}'\nargs = [${cgArgs.map((a) => `'${a}'`).join(", ")}]\nenv = { CODEGRAPH_NO_DAEMON = "1" }\n`;
     } else if (serena) {
       const serenaArgs = [
         "--from",
@@ -256,7 +256,7 @@ function makeCodexHome(tag, withServer) {
         "--log-level",
         "WARNING",
       ];
-      toml += `\n[mcp_servers.serena]\ncommand = '${serenaCommand}'\nargs = [${serenaArgs.map((a) => `'${a}'`).join(", ")}]\nrequired = true\n`;
+      toml += `\n[mcp_servers.serena]\ncommand = '${serenaCommand}'\nargs = [${serenaArgs.map((a) => `'${a}'`).join(", ")}]\n`;
     } else {
       const launcherArgs = [
         graphLauncher,
@@ -266,7 +266,7 @@ function makeCodexHome(tag, withServer) {
         String(spec.maxFiles),
         ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
       ];
-      toml += `\n[mcp_servers.samchon_graph]\ncommand = '${process.execPath}'\nargs = [${launcherArgs.map((a) => `'${a}'`).join(", ")}]\nrequired = true\n`;
+      toml += `\n[mcp_servers.samchon_graph]\ncommand = '${process.execPath}'\nargs = [${launcherArgs.map((a) => `'${a}'`).join(", ")}]\n`;
     }
   }
   validateMcpConfig(toml, withServer);

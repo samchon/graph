@@ -85,7 +85,7 @@ export const LANGUAGE_EXPERIMENTS = [
   },
   {
     language: "zig",
-    repository: "https://github.com/ratfactor/ziglings.git",
+    repository: "https://github.com/Hejsil/zig-clap.git",
     maxFiles: 120,
     minNodes: 1,
     minEdges: 0,

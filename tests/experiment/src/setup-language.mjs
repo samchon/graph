@@ -123,6 +123,13 @@ switch (experiment.language) {
     // a Python script that locates its plugins relative to its own path, so it
     // must run from the extracted tree rather than a symlink.
     apt(["openjdk-21-jdk", "python3"]);
+    // jdtls crashes on the runner's default JDK; point it at Java 21.
+    const javaHome = "/usr/lib/jvm/java-21-openjdk-amd64";
+    process.env.JAVA_HOME = javaHome;
+    if (process.env.GITHUB_ENV !== undefined) {
+      fs.appendFileSync(process.env.GITHUB_ENV, `JAVA_HOME=${javaHome}${os.EOL}`);
+    }
+    appendGithubPath(path.join(javaHome, "bin"));
     const target = path.join(toolsRoot, "jdtls");
     const archive = path.join(toolsRoot, "jdtls.tar.gz");
     await downloadFile(
@@ -135,13 +142,18 @@ switch (experiment.language) {
     appendGithubPath(path.join(target, "bin"));
     break;
   }
-  case "csharp":
-    // Latest csharp-ls targets .NET 9; installing it against the 8.0 SDK fails
-    // with a missing DotnetToolSettings.xml.
-    apt(["dotnet-sdk-9.0"]);
-    shell("dotnet tool update --global csharp-ls || dotnet tool install --global csharp-ls");
-    appendGithubPath(path.join(os.homedir(), ".dotnet", "tools"));
+  case "csharp": {
+    // `dotnet-sdk-9.0` is not an apt package on Ubuntu 24.04; use the official
+    // install script. Latest csharp-ls targets .NET 9.
+    const dotnetHome = path.join(os.homedir(), ".dotnet");
+    const dotnet = path.join(dotnetHome, "dotnet");
+    shell("curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh");
+    shell("bash /tmp/dotnet-install.sh --channel 9.0");
+    appendGithubPath(dotnetHome);
+    appendGithubPath(path.join(dotnetHome, "tools"));
+    shell(`"${dotnet}" tool update --global csharp-ls || "${dotnet}" tool install --global csharp-ls`);
     break;
+  }
   case "kotlin":
     await installKotlinLanguageServer();
     break;

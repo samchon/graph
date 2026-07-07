@@ -59,7 +59,16 @@ export class SamchonGraphApplication implements ISamchonGraphApplication {
   }
 
   private async load(): Promise<GraphMemory> {
-    this.promise ??= Promise.resolve(this.graph());
+    // Cache the built graph on success only. Caching a rejected promise would
+    // brick the resident server for the whole session after one transient index
+    // failure (e.g. a slow language-server cold start); clear it so the next
+    // call rebuilds.
+    if (this.promise === undefined) {
+      this.promise = Promise.resolve(this.graph()).catch((error: unknown) => {
+        this.promise = undefined;
+        throw error;
+      });
+    }
     return this.promise;
   }
 }

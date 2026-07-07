@@ -25,6 +25,7 @@ import { fileFromUri, fileUri, isSubPath } from "../utils/path";
 import { allExtensions, languageOf, specOf } from "./languages";
 import { buildStaticGraph } from "./staticIndexer";
 import { decoratorsAbove } from "./decoratorsAbove";
+import { overrideEdges } from "./overrideEdges";
 import { resolveType } from "./resolveType";
 import { supertypesOf } from "./supertypesOf";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
@@ -329,6 +330,7 @@ async function collectLanguageGraph(
         edges.push({ from: node.id, to: target.id, kind: "decorates", evidence: node.evidence });
       }
     }
+    edges.push(...overrideEdges(nodes, edges));
 
     return {
       nodes,

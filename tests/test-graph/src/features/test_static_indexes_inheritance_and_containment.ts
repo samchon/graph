@@ -33,6 +33,13 @@ export const test_static_indexes_inheritance_and_containment = async () => {
   TestValidator.predicate("scala with is an implements", has("implements", "Foo:class", "Baz:interface"));
   TestValidator.predicate("scala extends", has("extends", "Foo:class", "Bar:class"));
 
+  // A subclass method with the same name as a supertype method overrides it.
+  TestValidator.predicate("override across files", has("overrides", "Service.run:method", "Base.run:method"));
+  TestValidator.predicate(
+    "non-matching subclass method does not override",
+    dump.edges.every((edge) => edge.kind !== "overrides" || !edge.from.includes("Service.extra")),
+  );
+
   // A decorator directly above a declaration links to the decorator symbol.
   TestValidator.predicate("decorator becomes a decorates edge", has("decorates", "Service:class", "Injectable:function"));
   TestValidator.predicate(

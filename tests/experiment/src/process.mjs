@@ -13,6 +13,10 @@ export const parseArgs = (argv) => {
   const out = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
+    // `pnpm run <script> -- --flag value` forwards the bare `--` separator to
+    // the script; skip it so it is not mistaken for a flag that swallows the
+    // next token.
+    if (arg === "--") continue;
     if (arg.startsWith("--") === false) continue;
     const eq = arg.indexOf("=");
     if (eq >= 0) out[arg.slice(2, eq)] = arg.slice(eq + 1);

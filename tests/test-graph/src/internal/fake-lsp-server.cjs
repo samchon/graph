@@ -13,6 +13,7 @@ const options = {
   nullReferences: false,
   nullSymbols: false,
   classify: false,
+  inheritance: false,
   omitChildren: false,
   progress: false,
   specialReferences: false,
@@ -46,6 +47,8 @@ for (const arg of process.argv.slice(2)) {
     options.nullSymbols = true;
   } else if (arg === "--classify") {
     options.classify = true;
+  } else if (arg === "--inheritance") {
+    options.inheritance = true;
   } else if (arg === "--omit-children") {
     options.omitChildren = true;
   } else if (arg === "--progress") {
@@ -149,6 +152,23 @@ function handle(message) {
     }
     if (options.messageLessError) return respondBareError(message.id);
     if (options.emptySymbols) return respond(message.id, []);
+    if (options.inheritance) {
+      const cls = (name, kind, line) => ({
+        name,
+        detail: "",
+        kind,
+        range: { start: { line, character: 0 }, end: { line, character: 60 } },
+        selectionRange: { start: { line, character: 13 }, end: { line, character: 13 + name.length } },
+        children: [],
+      });
+      return respond(message.id, [
+        cls("Parent", 5, 0),
+        cls("Iface", 11, 1),
+        cls("Child", 5, 2),
+        cls("Solo", 5, 3),
+        cls("Dup", 5, 4),
+      ]);
+    }
     if (options.classify) {
       const leaf = (name, kind, line) => ({
         name,

@@ -175,7 +175,16 @@ const createInheritanceFixture = () => {
     "class Derived : public CppBase, private Helper {};",
   ]);
   // Python parenthesised bases, Ruby `<`, Kotlin constructor call, Scala `with`.
-  write("pet.py", ["class Animal:", "    pass", "class Dog(Animal, object):", "    pass"]);
+  write("pet.py", [
+    "class Animal:",
+    "    pass",
+    "class Dog(Animal, object):",
+    "    pass",
+    "class Weird(Animal, metaclass=Meta):",
+    "    pass",
+    "class Star(*bases):",
+    "    pass",
+  ]);
   write("car.rb", ["class Vehicle", "end", "class Car < Vehicle", "end"]);
   write("KFoo.kt", ["class KBase", "class KFoo : KBase()"]);
   write("Mixin.scala", ["class Bar", "trait Baz", "class Foo extends Bar with Baz"]);

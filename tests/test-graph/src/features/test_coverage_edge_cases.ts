@@ -140,6 +140,7 @@ export const test_coverage_edge_cases = async () => {
     serverArgs: [
       GraphPaths.fakeLspServer,
       "--bad-header",
+      "--bad-json",
       "--unknown-response",
       "--shutdown-error",
       "--symbol-information",
@@ -147,6 +148,10 @@ export const test_coverage_edge_cases = async () => {
     ],
     lspReferenceLimit: 0,
   });
+  TestValidator.predicate(
+    "LSP survives a malformed JSON frame",
+    symbolInformation.indexer === "lsp",
+  );
   TestValidator.predicate(
     "LSP SymbolInformation responses are converted",
     symbolInformation.nodes.some((node) => node.qualifiedName === "InformationContainer.LspInformation"),
@@ -786,6 +791,7 @@ export const test_coverage_edge_cases = async () => {
   TestValidator.equals("non-file URI returns as-is", fileFromUri("untouched"), "untouched");
   TestValidator.equals("file URI decodes slash paths", fileFromUri("file:///tmp/samchon%20graph"), "/tmp/samchon graph");
   TestValidator.equals("file URI decodes encoded drive colon", fileFromUri("file:///c%3A/repo/app.ts"), "c:\\repo\\app.ts");
+  TestValidator.equals("file URI restores encoded hash", fileFromUri("file:///tmp/a%23b.ts"), "/tmp/a#b.ts");
   TestValidator.equals("file URI decodes uppercase encoded drive colon", fileFromUri("file:///D%3A/repo/app.ts"), "D:\\repo\\app.ts");
   TestValidator.equals("file URI keeps plain drive colon", fileFromUri("file:///C:/repo/app.ts"), "C:\\repo\\app.ts");
 

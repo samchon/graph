@@ -6,7 +6,9 @@ export function fileFromUri(uri: string): string {
   const withoutScheme = uri
     .slice("file://".length)
     .replace(/^\/([A-Za-z])%3[Aa]/, "/$1:");
-  const decoded = decodeURI(withoutScheme);
+  // `decodeURI` leaves reserved characters encoded, but `fileUri` percent-encodes
+  // `#` in real paths; restore it (and `?`) so the path round-trips.
+  const decoded = decodeURI(withoutScheme).replace(/%23/g, "#").replace(/%3[Ff]/g, "?");
   if (/^\/[A-Za-z]:/.test(decoded)) return decoded.slice(1).replace(/\//g, "\\");
   return decoded;
 }

@@ -21,9 +21,7 @@ export async function buildGraphDump(
   if (normalized.mode === "lsp") {
     return validateDump((await buildLspGraph(normalized)).dump);
   }
-  const lsp = await buildLspGraph(normalized);
-  if (lsp.dump.indexer === "static") return validateDump(lsp.dump);
-  return validateDump(lsp.dump);
+  return validateDump((await buildLspGraph(normalized)).dump);
 }
 
 function validateDump(dump: IGraphDump): IGraphDump {

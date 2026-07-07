@@ -121,7 +121,9 @@ export async function buildLspGraph(
       project: root,
       languages: [...new Set(nodes.map((node) => node.language))],
       generatedAt: new Date().toISOString(),
-      indexer: warnings.length === 0 ? "lsp" : "hybrid",
+      // Only a static fallback makes the graph a hybrid; a benign warning (e.g.
+      // the reference cap) on a pure-LSP run must not relabel it.
+      indexer: staticFallbackLanguages.length > 0 ? "hybrid" : "lsp",
       nodes: dedupeNodes(nodes),
       edges: dedupeEdges(edges),
       diagnostics,
@@ -309,7 +311,7 @@ async function collectLanguageGraph(
     }
     for (const node of nodes) {
       if (node.kind !== "class" && node.kind !== "interface") continue;
-      const line = linesByFile.get(node.file)![node.evidence!.startLine - 1]!;
+      const line = linesByFile.get(node.file)![node.evidence!.startLine - 1]!.trim();
       const seen = new Set<string>();
       for (const supertype of supertypesOf(line)) {
         const target = resolveType(supertype.name, node, byName);
@@ -337,7 +339,7 @@ async function collectLanguageGraph(
       edges,
       diagnostics,
       warnings:
-        nodes.length >= referenceLimit
+        nodes.length > referenceLimit
           ? [`${language}: reference collection capped at ${referenceLimit} symbols.`]
           : [],
     };

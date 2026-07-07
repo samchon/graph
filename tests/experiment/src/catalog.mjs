@@ -32,7 +32,7 @@ export const LANGUAGE_EXPERIMENTS = [
     repository: "https://github.com/tokio-rs/mini-redis.git",
     maxFiles: 120,
     minNodes: 1,
-    minEdges: 0,
+    minEdges: 1,
   },
   {
     language: "cpp",

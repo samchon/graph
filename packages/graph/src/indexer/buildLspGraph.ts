@@ -209,6 +209,17 @@ async function collectLanguageGraph(
       });
     }
 
+    // Wait for the server's initial indexing BEFORE asking for symbols. Servers
+    // that load a project asynchronously differ in how they answer early
+    // requests: jdtls blocks them (a longer request timeout suffices), but
+    // csharp-ls answers documentSymbol with an empty list until its solution is
+    // loaded — collecting symbols first would silently index nothing.
+    await waitForIndexing(
+      () => lastProgressAt,
+      options.lspReadyQuietMs ?? 1_500,
+      options.lspReadyTimeoutMs ?? 30_000,
+    );
+
     for (const openedFile of opened) {
       const symbols = await client.request<DocumentSymbolResult>(
         "textDocument/documentSymbol",
@@ -218,12 +229,6 @@ async function collectLanguageGraph(
       byFile.set(openedFile.rel, converted);
       nodes.push(...converted);
     }
-
-    await waitForIndexing(
-      () => lastProgressAt,
-      options.lspReadyQuietMs ?? 1_500,
-      options.lspReadyTimeoutMs ?? 30_000,
-    );
 
     const linesByFile = new Map<string, string[]>();
     for (const openedFile of opened) {

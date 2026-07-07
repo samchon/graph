@@ -65,6 +65,8 @@ export const LANGUAGE_EXPERIMENTS = [
     minNodes: 1,
     minEdges: 0,
     timeoutMs: 60000,
+    // csharp-ls loads the solution; restored packages make that load succeed.
+    prepare: "dotnet restore",
   },
   {
     language: "kotlin",
@@ -108,8 +110,9 @@ export const LANGUAGE_EXPERIMENTS = [
     minNodes: 1,
     minEdges: 0,
     // ruby-lsp composes a bundle from the project's Gemfile; the dependencies
-    // must be installed or the server exits at launch.
-    prepare: "bundle install",
+    // must be installed or the server exits at launch. Vendor the bundle —
+    // an unprivileged install into the system gem path is denied.
+    prepare: "bundle config set --local path vendor/bundle && bundle install",
   },
   {
     language: "php",

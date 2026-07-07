@@ -54,20 +54,35 @@ export function runTrace(
 
   if (props.to !== undefined && props.to.trim() !== "") {
     const target = resolveHandle(graph, props.to);
-    const base = {
-      type: "trace" as const,
-      start: traceNode(graph, start.node),
-      direction: "path",
-      hops: [] as IGraphTrace.IHop[],
-      reached: [] as IGraphTrace.INode[],
-      truncated: false,
-      next: resultNext(
-        "answer",
-        "The path result is the flow answer; cite path nodes and evidence ranges.",
-      ),
-      guide: resultGuide("Use path, hops, and evidence as the flow answer."),
-    };
-    if (target.node === undefined) return base;
+    const startNode = traceNode(graph, start.node);
+    // Mirror the start handle: an ambiguous or unresolved target must ask to
+    // clarify, not report an empty path with next: "answer" (which reads as
+    // "no flow exists").
+    if (target.candidates !== undefined) {
+      return {
+        type: "trace",
+        direction: "path",
+        start: startNode,
+        hops: [],
+        reached: [],
+        truncated: false,
+        candidates: target.candidates.map((node) => traceNode(graph, node)),
+        next: resultNext("clarify", "The target handle is ambiguous; choose one candidate."),
+        guide: resultGuide("Disambiguate the target with returned candidates."),
+      };
+    }
+    if (target.node === undefined) {
+      return {
+        type: "trace",
+        direction: "path",
+        start: startNode,
+        hops: [],
+        reached: [],
+        truncated: false,
+        next: resultNext("clarify", "The target handle did not resolve in the graph."),
+        guide: resultGuide("Answer that the graph has no path to this target."),
+      };
+    }
     const found = findPath(
       graph,
       start.node.id,
@@ -77,11 +92,20 @@ export function runTrace(
       includeExternal,
     );
     return {
-      ...base,
+      type: "trace",
+      direction: "path",
+      start: startNode,
       target: traceNode(graph, target.node),
       path: (found?.path ?? []).map((node, depth) => traceNode(graph, node, depth, true)),
       hops: found?.hops ?? [],
+      reached: [],
+      truncated: false,
       steps: steps(graph, found?.hops ?? []),
+      next: resultNext(
+        "answer",
+        "The path result is the flow answer; cite path nodes and evidence ranges.",
+      ),
+      guide: resultGuide("Use path, hops, and evidence as the flow answer."),
     };
   }
 

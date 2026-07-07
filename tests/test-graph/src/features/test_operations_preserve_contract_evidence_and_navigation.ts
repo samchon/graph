@@ -72,6 +72,14 @@ export const test_operations_preserve_contract_evidence_and_navigation = async (
   const ambiguous = (await ContractGraph.call(app, { type: "trace", from: "run" })).result;
   TestValidator.predicate("ambiguous trace returns candidates", ambiguous.candidates?.length >= 2);
 
+  const ambiguousTarget = (
+    await ContractGraph.call(app, { type: "trace", from: "Root.Service.run", to: "run" })
+  ).result;
+  TestValidator.predicate(
+    "ambiguous target asks to clarify with candidates",
+    ambiguousTarget.next.action === "clarify" && (ambiguousTarget.candidates?.length ?? 0) >= 2,
+  );
+
   const entrypoints = (
     await ContractGraph.call(app, {
       type: "entrypoints",

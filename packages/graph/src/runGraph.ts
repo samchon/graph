@@ -1,5 +1,6 @@
 import { buildGraph } from "./indexer/buildGraph";
 import { buildGraphDump } from "./indexer/buildGraphDump";
+import { LANGUAGE_SPECS } from "./indexer/LANGUAGE_SPECS";
 import { GraphLanguage } from "./structures";
 import { startServer } from "./mcp/startServer";
 import packageJson from "../package.json";
@@ -86,25 +87,14 @@ function parseMode(value: string): "auto" | "lsp" | "static" {
   throw new Error(`Invalid --mode: ${value}`);
 }
 
+const ALLOWED_LANGUAGES = new Set<string>([
+  ...LANGUAGE_SPECS.map((spec) => spec.language),
+  "unknown",
+]);
+
 function parseLanguage(value: string): GraphLanguage {
-  const language = value;
-  const allowed = new Set([
-    "typescript",
-    "javascript",
-    "go",
-    "rust",
-    "cpp",
-    "c",
-    "java",
-    "csharp",
-    "kotlin",
-    "swift",
-    "scala",
-    "zig",
-    "unknown",
-  ]);
-  if (!allowed.has(language)) throw new Error(`Invalid --language: ${language}`);
-  return language as GraphLanguage;
+  if (!ALLOWED_LANGUAGES.has(value)) throw new Error(`Invalid --language: ${value}`);
+  return value as GraphLanguage;
 }
 
 function parseInteger(value: string): number {

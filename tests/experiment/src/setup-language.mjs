@@ -166,10 +166,10 @@ switch (experiment.language) {
     const dotnetHome = path.join(os.homedir(), ".dotnet");
     const dotnet = path.join(dotnetHome, "dotnet");
     shell("curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh");
-    // 8.0 runs csharp-ls 0.20.0 (a net8 tool); 9.0 stays for newer versions
-    // once the upstream package is fixed.
+    // 8.0 runs csharp-ls 0.20.0 (a net8 tool); 10.0 satisfies the fixture's
+    // global.json SDK pin so `dotnet restore` can load the solution.
     shell("bash /tmp/dotnet-install.sh --channel 8.0");
-    shell("bash /tmp/dotnet-install.sh --channel 9.0");
+    shell("bash /tmp/dotnet-install.sh --channel 10.0");
     appendGithubPath(dotnetHome);
     appendGithubPath(path.join(dotnetHome, "tools"));
     // csharp-ls 0.21.0 ships a broken package ("DotnetToolSettings.xml was not

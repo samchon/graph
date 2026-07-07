@@ -57,11 +57,14 @@ export const LANGUAGE_EXPERIMENTS = [
     timeoutMs: 60000,
   },
   {
+    // serilog has a root .sln, which csharp-ls needs to load a project context;
+    // the dotnet/samples monorepo has none and yields zero symbols.
     language: "csharp",
-    repository: "https://github.com/dotnet/samples.git",
+    repository: "https://github.com/serilog/serilog.git",
     maxFiles: 120,
     minNodes: 1,
     minEdges: 0,
+    timeoutMs: 60000,
   },
   {
     language: "kotlin",

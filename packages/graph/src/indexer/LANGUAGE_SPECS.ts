@@ -73,4 +73,40 @@ export const LANGUAGE_SPECS: ILanguageSpec[] = [
     lsp: { command: "zls", args: [] },
     lineComment: "//",
   },
+  {
+    language: "python",
+    extensions: [".py", ".pyi"],
+    lsp: { command: "pyright-langserver", args: ["--stdio"] },
+    lineComment: "#",
+  },
+  {
+    language: "ruby",
+    extensions: [".rb", ".rake", ".gemspec"],
+    lsp: { command: "ruby-lsp", args: [] },
+    lineComment: "#",
+  },
+  {
+    language: "php",
+    extensions: [".php", ".phtml"],
+    lsp: { command: "intelephense", args: ["--stdio"] },
+    lineComment: "//",
+  },
+  {
+    language: "lua",
+    extensions: [".lua"],
+    lsp: { command: "lua-language-server", args: [] },
+    lineComment: "--",
+  },
+  {
+    language: "bash",
+    extensions: [".sh", ".bash"],
+    lsp: { command: "bash-language-server", args: ["start"] },
+    lineComment: "#",
+  },
+  {
+    language: "dart",
+    extensions: [".dart"],
+    lsp: { command: "dart", args: ["language-server"] },
+    lineComment: "//",
+  },
 ];

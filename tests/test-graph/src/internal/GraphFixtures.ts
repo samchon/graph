@@ -345,6 +345,42 @@ const languageFixtures = [
     symbol: "zigEntry",
     source: "pub fn zigEntry() i32 {\n  return 1;\n}\n",
   },
+  {
+    language: "python",
+    file: "entry.py",
+    symbol: "PythonEntry",
+    source: "def PythonEntry():\n    return 1\n",
+  },
+  {
+    language: "ruby",
+    file: "entry.rb",
+    symbol: "RubyEntry",
+    source: "class RubyEntry\nend\n",
+  },
+  {
+    language: "php",
+    file: "entry.php",
+    symbol: "phpEntry",
+    source: "<?php\nfunction phpEntry() {\n  return 1;\n}\n",
+  },
+  {
+    language: "lua",
+    file: "entry.lua",
+    symbol: "luaEntry",
+    source: "function luaEntry()\n  return 1\nend\n",
+  },
+  {
+    language: "bash",
+    file: "entry.sh",
+    symbol: "bashEntry",
+    source: "function bashEntry() {\n  return 0\n}\n",
+  },
+  {
+    language: "dart",
+    file: "entry.dart",
+    symbol: "DartEntry",
+    source: "class DartEntry {\n}\n",
+  },
 ];
 
 export const GraphFixtures = {

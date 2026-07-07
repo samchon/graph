@@ -2,6 +2,56 @@
 
 Two benchmarks, mirroring the two `@ttsc/graph` and codegraph publish: a **structural** one (build time, node/edge counts) and an **agent-cost A/B** (the "X% fewer tokens" comparison).
 
+## Agent-cost A/B
+
+A faithful port of codegraph's headline agent-cost benchmark (and of `@ttsc/graph`'s port of it), **generalized across languages**. For one question per repo an agent CLI runs headless once per arm — `baseline` (no MCP) vs a graph tool — and the report carries tokens summed per turn, tool calls, and wall time, median over N runs. Arms: **@samchon/graph** (default), **codegraph** (`--cg=1`), **serena** (`--serena=1`).
+
+Two harnesses share the same corpus, prompts, and gates:
+
+- **`src/agent-ab-codex.mjs`** — OpenAI `codex` CLI (default `gpt-5.4-mini`, reasoning `high`). Each arm gets a minimal temp `CODEX_HOME` (copied `auth.json` + generated `config.toml`) so nothing but the MCP server differs. `codex --json` has no cost field, so tokens/tools/time are the metrics.
+- **`src/agent-ab.mjs`** — Claude Code CLI (`--strict-mcp-config`, per-arm MCP config, `--max-budget-usd`), reporting cost as well.
+
+### Rigor gates
+
+- **Prompt provenance** — every prompt resolves through `questions/manifest.json` and the harness refuses to run when a question file no longer matches its pinned SHA-256; `promptId` + `questionSha256` are recorded on every sample. Regenerate after editing questions with `pnpm --filter @samchon/graph-benchmark manifest`.
+- **Pinned checkouts** — every corpus entry pins the exact `commit` measured; the clone fetches that commit, never a moving branch.
+- **Graph-arm preflight** — before spending, the harness builds a bounded dump of the checkout and **aborts if the language server is missing** (`indexer: "static"`); a silent static fallback would corrupt the comparison. Override only with `--allow-static=1`.
+- **codegraph setup cost** — the codegraph arm runs `codegraph init` first and records its wall time as `toolSetupMs`.
+- **Tool-neutral prompts** — no graph guidance is appended to the question; tool guidance lives only in each MCP server's own descriptions, so every arm poses the identical utterance.
+
+### Corpus
+
+15 repos, one per language, taken **verbatim** from codegraph's evaluation suite — repositories and dedicated questions alike (`src/corpus.mjs` + `questions/*.md`). scala, zig, and bash are deliberately absent: codegraph has no dedicated utterance for them, and inventing one would break provenance. The shared `common` onboarding question is asked against every repo.
+
+```bash
+pnpm --filter @samchon/graph-benchmark corpus      # list repos, commits, questions
+pnpm --filter @samchon/graph-benchmark preflight   # zero-spend go/no-go matrix
+```
+
+### Running (spends real credits — user-triggered only, never CI)
+
+```bash
+# One cell: repo x family x tool (baseline arm cached separately)
+pnpm --filter @samchon/graph-benchmark codex -- --repo=gin --prompt-family=dedicated --arm=baseline
+pnpm --filter @samchon/graph-benchmark codex -- --repo=gin --prompt-family=dedicated --arm=graph
+pnpm --filter @samchon/graph-benchmark codex -- --repo=gin --prompt-family=dedicated --arm=graph --cg=1
+pnpm --filter @samchon/graph-benchmark codex -- --repo=gin --prompt-family=dedicated --arm=graph --serena=1
+
+# The whole suite: baseline measured ONCE per repo x family, then each tool;
+# existing reports are skipped, so an interrupted suite resumes for free.
+pnpm --filter @samchon/graph-benchmark suite-codex -- --runs=1
+```
+
+Reports land in `results/codex-<repo>-<family>-<tool>.json` (committed as the measurement record); per-run stream traces in `results/*.traces/` (gitignored).
+
+### Rendering
+
+```bash
+pnpm --filter @samchon/graph-benchmark render
+```
+
+Reads every `results/codex-*.json` and writes `results/summary-<family>-{light,dark}.svg`: grouped bars per repo (baseline gray + a fixed, CVD-validated tool order), direct value labels with % vs baseline, and a median-reduction summary line — light and dark variants for a README `<picture>` block.
+
 ## Structural benchmark
 
 Clones representative repositories, builds graph dumps, and records timing and graph-size metrics.
@@ -10,38 +60,3 @@ Clones representative repositories, builds graph dumps, and records timing and g
 pnpm --filter @samchon/graph-benchmark list
 pnpm --filter @samchon/graph-benchmark start -- --fixture typeorm --mode static
 ```
-
-## Agent-cost A/B (`agent-ab.mjs`)
-
-A port of codegraph's headline agent-cost benchmark (and of `@ttsc/graph`'s faithful port of it), **generalized across languages**. For one question per repo it runs the Claude Code CLI headless twice — once with the `@samchon/graph` MCP server enabled and once with an empty MCP config, both under `--strict-mcp-config` — and reports codegraph's metrics: tokens summed per assistant turn, tool-call count, cost, and wall time, median over N runs.
-
-The repositories and their `dedicated` questions are taken verbatim from codegraph's evaluation corpus (`src/corpus.mjs`) — one repo per language, for all 15 languages codegraph's suite covers. scala, zig, and bash are deliberately absent: codegraph has no dedicated utterance for them, and inventing one would break prompt provenance. The shared `common` onboarding question (`questions/common.md`) is asked against every repo to test whether orientation cost stays flat. **The prompt is tool-neutral** — no graph guidance is appended; the tool guidance lives only in the MCP server's tool descriptions, so both arms pose the identical question and the token comparison stays honest.
-
-> This **spends real Claude credits**, is non-deterministic, and is deliberately **not** wired into CI. It requires `claude` on `PATH` and a built package (`pnpm --filter @samchon/graph build`). The MCP server is the package's own launcher (`packages/graph/lib/bin.js --cwd <repo>`), which builds one resident graph and serves `inspect_code_graph` over stdio.
-
-```bash
-# List the corpus (repos, languages, dedicated questions)
-pnpm --filter @samchon/graph-benchmark corpus
-
-# One repo, dedicated question, both arms
-pnpm --filter @samchon/graph-benchmark agent-ab -- --repo=gin --prompt-family=dedicated --runs=4
-
-# The shared onboarding question against a repo, opus
-pnpm --filter @samchon/graph-benchmark agent-ab -- --repo=flask --prompt-family=common --runs=4 --model=opus
-
-# Comparator arm: serena instead of @samchon/graph (needs `uvx` on PATH)
-pnpm --filter @samchon/graph-benchmark agent-ab -- --repo=express --serena=1 --runs=2
-
-# The whole corpus, both prompt families, with a summary table
-pnpm --filter @samchon/graph-benchmark suite -- --runs=4 --model=sonnet
-```
-
-Reports and per-run stream-json traces are written under `results/`. Each report records the arm samples (tokens, tools, cost, wall time, and the agent's final answer) so a run can be re-inspected without re-spending credits.
-
-### Arms
-
-- `baseline` — empty MCP config; Read/Grep/Bash only.
-- `graph` — the `@samchon/graph` MCP server.
-- `--serena=1` / `--cg=1`-style comparators reuse the identical prompt and gates.
-
-Select arms with `--arm=baseline|graph|both` so a fixed baseline can be measured once and cached while graph iterations rerun only the MCP arm.

@@ -112,6 +112,19 @@ const result = app.inspect_code_graph({
 });
 ```
 
+## Benchmark
+
+The agent-cost A/B in `tests/benchmark` ports codegraph's headline benchmark (as `@ttsc/graph` did) across languages: for one question per repository an agent CLI runs headless once per arm — baseline (no MCP) vs `@samchon/graph` vs codegraph vs serena — and the report carries tokens summed per turn, tool calls, and wall time. Prompts are codegraph's own utterances, pinned by SHA-256; checkouts are pinned by commit; the graph arm refuses to run when the language server is missing rather than silently measuring the static fallback.
+
+```bash
+pnpm --filter @samchon/graph-benchmark corpus      # 15 repos / 15 languages, pinned
+pnpm --filter @samchon/graph-benchmark preflight   # zero-spend go/no-go
+pnpm --filter @samchon/graph-benchmark suite-codex -- --runs=1   # spends credits
+pnpm --filter @samchon/graph-benchmark render      # results -> SVG charts
+```
+
+See `tests/benchmark/README.md` for the full methodology.
+
 ## Design Notes
 
 The source-linked design target is the same one described for `@ttsc/graph`: keep the graph as an index, make the agent select one request through a typed contract, and trust resolved compiler/LSP facts enough to stop reading files after graph evidence answers the question.

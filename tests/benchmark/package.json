@@ -8,8 +8,13 @@
     "list": "node src/list-fixtures.mjs",
     "start": "node src/run-benchmark.mjs",
     "corpus": "node src/list-corpus.mjs",
+    "manifest": "node src/generate-manifest.mjs",
+    "preflight": "node src/preflight.mjs",
     "agent-ab": "node src/agent-ab.mjs",
-    "suite": "node src/run-suite.mjs"
+    "codex": "node src/agent-ab-codex.mjs",
+    "suite": "node src/run-suite.mjs",
+    "suite-codex": "node src/run-suite-codex.mjs",
+    "render": "node src/render-svg.mjs"
   },
   "dependencies": {
     "@samchon/graph": "workspace:*"

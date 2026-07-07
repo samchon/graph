@@ -41,4 +41,34 @@ export const test_lsp_mode_collects_symbols_references_and_diagnostics = async (
         diagnostic.severity === "warning",
     ) === true,
   );
+
+  // A server that reports `$/progress` is awaited until it stays quiet, and the
+  // references it can answer once indexing settles still become edges.
+  const progressDump = await buildGraphDump({
+    cwd: root,
+    mode: "lsp",
+    languages: ["typescript"],
+    server: process.execPath,
+    serverArgs: [GraphPaths.fakeLspServer, "--progress"],
+    lspReferenceLimit: 10,
+    lspReadyQuietMs: 600,
+  });
+  TestValidator.predicate(
+    "progress-reporting server still yields reference edges",
+    progressDump.edges.some((edge) => edge.kind === "references"),
+  );
+
+  // The overall readiness cap releases the wait even while progress keeps
+  // arriving, and reference collection still runs.
+  const cappedDump = await buildGraphDump({
+    cwd: root,
+    mode: "lsp",
+    languages: ["typescript"],
+    server: process.execPath,
+    serverArgs: [GraphPaths.fakeLspServer, "--progress"],
+    lspReferenceLimit: 10,
+    lspReadyQuietMs: 100_000,
+    lspReadyTimeoutMs: 200,
+  });
+  TestValidator.equals("readiness cap keeps LSP indexer", cappedDump.indexer, "lsp");
 };

@@ -18,39 +18,51 @@ const apt = (packages) => {
   shell(`sudo apt-get install -y ${packages.join(" ")}`);
 };
 
-const downloadJson = (url) =>
+// GitHub release download URLs (and coursier/eclipse mirrors) answer with a 302
+// to a CDN host, so follow redirects instead of treating them as failures.
+const openStream = (url, redirects = 0) =>
   new Promise((resolve, reject) => {
     https
       .get(url, { headers: { "User-Agent": "samchon-graph-experiment" } }, (response) => {
-        if (response.statusCode !== 200) {
-          reject(new Error(`${url} returned ${response.statusCode}`));
+        const status = response.statusCode ?? 0;
+        if (status >= 300 && status < 400 && response.headers.location) {
+          response.resume();
+          if (redirects >= 5) {
+            reject(new Error(`Too many redirects for ${url}`));
+            return;
+          }
+          resolve(openStream(new URL(response.headers.location, url).toString(), redirects + 1));
+          return;
+        }
+        if (status !== 200) {
+          reject(new Error(`${url} returned ${status}`));
           response.resume();
           return;
         }
-        const chunks = [];
-        response.on("data", (chunk) => chunks.push(chunk));
-        response.on("end", () => resolve(JSON.parse(Buffer.concat(chunks).toString("utf8"))));
+        resolve(response);
       })
       .on("error", reject);
   });
 
-const downloadFile = (url, file) =>
-  new Promise((resolve, reject) => {
-    const write = fs.createWriteStream(file);
-    https
-      .get(url, { headers: { "User-Agent": "samchon-graph-experiment" } }, (response) => {
-        if (response.statusCode !== 200) {
-          reject(new Error(`${url} returned ${response.statusCode}`));
-          response.resume();
-          return;
-        }
-        response.pipe(write);
-        write.on("finish", () => {
-          write.close(resolve);
-        });
-      })
-      .on("error", reject);
+const downloadJson = async (url) => {
+  const response = await openStream(url);
+  const chunks = [];
+  return await new Promise((resolve, reject) => {
+    response.on("data", (chunk) => chunks.push(chunk));
+    response.on("end", () => resolve(JSON.parse(Buffer.concat(chunks).toString("utf8"))));
+    response.on("error", reject);
   });
+};
+
+const downloadFile = async (url, file) => {
+  const response = await openStream(url);
+  await new Promise((resolve, reject) => {
+    const write = fs.createWriteStream(file);
+    response.pipe(write);
+    write.on("finish", () => write.close(resolve));
+    write.on("error", reject);
+  });
+};
 
 const latestAsset = async (repository, pattern) => {
   const release = await downloadJson(`https://api.github.com/repos/${repository}/releases/latest`);
@@ -105,11 +117,28 @@ switch (experiment.language) {
   case "c":
     apt(["clangd"]);
     break;
-  case "java":
-    apt(["openjdk-17-jdk", "jdtls"]);
+  case "java": {
+    // jdtls is not an apt package and requires Java 21+; install the JDK and the
+    // Eclipse JDT.LS snapshot tarball, then put its bin on PATH. The launcher is
+    // a Python script that locates its plugins relative to its own path, so it
+    // must run from the extracted tree rather than a symlink.
+    apt(["openjdk-21-jdk", "python3"]);
+    const target = path.join(toolsRoot, "jdtls");
+    const archive = path.join(toolsRoot, "jdtls.tar.gz");
+    await downloadFile(
+      "https://download.eclipse.org/jdtls/snapshots/jdt-language-server-latest.tar.gz",
+      archive,
+    );
+    fs.rmSync(target, { force: true, recursive: true });
+    ensureDir(target);
+    run("tar", ["-xzf", archive, "-C", target]);
+    appendGithubPath(path.join(target, "bin"));
     break;
+  }
   case "csharp":
-    apt(["dotnet-sdk-8.0"]);
+    // Latest csharp-ls targets .NET 9; installing it against the 8.0 SDK fails
+    // with a missing DotnetToolSettings.xml.
+    apt(["dotnet-sdk-9.0"]);
     shell("dotnet tool update --global csharp-ls || dotnet tool install --global csharp-ls");
     appendGithubPath(path.join(os.homedir(), ".dotnet", "tools"));
     break;
@@ -117,7 +146,10 @@ switch (experiment.language) {
     await installKotlinLanguageServer();
     break;
   case "swift":
-    run("sourcekit-lsp", ["--version"]);
+    // sourcekit-lsp ships with the toolchain installed by the workflow's Setup
+    // Swift step. It has no `--version` flag (that exits 64), so just confirm it
+    // resolves on PATH.
+    shell("command -v sourcekit-lsp");
     break;
   case "scala":
     apt(["openjdk-17-jdk", "gzip"]);

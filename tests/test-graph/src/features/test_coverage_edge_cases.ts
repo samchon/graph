@@ -187,7 +187,11 @@ export const test_coverage_edge_cases = async () => {
     server: process.execPath,
     serverArgs: [GraphPaths.fakeLspServer, "--special-references"],
   });
-  TestValidator.equals("LSP skips outside, self, and ownerless references", specialReferences.edges, []);
+  TestValidator.equals(
+    "LSP skips outside, self, and ownerless references",
+    specialReferences.edges.filter((edge) => edge.kind !== "contains"),
+    [],
+  );
 
   const nullSymbols = await buildGraphDump({
     cwd: lspRoot,

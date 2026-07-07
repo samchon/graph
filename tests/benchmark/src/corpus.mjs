@@ -5,6 +5,11 @@
 // @samchon/graph indexes rather than TypeScript alone. The shared `common`
 // onboarding question (questions/common.md) is asked against every repo.
 //
+// Coverage standard is codegraph's own: every supported language that appears
+// in its suite is here, one repo each — 15 of the 18 registered languages.
+// scala, zig, and bash are deliberately absent: codegraph has no dedicated
+// utterance for them, and inventing one would break prompt provenance.
+//
 // Each entry: a shallow-clonable repo, its primary language, and the exact
 // codegraph question. `maxFiles` caps how many source files the graph indexes
 // so a huge tree (flutter, redis) stays a bounded, comparable measurement.
@@ -99,6 +104,21 @@ export const CORPUS = [
     url: "https://github.com/Alamofire/Alamofire.git",
     question: "How does Alamofire build, send, and validate a request?",
     maxFiles: 300,
+  },
+  {
+    name: "lualine",
+    language: "lua",
+    url: "https://github.com/nvim-lualine/lualine.nvim.git",
+    question:
+      "How does lualine assemble and render its statusline sections and components?",
+    maxFiles: 300,
+  },
+  {
+    name: "flutter",
+    language: "dart",
+    url: "https://github.com/flutter/flutter.git",
+    question: "How does Flutter build and lay out a widget tree?",
+    maxFiles: 400,
   },
 ];
 

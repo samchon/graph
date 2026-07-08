@@ -18,3 +18,4 @@ tests/benchmark/.work/
 # record; only the raw per-run agent traces (full transcripts) stay out.
 tests/benchmark/results/*.traces/
 tests/benchmark/results/preflight.json
+tests/benchmark/results/codex-*.json

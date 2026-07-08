@@ -56,11 +56,11 @@
       "questionSha256": "7d7224ec9b14aa58dec9e698196586ef6bd14b4f7eb10b154cec9a3025daaa3f"
     },
     {
-      "id": "json-dedicated-v1",
+      "id": "leveldb-dedicated-v1",
       "family": "dedicated",
-      "repo": "json",
-      "file": "json.md",
-      "questionSha256": "73bbc49219fdffcc474289efa4abde52d16d6f09fa61d0d81e06ce4076f1d094"
+      "repo": "leveldb",
+      "file": "leveldb.md",
+      "questionSha256": "670f33ffb4dcfe5b0f6e704040d7a8555446c375c7ba5b7eaa464ee2eedad1cb"
     },
     {
       "id": "sinatra-dedicated-v1",

@@ -107,6 +107,9 @@ if (armsRequested.graph) {
         "--lsp-reference-limit",
         String(args["reference-limit"] ?? 2000),
         ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
+        ...(spec.lspWarmupTimeoutMs
+          ? ["--lsp-warmup-timeout-ms", String(spec.lspWarmupTimeoutMs)]
+          : []),
       ],
       { stdio: ["ignore", fd, "pipe"], encoding: "utf8", windowsHide: true },
     );

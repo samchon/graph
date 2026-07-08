@@ -14,11 +14,11 @@ import {
   summaryOf,
 } from "./common";
 
-const DEFAULT_DEPTH = 3;
-const DEFAULT_MAX_NODES = 24;
-const MAX_OPEN_DEPTH = 6;
-const MAX_OPEN_NODES = 64;
-const MAX_PATH_DEPTH = 16;
+const DEFAULT_DEPTH = 2;
+const DEFAULT_MAX_NODES = 6;
+const MAX_OPEN_DEPTH = 2;
+const MAX_OPEN_NODES = 8;
+const MAX_PATH_DEPTH = 12;
 
 export function runTrace(
   graph: GraphMemory,
@@ -250,7 +250,7 @@ function traceNode(
 }
 
 function steps(graph: GraphMemory, hops: readonly IGraphTrace.IHop[]): string[] {
-  return hops.slice(0, 8).map((hop) => {
+  return hops.slice(0, 6).map((hop) => {
     const from = graph.node(hop.from)!;
     const to = graph.node(hop.to)!;
     const lhs = from.qualifiedName ?? from.name;

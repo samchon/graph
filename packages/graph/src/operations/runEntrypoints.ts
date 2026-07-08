@@ -11,8 +11,8 @@ import {
 } from "./common";
 import { runLookup } from "./runLookup";
 
-const DEFAULT_LIMIT = 8;
-const MAX_LIMIT = 16;
+const DEFAULT_LIMIT = 4;
+const MAX_LIMIT = 8;
 
 export function runEntrypoints(
   graph: GraphMemory,

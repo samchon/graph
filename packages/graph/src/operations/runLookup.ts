@@ -10,8 +10,8 @@ import {
   summaryOf,
 } from "./common";
 
-const DEFAULT_LIMIT = 10;
-const MAX_LIMIT = 25;
+const DEFAULT_LIMIT = 5;
+const MAX_LIMIT = 6;
 
 export function runLookup(
   graph: GraphMemory,

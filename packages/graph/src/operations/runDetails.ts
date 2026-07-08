@@ -13,12 +13,12 @@ import {
   summaryOf,
 } from "./common";
 
-const DEFAULT_NEIGHBORS = 6;
-const MAX_NEIGHBORS = 16;
-const DEFAULT_MEMBERS = 16;
-const MAX_MEMBERS = 32;
-const DEFAULT_DEPENDENCIES = 8;
-const MAX_DEPENDENCIES = 20;
+const DEFAULT_NEIGHBORS = 2;
+const MAX_NEIGHBORS = 3;
+const DEFAULT_MEMBERS = 6;
+const MAX_MEMBERS = 8;
+const DEFAULT_DEPENDENCIES = 2;
+const MAX_DEPENDENCIES = 4;
 
 export function runDetails(
   graph: GraphMemory,

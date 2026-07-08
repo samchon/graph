@@ -56,6 +56,9 @@ export const CORPUS = [
     url: "https://github.com/google/gson.git",
     commit: "c9f3fd55854a743b66f857ace3c7b268ea3e2ef7",
     maxFiles: 1500,
+    // jdtls imports the workspace on a JVM before answering; give initialize
+    // room (JAVA_HOME is pointed at the provisioned JDK 21 by lib.mjs).
+    lspTimeoutMs: 90000,
   },
   {
     name: "redis",
@@ -81,6 +84,10 @@ export const CORPUS = [
     url: "https://github.com/sinatra/sinatra.git",
     commit: "5236d3459b8b9015e5ce21ddd0c6beb0db4081d4",
     maxFiles: 1500,
+    // ruby-lsp composes a bundle from the project's Gemfile; install it into a
+    // vendored path first, then give initialize room.
+    prepare: "bundle config set --local path vendor/bundle && bundle install",
+    lspTimeoutMs: 60000,
   },
   {
     name: "slim",
@@ -125,10 +132,10 @@ export const CORPUS = [
     language: "dart",
     url: "https://github.com/flutter/flutter.git",
     commit: "23815692ac0dfd036fed2f58ccc9f947bc7df9c3",
-    maxFiles: 2000,
-    // The Dart analysis server scans the package before answering; the default
-    // 10s per-request timeout is not enough on a tree this size.
-    lspTimeoutMs: 60000,
+    // flutter is an enormous monorepo; the Dart analysis server scans the whole
+    // workspace, so keep the file cap modest and give initialize room.
+    maxFiles: 400,
+    lspTimeoutMs: 90000,
   },
 ];
 

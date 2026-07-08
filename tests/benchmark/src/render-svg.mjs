@@ -85,9 +85,9 @@ function render(family, repos, model) {
   const barStep = barH + 2; // 2px surface gap between adjacent bars
   const groupPad = 12;
   const groupH = barStep * 4 + groupPad;
-  const legendY = 58;
-  const plotTop = legendY + 28;
-  const footerH = 96;
+  const legendY = 74;
+  const plotTop = legendY + 30;
+  const footerH = 44;
   const height = plotTop + repos.length * groupH + footerH;
 
   const values = [];
@@ -116,8 +116,8 @@ function render(family, repos, model) {
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
     style,
     `<rect width="${width}" height="${height}" class="s"/>`,
-    `<text x="24" y="30" font-size="16" font-weight="600" class="t">Agent token cost — ${esc(family)} question, per repository</text>`,
-    `<text x="24" y="48" font-size="12" class="m">codex / ${esc(model)} · reasoning high · N=1 · median tokens per run (input + output, summed per turn) · lower is better</text>`,
+    `<text x="24" y="32" font-size="16" font-weight="600" class="t">Agent token cost — ${esc(family)} question, per repository</text>`,
+    `<text x="24" y="52" font-size="12" class="m">codex · ${esc(model)} · N=1 · lower is better</text>`,
   );
 
   // Legend: baseline + fixed tool order.
@@ -175,25 +175,6 @@ function render(family, repos, model) {
     });
   });
 
-  // Summary: median reduction vs baseline per tool, across measured repos.
-  const summaryY = plotTop + repos.length * groupH + 54;
-  const summaries = TOOLS.map((tool) => {
-    const cuts = repos
-      .map((repo) => {
-        const base = cell(family, repo, "baseline")?.value;
-        const value = cell(family, repo, tool)?.value;
-        return base && value ? 1 - value / base : undefined;
-      })
-      .filter((v) => v !== undefined);
-    if (cuts.length === 0) return `${LABELS[tool]} not measured`;
-    const cut = Math.round(median(cuts) * 100);
-    return cut >= 0
-      ? `${LABELS[tool]} ${cut}% fewer (n=${cuts.length})`
-      : `${LABELS[tool]} ${-cut}% more (n=${cuts.length})`;
-  });
-  parts.push(
-    `<text x="24" y="${summaryY}" font-size="12" font-weight="600" class="t">Median vs baseline: ${esc(summaries.join(" · "))}</text>`,
-  );
   parts.push("</svg>");
   return parts.join("\n");
 }

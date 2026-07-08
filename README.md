@@ -62,18 +62,7 @@ The community `typescript-language-server` is an unofficial wrapper over the cla
 
 ## Benchmark
 
-A faithful port of `codegraph`'s headline agent-cost benchmark, generalized across languages. For one question per repository the `codex` CLI runs headless, once per arm — **baseline** (no MCP) vs `@samchon/graph` vs `codegraph` vs `serena` — and the report sums tokens per assistant turn, median over the runs. Prompts are `codegraph`'s own utterances, pinned by SHA-256; checkouts are pinned by commit; every arm poses the identical question (tool guidance lives only in each server's MCP descriptions).
-
-**Onboarding question, per repository — @samchon/graph cuts a median of 96% of tokens (n=12), vs codegraph 63% and serena +2% (worse than no tool):**
-
-| | @samchon/graph | codegraph | serena |
-|---|---|---|---|
-| **median vs baseline** | **−96%** | −63% | +2% (worse) |
-| repositories improved | 12 / 12 | 10 / 12 | 3 / 12 |
-
-Ten of twelve languages land between **−92% and −98%** with a single graph call. `@samchon/graph` wins even where the underlying language server is weak: on Ruby (ruby-lsp) it still cuts **−63%**, ahead of codegraph's −49% and serena's −15%.
-
-Run it yourself (spends real credits, never wired into CI):
+Reproduce the numbers yourself (spends real credits, never wired into CI):
 
 ```bash
 pnpm --filter @samchon/graph-benchmark corpus      # 12 repos / 12 languages, pinned
@@ -82,21 +71,47 @@ pnpm --filter @samchon/graph-benchmark suite-codex -- --runs=1
 pnpm --filter @samchon/graph-benchmark render      # results -> SVG charts
 ```
 
-## Why the difference is so large
+## How it works
 
-**The baseline agent greps.** With no graph it opens the entry file, follows imports by reading them, `rg`s for symbol names, reads the hits, and repeats — dozens of tool calls and tens of thousands of tokens of source text just to orient itself. That is where a million tokens go on a large repository.
+The whole surface is one tool with one typed contract:
 
-**`@samchon/graph` answers structure from structure.** The graph already holds every declaration, its span, and its edges. A `tour` call runs a relevance-scored flow traversal and returns the central entrypoints, the primary runtime flow, the nearby paths, the tests, and citation anchors — the whole orientation surface — in **one call**, as index facts rather than pasted source. The agent reads the map and answers. On the flagship TypeScript repo the tour surfaces the exact canvas/render entrypoints for a canvas-render question, with a 20-step flow, in a single call.
+```typescript
+export interface ISamchonGraphApplication {
+  inspect_code_graph(
+    props: ISamchonGraphApplication.IProps,
+  ): Promise<ISamchonGraphApplication.IResult>;
+}
 
-Three things make that work, all ported faithfully from `@ttsc/graph`:
+export namespace ISamchonGraphApplication {
+  export interface IProps {
+    question: string; // restate the code question
+    draft: IDraft; //    intended request + why it is smallest
+    review: string; //   correct the draft before committing
+    request:
+      | IGraphTour.IRequest //    broad orientation / runtime flow
+      | IGraphLookup.IRequest //  find a symbol
+      | IGraphTrace.IRequest //   follow a flow
+      | IGraphDetails.IRequest // one symbol's facts
+      | IGraphEntrypoints.IRequest
+      | IGraphOverview.IRequest
+      | IGraphEscape.IRequest; // leave the graph
+  }
 
-- **A sacred contract.** The tool's own description tells the agent the returned facts are language-server truth: *answer from them, don't re-verify with grep.* That stops the agent from second-guessing a correct graph into another 30 file reads.
-- **A complete engine.** `tour`/`trace`/`details` don't return a thin seed list; they compute the ranked flow, the impact set, the dependency neighborhood — a complete answer, so the agent doesn't fall back to searching.
-- **Bounded, source-free evidence.** Names, signatures, and spans — never file bodies. The payload stays small no matter how large the repository.
+  export interface IDraft {
+    reason: string; //                   why this is the smallest useful step
+    type: IProps["request"]["type"]; //  the request type being considered
+  }
+}
+```
 
-**Why serena often costs *more* than no tool:** a broad orientation tool that returns partial evidence invites the agent to call it many times and then grep anyway, stacking overhead on top of the search it was meant to replace. The benchmark shows this directly — serena is a net loss on the median.
+The other tools try to change what the agent does by *talking* to it — `serena` swaps in ~150 lines of system prompt, `codegraph` ships ~100 lines plus a skill file, both spent almost entirely on forbidding the agent from grepping anyway. `@samchon/graph` changes the **shape of the tool** instead:
 
-The graph itself is built for scale: edges are extracted by a single linear pass over each file (an identifier scan resolved against a name index), so a 2,000-file repository indexes in **~1.6 seconds** rather than the minutes a per-symbol reference sweep would take, and it re-indexes incrementally as source changes.
+- **One tool, not fifty.** `serena` buries its graph behind ~50 tools and the agent never finds the right one; `@samchon/graph` has exactly one, and a union type — filled in by the chain-of-thought — routes the request by construction instead of by persuasion.
+- **CoT compliance, not a wall of rules.** A required schema field can't be skipped the way a prompt line can be ignored. `props` makes the model write `question` → `draft` → `review` before it may act — so it reasons first, and a `review`/`escape` step catches a wrong turn.
+- **Index facts, not inlined source.** The result is names, signatures, and spans — never pasted file bodies. That is where the tokens actually go: the baseline agent blows its budget dumping source into context, while the graph answers the same question from the index.
+- **It respects the agent, it doesn't cage it.** No "use this instead of Read." It states a condition, then tells the agent where to stop — so the agent reaches for the graph when it should and skips it when it shouldn't.
+
+This is the design proven by the TypeScript-only predecessor, [`@ttsc/graph`](https://ttsc.dev/blog/i-made-ts-compiler-graph-mcp) — the launch post is the full autopsy of why the tools before it don't move the token bill. `@samchon/graph` generalizes it to 18 languages over LSP, with edges built by a single linear pass per file (a 2,000-file repo indexes in **~1.6 seconds**, re-indexed incrementally as source changes).
 
 ## Sponsors
 

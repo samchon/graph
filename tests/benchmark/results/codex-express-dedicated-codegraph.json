@@ -1,0 +1,66 @@
+{
+  "harness": "codex",
+  "tool": "codegraph",
+  "toolSetupMs": 488,
+  "repo": "express",
+  "language": "javascript",
+  "commit": "ba006766fb964571723138708eacaba0f55759cd",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\express",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "express-dedicated-v1",
+  "promptFamily": "dedicated",
+  "questionSha256": "63ddb8c8745d0f8aec2a33f077c73e8f4e9c4bcb39d811db063ac7b5aafe07ea",
+  "runs": 1,
+  "question": "How does Express route a request through its middleware stack?",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-express-dedicated-codegraph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 133280,
+        "cached": 82432,
+        "reasoning": 1751,
+        "tokensWithReasoning": 135031,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 129524,
+            "cachedInput": 82432,
+            "output": 3756,
+            "reasoning": 1751
+          }
+        ],
+        "tools": 11,
+        "shell": 10,
+        "graph": 1,
+        "web": 0,
+        "sourceTouches": 5,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"function Layer|Layer\\\\.prototype\\\\.(handle_request|handle_error|match)|function Route|Route\\\\.prototype\\\\.dispatch|Router\\\\.prototype\\\\.use|Router\\\\.prototype\\\\.handle\\\" -S .\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg --files . | rg \\\"router|layer|route|application\\\\.js|index\\\\.js\\\"\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Recurse -Force -Directory node_modules | Select-Object -First 20 -ExpandProperty FullName'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Recurse -Force -Filter router.js | Select-Object -ExpandProperty FullName'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-ChildItem -Recurse -Force node_modules\\\\router | Select-Object -ExpandProperty FullName\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-ChildItem -Recurse -Force node_modules\\\\router -Filter *.js | Select-Object -ExpandProperty FullName\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=0; Get-Content node_modules'\"\\\\router\\\\lib\\\\layer.js | ForEach-Object { \"'$i++; \"{0}`t{1}\" -f $i, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=0; Get-Content node_modules'\"\\\\router\\\\index.js | ForEach-Object { \"'$i++; \"{0}`t{1}\" -f $i, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=0; Get-Content node_modules'\"\\\\router\\\\lib\\\\route.js | ForEach-Object { \"'$i++; \"{0}`t{1}\" -f $i, $_ }'"
+        ],
+        "types": {
+          "agent_message": 5,
+          "mcp_tool_call": 1,
+          "command_execution": 10
+        },
+        "durMs": 86287,
+        "ok": true,
+        "answer": "Express routes a request by treating the app as a callable router and then walking a stack of `Layer` objects until one ends the request or the stack is exhausted.\n\n1. The app entrypoint is [`lib/application.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L152). `app.handle(req, res, callback)` sets up the request/response objects, installs the app prototypes, creates a `finalhandler`, and then delegates to `this.router.handle(req, res, done)`.\n2. Middleware is registered onto that router through [`app.use`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L190), which proxies to `router.use`. Non-app middleware becomes a `Layer` with `end: false`, so it matches prefixes and can run on many paths.\n3. Route handlers are registered through [`app.route`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L256), which creates a `Route` and a matching `Layer` with `end: true`. That layer’s handler calls `route.dispatch(req, res, next)`.\n\nThe actual traversal happens in [`router.handle`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/node_modules/router/index.js#L149):\n\n- It keeps an index into `this.stack`.\n- For each incoming request, it computes the pathname, then scans layers until `layer.match(path)` succeeds.\n- If the layer is a plain middleware layer, it trims the matched prefix off `req.url`, updates `req.baseUrl`, and calls the layer handler.\n- If the layer is a route layer, it checks the HTTP method and only dispatches if the route supports it.\n- It also runs parameter callbacks via `processParams(...)` before invoking the matched layer.\n\nThe matching and invocation are handled by [`Layer`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/node_modules/router/lib/layer.js#L34):\n\n- `Layer.match(path)` uses `path-to-regexp` to test the path and populate `layer.params`.\n- `Layer.handleRequest(req, res, next)` calls the middleware/handler, supports returned promises, and forwards errors to `next(err)`.\n- `Layer.handleError(error, req, res, next)` does the same for 4-arg error handlers.\n\nFor actual route methods, [`Route.dispatch`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/node_modules/router/lib/route.js#L98) walks the route’s own mini-stack:\n\n- It filters handlers by HTTP method.\n- `next('route')` skips the rest of the current route.\n- `next('router')` exits the router entirely.\n- If the request is `HEAD` and there is no `HEAD` handler, Express falls back to `GET`.\n\nTwo important path-shaping details:\n\n- Mounted middleware sees a stripped path, because [`trimPrefix`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/node_modules/router/index.js#L304) removes the mount prefix from `req.url` and updates `req.baseUrl`.\n- Mounted sub-apps are wrapped in [`app.use`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L219), where Express temporarily delegates to the child app and then restores the parent prototypes.\n\nSo the flow is:\n\n`incoming request -> app.handle -> router.handle -> layer matching -> params middleware -> middleware handler or route.dispatch -> next() to continue or finalhandler to finish`\n\nIf you want, I can also sketch this as a small sequence diagram or walk through a concrete example like `app.use('/api', ...)` plus `app.get('/api/users', ...)`.",
+        "error": "",
+        "promptId": "express-dedicated-v1",
+        "questionSha256": "63ddb8c8745d0f8aec2a33f077c73e8f4e9c4bcb39d811db063ac7b5aafe07ea",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

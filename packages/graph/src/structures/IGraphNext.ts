@@ -1,5 +1,15 @@
+/** The required next step from a language-server-derived graph result. */
 export interface IGraphNext {
+  /**
+   * Answer, continue graph inspection, leave graph, or clarify.
+   *
+   * `answer` means the returned graph result already carries the evidence
+   * contract for the current question, even when the slice is capped. Do not
+   * call graph again or read files to re-check or complete it.
+   */
   action: "answer" | "inspect" | "outside" | "clarify";
+
+  /** Smallest graph request type to use when `action` is `inspect`. */
   request?:
     | "entrypoints"
     | "lookup"
@@ -7,5 +17,7 @@ export interface IGraphNext {
     | "details"
     | "overview"
     | "tour";
+
+  /** Why the returned graph evidence supports that action. */
   reason: string;
 }

@@ -1,0 +1,70 @@
+{
+  "harness": "codex",
+  "tool": "serena",
+  "repo": "flask",
+  "language": "python",
+  "commit": "36e4a824f340fdee7ed50937ba8e7f6bc7d17f81",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\flask",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "flask-dedicated-v1",
+  "promptFamily": "dedicated",
+  "questionSha256": "2d8b7adf6cdf24ad01e969707e2d05089259ca7894fc9705bda9f53280f8e581",
+  "runs": 1,
+  "question": "How does Flask dispatch a request to a view function?",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-flask-dedicated-serena.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 221102,
+        "cached": 166400,
+        "reasoning": 990,
+        "tokensWithReasoning": 222092,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 218012,
+            "cachedInput": 166400,
+            "output": 3090,
+            "reasoning": 990
+          }
+        ],
+        "tools": 16,
+        "shell": 16,
+        "graph": 0,
+        "web": 0,
+        "sourceTouches": 14,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"def dispatch_request|def full_dispatch_request|url_adapter|match_request|before_request\" -S flask'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files flask | Select-Object -First 80'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Force'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-ChildItem -Recurse -Depth 2 -Force | Select-Object -First 200 FullName'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"def full_dispatch_request|def dispatch_request|url_adapter.match|request_context|before_request|after_request\" src/flask/app.py src/flask/sansio/app.py src/flask/ctx.py docs/views.rst docs/lifecycle.rst docs/reqcontext.rst'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/flask/app.py | Select-Object -First 900'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content docs/lifecycle.rst | Select-Object -Skip 120 -First 40'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content docs/views.rst | Select-Object -Skip 35 -First 60'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/flask/app.py | Select-Object -Skip 940 -First 120'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"def dispatch_request|def full_dispatch_request|def finalize_request|def preprocess_request|def wsgi_app|def request_context|def __call__\" src/flask/app.py src/flask/ctx.py'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"match_request|url_rule|routing_exception|view_functions\" src/flask/ctx.py src/flask/app.py'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/flask/ctx.py | Select-Object -Skip 398 -First 60'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/flask/app.py | Select-Object -Skip 1556 -First 80'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/flask/app.py | Select-Object -Skip 1360 -First 60'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"def add_url_rule|self.view_functions|endpoint =\" src/flask/sansio/app.py src/flask/app.py'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/flask/sansio/app.py | Select-Object -Skip 598 -First 80'"
+        ],
+        "types": {
+          "agent_message": 7,
+          "command_execution": 16
+        },
+        "durMs": 80518,
+        "ok": true,
+        "answer": "Flask dispatches a request in two stages: routing, then endpoint lookup.\n\n1. The WSGI server calls [`Flask.__call__`]([/absolute/path/to/repo?]) which delegates to [`wsgi_app`]( /? )? Wait need actual absolute paths. Let's construct carefully.  \n\nActually, the flow is:\n\n- [`src/flask/app.py:1618`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1618) `__call__` delegates to [`wsgi_app`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1566).\n- `wsgi_app` creates a request context, pushes it, then calls [`full_dispatch_request`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L992).\n- Pushing the request context performs URL matching in [`RequestContext.match_request`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/ctx.py#L405), which stores either `request.url_rule` and `request.view_args`, or a routing exception.\n- `full_dispatch_request` runs `request_started`, then `preprocess_request` (URL value preprocessors and `before_request` handlers), and if nothing returns early it calls [`dispatch_request`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L966).\n- `dispatch_request` checks for a routing exception, handles automatic `OPTIONS`, then does:\n  `self.view_functions[rule.endpoint](**view_args)`\n  via `ensure_sync` for async support.\n- The return value is converted to a real response in [`finalize_request`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1021), which runs `after_request`, saves the session, and emits `request_finished`.\n\nThe key registration piece is [`add_url_rule`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/sansio/app.py#L605), which stores the callable in `app.view_functions` under the endpoint name. Routing matches the URL to an endpoint; dispatch then looks that endpoint up and calls the function.\n\nFor class-based views, [`View.as_view()`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/docs/views.rst#L49) creates the callable that Flask registers, and the class’s `dispatch_request()` is the method that acts like the view function.\n\nIf you want, I can also sketch the exact call stack for a sample `@app.route` request.",
+        "error": "",
+        "promptId": "flask-dedicated-v1",
+        "questionSha256": "2d8b7adf6cdf24ad01e969707e2d05089259ca7894fc9705bda9f53280f8e581",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

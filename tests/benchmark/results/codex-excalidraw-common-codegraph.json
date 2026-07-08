@@ -1,0 +1,68 @@
+{
+  "harness": "codex",
+  "tool": "codegraph",
+  "toolSetupMs": 21403,
+  "repo": "excalidraw",
+  "language": "typescript",
+  "commit": "dd8296af1802d4920a645591e0de88b9272745fa",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\excalidraw",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-excalidraw-common-codegraph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 508464,
+        "cached": 433664,
+        "reasoning": 5284,
+        "tokensWithReasoning": 513748,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 500781,
+            "cachedInput": 433664,
+            "output": 7683,
+            "reasoning": 5284
+          }
+        ],
+        "tools": 14,
+        "shell": 12,
+        "graph": 2,
+        "web": 0,
+        "sourceTouches": 12,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"<Excalidraw|\\\\bExcalidraw\\\\b\\\" packages/excalidraw --glob \\\"*test*\\\" --glob \\\"*spec*\\\"\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"describe\\\\(|it\\\\(|test\\\\(\\\" packages/excalidraw/tests/packages/events.test.tsx\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"describe\\\\(|it\\\\(|test\\\\(\\\" packages/excalidraw/tests/App.test.tsx\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"describe\\\\(|it\\\\(|test\\\\(\\\" packages/excalidraw/tests/excalidraw.test.tsx\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n -C 6 \"ExcalidrawBase|function Excalidraw|const Excalidraw\" packages/excalidraw/index.tsx'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content packages/excalidraw/index.tsx | Select-Object -Skip 66 -First 120'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content packages/excalidraw/index.tsx | Select-Object -Skip 186 -First 80'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -C 4 \\\"updateScene\\\\(|componentDidMount|onExcalidrawAPI|setAppState =|scene =|renderer =\\\" packages/excalidraw/components/App.tsx\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -C 4 \\\"public updateScene|updateScene = \\\\(|private updateScene|updateScene\\\\(\\\" packages/excalidraw/components/App.tsx | Select-Object -First 80\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content packages/excalidraw/components/App.tsx | Select-Object -Skip 4712 -First 140'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n -C 4 \"createExcalidrawAPI\" packages/excalidraw/components/App.tsx'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content packages/excalidraw/components/App.tsx | Select-Object -Skip 792 -First 80'"
+        ],
+        "types": {
+          "agent_message": 7,
+          "mcp_tool_call": 2,
+          "command_execution": 12
+        },
+        "durMs": 139002,
+        "ok": true,
+        "answer": "**Tour**\n\n- The exported public component is [`packages/excalidraw/index.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/index.tsx#L310). `Excalidraw` is just a `React.memo(...)` wrapper around `ExcalidrawBase`.\n- The real entry wrapper is [`packages/excalidraw/index.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/index.tsx#L67). It normalizes props like `UIOptions`, `imageOptions`, `theme`, and `handleKeyboardGlobally`, wires `onExcalidrawAPI`, sets up providers, then renders `<InitializeApp><App ... /></InitializeApp>`.\n- The runtime core lives in [`packages/excalidraw/components/App.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L792). `createExcalidrawAPI()` builds the imperative API that consumers and tests use.\n- The actual work is driven from [`packages/excalidraw/components/App.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L3183), where `componentDidMount()` finalizes mount state and emits lifecycle callbacks.\n- Scene mutation funnels through [`packages/excalidraw/components/App.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L4717) via `updateScene(...)`. That is the key path for undoable updates, remote updates, and scene initialization.\n- Rendering happens in [`packages/excalidraw/components/App.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L2139): it asks `Renderer` for renderable elements, computes pointer-event gating, and composes `LayerUI`, `StaticCanvas`, `SVGLayer`, overlays, and menus.\n- The render pipeline depends on [`packages/excalidraw/scene/Renderer.ts`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/scene/Renderer.ts#L40), which is the next file to read if you want to understand how elements become paintable output.\n\n**What To Read Next**\n\n- [`packages/excalidraw/tests/excalidraw.test.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/tests/excalidraw.test.tsx#L21) for the integration-level contract of `<Excalidraw />`.\n- [`packages/excalidraw/tests/packages/events.test.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/tests/packages/events.test.tsx#L13) for mount/initialize/change/pointer event ordering.\n- [`packages/excalidraw/tests/App.test.tsx`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/tests/App.test.tsx#L12) for an App-level runtime failure path.\n- [`packages/excalidraw/tests/helpers/api.ts`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/tests/helpers/api.ts#L68) for the test harness that drives `updateScene`, `createElement`, selection, and file helpers.\n- If your first behavior change is interaction-heavy, also read `packages/excalidraw/tests/history.test.tsx` and `packages/excalidraw/tests/selection.test.tsx` next; they are the main regression nets around `updateScene` and pointer-driven state changes.\n\nIf you want, I can turn this into a narrower “first change map” for one specific area, like rendering, pointer interactions, or the imperative API.",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

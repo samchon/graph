@@ -1,0 +1,59 @@
+{
+  "harness": "codex",
+  "tool": "codegraph",
+  "toolSetupMs": 480,
+  "repo": "flask",
+  "language": "python",
+  "commit": "36e4a824f340fdee7ed50937ba8e7f6bc7d17f81",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\flask",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "flask-dedicated-v1",
+  "promptFamily": "dedicated",
+  "questionSha256": "2d8b7adf6cdf24ad01e969707e2d05089259ca7894fc9705bda9f53280f8e581",
+  "runs": 1,
+  "question": "How does Flask dispatch a request to a view function?",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-flask-dedicated-codegraph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 86096,
+        "cached": 52224,
+        "reasoning": 2106,
+        "tokensWithReasoning": 88202,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 82913,
+            "cachedInput": 52224,
+            "output": 3183,
+            "reasoning": 2106
+          }
+        ],
+        "tools": 4,
+        "shell": 3,
+        "graph": 1,
+        "web": 0,
+        "sourceTouches": 3,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$lines = Get-Content src/flask/app.py; $start=950; $end=991; for ($i=$start; $i -le $end; $i++) { if ($i -le $lines.Length) { '\"'{0}\"'`t{1}'\"' -f \"'$i, $lines[$i-1] } }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$lines = Get-Content src/flask/ctx.py; $start=300; $end=420; for ($i=$start; $i -le $end; $i++) { if ($i -le $lines.Length) { '\"'{0}\"'`t{1}'\"' -f \"'$i, $lines[$i-1] } }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$lines = Get-Content src/flask/ctx.py; $start=416; $end=450; for ($i=$start; $i -le $end; $i++) { if ($i -le $lines.Length) { '\"'{0}\"'`t{1}'\"' -f \"'$i, $lines[$i-1] } }'"
+        ],
+        "types": {
+          "agent_message": 4,
+          "mcp_tool_call": 1,
+          "command_execution": 3
+        },
+        "durMs": 60074,
+        "ok": true,
+        "answer": "Flask dispatches in two phases: routing first, then view invocation.\n\n- The WSGI entrypoint [`src/flask/app.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1566) creates a request context and pushes it.\n- During `RequestContext.push()`, Flask calls `match_request()`, which runs Werkzeug routing and stores the matched rule and URL variables on the request as `request.url_rule` and `request.view_args` in [`src/flask/ctx.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/ctx.py#L405).\n- `full_dispatch_request()` then runs request hooks and, if none returns early, calls `dispatch_request()` in [`src/flask/app.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L992).\n- `dispatch_request()` looks up the endpoint from `req.url_rule.endpoint`, fetches the callable from `self.view_functions`, and calls it with `**req.view_args` in [`src/flask/app.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L966).\n- The call is wrapped with `ensure_sync(...)`, so async view functions are handled correctly. If the rule says `OPTIONS` should be automatic, Flask returns the default options response instead of calling the view.\n\nFor class-based views, `View.as_view()` creates the actual callable that gets registered in `view_functions`; that wrapper instantiates the class and then calls its `dispatch_request()` in [`src/flask/views.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/views.py#L86).\n\nIn short:\n\n`WSGI request -> request context -> URL match -> endpoint lookup -> view function call`\n\nIf you want, I can also trace the error path for unmatched routes and 405/404 handling.",
+        "error": "",
+        "promptId": "flask-dedicated-v1",
+        "questionSha256": "2d8b7adf6cdf24ad01e969707e2d05089259ca7894fc9705bda9f53280f8e581",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

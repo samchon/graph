@@ -3,54 +3,119 @@ import { IGraphDiagnostic } from "./IGraphDiagnostic";
 import { IGraphEvidence } from "./IGraphEvidence";
 import { IGraphNext } from "./IGraphNext";
 
+/** A compact, source-read-free project map for broad orientation only. */
 export interface IGraphOverview {
+  /** Discriminator for source-free project overview. */
   type: "overview";
+
+  /** Absolute project root. */
   project: string;
+
+  /** Languages present in the project. */
   languages: GraphLanguage[];
+
+  /** Size of the graph. */
   counts: IGraphOverview.ICounts;
+
+  /** Folder layering, largest first. */
   layers?: IGraphOverview.ILayer[];
+
+  /** Highest-dependency symbols, busiest first. */
   hotspots?: IGraphOverview.IHotspot[];
+
+  /** Exported API symbols, most-depended-on first. */
   publicApi?: IGraphOverview.IPublicApi[];
+
+  /** Index diagnostics, when any. */
   diagnostics?: IGraphDiagnostic[];
+
+  /** How to use this source-free result next. */
   next: IGraphNext;
+
+  /** Human-readable compatibility note mirroring `next`. */
   guide: string;
 }
 
 export namespace IGraphOverview {
+  /** Which broad architecture facets `overview` should return. */
   export interface IRequest {
+    /** Discriminator for source-free project overview. */
     type: "overview";
+
+    /**
+     * The facet to project, or `all` for every facet. `layers` is the folder
+     * layering, `hotspots` the highest-dependency symbols, `publicApi` the
+     * exported API symbols ranked by how depended-on they are.
+     *
+     * Use this only for broad public API or layer orientation. For behavior,
+     * lifecycle, request-flow, rendering-flow, validation-flow, caller, or
+     * dependency questions, use `entrypoints` then `trace` instead.
+     *
+     * @default "all"
+     */
     aspect?: "all" | "layers" | "hotspots" | "publicApi" | "diagnostics";
   }
 
+  /** Size of the graph by node/edge totals and per-kind node counts. */
   export interface ICounts {
+    /** Number of source file container nodes. */
     files: number;
+
+    /** Total node count, including declarations and file containers. */
     nodes: number;
+
+    /** Total edge count, including structural edges. */
     edges: number;
+
+    /** Node count per kind. */
     byKind: Record<string, number>;
+
+    /** Node count per language. */
     byLanguage: Record<string, number>;
   }
 
+  /** One folder layer: its source files and export surface. */
   export interface ILayer {
+    /** Directory, project-relative. */
     dir: string;
+    /** Distinct source files under it. */
     files: number;
+    /** Exported symbols declared under it. */
     exported: number;
+    /** Languages present under it. */
     languages: GraphLanguage[];
   }
 
+  /** A compact symbol coordinate that can be passed to deeper graph tools. */
   export interface INode {
+    /** Stable handle for `details` or `trace`. */
     id: string;
+    /** The symbol's qualified name when available. */
     name: string;
+    /** Its declaration kind (`class`, `interface`, `function`, ...). */
     kind: string;
+    /** Language the symbol is written in. */
     language: GraphLanguage;
+    /** Project-relative path of the file that declares it. */
     file: string;
+    /** 1-based declaration line, when known. */
     line?: number;
+    /** Source span of the declaration, when known. */
     sourceSpan?: Pick<IGraphEvidence, "file" | "startLine" | "endLine">;
   }
 
+  /** A high-dependency symbol with its non-structural fan-in and fan-out. */
   export interface IHotspot extends INode {
+    /** Non-structural edges pointing at this symbol. */
     fanIn: number;
+    /** Non-structural edges leaving this symbol. */
     fanOut: number;
   }
 
+  /**
+   * One symbol on the project's exported public API surface. The list is ranked
+   * by how depended-on the symbol is, with test, typings, and generated files
+   * excluded.
+   */
   export type IPublicApi = INode;
 }

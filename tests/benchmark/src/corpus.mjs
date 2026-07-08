@@ -65,10 +65,14 @@ export const CORPUS = [
     maxFiles: 2000,
   },
   {
-    name: "json",
+    // codegraph's cpp pick (nlohmann/json) is a single-header library — it
+    // yields ~27 nodes / 0 edges, a degenerate graph target. Substitute
+    // leveldb, a real multi-file C++ project, and note the deviation: the
+    // question is repo-appropriate rather than codegraph-verbatim.
+    name: "leveldb",
     language: "cpp",
-    url: "https://github.com/nlohmann/json.git",
-    commit: "acf076a677c161643e64d8f83fd02624fd8c4bd3",
+    url: "https://github.com/google/leveldb.git",
+    commit: "7ee830d02b623e8ffe0b95d59a74db1e58da04c5",
     maxFiles: 1500,
   },
   {

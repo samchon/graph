@@ -1,0 +1,64 @@
+{
+  "harness": "codex",
+  "tool": "serena",
+  "repo": "flask",
+  "language": "python",
+  "commit": "36e4a824f340fdee7ed50937ba8e7f6bc7d17f81",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\flask",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-flask-common-serena.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 1157445,
+        "cached": 1041920,
+        "reasoning": 13000,
+        "tokensWithReasoning": 1170445,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 1136199,
+            "cachedInput": 1041920,
+            "output": 21246,
+            "reasoning": 13000
+          }
+        ],
+        "tools": 92,
+        "shell": 9,
+        "graph": 83,
+        "web": 0,
+        "sourceTouches": 9,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"class RequestContext|def __init__\\\\(|class AppContext\\\" src\\\\flask\\\\ctx.py\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"RequestContext\\\" src\\\\flask\\\\ctx.py src\\\\flask\\\\app.py src\\\\flask\\\\sansio\\\\app.py\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\\b(route|before_request|after_request|teardown_request|test_client|test_request_context|wsgi_app|full_dispatch_request|dispatch_request|make_response|handle_exception|handle_user_exception)\\\\b\\\" tests\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\\b(route|before_request|after_request|teardown_request|test_client|test_request_context|wsgi_app|full_dispatch_request|dispatch_request|make_response|handle_exception|handle_user_exception)\\\\b\\\" src\\\\flask\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content src\\\\flask\\\\__init__.py\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content README.md'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content pyproject.toml'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\conftest.py\""
+        ],
+        "types": {
+          "agent_message": 17,
+          "mcp_tool_call": 83,
+          "command_execution": 9
+        },
+        "durMs": 421491,
+        "ok": true,
+        "answer": "Here’s the shortest code-based map of the main runtime path.\n\n**Runtime Flow**\n- Public API exports are re-exported from [src/flask/__init__.py](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/__init__.py), so `from flask import Flask, request, jsonify, ...` is just package-level wiring.\n- `Flask(__name__)` starts in [src/flask/app.py:310](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L310), then immediately delegates setup work to `App.__init__` in [src/flask/sansio/app.py:279](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/sansio/app.py#L279). That constructor creates config, JSON, the URL map, blueprint registry, and other app state.\n- `Flask.__init__` also auto-registers the static file route in [src/flask/app.py:346](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L346) when a static folder exists.\n- `@app.route(...)` is thin sugar in [src/flask/sansio/scaffold.py:335](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/sansio/scaffold.py#L335); it just forwards to `add_url_rule`, which is implemented for real in [src/flask/sansio/app.py:604](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/sansio/app.py#L604). That is where URL rules and `view_functions` get stored.\n- The request engine starts at [src/flask/app.py:1618](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1618), but `__call__` just forwards to `wsgi_app`. The actual flow is:\n  - `wsgi_app` in [src/flask/app.py:1566](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1566)\n  - request context creation in [src/flask/ctx.py:339](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/ctx.py#L339)\n  - context push and URL matching in [src/flask/ctx.py:416](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/ctx.py#L416)\n  - pre-dispatch hooks in [src/flask/app.py:992](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L992) and [src/flask/app.py:1366](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1366)\n  - actual view dispatch in [src/flask/app.py:966](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L966)\n  - response coercion in [src/flask/app.py:1224](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1224)\n  - after-request/session finalization in [src/flask/app.py:1394](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1394)\n  - teardown on pop in [src/flask/ctx.py:446](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/ctx.py#L446)\n- Error handling is split between user-facing HTTP handling in [src/flask/app.py:866](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L866) and the fallback 500 path in [src/flask/app.py:898](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L898).\n- Class-based views enter through [src/flask/views.py:85](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/views.py#L85) (`View.as_view`) and then dispatch through [src/flask/views.py:182](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/views.py#L182) (`MethodView.dispatch_request`).\n\n**Read Next**\n- Route dispatch and method handling: [tests/test_basic.py:129](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_basic.py#L129) `test_request_dispatching`\n- Request hooks and after-request mutation: [tests/test_basic.py:707](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_basic.py#L707) `test_request_processing`\n- Response coercion and tuple/dict/list handling: [tests/test_basic.py:1141](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_basic.py#L1141) `test_response_types`\n- Invalid return values: [tests/test_basic.py:1235](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_basic.py#L1235) `test_response_type_errors`\n- App error handling path: [tests/test_basic.py:886](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_basic.py#L886) `test_error_handling`\n- Request context teardown: [tests/test_reqctx.py:15](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_reqctx.py#L15) `test_teardown_on_pop`\n- URL building inside a live request context: [tests/test_reqctx.py:62](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_reqctx.py#L62) `test_proper_test_request_context`\n- Test client context preservation: [tests/test_testing.py:200](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_testing.py#L200) `test_test_client_context_binding`\n- Class-based views: [tests/test_views.py:8](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_views.py#L8) `common_test`, [tests/test_views.py:18](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_views.py#L18) `test_basic_view`, [tests/test_views.py:29](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_views.py#L29) `test_method_based_view`\n- Blueprint request hooks and app-wide blueprint hooks: [tests/test_blueprints.py:80](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_blueprints.py#L80) `test_blueprint_app_error_handling`, [tests/test_blueprints.py:768](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_blueprints.py#L768) `test_request_processing`, [tests/test_blueprints.py:799](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_blueprints.py#L799) `test_app_request_processing`\n- Error handler precedence across app and blueprint scopes: [tests/test_user_error_handler.py:163](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_user_error_handler.py#L163) `test_default_error_handler`\n\nI also wrote onboarding memories for the repo. If you want to sanity-check them later, run `serena memories check` from the project root.",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

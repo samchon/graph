@@ -1,0 +1,76 @@
+{
+  "harness": "codex",
+  "tool": "samchon-graph",
+  "toolSetupMs": 12773,
+  "repo": "express",
+  "language": "javascript",
+  "commit": "ba006766fb964571723138708eacaba0f55759cd",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\express",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-express-common-samchon-graph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 567894,
+        "cached": 492544,
+        "reasoning": 7961,
+        "tokensWithReasoning": 575855,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 551800,
+            "cachedInput": 492544,
+            "output": 16094,
+            "reasoning": 7961
+          }
+        ],
+        "tools": 87,
+        "shell": 86,
+        "graph": 1,
+        "web": 0,
+        "sourceTouches": 86,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"app.listen = function listen()\\\" lib\\\\application.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"module.exports = require('./lib/express');\\\" index.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"should re-route when method is altered\\\" test\\\\app.router.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"should be .use()able\\\" test\\\\app.router.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"should restore req.params after leaving router\\\" test\\\\app.router.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"methods\\\" test\\\\app.router.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"should ensure regexp matches path prefix\\\" test\\\\app.router.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"when next(\\\\\\\"router\\\\\\\") is called\\\" test\\\\app.router.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"should not use disposed router/middleware\\\" test\\\\app.router.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"should break out of app.router\\\" test\\\\app.router.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"jump out of router\\\" test\\\\app.router.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"next('router')\\\" test\\\\app.router.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"break out of app.router\\\" test\\\\app.router.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"this.on('mount'\\\" lib\\\\application.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"Object.defineProperty(this, 'router'\\\" lib\\\\application.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"Object.setPrototypeOf(this.request, parent.request)\\\" lib\\\\application.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"router.use(path, function mounted_app(req, res, next)\\\" lib\\\\application.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"Object.setPrototypeOf(req, this.request)\\\" lib\\\\application.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"this.router.handle(req, res, done);\\\" lib\\\\application.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n -F \\\"var done = callback || finalhandler(req, res\\\" lib\\\\application.js\""
+        ],
+        "types": {
+          "agent_message": 10,
+          "mcp_tool_call": 1,
+          "command_execution": 86
+        },
+        "durMs": 286108,
+        "ok": true,
+        "answer": "The runtime spine is small and clean:\n\n1. Public entrypoint: [`index.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/index.js#L11) just re-exports [`lib/express.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/express.js#L27), and `createApplication()` there makes `express()` a callable function, not just an object.\n2. App construction: [`lib/express.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/express.js#L36) builds `app(req, res, next) { app.handle(req, res, next) }`, mixes in the EventEmitter and application prototype, and creates per-app `request`/`response` prototypes.\n3. Boot and lazy router: [`lib/application.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L59) runs `app.init()`, which sets defaults and defines the lazy `app.router` getter at [`lib/application.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L69).\n4. Actual request work: [`lib/application.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L152) is the core dispatcher. It installs the final handler, sets `X-Powered-By`, wires `req.res` / `res.req`, swaps prototypes, ensures `res.locals`, then delegates to `this.router.handle(...)` at [`lib/application.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L177).\n5. Route/middleware registration: [`lib/application.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L190) is `app.use()`, [`lib/application.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L256) is `app.route()`, the generated verb methods are at [`lib/application.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L471), and [`lib/application.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L494) is `app.all()`.\n6. Server boundary: [`lib/application.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L598) wraps the app in `http.createServer(this)`, so incoming HTTP traffic reaches the same callable app function.\n\nWhat that means in practice: the repo-level code stops at `app.handle()` and `router.handle()`. The matching and stack traversal live in the `router` dependency; Express here mainly wires the public API, prototype inheritance, mount behavior, and server hookup.\n\nRead next, in this order:\n\n1. [`test/app.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/app.js#L7) for the basics: callable app, EventEmitter inheritance, 404 fallback, mountpath/path, and default config.\n2. [`test/exports.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/exports.js#L7) for the public API surface: `Router`, middleware helpers, and the `application` / `request` / `response` prototypes.\n3. [`test/app.use.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/app.use.js#L8) for mounting behavior, nested apps, path prefixes, dynamic routes, and middleware flattening. The most useful cases are at lines 22, 37, 71, 86, 126, 152, 173, and 201.\n4. [`test/app.router.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/app.router.js#L11) for dispatch semantics: `req.params` restoration, method-specific routes, regex paths, altered methods, `next('router')`, and error handling. Key anchors are at lines 12, 39, 64, 144, 213, 873, 904, and 1159.\n5. [`test/app.route.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/app.route.js#L6) for route stacks and promise rejection handling.\n6. [`test/app.listen.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/app.listen.js#L6) for the HTTP server wrapper and callback/error behavior.\n7. [`test/app.request.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/app.request.js#L7) and [`test/app.response.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/app.response.js#L7) for prototype extension, sub-app inheritance, and isolation.\n8. If your change touches response helpers specifically, also read [`test/res.status.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/res.status.js#L5) and [`test/res.sendStatus.js`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/res.sendStatus.js#L6).\n\nIf you want, I can turn this into a \"change map\" for a specific behavior area, like routing, middleware mounting, or response helpers.",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

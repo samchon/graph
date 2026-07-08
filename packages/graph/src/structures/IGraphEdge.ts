@@ -1,9 +1,24 @@
 import { GraphEdgeKind } from "./GraphEdgeKind";
 import { IGraphEvidence } from "./IGraphEvidence";
 
+/**
+ * A directed relationship from one {@link IGraphNode} to another, both named
+ * by `id`. The triple `(from, to, kind)` is unique; a repeated relationship
+ * keeps the first source-order evidence.
+ *
+ * Every edge is resolved by the language server, so there is no per-edge trust
+ * flag to carry — the whole graph is language-server-resolved fact.
+ */
 export interface IGraphEdge {
+  /** Node id the relationship originates from. */
   from: string;
+
+  /** Node id the relationship points to. */
   to: string;
+
+  /** The relationship kind. */
   kind: GraphEdgeKind;
+
+  /** The source expression that produced the edge, for display and expansion. */
   evidence?: IGraphEvidence;
 }

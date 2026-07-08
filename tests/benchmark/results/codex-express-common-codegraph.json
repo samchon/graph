@@ -1,0 +1,76 @@
+{
+  "harness": "codex",
+  "tool": "codegraph",
+  "toolSetupMs": 3770,
+  "repo": "express",
+  "language": "javascript",
+  "commit": "ba006766fb964571723138708eacaba0f55759cd",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\express",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-express-common-codegraph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 541921,
+        "cached": 401920,
+        "reasoning": 5450,
+        "tokensWithReasoning": 547371,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 531533,
+            "cachedInput": 401920,
+            "output": 10388,
+            "reasoning": 5450
+          }
+        ],
+        "tools": 42,
+        "shell": 41,
+        "graph": 1,
+        "web": 0,
+        "sourceTouches": 40,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content test\\\\res.json.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content test\\\\app.param.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content test\\\\app.head.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content lib\\\\utils.js\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content index.js | ForEach-Object { \"{0}`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content lib'\"\\\\express.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content node_modules'\"\\\\router\\\\lib\\\\route.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content node_modules'\"\\\\router\\\\lib\\\\layer.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content test'\"\\\\app.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content node_modules'\"\\\\router\\\\index.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content lib'\"\\\\application.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content test'\"\\\\app.use.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content test'\"\\\\app.response.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content test'\"\\\\app.request.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content lib'\"\\\\utils.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content test'\"\\\\app.route.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content test'\"\\\\res.json.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content test'\"\\\\exports.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content test'\"\\\\res.send.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content test'\"\\\\app.router.js | ForEach-Object { \\\"{0}\"'`t{1}\" -f $i++, $_ }'"
+        ],
+        "types": {
+          "agent_message": 9,
+          "mcp_tool_call": 1,
+          "command_execution": 41
+        },
+        "durMs": 185417,
+        "ok": true,
+        "answer": "**Runtime Flow**\n- Public entrypoint is just a shim: [index.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/index.js#L11) exports the factory from [lib/express.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/express.js#L36).\n- `createApplication()` builds the callable `app(req, res, next)` and mixes in the app prototype, `EventEmitter`, plus per-app request/response prototypes in [lib/express.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/express.js#L36).\n- `app.init()` sets defaults and lazily creates the base router in [lib/application.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L59).\n- The real request entrypoint is `app.handle(req, res, callback)` in [lib/application.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L152): it installs `req.res`, `res.req`, swaps prototypes, ensures `res.locals`, then delegates to `this.router.handle(...)`.\n- The router package does the matching and dispatching in [node_modules/router/index.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/node_modules/router/index.js#L149): it walks the stack, trims mount prefixes, runs param processing, and chooses between middleware and route dispatch.\n- Route/middleware nodes are represented by `Layer` in [node_modules/router/lib/layer.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/node_modules/router/lib/layer.js#L34), which handles path matching, param extraction, and promise/error-aware handler invocation.\n- Per-path method dispatch happens in `Route.dispatch()` in [node_modules/router/lib/route.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/node_modules/router/lib/route.js#L98).\n- Response finalization is mainly `res.send()` in [lib/response.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/response.js#L126): it sets content type, length, ETag, freshness, HEAD/204/205/304 behavior, then ends the socket.\n\n**Nearby Paths Worth Knowing**\n- `app.use()` mount behavior, sub-app inheritance, and prototype restoration live in [lib/application.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L190).\n- `app.route()` and `app.param()` are thin adapters over router behavior in [lib/application.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L256) and [lib/application.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L322).\n- Configuration that affects runtime behavior is centralized in [lib/utils.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/utils.js#L130) for ETag, [lib/utils.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/utils.js#L162) for query parsing, [lib/utils.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/utils.js#L194) for proxy trust, and [lib/utils.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/utils.js#L225) for `Content-Type` charset handling.\n- Request-side computed properties like `req.query`, `req.fresh`, `req.ip`, `req.protocol`, and `req.subdomains` live in [lib/request.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/request.js).\n- `app.listen()` is just `http.createServer(this)` plus callback/error wiring in [lib/application.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/lib/application.js#L598).\n\n**Tests To Read Next**\n1. [test/app.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/app.js#L7) for the app shape: callable app, 404 fallback, mountpath, `app.path()`, and env defaults.\n2. [test/exports.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/exports.js#L7) for the public API surface that `index.js` exposes.\n3. [test/app.use.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/app.use.js#L9) for the most important mounting/path-stripping behavior.\n4. [test/app.route.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/app.route.js#L6) for route chaining, `next('route')`, `next('router')`, and route-level promise/error behavior.\n5. [test/app.router.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/app.router.js#L11) for the full dispatch story: param handling, method switching, URL rewriting, ordering, and router escape cases.\n6. [test/app.param.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/app.param.js#L7) for parameter callbacks and caching/merge behavior.\n7. [test/Router.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/Router.js#L7) and [test/Route.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/Route.js#L6) for the lower-level router package semantics that `express` delegates to.\n8. [test/app.request.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/app.request.js#L8) and [test/app.response.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/app.response.js#L8) for how per-app request/response prototype extension works across mounted sub-apps.\n9. [test/res.send.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/res.send.js#L12) and [test/res.json.js](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/express/test/res.json.js#L7) for the response code paths most behavior changes end up touching.\n\nIf you want, I can turn this into a narrower “first change map” for one area, like routing, params, or response formatting.",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

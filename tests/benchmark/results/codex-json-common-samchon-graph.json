@@ -1,0 +1,76 @@
+{
+  "harness": "codex",
+  "tool": "samchon-graph",
+  "toolSetupMs": 31809,
+  "repo": "json",
+  "language": "cpp",
+  "commit": "acf076a677c161643e64d8f83fd02624fd8c4bd3",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\json",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-json-common-samchon-graph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 1243050,
+        "cached": 1124352,
+        "reasoning": 7315,
+        "tokensWithReasoning": 1250365,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 1229440,
+            "cachedInput": 1124352,
+            "output": 13610,
+            "reasoning": 7315
+          }
+        ],
+        "tools": 44,
+        "shell": 40,
+        "graph": 4,
+        "web": 0,
+        "sourceTouches": 39,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"TEST_CASE\\\\(\\\\\\\"deserialization\\\\\\\"|successful deserialization|empty input|comments|trailing comma|parse_error|SaxEventLogger\\\" tests\\\\src\\\\unit-deserialization.cpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"json::parse\\\\(|json::accept\\\\(|json::sax_parse\\\\(|parser_helper\\\\(|accept_helper\\\\(|comments_helper\\\\(|trailing_comma_helper\\\\(\\\" tests\\\\src\\\\unit-class_parser.cpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"TEST_CASE\\\\(\\\" tests\\\\src\\\\unit-deserialization.cpp tests\\\\src\\\\unit-serialization.cpp tests\\\\src\\\\unit-class_parser.cpp tests\\\\src\\\\unit-class_lexer.cpp tests\\\\src\\\\unit-user_defined_input.cpp tests\\\\src\\\\unit-unicode1.cpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"dump\\\\(|invalid character|ending with incomplete character|unexpected character|U\\\\+FFFD Substitution|binary.dump\\\\(|long_double_json\\\" tests\\\\src\\\\unit-serialization.cpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"dump_escaped|check_escaped|TEST_CASE\\\\(\\\" tests\\\\src\\\\unit-convenience.cpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\src\\\\unit-convenience.cpp | Select-Object -Skip 88 -First 40\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\src\\\\unit-class_parser.cpp | Select-Object -Skip 208 -First 80\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"token_type scan\\\\(|scan_string\\\\(|scan_number\\\\(|scan_literal\\\\(|return scan\\\" include\\\\nlohmann\\\\detail\\\\input\\\\lexer.hpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content include\\\\nlohmann\\\\detail\\\\input\\\\lexer.hpp | Select-Object -Skip 360 -First 260\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content include\\\\nlohmann\\\\detail\\\\input\\\\json_sax.hpp | Select-Object -Skip 160 -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content include\\\\nlohmann\\\\detail\\\\input\\\\lexer.hpp | Select-Object -Skip 1598 -First 110\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"class json_sax_dom_parser|bool null\\\\(|bool start_object\\\\(|bool key\\\\(|bool end_object\\\\(|bool start_array\\\\(|bool end_array\\\\(|bool parse_error\\\\(\\\" include\\\\nlohmann\\\\detail\\\\input\\\\json_sax.hpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"token_type scan\\\\(|scan_string\\\\(|scan_number\\\\(|scan_literal\\\\(|skip_whitespace\\\\(\\\" include\\\\nlohmann\\\\detail\\\\input\\\\lexer.hpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"string_t dump\\\\(|friend std::ostream& operator<<\\\\(|serializer s\\\\(|s.dump\\\\(\\\" include\\\\nlohmann\\\\json.hpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"static basic_json parse\\\\(|static bool accept\\\\(|static bool sax_parse\\\\(\\\" include\\\\nlohmann\\\\json.hpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"void parse\\\\(const bool strict, BasicJsonType& result\\\\)|bool accept\\\\(const bool strict = true\\\\)|bool sax_parse\\\\(SAX\\\\* sax, const bool strict = true\\\\)|bool sax_parse_internal\\\\(\\\" include\\\\nlohmann\\\\detail\\\\input\\\\parser.hpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"TEST_CASE\\\\(\\\\\\\"deserialization\\\\\\\"|TEST_CASE\\\\(\\\\\\\"serialization\\\\\\\"|TEST_CASE\\\\(\\\\\\\"parser class\\\\\\\"|TEST_CASE\\\\(\\\\\\\"lexer class\\\\\\\"|TEST_CASE\\\\(\\\\\\\"convenience functions\\\\\\\"|TEST_CASE\\\\(\\\\\\\"Use arbitrary stdlib container\\\\\\\"|TEST_CASE\\\\(\\\\\\\"Unicode \\\\(1/5\\\\)\\\" tests\\\\src\\\\unit-deserialization.cpp tests\\\\src\\\\unit-serialization.cpp tests\\\\src\\\\unit-class_parser.cpp tests\\\\src\\\\unit-class_lexer.cpp tests\\\\src\\\\unit-convenience.cpp tests\\\\src\\\\unit-user_defined_input.cpp tests\\\\src\\\\unit-unicode1.cpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"TEST_CASE\\\\(\\\\\\\"parser class\\\\\\\"|TEST_CASE\\\\(\\\\\\\"last-read diagnostics are identical across input adapters\\\\\\\"\\\" tests\\\\src\\\\unit-class_parser.cpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"TEST_CASE\\\\(\\\\\\\"lexer class\\\\\\\"|TEST_CASE\\\\(\\\\\\\"convenience functions\\\\\\\"|TEST_CASE\\\\(\\\\\\\"Use arbitrary stdlib container\\\\\\\"|TEST_CASE\\\\(\\\\\\\"Custom container non-member begin/end\\\\\\\"|TEST_CASE\\\\(\\\\\\\"Custom iterator\\\\\\\"\\\" tests\\\\src\\\\unit-class_lexer.cpp tests\\\\src\\\\unit-convenience.cpp tests\\\\src\\\\unit-user_defined_input.cpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"TEST_CASE\\\\(\\\\\\\"Unicode \\\\(1/5\\\\)\\\\\\\"|TEST_CASE\\\\(\\\\\\\"Markus Kuhn's UTF-8 decoder capability and stress test\\\\\\\"\\\" tests\\\\src\\\\unit-unicode1.cpp\""
+        ],
+        "types": {
+          "agent_message": 8,
+          "mcp_tool_call": 4,
+          "command_execution": 40
+        },
+        "durMs": 237204,
+        "ok": true,
+        "answer": "The library is centered on `nlohmann::json` (`basic_json<>`) and the runtime core is the `parse`/`dump` pair.\n\n**Runtime Flow**\n- Public type alias: [include/nlohmann/json_fwd.hpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json_fwd.hpp#L62)\n- Public parse entrypoint: [include/nlohmann/json.hpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L4090)\n- Public dump entrypoint: [include/nlohmann/json.hpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L1338)\n\n**Parse Path**\n- `json::parse(...)` builds an input adapter and hands it to `detail::parser`, then calls `parser::parse(true, result)`: [include/nlohmann/json.hpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L4090)\n- `detail::parser::parse(...)` is the DOM-building wrapper; it chooses the callback-aware DOM parser when a callback is present, otherwise the normal DOM parser, then enforces strict EOF and error handling: [include/nlohmann/detail/input/parser.hpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/parser.hpp#L95)\n- The lexer does tokenization and dispatches to `scan_string()`, `scan_number()`, `scan_literal()`, or structural tokens: [include/nlohmann/detail/input/lexer.hpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/lexer.hpp#L1610)\n- The actual DOM mutation happens in `json_sax_dom_parser`, which handles `null`, numbers, strings, arrays, objects, keys, and parse errors: [include/nlohmann/detail/input/json_sax.hpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/json_sax.hpp#L167)\n\n**Dump Path**\n- `json::dump(...)` creates a `serializer` and delegates the actual work to it: [include/nlohmann/json.hpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L1338)\n- `detail::serializer::dump(...)` recursively walks objects, arrays, primitives, and binary values: [include/nlohmann/detail/output/serializer.hpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/output/serializer.hpp#L107)\n- String escaping and UTF-8 error handling live in `dump_escaped(...)`: [include/nlohmann/detail/output/serializer.hpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/output/serializer.hpp#L391)\n- Stream output uses the same serializer path via `operator<<`: [include/nlohmann/json.hpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L4050)\n\n**Nearby Paths**\n- `accept(...)` is the parse-only validation branch that reuses the same parser core: [include/nlohmann/json.hpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L4133)\n- `sax_parse(...)` is the event-driven branch, and binary formats are routed separately there: [include/nlohmann/json.hpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L4163)\n- If you touch binary formats next, the neighboring `from_cbor` / `to_cbor` / `from_msgpack` / `to_msgpack` families are in the same section of `json.hpp`: [include/nlohmann/json.hpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L4348)\n\n**Tests To Read Next**\n- End-to-end parse/accept/SAX/stream behavior: [tests/src/unit-deserialization.cpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-deserialization.cpp#L237)\n- Parser internals, callbacks, comments, trailing commas, and direct `json::parser(...)` usage: [tests/src/unit-class_parser.cpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-class_parser.cpp#L349)\n- The parser helper and callback/relaxed-input flow start here: [tests/src/unit-class_parser.cpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-class_parser.cpp#L217)\n- Lexer tokenization and invalid-token edge cases: [tests/src/unit-class_lexer.cpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-class_lexer.cpp#L35)\n- Dump formatting, UTF-8 error handling, binary serialization, and floating-point formatting: [tests/src/unit-serialization.cpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-serialization.cpp#L18)\n- UTF-8 and `error_handler_t` coverage for `dump(...)`: [tests/src/unit-serialization.cpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-serialization.cpp#L83)\n- Direct `dump_escaped(...)` unit coverage: [tests/src/unit-convenience.cpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-convenience.cpp#L107)\n- Parsing arbitrary containers and iterators: [tests/src/unit-user_defined_input.cpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-user_defined_input.cpp#L18)\n- Unicode round-trips and surrogate handling: [tests/src/unit-unicode1.cpp](/C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-unicode1.cpp#L21)\n\nIf you want, I can turn this into a “first behavior change” reading order next and point you to the exact files for either input-side changes or output-side changes.",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

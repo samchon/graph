@@ -1,0 +1,74 @@
+{
+  "harness": "codex",
+  "tool": "baseline",
+  "repo": "redis",
+  "language": "c",
+  "commit": "6bf6224c3dad518329ddc893ef9c5d58dcbabdeb",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\redis",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-redis-common-baseline.traces",
+  "samples": {
+    "baseline": [
+      {
+        "tokens": 705483,
+        "cached": 430080,
+        "reasoning": 6704,
+        "tokensWithReasoning": 712187,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 693405,
+            "cachedInput": 430080,
+            "output": 12078,
+            "reasoning": 6704
+          }
+        ],
+        "tools": 38,
+        "shell": 38,
+        "graph": 0,
+        "web": 0,
+        "sourceTouches": 37,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/commands.c | Select-Object -First 120'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/server.c | Select-Object -Skip 2940 -First 260'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"set |GET|protocol|RESP|parse|command|lookup|pipeline|inline|multibulk|PONG|PING|auth|HELLO|COMMAND\" tests/unit/protocol.tcl tests/unit/networking.tcl tests/unit/introspection.tcl tests/unit/type/string.tcl tests/unit/multi.tcl'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/unit/networking.tcl | Select-Object -First 240'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/unit/protocol.tcl | Select-Object -First 220'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/unit/type/string.tcl | Select-Object -First 260'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/unit/introspection.tcl | Select-Object -First 220'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n '\\\"set\\\"|setCommand|getCommand|msetCommand|mgetCommand|getexCommand' src/commands/set.json src/commands/get.json src/commands/mset.json src/commands/mget.json src/commands/getex.json src/commands.c src/commands.def\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/commands/get.json | Select-Object -First 120'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/commands/set.json | Select-Object -First 120'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/commands/mget.json | Select-Object -First 120'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/commands/mset.json | Select-Object -First 120'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"prefetch works as expected|read-events and pipeline-length|CLIENT INFO input/output/cmds-processed stats|PING|CLIENT LIST|MONITOR|CONFIG SET|MULTI / EXEC|GETEX|GETDEL|MSET spanning multiple prefetch batches|SET and GET an item|Very big payload in GET/SET|Negative multibulk length|bulk reply protocol\" tests/unit/networking.tcl tests/unit/introspection.tcl tests/unit/multi.tcl tests/unit/type/string.tcl tests/unit/protocol.tcl'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/unit/networking.tcl | Select-Object -Skip 110 -First 90'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/unit/multi.tcl | Select-Object -First 120'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/unit/type/string.tcl | Select-Object -Skip 250 -First 100'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"int processInputBuffer\\\\(|int processCommandAndResetClient\\\\(|void readQueryFromClient\\\\(\\\" src/networking.c\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"void beforeSleep\\\\(|void initServer\\\\(|int main\\\\(|void call\\\\(|struct redisCommand \\\\*lookupCommand\\\\(\\\" src/server.c\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"void setCommand|void getCommand|void getexCommand|void getdelCommand|void getsetCommand|void mgetCommand|void msetCommand|void msetexCommand|void incrCommand|int getGenericCommand\" src/t_string.c'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"int processCommand\\\\(\\\" src/server.c\""
+        ],
+        "types": {
+          "agent_message": 10,
+          "command_execution": 38
+        },
+        "durMs": 210942,
+        "ok": true,
+        "answer": "**Runtime Flow**\nThe core server path is:\n\n`main()` -> `initServer()` -> `aeMain(server.el)` -> `readQueryFromClient()` -> `processInputBuffer()` -> `processCommandAndResetClient()` -> `processCommand()` -> `call()` -> the command handler like `setCommand()` / `getCommand()` / `msetCommand()`\n\nKey code:\n- Startup and event loop wiring: [`src/server.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L7924) `main()`, [`src/server.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L2965) `initServer()`, [`src/server.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L1935) `beforeSleep()`\n- Socket read and parsing: [`src/networking.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3830) `readQueryFromClient()`, [`src/networking.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3626) `processInputBuffer()`, [`src/networking.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3491) `processCommandAndResetClient()`\n- Command dispatch and policy checks: [`src/server.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L4413) `processCommand()`, [`src/server.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L3610) `lookupCommand()`, [`src/server.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L3950) `call()`\n- Actual string work: [`src/t_string.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/t_string.c#L435) `setCommand()`, [`src/t_string.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/t_string.c#L475) `getCommand()`, [`src/t_string.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/t_string.c#L813) `msetCommand()`, [`src/t_string.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/t_string.c#L717) `mgetCommand()`\n\n**Where the public API lives**\nRedis’ public server API is the command table. The generated definitions map names and flags to handlers:\n- [`src/commands.def`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/commands.def#L12689) `GET`\n- [`src/commands.def`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/commands.def#L12704) `SET`\n- [`src/commands.def`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/commands.def#L12699) `MGET`\n- [`src/commands.def`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/commands.def#L12700) `MSET`\n\nIf you want the contract first, the matching JSON specs are also useful:\n- [`src/commands/set.json`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/commands/set.json#L1)\n- [`src/commands/get.json`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/commands/get.json#L1)\n- [`src/commands/mset.json`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/commands/mset.json#L1)\n\n**Nearby Paths To Read Next**\n- [`src/networking.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3626) for pipelining, pending commands, I/O-thread handoff, and parse errors.\n- [`src/server.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L4413) for ACL, cluster redirection, OOM, disk-error gating, and propagation decisions before a handler runs.\n- [`src/server.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L3950) for the side effects that happen after a handler returns: stats, monitors, slowlog, replication/AOF propagation.\n- [`src/t_string.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/t_string.c#L435) plus the helpers it calls, especially `setGenericCommand()`, `getGenericCommand()`, and `msetGenericCommand()`.\n- [`src/server.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L3610) if you expect to touch command lookup, rename-command behavior, or subcommand handling.\n\n**Tests To Read Next**\n- [`tests/unit/protocol.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/protocol.tcl#L1) and [`tests/unit/protocol.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/protocol.tcl#L9) for RESP parsing and protocol errors.\n- [`tests/unit/protocol.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/protocol.tcl#L138) for reply formatting and raw protocol behavior.\n- [`tests/unit/type/string.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/type/string.tcl#L2) for the basic `SET`/`GET` path.\n- [`tests/unit/type/string.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/type/string.tcl#L105) through [`tests/unit/type/string.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/type/string.tcl#L187) for `GETEX`, `GETDEL`, and propagation/TTL edge cases.\n- [`tests/unit/type/string.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/type/string.tcl#L259) for `MSET` batching and the prefetch boundary regression test.\n- [`tests/unit/networking.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/networking.tcl#L193) and [`tests/unit/networking.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/networking.tcl#L250) for I/O-thread prefetch behavior.\n- [`tests/unit/introspection.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/introspection.tcl#L67), [`tests/unit/introspection.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/introspection.tcl#L144), and [`tests/unit/introspection.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/introspection.tcl#L401) for client stats, pipeline accounting, and MONITOR side effects.\n- [`tests/unit/multi.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/multi.tcl#L12), [`tests/unit/multi.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/multi.tcl#L398), and [`tests/unit/multi.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/multi.tcl#L412) for transaction semantics and propagation rules.\n\nIf you want, I can turn this into a second pass focused on one concrete behavior path, like `SET` with expiry/condition flags or the RESP parser pipeline.",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

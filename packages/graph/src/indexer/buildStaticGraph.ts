@@ -77,13 +77,20 @@ export function buildStaticGraph(options: IBuildGraphOptions = {}): IGraphDump {
     const lines = readLines(abs);
     /* c8 ignore next */
     if (lines === undefined) continue;
+    // Index children by owner once per file instead of re-filtering every
+    // declaration against every other (which is quadratic in a large file).
+    const childrenByOwner = new Map<string, typeof declarations>();
+    for (const child of declarations) {
+      if (child.ownerId === undefined) continue;
+      push(childrenByOwner, child.ownerId, child);
+    }
     for (const declaration of declarations) {
       // Scan only the lines that belong to this declaration itself: lines inside
       // nested declarations are attributed to those declarations, and their
       // signature lines are definitions, not calls. Without this exclusion a
       // class "calls" every method it merely defines, and every call inside a
       // method body is double-attributed to the class.
-      const nested = declarations.filter((child) => child.ownerId === declaration.node.id);
+      const nested = childrenByOwner.get(declaration.node.id) ?? [];
       const body = lines
         .slice(declaration.startIndex, Math.max(declaration.startIndex + 1, declaration.endIndex + 1))
         .filter((_, offset) => {
@@ -327,38 +334,48 @@ function importsOf(
   return out;
 }
 
+// Scan the body ONCE for identifier occurrences and resolve each against the
+// name index — O(body length), not O(all names) with a regex per name. An
+// identifier immediately followed by `(` is a call (an instantiation when it
+// resolves to a class), otherwise a bare type reference; per target the call
+// relation outranks a type reference, matching the previous "call-pattern
+// first, else type" precedence exactly.
+const IDENTIFIER = /[A-Za-z_$][A-Za-z0-9_$]*/g;
+
 function dependencyEdges(
   source: IGraphNode,
   body: string,
   byName: Map<string, IGraphNode[]>,
 ): IGraphEdge[] {
-  const out: IGraphEdge[] = [];
-  const seen = new Set<string>();
-  for (const [name, targets] of byName) {
+  const best = new Map<string, { target: IGraphNode; kind: GraphEdgeKind }>();
+  IDENTIFIER.lastIndex = 0;
+  for (let match = IDENTIFIER.exec(body); match !== null; match = IDENTIFIER.exec(body)) {
+    const name = match[0];
     if (name === source.name) continue;
+    const targets = byName.get(name);
+    if (targets === undefined) continue;
+    // `name` differs from `source.name` (skipped above), so `source` is never
+    // among these targets and a non-self target always exists.
     const target = targets.find((node) => node.file !== source.file || node.id !== source.id);
     /* c8 ignore next */
     if (target === undefined) continue;
-    const callPattern = new RegExp(`\\b(?:new\\s+)?${escapeRegExp(name)}\\s*\\(`);
-    const typePattern = new RegExp(`\\b${escapeRegExp(name)}\\b`);
-    const kind: GraphEdgeKind | undefined = callPattern.test(body)
+    // A `(` after any run of whitespace makes this occurrence a call site.
+    let cursor = match.index + name.length;
+    while (cursor < body.length && (body[cursor] === " " || body[cursor] === "\t")) cursor++;
+    const isCall = body[cursor] === "(";
+    const kind: GraphEdgeKind = isCall
       ? target.kind === "class"
         ? "instantiates"
         : "calls"
-      : typePattern.test(body)
-        ? "type_ref"
-        : undefined;
-    if (kind === undefined) continue;
-    const key = `${source.id}\0${target.id}\0${kind}`;
-    /* c8 ignore next */
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({
-      from: source.id,
-      to: target.id,
-      kind,
-      evidence: source.evidence,
-    });
+      : "type_ref";
+    const prev = best.get(target.id);
+    if (prev === undefined || (prev.kind === "type_ref" && kind !== "type_ref")) {
+      best.set(target.id, { target, kind });
+    }
+  }
+  const out: IGraphEdge[] = [];
+  for (const { target, kind } of best.values()) {
+    out.push({ from: source.id, to: target.id, kind, evidence: source.evidence });
   }
   return out;
 }
@@ -478,10 +495,6 @@ function stripStringsAndComments(line: string): string {
 
 function isCapitalized(name: string): boolean {
   return /^[A-Z]/.test(name);
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 const CONTROL_WORDS = new Set([

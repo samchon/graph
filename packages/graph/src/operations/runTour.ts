@@ -4,8 +4,8 @@ import { bound, isTestPath, resultGuide, resultNext, summaryOf } from "./common"
 import { runEntrypoints } from "./runEntrypoints";
 import { runTrace } from "./runTrace";
 
-const DEFAULT_LIMIT = 8;
-const MAX_LIMIT = 16;
+const DEFAULT_LIMIT = 5;
+const MAX_LIMIT = 5;
 
 export function runTour(graph: GraphMemory, props: IGraphTour.IRequest): IGraphTour {
   const limit = bound(props.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);

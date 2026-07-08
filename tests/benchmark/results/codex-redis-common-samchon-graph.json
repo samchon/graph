@@ -1,0 +1,76 @@
+{
+  "harness": "codex",
+  "tool": "samchon-graph",
+  "toolSetupMs": 530476,
+  "repo": "redis",
+  "language": "c",
+  "commit": "6bf6224c3dad518329ddc893ef9c5d58dcbabdeb",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\redis",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-redis-common-samchon-graph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 1019477,
+        "cached": 879104,
+        "reasoning": 11726,
+        "tokensWithReasoning": 1031203,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 1002057,
+            "cachedInput": 879104,
+            "output": 17420,
+            "reasoning": 11726
+          }
+        ],
+        "tools": 34,
+        "shell": 20,
+        "graph": 14,
+        "web": 0,
+        "sourceTouches": 20,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg --files src | rg '\"'^(src)/(server|networking|db|string|multi|eval|functions|acl|replication|cluster|module|script)'\"\\\\.(c|h)\"'$'\"'\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg --files tests | rg '\"'^(tests/(unit|integration|modules))/.*'\"\\\\.(tcl|c|cpp|py|rb|lua)\"'$'\"' | Select-Object -First 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files src | Select-Object -First 200'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files tests | Select-Object -First 200'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"''^test '\"\\\\{|\"'^proc |''^start_server|''^start_bg_complex_data|''^test_client\" tests/unit/networking.tcl tests/unit/protocol.tcl tests/unit/querybuf.tcl tests/unit/acl.tcl tests/unit/auth.tcl tests/unit/multi.tcl tests/unit/slowlog.tcl tests/unit/pause.tcl tests/unit/tracking.tcl'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"''^test '\"\\\\{|\"'^proc |''^start_server|''^start_bg_complex_data|''^test_client\" tests/integration/aof.tcl tests/integration/replication-2.tcl tests/integration/replication-3.tcl tests/integration/block-repl.tcl tests/integration/logging.tcl'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"''^test '\"\\\\{\\\" tests/unit/networking.tcl tests/unit/protocol.tcl tests/unit/querybuf.tcl tests/unit/acl.tcl tests/unit/auth.tcl tests/unit/multi.tcl tests/unit/slowlog.tcl tests/unit/pause.tcl tests/unit/tracking.tcl\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"''^test '\"\\\\{\\\" tests/integration/aof.tcl tests/integration/replication-2.tcl tests/integration/replication-3.tcl tests/integration/block-repl.tcl tests/integration/logging.tcl\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\unit\\\\protocol.tcl -TotalCount 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\unit\\\\networking.tcl -TotalCount 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\unit\\\\querybuf.tcl -TotalCount 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\unit\\\\multi.tcl -TotalCount 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\unit\\\\auth.tcl -TotalCount 160\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\unit\\\\acl.tcl -TotalCount 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\unit\\\\tracking.tcl -TotalCount 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\unit\\\\slowlog.tcl -TotalCount 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\integration\\\\aof.tcl -TotalCount 80\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\integration\\\\replication-2.tcl -TotalCount 40\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\integration\\\\block-repl.tcl -TotalCount 80\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\integration\\\\replication-3.tcl -TotalCount 40\""
+        ],
+        "types": {
+          "agent_message": 12,
+          "mcp_tool_call": 14,
+          "command_execution": 20
+        },
+        "durMs": 377926,
+        "ok": true,
+        "answer": "The server-side public API here is the client command surface. The central runtime path is:\n\n- [`src/server.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L7924) `main`\n- [`src/ae.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/ae.c#L497) `aeMain`\n- [`src/networking.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3830) `readQueryFromClient`\n- [`src/networking.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3626) `processInputBuffer`\n- [`src/networking.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3491) `processCommandAndResetClient`\n- [`src/server.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L4413) `processCommand`\n- [`src/server.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L3950) `call`\n\nWhat each layer does:\n\n- `main` boots the server, loads config, initializes ACL/AOF/cluster/modules, then enters the event loop.\n- `aeMain` drives the event loop via `aeProcessEvents`.\n- `readQueryFromClient` reads bytes from the connection and hands them to the parser/buffer layer.\n- `processInputBuffer` splits into the inline vs RESP multibulk paths, manages pending commands, and eventually hands off to `processCommandAndResetClient`.\n- `processCommand` is the gatekeeper: ACL checks, blocked-client handling, cluster redirection, MULTI/EXEC, module filters, eviction/protection rules, and basic reply/error setup happen here.\n- `call` is the execution/bookkeeping layer: hotkey stats, replication feed, tracking, slowlog, latency histograms, and post-command cleanup happen here.\n\nThe command implementation layer is mostly table-driven and lives behind the dispatcher in:\n\n- [`src/commands.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/commands.c)\n- [`src/commands.def`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/commands.def)\n\nFrom there, the actual work is spread across command families such as `src/db.c`, `src/t_string.c`, `src/t_hash.c`, `src/t_list.c`, `src/t_set.c`, `src/t_zset.c`, `src/expire.c`, `src/multi.c`, `src/eval.c`, `src/functions.c`, `src/module.c`, and `src/cluster.c`.\n\nNearby code paths worth reading next:\n\n- [`src/networking.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3830) `readQueryFromClient`: socket-read edge, auth gating, read-error handling.\n- [`src/networking.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3626) `processInputBuffer`: inline vs RESP parsing, pending-command handling, buffer resizing.\n- [`src/server.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L4413) `processCommand`: dispatch gates for ACL/cluster/blocking/MULTI/module filters.\n- [`src/server.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L3950) `call`: the execution and side-effect bookkeeping path.\n- [`src/multi.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/multi.c#L35) and [`src/multi.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/multi.c#L127): transaction queueing and `EXEC`.\n- [`src/acl.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/acl.c#L1911), [`src/cluster.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/cluster.c#L1468), [`src/blocked.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/blocked.c#L343), [`src/module.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/module.c#L11962): the main policy/gating subsystems around dispatch.\n- [`src/replication.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/replication.c#L785), [`src/slowlog.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/slowlog.c), [`src/tracking.c`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/tracking.c): post-execution side effects.\n\nTests I’d read next, in this order:\n\n- [`tests/unit/protocol.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/protocol.tcl#L1): malformed RESP, desync, raw protocol behavior.\n- [`tests/unit/querybuf.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/querybuf.tcl#L33): query-buffer growth/shrink and partial-command behavior.\n- [`tests/unit/networking.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/networking.tcl#L17): config/networking behavior and pending-command pool cases.\n- [`tests/unit/multi.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/multi.tcl#L11): `MULTI`, `EXEC`, `DISCARD`, WATCH, aborted transactions.\n- [`tests/unit/auth.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/auth.tcl#L15): auth gating and unauthenticated client limits.\n- [`tests/unit/acl.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/acl.tcl#L1): command and key permission checks.\n- [`tests/unit/slowlog.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/slowlog.tcl#L1): execution timing, redaction, and rewritten command logging.\n- [`tests/unit/tracking.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/tracking.tcl#L2): client tracking and invalidation propagation.\n- [`tests/integration/aof.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/integration/aof.tcl#L1): loading/truncation behavior around incomplete transactions.\n- [`tests/integration/replication-2.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/integration/replication-2.tcl#L1), [`tests/integration/replication-3.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/integration/replication-3.tcl#L1), [`tests/integration/block-repl.tcl`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/integration/block-repl.tcl#L1): replication correctness and blocked-command propagation.\n\nIf you want, I can turn this into a “first change checklist” for one specific behavior area, like protocol parsing, ACL gating, transactions, or replication.",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 2
+      }
+    ]
+  }
+}

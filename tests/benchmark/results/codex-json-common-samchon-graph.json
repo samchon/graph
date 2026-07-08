@@ -1,0 +1,66 @@
+{
+  "harness": "codex",
+  "tool": "samchon-graph",
+  "toolSetupMs": 31265,
+  "repo": "json",
+  "language": "cpp",
+  "commit": "acf076a677c161643e64d8f83fd02624fd8c4bd3",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\json",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-json-common-samchon-graph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 642895,
+        "cached": 455680,
+        "reasoning": 7798,
+        "tokensWithReasoning": 650693,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 630875,
+            "cachedInput": 455680,
+            "output": 12020,
+            "reasoning": 7798
+          }
+        ],
+        "tools": 22,
+        "shell": 10,
+        "graph": 12,
+        "web": 0,
+        "sourceTouches": 10,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"parse\\\\(|dump\\\\(\\\" include/nlohmann/json.hpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"class serializer|void parse\\\\(|bool sax_parse\\\\(|bool sax_parse_internal\\\\(\\\" include/nlohmann/detail/output/serializer.hpp include/nlohmann/detail/input/parser.hpp include/nlohmann/detail/input/json_sax.hpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"json::parse\\\\(|json::dump\\\\(|serializer|parse_event_t|diagnostic positions|parser_helper|accept_helper\\\" tests/src/unit-class_parser.cpp tests/src/unit-class_parser_diagnostic_positions.cpp tests/src/unit-serialization.cpp tests/src/unit-convenience.cpp tests/src/unit-diagnostic-positions.cpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content include/nlohmann/detail/output/serializer.hpp | Select-Object -Skip 50 -First 120'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content include/nlohmann/detail/input/json_sax.hpp | Select-Object -Skip 167 -First 150'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content include/nlohmann/json.hpp | Select-Object -Skip 4080 -First 50'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content include/nlohmann/detail/input/parser.hpp | Select-Object -Skip 80 -First 120'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/src/unit-class_parser_diagnostic_positions.cpp | Select-Object -Skip 214 -First 90'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/src/unit-class_parser.cpp | Select-Object -Skip 200 -First 80'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/src/unit-serialization.cpp | Select-Object -Skip 290 -First 60'"
+        ],
+        "types": {
+          "agent_message": 11,
+          "mcp_tool_call": 12,
+          "command_execution": 10
+        },
+        "durMs": 249381,
+        "ok": true,
+        "answer": "The main runtime spine here is the parse path. This is a header-only library, so the public API and the internals live side by side in `include/nlohmann/json.hpp` and `include/nlohmann/detail/*`.\n\n**Runtime Spine**\n- Public entrypoint: [`basic_json::parse`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L4090) and its iterator/span overloads at [`json.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L4105) / [`json.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L4119). Each overload just builds a `basic_json result`, wraps the input with `detail::input_adapter(...)`, and immediately calls `parser(...).parse(true, result);`.\n- Core parser dispatcher: [`detail::parser::parse`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/parser.hpp#L95). This is where the flow forks between callback-aware parsing and plain DOM parsing. It constructs either `json_sax_dom_callback_parser` or `json_sax_dom_parser`, calls `sax_parse_internal(&sdp)`, enforces strict EOF, and returns `discarded` when the callback/parser reports an error.\n- Main work loop: [`detail::parser::sax_parse_internal`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/parser.hpp#L182). This is the token-by-token engine. It uses the lexer, maintains a stack for nested arrays/objects, and drives SAX events like `start_object`, `key`, `start_array`, `string`, and the numeric handlers.\n- DOM builder: [`detail::json_sax_dom_parser`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/json_sax.hpp#L167). Its event methods are the actual “build JSON value from parser events” layer. The important nearby methods are `start_object`, `key`, `end_object`, `start_array`, and the scalar handlers.\n- Output sibling path: [`basic_json::dump`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L1338) delegates into [`detail::serializer`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/output/serializer.hpp#L51). The serializer recursively walks the DOM, escapes strings, formats numbers, and writes through the output adapter.\n- Public SAX entrypoint: [`basic_json::sax_parse`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L4163) / [`json.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L4179) is the alternate public path. For text input it routes back into `parser(...).sax_parse(...)`; for binary formats it branches to `detail::binary_reader(...).sax_parse(...)`.\n\n**What To Read Next**\n- [`tests/src/unit-class_parser.cpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-class_parser.cpp#L217) is the best first test file. Its `parser_helper` exercises the same three important surfaces in one place: `json::parser(...).parse(true, j)`, `json::sax_parse(...)`, and `json::parse(s, cb, false)`.\n- [`tests/src/unit-class_parser_diagnostic_positions.cpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-class_parser_diagnostic_positions.cpp#L215) is the next file if you care about error reporting, callback behavior, or `JSON_DIAGNOSTIC_POSITIONS`. It mirrors the parser helper pattern but pins down line/column expectations.\n- [`tests/src/unit-diagnostic-positions.cpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-diagnostic-positions.cpp#L29) gives smaller parse-error smoke tests, including invalid input and patch parsing.\n- [`tests/src/unit-serialization.cpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-serialization.cpp#L305) covers the dump side, including the float formatting path in `serializer::dump_float` and round-trip parse/dump checks.\n- [`tests/src/unit-convenience.cpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-convenience.cpp#L101) shows direct `json::serializer` usage, which is useful if you need to change output formatting behavior.\n- For the immediate implementation layers under parser, skim [`include/nlohmann/detail/input/input_adapters.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/input_adapters.hpp#L109) and [`include/nlohmann/detail/input/lexer.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/lexer.hpp#L134).\n\nIf you want, I can turn this into a one-page “read order” for either the parse path or the dump path, depending on the behavior change you plan to make.",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

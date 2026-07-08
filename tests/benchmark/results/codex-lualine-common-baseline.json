@@ -1,0 +1,74 @@
+{
+  "harness": "codex",
+  "tool": "baseline",
+  "repo": "lualine",
+  "language": "lua",
+  "commit": "221ce6b2d999187044529f49da6554a92f740a96",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\lualine",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-lualine-common-baseline.traces",
+  "samples": {
+    "baseline": [
+      {
+        "tokens": 1156957,
+        "cached": 966656,
+        "reasoning": 6084,
+        "tokensWithReasoning": 1163041,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 1145009,
+            "cachedInput": 966656,
+            "output": 11948,
+            "reasoning": 6084
+          }
+        ],
+        "tools": 38,
+        "shell": 38,
+        "graph": 0,
+        "web": 0,
+        "sourceTouches": 37,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content tests'\"\\\\spec\\\\utils_spec.lua | ForEach-Object { '{0,4}: {1}' -f \"'$i, $_; $i++ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command '$i=1; Get-Content tests'\"\\\\spec\\\\component_spec.lua | ForEach-Object { '{0,4}: {1}' -f \"'$i, $_; $i++ }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content lua\\\\lualine\\\\components\\\\special\\\\function_component.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content lua\\\\lualine\\\\components\\\\filename.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content lua\\\\lualine\\\\components\\\\diagnostics\\\\init.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\minimal_init.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\statusline.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content lua\\\\lualine\\\\components\\\\special\\\\vim_var_component.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content lua\\\\lualine\\\\components\\\\special\\\\eval_func_component.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content lua\\\\lualine\\\\components\\\\mode.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"setup\\\\(|get_config\\\\(|statusline\\\\(|tabline\\\\(|winbar\\\\(\\\" tests\\\\spec\\\\lualine_spec.lua tests\\\\spec\\\\config_spec.lua tests\\\\spec\\\\component_spec.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"refresh\\\\(|hide\\\\(|set_statusline|set_tabline|set_winbar|ignore_focus|globalstatus\\\" tests lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"function M:draw|function M:update_status|function M:init|function M:apply_section_separators|function M:apply_highlights\\\" lua\\\\lualine\\\\component.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"function M:update_status|function M:init\\\" lua\\\\lualine\\\\components\\\\special\\\\function_component.lua lua\\\\lualine\\\\components\\\\filename.lua lua\\\\lualine\\\\components\\\\diagnostics\\\\init.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"function M:init|function M:update_status\\\" lua\\\\lualine\\\\components\\\\filename.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"function M:init|function M:update_status\\\" lua\\\\lualine\\\\components\\\\special\\\\vim_var_component.lua lua\\\\lualine\\\\components\\\\special\\\\eval_func_component.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"function M:init|function M:update_status\\\" lua\\\\lualine\\\\components\\\\filename.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"M\\\\.init|M\\\\.update_status\\\" lua\\\\lualine\\\\components\\\\filename.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"function M.create_highlight_groups|function M.create_component_highlight_group|function M.component_format_highlight|function M.format_highlight\\\" lua\\\\lualine\\\\highlight.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"function setup_theme|function status_dispatch|local function statusline =|local function refresh|local function set_statusline|local function set_tabline|local function set_winbar|local function hide\\\" lua\\\\lualine.lua\""
+        ],
+        "types": {
+          "agent_message": 12,
+          "command_execution": 38
+        },
+        "durMs": 224582,
+        "ok": true,
+        "answer": "Here’s the shortest accurate runtime map of this codebase.\n\n```text\nrequire('lualine').setup(user_config)\n  -> lualine.setup [lua/lualine.lua#L680]\n  -> config.merge/defaults [lua/lualine/config.lua#L112]\n  -> theme setup + highlight groups [lua/lualine.lua#L240, lua/lualine/highlight.lua#L200]\n  -> load components/extensions [lua/lualine/utils/loader.lua#L202]\n  -> install statusline/tabline/winbar handlers [lua/lualine.lua#L467, lua/lualine.lua#L533, lua/lualine.lua#L594]\n  -> timers/autocmds call refresh [lua/lualine.lua#L360]\n  -> status_dispatch chooses active/inactive/extension sections [lua/lualine.lua#L290]\n  -> local statusline builder assembles sections [lua/lualine.lua#L158]\n  -> draw_section renders each component [lua/lualine/utils/section.lua#L18]\n  -> component:draw decorates output [lua/lualine/component.lua#L271]\n  -> component:update_status does the actual feature work\n```\n\n**Public API**\n- `setup()` is the entrypoint and the main orchestration layer. It applies config, loads the theme, converts config into component objects, then installs refresh machinery. See [lua/lualine.lua#L680](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L680).\n- `refresh()` is the runtime workhorse. It queues by default, then later drains the queue and repaints statusline, tabline, and winbar based on scope. See [lua/lualine.lua#L360](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L360).\n- `statusline()`, `winbar()`, and `tabline()` are renderers, not setters. `statusline()` and `winbar()` are closures from `status_dispatch()`, which pick active vs inactive sections and extension overrides. See [lua/lualine.lua#L290](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L290).\n- `get_config()` returns a deep copy of the current merged config. That is important if you plan to mutate config after setup. See [lua/lualine.lua#L705](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L705) and [lua/lualine/config.lua#L156](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/config.lua#L156).\n- `hide()` toggles the same statusline/tabline/winbar machinery using `set_statusline`, `set_tabline`, and `set_winbar`. There is no obvious direct spec for it, so behavior is mostly covered indirectly through setup and refresh paths. See [lua/lualine.lua#L636](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L636).\n\n**Where The Work Happens**\n- Config normalization lives in [lua/lualine/config.lua#L112](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/config.lua#L112). This is where default options are merged, separator strings are expanded into `{left,right}`, and `disabled_filetypes` is normalized into per-place lists.\n- Component loading lives in [lua/lualine/utils/loader.lua#L59](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/utils/loader.lua#L59). Strings can become built-in modules, statusline expressions, Vim variables, or eval functions. `load_all()` resets component IDs, function store state, and option caches before loading sections/extensions. See [lua/lualine/utils/loader.lua#L202](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/utils/loader.lua#L202).\n- The base rendering pipeline is in [lua/lualine/component.lua#L33](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/component.lua#L33) and [lua/lualine/component.lua#L271](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/component.lua#L271). Subclasses only implement `update_status`; the base class handles padding, icons, color highlights, click handlers, and separators.\n- Section assembly is in [lua/lualine/utils/section.lua#L18](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/utils/section.lua#L18). This is where component separators are stripped or preserved depending on neighboring colors and where section boundary highlights are fixed up.\n- Highlight/theme logic lives in [lua/lualine/highlight.lua#L200](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/highlight.lua#L200), [lua/lualine/highlight.lua#L305](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/highlight.lua#L305), and [lua/lualine/highlight.lua#L417](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/highlight.lua#L417). This is the place to read if a change affects colors, theme fallback, or dynamic component coloring.\n- The exported API is wired up at the bottom of [lua/lualine.lua#L701](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L701).\n\n**Representative Component Paths**\n- Generic Lua-function components are handled by [lua/lualine/components/special/function_component.lua#L1](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/components/special/function_component.lua#L1).\n- Vim-variable and Vim-function/eval components are handled by [lua/lualine/components/special/vim_var_component.lua#L7](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/components/special/vim_var_component.lua#L7) and [lua/lualine/components/special/eval_func_component.lua#L5](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/components/special/eval_func_component.lua#L5).\n- A concrete feature component like filename is in [lua/lualine/components/filename.lua#L67](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/components/filename.lua#L67) and shows the pattern all feature modules follow: `init()` sets defaults, `update_status()` computes text.\n- Diagnostics is a good example of a richer component with caching and colored subsegments. See [lua/lualine/components/diagnostics/init.lua#L18](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/components/diagnostics/init.lua#L18) and [lua/lualine/components/diagnostics/init.lua#L53](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/components/diagnostics/init.lua#L53).\n\n**Tests To Read Next**\n- Start with the integration spec in [tests/spec/lualine_spec.lua#L85](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/lualine_spec.lua#L85). That covers the default active/inactive render, live config updates, separators, icons, disabled filetypes, and custom extensions.\n- For config semantics, read [tests/spec/config_spec.lua#L6](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/config_spec.lua#L6). It tells you exactly what `apply_configuration()` is supposed to preserve or normalize.\n- For component behavior, read [tests/spec/component_spec.lua#L12](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/component_spec.lua#L12). That file covers the base `Component` class plus the common adapters and representative feature components.\n- For low-level helpers and section rendering edge cases, read [tests/spec/utils_spec.lua#L10](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/utils_spec.lua#L10).\n- For the test harness itself, read [tests/statusline.lua#L1](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/statusline.lua#L1). It explains how the expected statusline snapshots are built and compared.\n- There is no direct `hide()` spec I found, so if your first change touches hide/unhide, the closest coverage is the setup/refresh integration path in [tests/spec/lualine_spec.lua#L85](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/lualine_spec.lua#L85) and the setter code in [lua/lualine.lua#L467](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L467), [lua/lualine.lua#L533](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L533), and [lua/lualine.lua#L594](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L594).\n\nIf you want, I can turn this into a smaller “change map” for a specific first edit, like “adjust rendering behavior,” “add a new component,” or “change refresh logic.”",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

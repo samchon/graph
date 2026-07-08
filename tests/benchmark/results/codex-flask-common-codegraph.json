@@ -1,0 +1,65 @@
+{
+  "harness": "codex",
+  "tool": "codegraph",
+  "toolSetupMs": 3250,
+  "repo": "flask",
+  "language": "python",
+  "commit": "36e4a824f340fdee7ed50937ba8e7f6bc7d17f81",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\flask",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-flask-common-codegraph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 83315,
+        "cached": 29696,
+        "reasoning": 4702,
+        "tokensWithReasoning": 88017,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 76564,
+            "cachedInput": 29696,
+            "output": 6751,
+            "reasoning": 4702
+          }
+        ],
+        "tools": 10,
+        "shell": 9,
+        "graph": 1,
+        "web": 0,
+        "sourceTouches": 9,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"full_dispatch_request|wsgi_app|finalize_request|process_response|preprocess_request|request_started|request_finished|test_client|test_request_context\" tests src/flask -g \"*.py\"'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg --files tests | sort'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"''^def test_\" tests/test_reqctx.py'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"''^def test_\" tests/test_signals.py'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"''^def test_\" tests/test_blueprints.py'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"''^def test_\" tests/test_testing.py'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"''^def test_\" tests/test_appctx.py'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"''^def test_\" tests/test_basic.py'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"''^def test_\" tests/test_views.py'"
+        ],
+        "types": {
+          "agent_message": 5,
+          "mcp_tool_call": 1,
+          "command_execution": 9
+        },
+        "durMs": 110934,
+        "ok": true,
+        "answer": "The central runtime flow is the request lifecycle:\n\n1. `Flask.__call__` hands the WSGI request to `wsgi_app`.\n2. `wsgi_app` creates a `RequestContext`, pushes it, and enters `full_dispatch_request`.\n3. `full_dispatch_request` runs request hooks, dispatches to the view, and hands the result to `finalize_request`.\n4. `finalize_request` turns the return value into a `Response`, runs response post-processing, and emits request-finished signals.\n\n**Core path**\n- Public WSGI entrypoint: [`src/flask/app.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1618)\n- WSGI request handling: [`src/flask/app.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1566)\n- Main dispatch loop: [`src/flask/app.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L992)\n- Response finalization: [`src/flask/app.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1021)\n- After-request/session processing: [`src/flask/app.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1394)\n\n**Important nearby code paths**\n- Context push, session open, URL matching: [`src/flask/ctx.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/ctx.py#L416)\n- Per-request preprocessing hook path: [`src/flask/app.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1366)\n- Class-based view dispatch: [`src/flask/views.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/views.py#L182)\n- Request lifecycle signals: [`src/flask/signals.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/signals.py#L10)\n- Test helpers that create the same runtime context: [`src/flask/app.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L755) and [`src/flask/app.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/src/flask/app.py#L1517)\n\n**Read next**\n1. [`tests/test_basic.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_basic.py#L707) for the main request-processing behavior. Start with `test_request_processing`, `test_request_preprocessing_early_return`, `test_after_request_processing`, `test_error_handling`, and `test_response_types`.\n2. [`tests/test_blueprints.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_blueprints.py#L768) for blueprint-specific request hooks, URL processors, and nested blueprint ordering.\n3. [`tests/test_reqctx.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_reqctx.py#L62) for request-context semantics, especially `test_proper_test_request_context`, `test_context_binding`, and session teardown behavior.\n4. [`tests/test_testing.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_testing.py#L73) for `test_client` behavior, environ building, preserved contexts, and client/session edge cases.\n5. [`tests/test_signals.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_signals.py#L50) for `request_started` and `request_finished`.\n6. [`tests/test_views.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_views.py#L18) if you expect to touch class-based views or method dispatch.\n7. [`tests/test_appctx.py`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/flask/tests/test_appctx.py#L34) for the app-context side of `test_request_context`.\n\nOne useful gap: codegraph did not find direct tests covering `preprocess_request`, `finalize_request`, or `process_response` by name, so if your first change touches those methods, the closest behavior coverage is in `tests/test_basic.py` and `tests/test_blueprints.py`.\n\nIf you want, I can turn this into a “first change map” next: the exact 3 files to read in order for a specific behavior change, like request hooks, error handling, or session handling.",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

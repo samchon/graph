@@ -1,0 +1,66 @@
+{
+  "harness": "codex",
+  "tool": "baseline",
+  "repo": "gin",
+  "language": "go",
+  "commit": "34dac209ffb6ef85cc78c5d217bbb7ad001d68fd",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\gin",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "gin-dedicated-v1",
+  "promptFamily": "dedicated",
+  "questionSha256": "ea28874c63f02a58bf5862775c042fc716a09a7803e817397344b0d09a430a98",
+  "runs": 1,
+  "question": "How does gin route requests through its middleware chain?",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-gin-dedicated-baseline.traces",
+  "samples": {
+    "baseline": [
+      {
+        "tokens": 113171,
+        "cached": 78848,
+        "reasoning": 1956,
+        "tokensWithReasoning": 115127,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 109335,
+            "cachedInput": 78848,
+            "output": 3836,
+            "reasoning": 1956
+          }
+        ],
+        "tools": 12,
+        "shell": 12,
+        "graph": 0,
+        "web": 0,
+        "sourceTouches": 12,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"type Context|func \\\\(c \\\\*Context\\\\) Next|func \\\\(c \\\\*Context\\\\) handleHTTPRequest|func \\\\(engine \\\\*Engine\\\\) ServeHTTP\\\" -S .\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"func \\\\(.*\\\\) ServeHTTP|Next\\\\(|handlersChain|middleware\\\" -S .\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content context.go | Select-Object -Skip 180 -First 80'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content routergroup.go | Select-Object -Skip 1 -First 180'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content gin.go | Select-Object -Skip 640 -First 160'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"func \\\\(group \\\\*RouterGroup\\\\) combineHandlers|func \\\\(engine \\\\*Engine\\\\) addRoute|type HandlersChain|const abortIndex\\\" -S .\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content gin.go | Select-Object -Skip 300 -First 120'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content routergroup.go | Select-Object -Skip 220 -First 60'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content gin.go | Select-Object -First 90'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"func \\\\(engine \\\\*Engine\\\\) ServeHTTP|func \\\\(engine \\\\*Engine\\\\) handleHTTPRequest|func serveError|func \\\\(engine \\\\*Engine\\\\) Use|func \\\\(engine \\\\*Engine\\\\) addRoute\\\" gin.go\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"func \\\\(c \\\\*Context\\\\) Next|func \\\\(c \\\\*Context\\\\) Abort|const abortIndex\\\" context.go\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"func \\\\(group \\\\*RouterGroup\\\\) Use|func \\\\(group \\\\*RouterGroup\\\\) Group|func \\\\(group \\\\*RouterGroup\\\\) handle|func \\\\(group \\\\*RouterGroup\\\\) combineHandlers\\\" routergroup.go\""
+        ],
+        "types": {
+          "agent_message": 5,
+          "command_execution": 12
+        },
+        "durMs": 71291,
+        "ok": true,
+        "answer": "Gin handles requests in two phases: it builds a single `HandlersChain` at registration time, then walks that chain at request time.\n\n**How the chain is built**\n- `RouterGroup.Use(...)` appends middleware to the group’s handler list, and `RouterGroup.Group(...)` creates child groups that inherit and prepend parent middleware.\n- When you register a route, `RouterGroup.handle(...)` calls `combineHandlers(...)`, which copies `group.Handlers` first and route handlers second. So the execution order is: global middleware, group middleware, route-specific middleware, final handler.\n- See [`routergroup.go`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/routergroup.go#L65), [`routergroup.go`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/routergroup.go#L86), and [`routergroup.go`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/routergroup.go#L241).\n\n**How a request is routed**\n- `Engine.ServeHTTP(...)` gets a `Context` from the pool and calls `handleHTTPRequest(...)`.\n- `handleHTTPRequest(...)` matches the request path/method against the route tree. If it finds a match, it assigns the matched chain to `c.handlers` and calls `c.Next()`.\n- See [`gin.go`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/gin.go#L662) and [`gin.go`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/gin.go#L690).\n\n**How middleware execution advances**\n- `Context.Next()` increments the handler index and runs each remaining handler in order.\n- If a middleware calls `c.Next()`, it yields to the rest of the chain, then resumes after the downstream handlers return.\n- `Abort()` stops any remaining handlers from running by jumping the index to `abortIndex`.\n- See [`context.go`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/context.go#L57), [`context.go`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/context.go#L198), and [`context.go`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/context.go#L217).\n\n**Special cases**\n- `Engine.Use(...)` also rebuilds the 404 and 405 chains so global middleware runs for `NoRoute` and `NoMethod` responses too.\n- Those error paths set `c.handlers` to `allNoRoute` or `allNoMethod`, then `serveError(...)` calls `c.Next()` before writing the default body.\n- See [`gin.go`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/gin.go#L340) and [`gin.go`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/gin.go#L764).\n\nIn short: Gin does not “route through middleware” dynamically one-by-one. It precomputes a chain per route, then `Context.Next()` walks that chain in order, with `Abort()` stopping the remaining handlers.",
+        "error": "",
+        "promptId": "gin-dedicated-v1",
+        "questionSha256": "ea28874c63f02a58bf5862775c042fc716a09a7803e817397344b0d09a430a98",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

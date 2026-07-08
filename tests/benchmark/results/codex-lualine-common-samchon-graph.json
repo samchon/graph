@@ -1,0 +1,77 @@
+{
+  "harness": "codex",
+  "tool": "samchon-graph",
+  "toolSetupMs": 17895,
+  "repo": "lualine",
+  "language": "lua",
+  "commit": "221ce6b2d999187044529f49da6554a92f740a96",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\lualine",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-lualine-common-samchon-graph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 849219,
+        "cached": 689152,
+        "reasoning": 7460,
+        "tokensWithReasoning": 856679,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 836103,
+            "cachedInput": 689152,
+            "output": 13116,
+            "reasoning": 7460
+          }
+        ],
+        "tools": 35,
+        "shell": 28,
+        "graph": 7,
+        "web": 0,
+        "sourceTouches": 28,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content lua/lualine\\\\utils\\\\section.lua | Select-Object -First 260\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content lua/lualine\\\\utils\\\\loader.lua | Select-Object -First 260\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content lua/lualine\\\\component.lua | Select-Object -First 360\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"setup\\\\(|refresh\\\\(|hide\\\\(|globalstatus|winbar|tabline|disabled_filetypes|ignore_focus\\\" tests\\\\spec\\\\lualine_spec.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"''^  it'\"\\\\(|\"'^  describe'\"\\\\(\\\" tests\\\\spec\\\\lualine_spec.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\statusline.lua | Select-Object -First 260\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\spec\\\\lualine_spec.lua | Select-Object -Skip 240 -First 160\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\spec\\\\lualine_spec.lua | Select-Object -Skip 380 -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\spec\\\\config_spec.lua | Select-Object -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\spec\\\\lualine_spec.lua | Select-Object -Skip 940 -First 180\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"hide\\\\(|unhide|set_statusline|set_tabline|set_winbar|refresh\\\\(\\\" tests lua -g \\\"*.lua\\\"\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content lua\\\\lualine\\\\utils\\\\nvim_opts.lua | Select-Object -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content lua\\\\lualine\\\\utils\\\\utils.lua | Select-Object -First 260\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg --files tests\\\\spec\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"describe\\\\(\\\" tests\\\\spec\\\\component_spec.lua tests\\\\spec\\\\config_spec.lua tests\\\\spec\\\\lualine_spec.lua\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\spec\\\\component_spec.lua | Select-Object -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\spec\\\\utils_spec.lua | Select-Object -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\spec\\\\component_spec.lua | Select-Object -Skip 780 -First 160\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content lua\\\\lualine\\\\components\\\\special\\\\function_component.lua | Select-Object -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content lua\\\\lualine\\\\highlight.lua | Select-Object -First 260\""
+        ],
+        "types": {
+          "agent_message": 16,
+          "mcp_tool_call": 7,
+          "command_execution": 28,
+          "todo_list": 1
+        },
+        "durMs": 273508,
+        "ok": true,
+        "answer": "**Runtime Flow**\n\nThe public entrypoint is [`lua/lualine.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L680). The central path is:\n\n1. `require('lualine').setup(user_config)` in [`lua/lualine.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L680)\n2. `apply_configuration()` in [`lua/lualine/config.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/config.lua#L95) merges defaults, normalizes separators/filetypes, and returns the applied config\n3. `setup_theme()` in [`lua/lualine.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L240) loads the theme and creates highlight groups\n4. `loader.load_all(config)` in [`lua/lualine/utils/loader.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/utils/loader.lua#L202) turns section entries into live component objects and loads extensions\n5. `set_statusline()`, `set_tabline()`, and `set_winbar()` in [`lua/lualine.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L533) install timers/autocmds and trigger the first refresh\n6. `refresh()` in [`lua/lualine.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L360) computes what windows/tabs need updates and writes the rendered strings back into Neovim options\n\nThe actual rendering work is lower in the stack:\n\n- `status_dispatch()` in [`lua/lualine.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L286) chooses active vs inactive sections, handles disabled filetypes, and switches to extension sections when a filetype matches\n- `statusline()` in [`lua/lualine.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine.lua#L158) builds the final statusline string\n- `draw_section()` in [`lua/lualine/utils/section.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/utils/section.lua#L14) renders each section and trims separators when colors change\n- `component:draw()` in [`lua/lualine/component.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/component.lua#L173) is the base component driver that calls the component-specific `update_status()`, then applies icons, padding, highlights, click handlers, and separators\n\nA useful concrete example is the function-based component wrapper in [`lua/lualine/components/special/function_component.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/components/special/function_component.lua#L1), which is what many tests and custom components use.\n\n**What to Read Next**\n\nIf you want the shortest path to understanding behavior changes, read these in order:\n\n1. [`lua/lualine/config.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/config.lua#L1) for config defaults and normalization rules\n2. [`lua/lualine/utils/loader.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/utils/loader.lua#L1) for how section tables become live components\n3. [`lua/lualine/component.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/component.lua#L1) for the shared component lifecycle\n4. [`lua/lualine/utils/section.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/utils/section.lua#L1) for section assembly and separator edge cases\n5. [`lua/lualine/highlight.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/highlight.lua#L1) if your change touches colors or theme behavior\n6. [`lua/lualine/utils/nvim_opts.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/lua/lualine/utils/nvim_opts.lua#L1) for how lualine safely sets/restores Neovim options\n\nTests that map directly to those paths:\n\n- [`tests/spec/config_spec.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/config_spec.lua#L6) for config normalization\n- [`tests/spec/lualine_spec.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/lualine_spec.lua#L9) for the top-level `setup()` and snapshot behavior\n- [`tests/spec/lualine_spec.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/lualine_spec.lua#L266) for disabled filetypes and custom extensions\n- [`tests/spec/lualine_spec.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/lualine_spec.lua#L381) for tabline behavior\n- [`tests/spec/lualine_spec.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/lualine_spec.lua#L952) for diagnostics rendering\n- [`tests/spec/lualine_spec.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/lualine_spec.lua#L1063) for compound filetypes\n- [`tests/spec/component_spec.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/component_spec.lua#L12) for the base component contract\n- [`tests/spec/component_spec.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/component_spec.lua#L804) for branch-specific behavior\n- [`tests/spec/component_spec.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/component_spec.lua#L867) for LSP status behavior\n- [`tests/spec/utils_spec.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/spec/utils_spec.lua#L93) for section separator and highlight utility edge cases\n- [`tests/statusline.lua`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/lualine/tests/statusline.lua#L84) for how the snapshot tests evaluate the statusline expression\n\nIf you want, I can do a second-pass tour for one specific feature path next, for example `branch`, `diagnostics`, `tabline`, or `refresh`/autocmd handling.",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

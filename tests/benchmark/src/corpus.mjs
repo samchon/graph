@@ -66,6 +66,9 @@ export const CORPUS = [
     url: "https://github.com/redis/redis.git",
     commit: "6bf6224c3dad518329ddc893ef9c5d58dcbabdeb",
     maxFiles: 2000,
+    // clangd can take tens of seconds on redis's largest translation units;
+    // give documentSymbol/references room so the graph does not fall back.
+    lspTimeoutMs: 30000,
   },
   {
     // codegraph's cpp pick (nlohmann/json) is a single-header library — it
@@ -85,9 +88,12 @@ export const CORPUS = [
     commit: "5236d3459b8b9015e5ce21ddd0c6beb0db4081d4",
     maxFiles: 1500,
     // ruby-lsp composes a bundle from the project's Gemfile; install it into a
-    // vendored path first, then give initialize room.
+    // vendored path first, then give initialize room. ruby-lsp is also very slow
+    // on textDocument/references (tens of seconds each), so give the warmup a
+    // patient budget to land the reference index before the batch.
     prepare: "bundle config set --local path vendor/bundle && bundle install",
     lspTimeoutMs: 60000,
+    lspWarmupTimeoutMs: 180000,
   },
   {
     name: "slim",

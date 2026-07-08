@@ -27,6 +27,14 @@ const options = {
 };
 let diagnosticSeverities = [2];
 let hangMethod;
+// Delay only the FIRST textDocument/references response by this many ms, then
+// answer the rest immediately — models a server that builds its reference index
+// lazily on the first call and serves the rest from cache.
+let slowFirstReferencesMs = 0;
+let referenceCallCount = 0;
+// Answer the first N references (enough to let the warmup succeed) and then go
+// silent — models a warm server that still times out on a few later targets.
+let hangReferencesAfter = Infinity;
 
 for (const arg of process.argv.slice(2)) {
   if (arg.startsWith("--fail-language=")) {
@@ -73,6 +81,10 @@ for (const arg of process.argv.slice(2)) {
     options.unknownParent = true;
   } else if (arg.startsWith("--hang-method=")) {
     hangMethod = arg.slice("--hang-method=".length);
+  } else if (arg.startsWith("--slow-first-references=")) {
+    slowFirstReferencesMs = Number(arg.slice("--slow-first-references=".length));
+  } else if (arg.startsWith("--hang-references-after=")) {
+    hangReferencesAfter = Number(arg.slice("--hang-references-after=".length));
   } else if (arg.startsWith("--diagnostic-severities=")) {
     diagnosticSeverities = arg
       .slice("--diagnostic-severities=".length)
@@ -325,6 +337,17 @@ function handle(message) {
   if (message.method === "textDocument/references") {
     if (options.referenceError) return respondError(message.id, "content modified");
     if (options.nullReferences) return respond(message.id, null);
+    referenceCallCount += 1;
+    if (referenceCallCount > hangReferencesAfter) return;
+    if (slowFirstReferencesMs > 0 && referenceCallCount === 1) {
+      // The first call is delayed past a short per-request timeout but within a
+      // patient warmup budget; the harness must wait it out, then the batch is
+      // instant. Re-dispatch after the delay with the delay disabled.
+      const delay = slowFirstReferencesMs;
+      slowFirstReferencesMs = 0;
+      setTimeout(() => handle(message), delay);
+      return;
+    }
     if (options.classify) {
       const uri = message.params.textDocument.uri;
       const at = (line) => ({

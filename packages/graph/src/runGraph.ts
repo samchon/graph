@@ -83,6 +83,10 @@ function parseArgs(argv: readonly string[]) {
       options.lspConcurrency = parseInteger(next());
     } else if (arg.startsWith("--lsp-concurrency=")) {
       options.lspConcurrency = parseInteger(arg.slice("--lsp-concurrency=".length));
+    } else if (arg === "--lsp-warmup-timeout-ms") {
+      options.lspWarmupTimeoutMs = parseInteger(next());
+    } else if (arg.startsWith("--lsp-warmup-timeout-ms=")) {
+      options.lspWarmupTimeoutMs = parseInteger(arg.slice("--lsp-warmup-timeout-ms=".length));
     } else if (arg === "--graph-file") {
       options.graphFile = next();
     } else if (arg.startsWith("--graph-file=")) {

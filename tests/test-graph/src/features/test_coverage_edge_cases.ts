@@ -33,6 +33,10 @@ export const test_coverage_edge_cases = async () => {
       "--max-files=2",
       "--lsp-timeout-ms",
       "3",
+      "--lsp-reference-limit=5",
+      "--lsp-concurrency",
+      "2",
+      "--graph-file=ignored-for-dump.json",
     ],
     { encoding: "utf8" },
   );
@@ -52,6 +56,11 @@ export const test_coverage_edge_cases = async () => {
       "fake-server",
       "--max-files",
       "1",
+      "--lsp-reference-limit",
+      "5",
+      "--lsp-concurrency=2",
+      "--graph-file",
+      "ignored-for-dump.json",
     ],
     { encoding: "utf8" },
   );

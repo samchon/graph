@@ -77,6 +77,7 @@ if (!armsRequested.baseline && !armsRequested.graph) {
 const corpusRoot = args.corpus ?? path.join(os.tmpdir(), "samchon-graph-corpus");
 fs.mkdirSync(corpusRoot, { recursive: true });
 const repoDir = args["repo-dir"] ? path.resolve(args["repo-dir"]) : clonePinned(spec, corpusRoot);
+const graphFile = path.join(corpusRoot, `${repoKey}.graph.json`);
 ensureInstalled(repoDir, { noInstall: args["no-install"] === "1" });
 
 // 2. Graph-arm prerequisites, verified BEFORE any credits are spent.
@@ -86,16 +87,46 @@ if (armsRequested.graph) {
     if (!fs.existsSync(graphLauncher)) {
       throw new Error(`@samchon/graph launcher not built: ${graphLauncher}\nRun \`pnpm --filter @samchon/graph build\` first.`);
     }
-    const flight = preflightGraph(spec, repoDir);
-    if (!flight.ok && args["allow-static"] !== "1") {
+    // Pre-build the full-density dump once, outside the measured cell, and
+    // serve it via --graph-file — the same treatment codegraph gets from its
+    // `init` (both recorded as toolSetupMs). This is also the preflight: a
+    // static dump aborts the run instead of corrupting the comparison.
+    const started = Date.now();
+    const fd = fs.openSync(graphFile, "w");
+    const built = cp.spawnSync(
+      process.execPath,
+      [
+        graphLauncher,
+        "dump",
+        "--cwd",
+        repoDir,
+        "--mode",
+        "lsp",
+        "--max-files",
+        String(spec.maxFiles),
+        "--lsp-reference-limit",
+        String(args["reference-limit"] ?? 2000),
+        ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
+      ],
+      { stdio: ["ignore", fd, "pipe"], encoding: "utf8", windowsHide: true },
+    );
+    fs.closeSync(fd);
+    if (built.status !== 0) {
+      throw new Error(`graph pre-build failed (${built.status})\n${(built.stderr ?? "").slice(0, 1000)}`);
+    }
+    toolSetupMs = Date.now() - started;
+    const dump = JSON.parse(fs.readFileSync(graphFile, "utf8"));
+    if (dump.indexer === "static" && args["allow-static"] !== "1") {
       throw new Error(
-        `preflight: ${repoKey} (${spec.language}) produced indexer="${flight.indexer}" — the ` +
-          `language server is missing or broken on this host, and measuring the static fallback ` +
-          `would corrupt the comparison. Install the server or pass --allow-static=1 to override.\n` +
-          `warnings: ${flight.warnings.join("; ")}`,
+        `pre-build: ${repoKey} (${spec.language}) produced indexer="static" — the language server ` +
+          `is missing or broken on this host. Install it or pass --allow-static=1.\n` +
+          `warnings: ${(dump.warnings ?? []).join("; ")}`,
       );
     }
-    console.log(`preflight ok: ${flight.indexer}, ${flight.nodes} nodes / ${flight.edges} edges (bounded)`);
+    console.log(
+      `graph pre-built: ${dump.indexer}, ${dump.nodes.length} nodes / ${dump.edges.length} edges ` +
+        `in ${(toolSetupMs / 1000).toFixed(0)}s -> ${graphFile}`,
+    );
   }
   if (cg) {
     const started = Date.now();
@@ -258,16 +289,14 @@ function makeCodexHome(tag, withServer) {
       ];
       toml += `\n[mcp_servers.serena]\ncommand = '${serenaCommand}'\nargs = [${serenaArgs.map((a) => `'${a}'`).join(", ")}]\n`;
     } else {
-      const launcherArgs = [
-        graphLauncher,
-        "--cwd",
-        repoDir,
-        "--max-files",
-        String(spec.maxFiles),
-        ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
-      ];
+      // Serve the pre-built dump: startup is instant and every call answers
+      // from the full-density resident graph.
+      const launcherArgs = [graphLauncher, "--graph-file", graphFile];
       toml += `\n[mcp_servers.samchon_graph]\ncommand = '${process.execPath}'\nargs = [${launcherArgs.map((a) => `'${a}'`).join(", ")}]\n`;
     }
+    // Symmetric server timeouts for every tool arm: first calls may index or
+    // resolve lazily.
+    toml += `startup_timeout_sec = 60\ntool_timeout_sec = 300\n`;
   }
   validateMcpConfig(toml, withServer);
   fs.writeFileSync(path.join(home, "config.toml"), toml);

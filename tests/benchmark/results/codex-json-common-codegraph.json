@@ -1,0 +1,76 @@
+{
+  "harness": "codex",
+  "tool": "codegraph",
+  "toolSetupMs": 23250,
+  "repo": "json",
+  "language": "cpp",
+  "commit": "acf076a677c161643e64d8f83fd02624fd8c4bd3",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\json",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-json-common-codegraph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 538136,
+        "cached": 417280,
+        "reasoning": 9295,
+        "tokensWithReasoning": 547431,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 523460,
+            "cachedInput": 417280,
+            "output": 14676,
+            "reasoning": 9295
+          }
+        ],
+        "tools": 28,
+        "shell": 26,
+        "graph": 2,
+        "web": 0,
+        "sourceTouches": 26,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"LLVMFuzzerRunDriver\" tests/thirdparty/Fuzzer'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/FuzzerDriver.cpp | Select-Object -Skip 500 -First 260'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/FuzzerMutate.h | Select-Object -First 160'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp | Select-Object -Skip 130 -First 420'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"void Fuzzer::Loop\\\\(|MutateAndTestOne\\\\(|UpdateCorpusAndScore\\\\(|MinimizeCrashLoop\\\\(|RereadOutputCorpus\\\\(|ShuffleAndMinimize\\\\(\\\" tests/thirdparty/Fuzzer/FuzzerLoop.cpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"TEST\\\\(Merge|TEST\\\\(Corpus|TEST\\\\(Fuzzer, CrossOver|TEST\\\\(FuzzerMutate\\\" tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp tests/thirdparty/Fuzzer/test/*.test\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/FuzzerLoop.cpp | Select-Object -Skip 600 -First 220'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/FuzzerDriver.cpp | Select-Object -Skip 355 -First 170'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"FuzzerDriver|LLVMFuzzerTestOneInput|LLVMFuzzerMutate|minimize_crash|merge|runs=|max_total_time|output corpus|corpus\\\" tests/thirdparty/Fuzzer/test tests/thirdparty/Fuzzer -g '\"'!**/build/**'\"'\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/FuzzerDefs.h | Select-Object -First 120'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp | Select-Object -Skip 700 -First 90'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp | Select-Object -Skip 580 -First 170'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"RUN:|CHECK:|CHECK-\" tests/thirdparty/Fuzzer/test/fuzzer-flags.test tests/thirdparty/Fuzzer/test/fuzzer-runs.test tests/thirdparty/Fuzzer/test/fuzzer-dirs.test tests/thirdparty/Fuzzer/test/minimize_crash.test tests/thirdparty/Fuzzer/test/merge.test tests/thirdparty/Fuzzer/test/fuzzer-leak.test tests/thirdparty/Fuzzer/test/trace-malloc.test tests/thirdparty/Fuzzer/test/fuzzer-threaded.test tests/thirdparty/Fuzzer/test/fuzzer-traces-hooks.test tests/thirdparty/Fuzzer/test/fuzzer-seed.test'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/test/minimize_crash.test | Select-Object -First 40'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/test/fuzzer-flags.test | Select-Object -First 40'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/test/merge.test | Select-Object -First 70'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/test/CustomMutatorTest.cpp | Select-Object -First 80'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/FuzzerInterface.h | Select-Object -First 120'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/test/CustomCrossOverTest.cpp | Select-Object -First 80'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/thirdparty/Fuzzer/test/AFLDriverTest.cpp | Select-Object -First 80'"
+        ],
+        "types": {
+          "agent_message": 10,
+          "mcp_tool_call": 2,
+          "command_execution": 26
+        },
+        "durMs": 244472,
+        "ok": true,
+        "answer": "The runtime spine here is:\n\n`main` -> `fuzzer::FuzzerDriver` -> `Fuzzer::Loop` -> `MutateAndTestOne` -> `RunOne` -> `ExecuteCallback` -> your `LLVMFuzzerTestOneInput`\n\nThis checkout does not expose a `LLVMFuzzerRunDriver` symbol; the harness entrypoint is `fuzzer::FuzzerDriver`.\n\n**Core Flow**\n- [FuzzerInterface.h:27](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerInterface.h#L27) is the user-facing contract. Implement `LLVMFuzzerTestOneInput`; optionally provide `LLVMFuzzerInitialize`, `LLVMFuzzerCustomMutator`, `LLVMFuzzerCustomCrossOver`, or call `LLVMFuzzerMutate` from inside your target.\n- [FuzzerMain.cpp:19](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerMain.cpp#L19) is the top-level executable entrypoint. It forwards `argc/argv` plus `LLVMFuzzerTestOneInput` into `fuzzer::FuzzerDriver`.\n- [FuzzerDefs.h:75](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerDefs.h#L75) declares `FuzzerDriver`, the internal runtime entrypoint.\n- [FuzzerDriver.cpp:356](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerDriver.cpp#L356) parses flags, initializes `ExternalFunctions`, seeds randomness, builds `MutationDispatcher`, `InputCorpus`, and `Fuzzer`, then selects a mode.\n- [FuzzerDriver.cpp:263](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerDriver.cpp#L263) is the plain-run path: load one file, call `F->RunOne`, then do leak detection.\n- [FuzzerLoop.cpp:461](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerLoop.cpp#L461) is the initial corpus setup path.\n- [FuzzerLoop.cpp:705](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerLoop.cpp#L705) is the per-iteration fuzz path: pick a corpus entry, mutate it, run it, and add it back if it increases coverage.\n- [FuzzerLoop.cpp:488](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerLoop.cpp#L488) is the actual execution/coverage accounting step.\n- [FuzzerLoop.cpp:527](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerLoop.cpp#L527) copies the input and calls your callback.\n- [FuzzerMutate.cpp:27](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerMutate.cpp#L27) wires the mutation palette and custom hooks.\n- [FuzzerMutate.cpp:484](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerMutate.cpp#L484) is the mutation dispatcher that chooses one mutator and retries on failures.\n- [FuzzerLoop.cpp:788](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerLoop.cpp#L788) exposes `LLVMFuzzerMutate`, the libFuzzer helper some targets use inside `LLVMFuzzerTestOneInput`.\n\n**Nearby Paths**\n- [FuzzerLoop.cpp:429](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerLoop.cpp#L429) reloads the output corpus.\n- [FuzzerLoop.cpp:461](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerLoop.cpp#L461) shuffles/minimizes the initial corpus.\n- [FuzzerLoop.cpp:769](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerLoop.cpp#L769) is the crash-minimization loop.\n- [FuzzerMerge.cpp:213](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/FuzzerMerge.cpp#L213) is the merge-mode implementation if you need to touch corpus merging.\n- [afl_driver.cpp:241](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/afl/afl_driver.cpp#L241) is the alternate AFL-facing `main` if you care about that wrapper too.\n\n**Tests To Read Next**\n- [FuzzerUnittest.cpp:26](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L26) covers `CrossOver`.\n- [FuzzerUnittest.cpp:143](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L143), [FuzzerUnittest.cpp:179](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L179), [FuzzerUnittest.cpp:223](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L223), [FuzzerUnittest.cpp:259](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L259), [FuzzerUnittest.cpp:295](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L295), [FuzzerUnittest.cpp:325](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L325), [FuzzerUnittest.cpp:373](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L373), [FuzzerUnittest.cpp:413](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L413), [FuzzerUnittest.cpp:442](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L442), [FuzzerUnittest.cpp:474](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L474), and [FuzzerUnittest.cpp:514](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L514) cover the mutation families one by one.\n- [FuzzerUnittest.cpp:585](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L585) checks corpus selection/distribution.\n- [FuzzerUnittest.cpp:603](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L603), [FuzzerUnittest.cpp:643](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L643), and [FuzzerUnittest.cpp:711](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/FuzzerUnittest.cpp#L711) cover merge parsing and merge behavior.\n- [fuzzer-flags.test:1](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/fuzzer-flags.test#L1) covers flag parsing and unknown-flag handling.\n- [fuzzer-runs.test:1](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/fuzzer-runs.test#L1) covers the `-runs` plain-execution path.\n- [fuzzer-dirs.test:1](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/fuzzer-dirs.test#L1) covers corpus directory loading.\n- [minimize_crash.test:1](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/minimize_crash.test#L1) covers crash minimization.\n- [merge.test:1](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/merge.test#L1) covers merge mode.\n- [fuzzer-leak.test:1](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/fuzzer-leak.test#L1) covers leak detection behavior.\n- [trace-malloc.test:1](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/trace-malloc.test#L1) covers malloc tracing.\n- [fuzzer-threaded.test:1](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/fuzzer-threaded.test#L1) covers threaded execution.\n- [fuzzer-traces-hooks.test:8](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/thirdparty/Fuzzer/test/fuzzer-traces-hooks.test#L8) covers trace hooks and the dictionary signal they produce.\n\nIf you want, I can turn this into a smaller “read these 5 files first” path for the exact behavior you plan to change.",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

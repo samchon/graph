@@ -1,0 +1,75 @@
+{
+  "harness": "codex",
+  "tool": "samchon-graph",
+  "repo": "excalidraw",
+  "language": "typescript",
+  "commit": "dd8296af1802d4920a645591e0de88b9272745fa",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\excalidraw",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "excalidraw-dedicated-v1",
+  "promptFamily": "dedicated",
+  "questionSha256": "e4f3b02a5d3a1e86a9136d90a4b8bd9c73774733f9f1c021faee61b3ea6e83b5",
+  "runs": 1,
+  "question": "How does Excalidraw render and update canvas elements?",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-excalidraw-dedicated-samchon-graph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 638767,
+        "cached": 510464,
+        "reasoning": 4567,
+        "tokensWithReasoning": 643334,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 630466,
+            "cachedInput": 510464,
+            "output": 8301,
+            "reasoning": 4567
+          }
+        ],
+        "tools": 26,
+        "shell": 21,
+        "graph": 5,
+        "web": 0,
+        "sourceTouches": 21,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"renderInteractiveScene|InteractiveCanvas|SceneRenderer|renderScene|updateScene|onElementsChange|invalidate|requestAnimationFrame\" excalidraw-app packages/excalidraw packages/element'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/excalidraw/components/App.tsx' | Select-Object -Skip 2410 -First 80\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/excalidraw/components/canvases/InteractiveCanvas.tsx' | Select-Object -Skip 80 -First 240\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/excalidraw/components/App.tsx' | Select-Object -Skip 3650 -First 90\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/excalidraw/renderer/interactiveScene.ts' | Select-Object -Skip 1540 -First 580\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/excalidraw/components/canvases/StaticCanvas.tsx' | Select-Object -First 260\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/excalidraw/components/App.tsx' | Select-Object -Skip 4698 -First 170\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/excalidraw/renderer/interactiveScene.ts' | Select-Object -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"triggerUpdate\\\\(|replaceAllElements\\\\(|mutateElement\\\\(|getElementsIncludingDeleted\\\\(\\\" packages/element/src/Scene.ts packages/excalidraw/components/App.tsx\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/element/src/Scene.ts' | Select-Object -Skip 108 -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/element/src/Scene.ts' | Select-Object -Skip 360 -First 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"scene\\\\.onUpdate\\\\(|onUpdate\\\\(\\\" packages/excalidraw/components/App.tsx packages/element/src/Scene.ts\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/excalidraw/components/App.tsx' | Select-Object -Skip 840 -First 80\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/excalidraw/components/App.tsx' | Select-Object -Skip 1568 -First 80\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/excalidraw/components/App.tsx' | Select-Object -Skip 3218 -First 40\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"export const renderStaticScene|function renderStaticScene|const renderStaticScene\" packages/excalidraw/renderer/staticScene.ts'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/excalidraw/renderer/staticScene.ts' | Select-Object -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"renderElement\\\\(|renderElements|renderSceneToCanvas|renderStaticSceneThrottled\\\" packages/excalidraw/renderer/staticScene.ts\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/excalidraw/renderer/staticScene.ts' | Select-Object -Skip 480 -First 140\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content 'packages/excalidraw/renderer/staticScene.ts' | Select-Object -Skip 300 -First 190\""
+        ],
+        "types": {
+          "agent_message": 8,
+          "mcp_tool_call": 5,
+          "command_execution": 21
+        },
+        "durMs": 327229,
+        "ok": true,
+        "answer": "Excalidraw splits rendering into two canvas layers and keeps the actual element data in a separate `Scene` store.\n\n**Render path**\n- `App` renders both canvases: `StaticCanvas` for the document content and `InteractiveCanvas` for overlays like selection, handles, and collaborators. See [App.tsx](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L2431).\n- `StaticCanvas` is responsible for drawing the scene. It calls `renderStaticScene(...)`, which iterates `visibleElements`, calls `renderElement(...)` for each element, and also handles bound text, link icons, embeddables, frame clipping, and pending flowchart nodes. See [StaticCanvas.tsx](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/canvases/StaticCanvas.tsx#L22) and [staticScene.ts](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/renderer/staticScene.ts#L300).\n- `InteractiveCanvas` does not paint the base shapes. It prepares collaborator pointer data, then starts an `AnimationController` loop that repeatedly calls `renderInteractiveScene(...)`. That function draws selection UI, handles, highlights, snaps, remote cursors, and scrollbars. See [InteractiveCanvas.tsx](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/canvases/InteractiveCanvas.tsx#L86) and [interactiveScene.ts](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/renderer/interactiveScene.ts#L1550).\n\n**Update path**\n- Most element/app changes go through `App.updateScene(...)`. It can update React state, replace all scene elements, or update collaborators. See [App.tsx](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L4717).\n- Replacing the scene rebuilds the element maps and then calls `Scene.triggerUpdate()`. Mutating a single element also triggers an update if its version changed. See [Scene.ts](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/element/src/Scene.ts#L271), [Scene.ts](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/element/src/Scene.ts#L303), and [Scene.ts](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/element/src/Scene.ts#L427).\n- `App` subscribes to `scene.onUpdate(this.triggerRender)`, so any scene invalidation forces a React update. `triggerRender()` either calls `scene.triggerUpdate()` or `setState({})` to make the canvases rerender. See [App.tsx](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L3235) and [App.tsx](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/App.tsx#L4672).\n- Both canvas components are wrapped in `React.memo`, so they only redraw when the relevant props actually change. `StaticCanvas` also supports RAF throttling for scene rendering. See [StaticCanvas.tsx](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/canvases/StaticCanvas.tsx#L94) and [InteractiveCanvas.tsx](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/excalidraw/packages/excalidraw/components/canvases/InteractiveCanvas.tsx#L275).\n\n**Practical summary**\n- Base elements live in `Scene`.\n- `Scene` changes invalidate the scene.\n- `App` converts that invalidation into a React rerender.\n- `StaticCanvas` repaints the actual drawing.\n- `InteractiveCanvas` repaints the UI overlay continuously or when its tracked props change.\n\nIf you want, I can trace one concrete interaction next, like drag, resize, or text editing, through this pipeline.",
+        "error": "",
+        "promptId": "excalidraw-dedicated-v1",
+        "questionSha256": "e4f3b02a5d3a1e86a9136d90a4b8bd9c73774733f9f1c021faee61b3ea6e83b5",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

@@ -14,11 +14,11 @@ import {
   summaryOf,
 } from "./common";
 
-const DEFAULT_DEPTH = 2;
-const DEFAULT_MAX_NODES = 8;
-const MAX_OPEN_DEPTH = 4;
-const MAX_OPEN_NODES = 20;
-const MAX_PATH_DEPTH = 12;
+const DEFAULT_DEPTH = 3;
+const DEFAULT_MAX_NODES = 24;
+const MAX_OPEN_DEPTH = 6;
+const MAX_OPEN_NODES = 64;
+const MAX_PATH_DEPTH = 16;
 
 export function runTrace(
   graph: GraphMemory,

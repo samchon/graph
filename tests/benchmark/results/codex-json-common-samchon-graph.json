@@ -1,0 +1,75 @@
+{
+  "harness": "codex",
+  "tool": "samchon-graph",
+  "repo": "json",
+  "language": "cpp",
+  "commit": "acf076a677c161643e64d8f83fd02624fd8c4bd3",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\json",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-json-common-samchon-graph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 1268746,
+        "cached": 1140224,
+        "reasoning": 7592,
+        "tokensWithReasoning": 1276338,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 1253085,
+            "cachedInput": 1140224,
+            "output": 15661,
+            "reasoning": 7592
+          }
+        ],
+        "tools": 63,
+        "shell": 60,
+        "graph": 3,
+        "web": 0,
+        "sourceTouches": 59,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\" tests\\\\src\\\\unit-convenience.cpp | Select-Object -First 140\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\" tests\\\\src\\\\unit-user_defined_input.cpp | Select-Object -First 150\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\" tests\\\\src\\\\unit-class_parser.cpp | Select-Object -First 380\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"\\\" tests\\\\src\\\\unit-constructor2.cpp | Select-Object -First 60\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\src\\\\unit-constructor1.cpp | ForEach-Object -Begin {\"'$i=1} -Process {\"$i`t$_\"; $i++} | Select-Object -First 30'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\src\\\\unit-user_defined_input.cpp | ForEach-Object -Begin {\"'$i=1} -Process {\"$i`t$_\"; $i++} | Select-Object -First 150'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\src\\\\unit-convenience.cpp | ForEach-Object -Begin {\"'$i=1} -Process {\"$i`t$_\"; $i++} | Select-Object -First 130'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\src\\\\unit-class_parser.cpp | ForEach-Object -Begin {\"'$i=1} -Process {\"$i`t$_\"; $i++} | Select-Object -First 380'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\src\\\\unit-constructor2.cpp | ForEach-Object -Begin {\"'$i=1} -Process {\"$i`t$_\"; $i++} | Select-Object -First 60'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\src\\\\unit-constructor1.cpp | ForEach-Object -Begin {\"'$i=1} -Process {\"$i`t$_\"; $i++} | Select-Object -Skip 145 -First 70'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\src\\\\unit-constructor1.cpp | ForEach-Object -Begin {\"'$i=1} -Process {\"$i`t$_\"; $i++} | Select-Object -Skip 905 -First 35'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content tests\\\\src\\\\unit-constructor1.cpp | ForEach-Object -Begin {\"'$i=1} -Process {\"$i`t$_\"; $i++} | Select-Object -Skip 235 -First 85'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"class json_sax_dom_parser|class json_sax_dom_callback_parser|class json_sax_acceptor|handle_value\\\\(|parse_error\\\\(\\\" include\\\\nlohmann\\\\detail\\\\input\\\\json_sax.hpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"static basic_json parse\\\\(|string_t dump\\\\(|friend std::ostream& operator<<|friend std::ostream& operator>>|accept\\\\(|sax_parse\\\\(\\\" include\\\\nlohmann\\\\json.hpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"class parser|class lexer|class serializer|dump\\\\(|sax_parse_internal|handle_value\\\\(|dump_escaped\\\\(|write_character\\\\(|write_characters\\\\(\\\" include\\\\nlohmann\\\\detail\\\\input\\\\parser.hpp include\\\\nlohmann\\\\detail\\\\input\\\\lexer.hpp include\\\\nlohmann\\\\detail\\\\output\\\\serializer.hpp include\\\\nlohmann\\\\detail\\\\output\\\\output_adapters.hpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"get<|get_to\\\\(|JSONSerializer<|from_json\\\\(|to_json\\\\(|adl_serializer|from_json_fn|to_json_fn\\\" include\\\\nlohmann\\\\json.hpp include\\\\nlohmann\\\\detail\\\\conversions\\\\from_json.hpp include\\\\nlohmann\\\\detail\\\\conversions\\\\to_json.hpp include\\\\nlohmann\\\\adl_serializer.hpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content include\\\\nlohmann\\\\detail\\\\conversions\\\\from_json.hpp | Select-Object -First 260\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content include\\\\nlohmann\\\\detail\\\\conversions\\\\to_json.hpp | Select-Object -First 220\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"output_adapter_protocol|output_vector_adapter|output_stream_adapter|output_string_adapter|class output_adapter\\\" include\\\\nlohmann\\\\detail\\\\output\\\\output_adapters.hpp\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"from_json\\\\(|to_json\\\\(|get_to\\\\(|get<\\\" include\\\\nlohmann\\\\json.hpp include\\\\nlohmann\\\\detail\\\\conversions\\\\from_json.hpp include\\\\nlohmann\\\\detail\\\\conversions\\\\to_json.hpp include\\\\nlohmann\\\\adl_serializer.hpp\""
+        ],
+        "types": {
+          "agent_message": 16,
+          "mcp_tool_call": 3,
+          "command_execution": 60
+        },
+        "durMs": 308550,
+        "ok": true,
+        "answer": "The central runtime flow here is the header-only `nlohmann::json` text parse/serialize pipeline.\n\n**Runtime Flow**\n- Public entrypoint for parsing is [`include/nlohmann/json.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L4090): `json::parse(...)` constructs a `detail::parser`.\n- The parser core lives in [`include/nlohmann/detail/input/parser.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/parser.hpp#L60) and drives recursive-descent parsing via `sax_parse_internal`.\n- Tokenization happens in [`include/nlohmann/detail/input/lexer.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/lexer.hpp#L134).\n- Parsed values are built through the SAX DOM handlers in [`include/nlohmann/detail/input/json_sax.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/json_sax.hpp#L167) and [`include/nlohmann/detail/input/json_sax.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/json_sax.hpp#L473); validation-only parsing uses [`include/nlohmann/detail/input/json_sax.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/json_sax.hpp#L910).\n- Public serialization is [`include/nlohmann/json.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L1338) (`dump()`), with stream output in [`include/nlohmann/json.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L4050).\n- Serialization work is done by [`include/nlohmann/detail/output/serializer.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/output/serializer.hpp#L51), which writes through adapters from [`include/nlohmann/detail/output/output_adapters.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/output/output_adapters.hpp#L30).\n- `get<T>()` / `get_to()` and the user-defined conversion bridge sit in [`include/nlohmann/json.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L1636) and [`include/nlohmann/json.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/json.hpp#L1864), backed by [`include/nlohmann/detail/conversions/from_json.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/conversions/from_json.hpp#L47), [`include/nlohmann/detail/conversions/to_json.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/conversions/to_json.hpp#L268), and [`include/nlohmann/adl_serializer.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/adl_serializer.hpp#L22).\n\n**Read Next**\n- [`tests/src/unit-class_parser.cpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-class_parser.cpp#L217): parser helpers and the main `TEST_CASE(\"parser class\")` at line 349; this is the best first test file for parse behavior.\n- [`tests/src/unit-user_defined_input.cpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-user_defined_input.cpp#L18): input-adapter coverage for iterators, containers, and custom begin/end.\n- [`tests/src/unit-convenience.cpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-convenience.cpp#L97): `dump_escaped` and string escaping behavior.\n- [`tests/src/unit-constructor1.cpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-constructor1.cpp#L24): constructors plus `get<T>()`/round-trip conversion cases; the `dump()` edge cases for NaN/inf are near line 906.\n- [`tests/src/unit-constructor2.cpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-constructor2.cpp#L14): copy/move/destructor coverage for the remaining object lifecycle behavior.\n\n**If You Change One Thing First**\n- Parser behavior: start with [`unit-class_parser.cpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-class_parser.cpp#L349), then read [`parser.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/parser.hpp#L60) and [`json_sax.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/input/json_sax.hpp#L167).\n- Serializer behavior: start with [`unit-convenience.cpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-convenience.cpp#L107), then read [`serializer.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/output/serializer.hpp#L51).\n- Conversion or user-defined types: start with [`unit-constructor1.cpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/tests/src/unit-constructor1.cpp#L24), then read [`from_json.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/conversions/from_json.hpp#L47) and [`to_json.hpp`](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/json/include/nlohmann/detail/conversions/to_json.hpp#L268).\n\nIf you want, I can turn this into a one-page “follow this call stack in order” checklist with the exact functions to open next.",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

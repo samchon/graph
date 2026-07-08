@@ -1,0 +1,75 @@
+{
+  "harness": "codex",
+  "tool": "samchon-graph",
+  "repo": "redis",
+  "language": "c",
+  "commit": "6bf6224c3dad518329ddc893ef9c5d58dcbabdeb",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\redis",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-redis-common-samchon-graph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 1402254,
+        "cached": 1177088,
+        "reasoning": 5713,
+        "tokensWithReasoning": 1407967,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 1390481,
+            "cachedInput": 1177088,
+            "output": 11773,
+            "reasoning": 5713
+          }
+        ],
+        "tools": 47,
+        "shell": 40,
+        "graph": 7,
+        "web": 0,
+        "sourceTouches": 40,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"void aeMain\\\\(|aeProcessEvents\\\\(|aeCreateEventLoop\\\\(\\\" src/ae.c src/server.c\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/ae.c | Select-Object -Index (340..470)'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/ae.c | Select-Object -Index (490..515)'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"processCommandAndResetClient\\\\(|preprocessCommand\\\\(\\\" src/networking.c src/server.c\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/networking.c | Select-Object -Index (3468..3518)'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"protected mode|AUTH|HELLO|NOPERM|ACL|command not allowed|noauth\" tests/unit/auth.tcl tests/unit/acl.tcl tests/unit/acl-v2.tcl tests/unit/limits.tcl tests/unit/pause.tcl tests/unit/multi.tcl'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/unit/auth.tcl | Select-Object -First 220'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/unit/acl.tcl | Select-Object -First 220'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"queue|queued|transaction|watch|exec|discard|blocked|pending\" tests/unit/multi.tcl tests/unit/pause.tcl tests/unit/obuf-limits.tcl tests/unit/replybufsize.tcl tests/unit/quit.tcl'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content tests/unit/multi.tcl | Select-Object -First 240'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"lookupCommand\\\\(|commandTable|redisCommand|proc\\\" src/commands.c src/server.c src/server.h\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/commands.c | Select-Object -First 220'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/server.c | Select-Object -Index (3588..3668)'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content src/server.c | Select-Object -Index (4363..4408)'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"AUTH fails when a wrong password is given|Arbitrary command gives an error when AUTH is required|For unauthenticated clients multibulk and bulk length are limited|For unauthenticated clients output buffer is limited\" tests/unit/auth.tcl'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"Test read commands are not blocked by client pause|Test read/admin multi-execs are not blocked by pause RO|Test write multi-execs are blocked by pause RO|Test scripts are blocked by pause RO|Test RO scripts are not blocked by pause RO|CLIENT UNBLOCK is not allow to unblock client blocked by CLIENT PAUSE\" tests/unit/pause.tcl'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"Pending command pool expansion and shrinking|prefetch works as expected\" tests/unit/networking.tcl'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"MULTI / EXEC basics|EXEC fails if there are errors while queueing commands #1|EXEC works on WATCHed key not modified|EXEC fail on WATCHed key modified \\\\(1 key of 1 watched\\\\)|EXEC fail on lazy expired WATCHed key|After successful EXEC key is no longer watched|It is possible to UNWATCH|MULTI / EXEC is propagated correctly \\\\(empty transaction\\\\)\\\" tests/unit/multi.tcl\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"stats: client processing and pipeline metrics|stats: client processing metrics reset with CONFIG RESETSTAT\" tests/unit/info.tcl'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"query buffer resized correctly|Client executes small argv commands using reusable query buffer\" tests/unit/querybuf.tcl'"
+        ],
+        "types": {
+          "agent_message": 9,
+          "mcp_tool_call": 7,
+          "command_execution": 40
+        },
+        "durMs": 293568,
+        "ok": true,
+        "answer": "**Runtime Spine**\n- The server starts in [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L7924) `main()`, which does process/runtime setup, loads config, initializes the server with `initServer()` at [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L2965), then enters the event loop with `aeMain(server.el)` at [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L8280).\n- The event loop itself is in [src/ae.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/ae.c#L497); `aeMain()` repeatedly calls `aeProcessEvents()`, which dispatches readable socket events to the client read path.\n- Incoming bytes hit [src/networking.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3830) `readQueryFromClient()`, which appends to the query buffer and then calls [src/networking.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3626) `processInputBuffer()`.\n- `processInputBuffer()` parses RESP / inline input, batches pipelined requests, pre-processes each complete command, and finally hands execution to [src/networking.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3491) `processCommandAndResetClient()`.\n- `processCommandAndResetClient()` sets `server.current_client` and calls the core gatekeeper in [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L4413) `processCommand()`.\n- `processCommand()` is where the big policy checks happen: command lookup, arity, auth, ACL, cluster redirection, maxmemory, disk-write denial, pause handling, and MULTI/EXEC queuing. The actual implementation jump happens at `call(c, flags)` in [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L3950).\n- `call()` is the execution seam: it invokes the command function pointer `c->cmd->proc(c)`, then records stats, slowlog, monitor output, and AOF/replication propagation.\n- Command name to function-pointer resolution happens in [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L3594) `lookupCommandLogic()`, which maps `argv[0]` and optional subcommands to a `redisCommand`.\n- The command registry is generated through [src/commands.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/commands.c#L1), which includes `commands.def` / `commands_with_reply_schema.def`.\n\n**Nearby Code Paths**\n- [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L4363) `preprocessCommand()` does key extraction, slot calculation, and early cross-slot validation before execution.\n- [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L4413) `processCommand()` contains the main admission branches you’ll most likely touch first: `AUTH`, ACL checks, cluster redirects, `CLIENT_PAUSE`, replication state, and transaction queueing.\n- [src/networking.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3626) `processInputBuffer()` is where pipelining and I/O-thread handoff are handled.\n- Actual data-type command bodies live in the `src/t_*.c` family, plus specialized subsystems like `src/acl.c`, `src/cluster.c`, `src/eval.c`, `src/replication.c`, and `src/module.c`.\n\n**Tests To Read Next**\n- RESP parsing and protocol edge cases: [tests/unit/protocol.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/protocol.tcl#L1) and [tests/unit/querybuf.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/querybuf.tcl#L39).\n- Client input buffering, pipelining, and I/O-thread behavior: [tests/unit/networking.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/networking.tcl#L413).\n- Startup/auth admission behavior: [tests/unit/auth.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/auth.tcl#L28).\n- ACL gating and `NOPERM` paths: [tests/unit/acl.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/acl.tcl#L701).\n- Transaction, WATCH, and EXEC behavior: [tests/unit/multi.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/multi.tcl#L12).\n- Pause / blocked-client behavior: [tests/unit/pause.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/pause.tcl#L16).\n- Pipeline and processing metrics: [tests/unit/info.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/info.tcl#L539).\n\nIf you want, I can turn this into a narrower “first change” tour for one area:\n1. command execution and validation\n2. networking / protocol parsing\n3. ACL / auth\n4. transactions / pause / blocking",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

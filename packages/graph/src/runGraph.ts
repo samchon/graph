@@ -41,7 +41,7 @@ async function runDump(argv: readonly string[]): Promise<void> {
 }
 
 function parseArgs(argv: readonly string[]) {
-  const options: Parameters<typeof buildGraph>[0] = {};
+  const options: Parameters<typeof buildGraph>[0] & { graphFile?: string } = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     const next = (): string => {
@@ -75,6 +75,18 @@ function parseArgs(argv: readonly string[]) {
       options.lspTimeoutMs = parseInteger(next());
     } else if (arg.startsWith("--lsp-timeout-ms=")) {
       options.lspTimeoutMs = parseInteger(arg.slice("--lsp-timeout-ms=".length));
+    } else if (arg === "--lsp-reference-limit") {
+      options.lspReferenceLimit = parseInteger(next());
+    } else if (arg.startsWith("--lsp-reference-limit=")) {
+      options.lspReferenceLimit = parseInteger(arg.slice("--lsp-reference-limit=".length));
+    } else if (arg === "--lsp-concurrency") {
+      options.lspConcurrency = parseInteger(next());
+    } else if (arg.startsWith("--lsp-concurrency=")) {
+      options.lspConcurrency = parseInteger(arg.slice("--lsp-concurrency=".length));
+    } else if (arg === "--graph-file") {
+      options.graphFile = next();
+    } else if (arg.startsWith("--graph-file=")) {
+      options.graphFile = arg.slice("--graph-file=".length);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -117,6 +129,9 @@ Options:
   --server-arg ARG          Add one language server argument.
   --max-files N             Cap source files indexed.
   --lsp-timeout-ms N        Per-request LSP timeout.
+  --lsp-reference-limit N   Reference targets to collect edges for.
+  --lsp-concurrency N       Concurrent reference requests.
+  --graph-file PATH         Serve a pre-built dump instead of indexing.
 `;
 }
 

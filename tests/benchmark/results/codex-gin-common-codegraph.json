@@ -1,0 +1,76 @@
+{
+  "harness": "codex",
+  "tool": "codegraph",
+  "toolSetupMs": 3798,
+  "repo": "gin",
+  "language": "go",
+  "commit": "34dac209ffb6ef85cc78c5d217bbb7ad001d68fd",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\gin",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-gin-common-codegraph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 409996,
+        "cached": 345600,
+        "reasoning": 7684,
+        "tokensWithReasoning": 417680,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 398517,
+            "cachedInput": 345600,
+            "output": 11479,
+            "reasoning": 7684
+          }
+        ],
+        "tools": 26,
+        "shell": 25,
+        "graph": 1,
+        "web": 0,
+        "sourceTouches": 25,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"func \\\\(engine \\\\*Engine\\\\) ServeHTTP|func \\\\(engine \\\\*Engine\\\\) handleHTTPRequest|func \\\\(engine \\\\*Engine\\\\) Use\\\\(\\\" .\\\\gin.go\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\context.go | Select-Object -Index (176..260)\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\gin.go | Select-Object -Index (330..725)\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"Next\\\\(|ServeHTTP|handleHTTPRequest|AbortWithStatus|ErrorLogger|Recovery\\\\(|Logger\\\\(\\\" .\\\\gin_test.go .\\\\context_test.go .\\\\logger_test.go .\\\\recovery_test.go .\\\\benchmarks_test.go\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'rg -n \"func Test.*Next|func Test.*Recovery|func Test.*Logger|func Test.*Abort|func Test.*Error\" .'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\logger_test.go | Select-Object -Index (1..55)\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\recovery_test.go | Select-Object -Index (1..95)\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\middleware_test.go | Select-Object -Index (150..220)\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\context_test.go | Select-Object -Index (3548..3595)\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\gin_test.go | Select-Object -Index (600..635)\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\gin_test.go | Select-Object -Index (1038..1165)\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\gin_test.go | Select-Object -Index (600..625)\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\gin_test.go | Select-Object -Index (560..595)\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"handlerTest1|handlerTest2\\\" .\\\\gin_test.go\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content -Path .\\\\gin_test.go | Select-Object -Index (650..700)\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"func Default|func \\\\(engine \\\\*Engine\\\\) Use|func \\\\(engine \\\\*Engine\\\\) ServeHTTP|func \\\\(engine \\\\*Engine\\\\) handleHTTPRequest|func \\\\(c \\\\*Context\\\\) Next|func \\\\(c \\\\*Context\\\\) Abort|func \\\\(c \\\\*Context\\\\) Handler\\\" .\\\\gin.go .\\\\context.go\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"func TestContextNext|func TestMiddlewareAbort|func TestMiddlewareAbortHandlersChainAndNext|func TestPanicInHandler|func TestPanicWithAbort|func TestErrorLogger|func TestLogger|func TestEngineHandleContext|func TestUpdateRouteTreesCalledOnce|func TestMethodNotAllowedNoRoute\\\" .\\\\context_test.go .\\\\middleware_test.go .\\\\recovery_test.go .\\\\logger_test.go .\\\\gin_test.go\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"func TestListOfRoutes\\\" .\\\\gin_test.go\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"func TestNoMethodWithGlobalHandlers|func TestNoRouteWithGlobalHandlers\\\" .\\\\gin_test.go\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"rg -n \\\"func \\\\(engine \\\\*Engine\\\\) Handler\\\\(\\\" .\\\\gin.go\""
+        ],
+        "types": {
+          "agent_message": 12,
+          "mcp_tool_call": 1,
+          "command_execution": 25
+        },
+        "durMs": 196040,
+        "ok": true,
+        "answer": "The central runtime flow here is the request chain.\n\n- `gin.Default()` builds an engine with the two default middlewares attached: `Logger()` and `Recovery()` in [gin.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/gin.go:236).\n- `Engine.Use()` is the global middleware hook. It appends handlers to the chain and rebuilds the 404/405 fallback chains in [gin.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/gin.go:340).\n- `Engine.Handler()` is the standard-library integration point if you mount Gin into `http.Server` yourself in [gin.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/gin.go:243).\n- `Engine.ServeHTTP()` is the HTTP entrypoint. It pulls a pooled `Context`, resets it, and hands off to request dispatch in [gin.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/gin.go:662).\n- `Engine.handleHTTPRequest()` does the real work: method/path lookup, route-tree match, fills `c.handlers`, sets `c.fullPath`, then starts the chain with `c.Next()` in [gin.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/gin.go:690).\n- `Context.Next()` is the runtime dispatch loop. The key dynamic call is `c.handlers[c.index](c)` in [context.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/context.go:198).\n- `Context.Abort()` stops the remaining chain by forcing the index to the abort sentinel in [context.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/context.go:217).\n\nThe practical mental model is: route registration builds the chain, `ServeHTTP()` selects the matching chain, and `Next()` walks it. `Abort()` short-circuits that walk.\n\nRead these tests next, in this order:\n\n- Chain semantics: [context_test.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/context_test.go:3555) `TestContextNext`\n- Abort behavior: [middleware_test.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/middleware_test.go:159) `TestMiddlewareAbort`\n- Abort plus `Next()` interaction: [middleware_test.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/middleware_test.go:185) `TestMiddlewareAbortHandlersChainAndNext`\n- Panic recovery path: [recovery_test.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/recovery_test.go:51) `TestPanicInHandler`\n- Recovery with abort: [recovery_test.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/recovery_test.go:79) `TestPanicWithAbort`\n- Logger path: [logger_test.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/logger_test.go:22) `TestLogger`\n- Error logger path: [logger_test.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/logger_test.go:376) `TestErrorLogger`\n- Request-entry / re-entry behavior: [gin_test.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/gin_test.go:654) `TestEngineHandleContext`\n- Route-tree update timing: [gin_test.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/gin_test.go:1143) `TestUpdateRouteTreesCalledOnce`\n- 404/405 middleware composition: [gin_test.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/gin_test.go:494) `TestNoRouteWithGlobalHandlers`, [gin_test.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/gin_test.go:573) `TestNoMethodWithGlobalHandlers`\n- Route normalization edge cases if you touch paths: [path_test.go](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/gin/path_test.go:72) `TestPathClean`\n\nIf you want the shortest possible reading path, start with `gin.go`, then `context.go`, then `context_test.go` and `middleware_test.go`. That gives you the whole request lifecycle and the two most important control-flow contracts.",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

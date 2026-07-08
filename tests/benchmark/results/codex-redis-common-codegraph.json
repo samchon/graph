@@ -1,0 +1,74 @@
+{
+  "harness": "codex",
+  "tool": "codegraph",
+  "toolSetupMs": 37335,
+  "repo": "redis",
+  "language": "c",
+  "commit": "6bf6224c3dad518329ddc893ef9c5d58dcbabdeb",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\redis",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "common-v1",
+  "promptFamily": "common",
+  "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+  "runs": 1,
+  "question": "I'm new to this codebase and need a real code-based tour before my first behavior change.\n\nFind the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-redis-common-codegraph.traces",
+  "samples": {
+    "graph": [
+      {
+        "tokens": 353686,
+        "cached": 221184,
+        "reasoning": 5507,
+        "tokensWithReasoning": 359193,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 344045,
+            "cachedInput": 221184,
+            "output": 9641,
+            "reasoning": 5507
+          }
+        ],
+        "tools": 21,
+        "shell": 18,
+        "graph": 3,
+        "web": 0,
+        "sourceTouches": 17,
+        "shellCommands": [
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-ChildItem -Path .\\\\src -File | Where-Object { \"'$_.Name -in @('\"'server.c','networking.c') } | Select-Object -ExpandProperty FullName\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-ChildItem -Path .\\\\tests -Recurse -File | Select-Object -ExpandProperty FullName\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content .\\\\tests\\\\unit\\\\multi.tcl | Select-Object -First 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content .\\\\tests\\\\unit\\\\acl.tcl | Select-Object -First 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content .\\\\tests\\\\unit\\\\pubsub.tcl | Select-Object -First 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content .\\\\tests\\\\unit\\\\networking.tcl | Select-Object -First 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content .\\\\tests\\\\unit\\\\querybuf.tcl | Select-Object -First 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content .\\\\tests\\\\unit\\\\protocol.tcl | Select-Object -First 120\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Select-String -Path .\\\\tests\\\\unit\\\\multi.tcl -Pattern 'test \\\\{MULTI / EXEC basics\\\\}', 'test \\\\{DISCARD\\\\}', 'test \\\\{Nested MULTI are not allowed\\\\}', 'test \\\\{EXEC fails if there are errors while queueing commands #1\\\\}' | ForEach-Object { \\\"\"'$($_.LineNumber): $($_.Line.Trim())\" }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Select-String -Path .\\\\tests\\\\unit\\\\networking.tcl -Pattern 'test \\\\{CONFIG SET port number\\\\}', 'test \\\\{CONFIG SET bind address\\\\}', 'test \\\\{Default bind address configuration handling\\\\}' | ForEach-Object { \\\"\"'$($_.LineNumber): $($_.Line.Trim())\" }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Select-String -Path .\\\\tests\\\\unit\\\\acl.tcl -Pattern 'test \\\\{Connections start with the default user\\\\}', 'test \\\\{New users start disabled\\\\}', 'test \\\\{By default users are not able to access any command\\\\}', 'test \\\\{By default, only default user is able to publish to any channel\\\\}' | ForEach-Object { \\\"\"'$($_.LineNumber): $($_.Line.Trim())\" }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Select-String -Path .\\\\tests\\\\unit\\\\pubsub.tcl -Pattern 'test \\\"Pub/Sub PING on RESP', 'test \\\"PUBLISH/SUBSCRIBE basics\\\"', 'test \\\"PUBLISH/SUBSCRIBE with two clients\\\"', 'test \\\"PUBLISH/SUBSCRIBE after UNSUBSCRIBE without arguments\\\"' | ForEach-Object { \\\"\"'$($_.LineNumber): $($_.Line.Trim())\" }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Select-String -Path .\\\\tests\\\\unit\\\\querybuf.tcl -Pattern 'test \\\"query buffer resized correctly\\\"', 'test \\\"query buffer resized correctly when not idle\\\"', 'test \\\"query buffer resized correctly with fat argv\\\"' | ForEach-Object { \\\"\"'$($_.LineNumber): $($_.Line.Trim())\" }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Select-String -Path .\\\\tests\\\\unit\\\\protocol.tcl -Pattern 'test \\\"Handle an empty query\\\"', 'test \\\"Negative multibulk length\\\"', 'test \\\"Wrong multibulk payload header\\\"', 'test \\\"Generic wrong number of args\\\"' | ForEach-Object { \\\"\"'$($_.LineNumber): $($_.Line.Trim())\" }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Select-String -Path .\\\\tests\\\\unit\\\\moduleapi\\\\commandfilter.tcl -Pattern 'test ', 'commandfilter' | Select-Object -First 12 | ForEach-Object { \\\"\"'$($_.LineNumber): $($_.Line.Trim())\" }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Get-Content .\\\\tests\\\\unit\\\\moduleapi\\\\commandfilter.tcl | Select-Object -First 80\"",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Select-String -Path .\\\\tests\\\\unit\\\\networking.tcl -Pattern 'test \\\\{Default bind address configuration handling\\\\}', 'test \\\\{CONFIG SET port number\\\\}', 'test \\\\{CONFIG SET bind address\\\\}' | ForEach-Object { \\\"\"'$($_.LineNumber): $($_.Line.Trim())\" }'",
+          "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command \"Select-String -Path .\\\\tests\\\\unit\\\\auth.tcl -Pattern 'test ' | Select-Object -First 10 | ForEach-Object { \\\"\"'$($_.LineNumber): $($_.Line.Trim())\" }'"
+        ],
+        "types": {
+          "agent_message": 10,
+          "mcp_tool_call": 3,
+          "command_execution": 18
+        },
+        "durMs": 168588,
+        "ok": true,
+        "answer": "I treated Redis’s public API here as the network command protocol. The hot path is:\n\n`socket read -> processInputBuffer() -> processCommandAndResetClient() -> processCommand() -> call() -> c->cmd->proc(c)`\n\n**Runtime Flow**\n- [src/networking.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3830) `readQueryFromClient()` is the entry from the event loop into request handling.\n- [src/networking.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3626) `processInputBuffer()` is the main parser/reader loop. It decides whether the buffer is inline or RESP/multibulk and advances completed commands.\n- [src/networking.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3491) `processCommandAndResetClient()` wraps the command execution and restores client state afterward.\n- [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L4413) `processCommand()` is the dispatcher and gatekeeper. This is where Redis checks command existence, arity, auth, ACLs, cluster redirection, pub/sub restrictions, paused state, loading state, OOM/disk/replica constraints, and transaction behavior.\n- [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L3950) `call()` is the workhorse. It sets execution context, then invokes the actual command implementation at [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L4016) with `c->cmd->proc(c)`.\n- [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L3610) `lookupCommand()` and related lookup helpers resolve the command object before dispatch.\n- [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L4363) `preprocessCommand()` and the `rejectCommand*()` helpers are the pre-dispatch normalization/error paths.\n- [src/networking.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3431) `prepareForNextCommand()` and `commandProcessed()` are the immediate post-command cleanup path.\n\n**Nearby Paths To Read**\n- [src/networking.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3063) `processInlineBuffer()` and [src/networking.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3214) `processMultibulkBuffer()` are the two parser branches feeding the runtime path.\n- [src/networking.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3491) through [src/networking.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3626) is the best networking block to read together.\n- [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L3950) through [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L4793) is the best dispatcher block to read together.\n- [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L1402) `enterExecutionUnit()` is the execution-scoping machinery that brackets `call()`.\n- [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L532) `performEvictions()` is one of the pre-execution pressure valves that can stop or reject a command before it runs.\n\n**Tests To Read Next**\n- [tests/unit/protocol.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/protocol.tcl#L2) covers the RESP/parser edge cases that feed `processInputBuffer()`.\n- [tests/unit/networking.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/networking.tcl#L17) covers command-adjacent networking behavior, including config changes and buffer behavior.\n- [tests/unit/auth.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/auth.tcl#L16) covers the AUTH gate that `processCommand()` enforces before normal execution.\n- [tests/unit/acl.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/acl.tcl#L2) covers ACL setup and permission failures, including command-level denial.\n- [tests/unit/multi.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/multi.tcl#L12) covers MULTI/EXEC queueing, aborts, and transaction execution.\n- [tests/unit/pubsub.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/pubsub.tcl#L19) covers the pub/sub mode restrictions that `processCommand()` enforces.\n- [tests/unit/querybuf.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/querybuf.tcl#L39) covers query-buffer resizing, which is directly tied to the input side of the flow.\n- [tests/unit/moduleapi/commandfilter.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/moduleapi/commandfilter.tcl#L6) covers module command filters, which run before normal command dispatch and can rewrite or redirect arguments.\n\nIf you want the shortest reading order, do this:\n1. [src/networking.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/networking.c#L3491)\n2. [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L4413)\n3. [src/server.c](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/src/server.c#L3950)\n4. [tests/unit/protocol.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/protocol.tcl#L2)\n5. [tests/unit/auth.tcl](C:/Users/samch/AppData/Local/Temp/samchon-graph-corpus/redis/tests/unit/auth.tcl#L16)\n\nIf you want, I can turn this into a “first behavior change” map for one specific branch in `processCommand()` next, for example auth, ACL, pub/sub, transactions, or maxmemory.",
+        "error": "",
+        "promptId": "common-v1",
+        "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

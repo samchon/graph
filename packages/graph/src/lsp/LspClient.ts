@@ -35,14 +35,18 @@ export class LspClient {
     });
   }
 
-  public async request<T>(method: string, params: unknown): Promise<T> {
+  public async request<T>(
+    method: string,
+    params: unknown,
+    timeoutMs?: number,
+  ): Promise<T> {
     const id = this.nextId++;
     const payload = { jsonrpc: "2.0", id, method, params };
     const promise = new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`LSP request timed out: ${method}`));
-      }, this.timeoutMs);
+      }, timeoutMs ?? this.timeoutMs);
       this.pending.set(id, {
         resolve: (value) => resolve(value as T),
         reject,

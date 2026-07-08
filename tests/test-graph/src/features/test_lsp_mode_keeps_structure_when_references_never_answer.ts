@@ -6,10 +6,12 @@ import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
 
-export const test_lsp_mode_stops_references_after_repeated_timeouts = async () => {
-  // Two files so the fake server reports more symbols than the three timeouts
-  // that trip the breaker — the remaining targets must be skipped, not asked.
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-timeout-"));
+export const test_lsp_mode_keeps_structure_when_references_never_answer = async () => {
+  // A server that never answers references at all. The single patient warmup
+  // request times out, references are declared unavailable, and the structural
+  // graph (symbols + containment) is kept — one bounded wait, no per-target
+  // grind, no hang.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-warmup-fail-"));
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   for (const name of ["a.ts", "b.ts"]) {
     fs.writeFileSync(
@@ -17,10 +19,7 @@ export const test_lsp_mode_stops_references_after_repeated_timeouts = async () =
       "export class LspService {\n  run(): void {\n    helper();\n  }\n}\nconst x = 1;\nexport function helper(): void {}\n",
     );
   }
-  // The server never answers references, so every request times out. Timeouts
-  // must not be retried (each retry burns the full request timeout again), and
-  // after a few of them the reference pass must stop asking entirely instead of
-  // grinding through every remaining target.
+
   const started = Date.now();
   const dump = await buildGraphDump({
     cwd: root,
@@ -28,9 +27,8 @@ export const test_lsp_mode_stops_references_after_repeated_timeouts = async () =
     languages: ["typescript"],
     server: process.execPath,
     serverArgs: [GraphPaths.fakeLspServer, "--hang-method=textDocument/references"],
-    // Generous enough that initialize/documentSymbol survive a cold CI runner;
-    // only the hung references requests consume it.
     lspTimeoutMs: 2_000,
+    lspWarmupTimeoutMs: 2_000, // small so the test does not wait the 180s default
     lspConcurrency: 1,
   });
   const elapsed = Date.now() - started;
@@ -42,10 +40,13 @@ export const test_lsp_mode_stops_references_after_repeated_timeouts = async () =
     dump.edges.some((edge) => edge.kind === "contains"),
   );
   TestValidator.predicate(
-    "the breaker reports itself",
-    dump.warnings?.some((warning) => warning.includes("repeated timeouts")) === true,
+    "no reference edges when the server never answers",
+    dump.edges.every((edge) => edge.kind !== "calls" && edge.kind !== "references"),
   );
-  // 3 timeouts x 2s, no retries, remaining targets skipped — far below the
-  // 6-target x 3-retry x 2s (36s+) grind the old behavior would have produced.
-  TestValidator.predicate("the pass stops instead of grinding", elapsed < 15_000);
+  TestValidator.predicate(
+    "the warmup failure reports itself",
+    dump.warnings?.some((warning) => warning.includes("warmup budget")) === true,
+  );
+  // One warmup timeout (2s), not a per-target grind.
+  TestValidator.predicate("one bounded warmup, no grind", elapsed < 15_000);
 };

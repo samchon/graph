@@ -257,34 +257,55 @@ async function collectLanguageGraph(
     const referenceTargets = [...nodes]
       .sort((a, b) => Number(isTestPath(a.file)) - Number(isTestPath(b.file)))
       .slice(0, referenceLimit);
-    // Reference requests are independent, so keep several in flight at once;
-    // results stay indexed by target order to keep edge output deterministic.
-    // A server that cannot answer references at all would burn the full request
-    // timeout per target; after a few timeouts, stop asking and keep the
-    // symbols, containment, and inheritance the server did provide.
-    let referenceTimeouts = 0;
-    const referenceResults = await mapWithConcurrency(
-      referenceTargets,
-      options.lspConcurrency ?? 16,
-      async (target) => {
-        if (referenceTimeouts >= 3) return null;
-        const evidence = target.evidence!;
-        const abs = path.join(root, target.file);
-        const refs = await safeReferences(client, {
-          textDocument: { uri: fileUri(abs) },
-          position: {
-            line: evidence.startLine - 1,
-            character: Math.max(0, evidence.startCol! - 1),
-          },
-          context: { includeDeclaration: false },
-        });
-        if (refs === "timeout") {
-          referenceTimeouts += 1;
-          return null;
-        }
-        return refs;
-      },
-    );
+    // Language servers build their cross-file reference index lazily — often on
+    // the FIRST `textDocument/references` call, not during the initial
+    // `$/progress` indexing wait above. So warm the index with one patient
+    // request before firing the batch: once it exists, every later request is
+    // served from the server's cache in milliseconds. Firing the whole batch
+    // cold instead makes every request race the same one-time build and time
+    // out (ruby-lsp on a fresh project is the pathological case). Results stay
+    // indexed by target order to keep edge output deterministic.
+    const referenceParams = (target: IGraphNode): unknown => {
+      const evidence = target.evidence!;
+      return {
+        textDocument: { uri: fileUri(path.join(root, target.file)) },
+        position: {
+          line: evidence.startLine - 1,
+          character: Math.max(0, evidence.startCol! - 1),
+        },
+        context: { includeDeclaration: false },
+      };
+    };
+    const referenceResults: (ILocation[] | null)[] = new Array(
+      referenceTargets.length,
+    ).fill(null);
+    // Only after the warmup request actually returns is the server proven able
+    // to answer references; a timeout even under the patient budget means it
+    // cannot, so we keep the structural graph and skip the rest rather than
+    // grinding the full batch.
+    let referencesUnavailable = false;
+    if (referenceTargets.length > 0) {
+      const warm = await safeReferences(
+        client,
+        referenceParams(referenceTargets[0]!),
+        options.lspWarmupTimeoutMs ?? 180_000,
+      );
+      if (warm === "timeout") referencesUnavailable = true;
+      else referenceResults[0] = warm;
+    }
+    if (!referencesUnavailable && referenceTargets.length > 1) {
+      const rest = await mapWithConcurrency(
+        referenceTargets.slice(1),
+        options.lspConcurrency ?? 16,
+        async (target) => {
+          const refs = await safeReferences(client, referenceParams(target));
+          return refs === "timeout" ? null : refs;
+        },
+      );
+      for (let index = 0; index < rest.length; index++) {
+        referenceResults[index + 1] = rest[index]!;
+      }
+    }
     for (let index = 0; index < referenceTargets.length; index++) {
       const target = referenceTargets[index]!;
       const refs = referenceResults[index];
@@ -371,8 +392,8 @@ async function collectLanguageGraph(
         ...(nodes.length > referenceLimit
           ? [`${language}: reference collection capped at ${referenceLimit} symbols.`]
           : []),
-        ...(referenceTimeouts >= 3
-          ? [`${language}: reference collection stopped after repeated timeouts.`]
+        ...(referencesUnavailable
+          ? [`${language}: server did not answer references within the warmup budget; kept structural edges only.`]
           : []),
       ],
     };
@@ -421,10 +442,15 @@ function referenceKind(
 async function safeReferences(
   client: LspClient,
   params: unknown,
+  timeoutMs?: number,
 ): Promise<ILocation[] | null | "timeout"> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      return await client.request<ILocation[] | null>("textDocument/references", params);
+      return await client.request<ILocation[] | null>(
+        "textDocument/references",
+        params,
+        timeoutMs,
+      );
     } catch (error) {
       if ((error as Error).message.startsWith("LSP request timed out")) return "timeout";
       await new Promise((resolve) => setTimeout(resolve, 100));

@@ -1,24 +1,22 @@
 # `@samchon/graph`
 
-`@samchon/graph` is the language-neutral successor to `@ttsc/graph`.
+[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/samchon/graph/blob/master/LICENSE) [![NPM Version](https://img.shields.io/npm/v/@samchon/graph.svg)](https://www.npmjs.com/package/@samchon/graph) [![NPM Downloads](https://img.shields.io/npm/dm/@samchon/graph.svg)](https://www.npmjs.com/package/@samchon/graph) [![Build Status](https://github.com/samchon/graph/workflows/test/badge.svg)](https://github.com/samchon/graph/actions?query=workflow%3Atest)
 
-It exposes one MCP tool, `inspect_code_graph`, that returns a bounded source-free index of a repository: declarations, source spans, and the relationships between them — imports, calls, type references, member access, containment, inheritance, decorators, and overrides — plus diagnostics when the language server can provide them, and a `next` contract that tells the agent whether to answer, inspect once more, leave the graph, or ask for clarification.
+**A code graph that answers "how does this repo work?" without your agent reading the repo.**
 
-The package follows the `@ttsc/graph` architecture:
+`@samchon/graph` is an MCP server. It indexes a codebase — across **18 languages** — into a graph of declarations and their relationships, and answers an agent's orientation questions from that graph instead of from source files. The agent gets the map in one call rather than grepping and reading its way through dozens of files.
 
-- one tool, not a garden of narrow tools;
-- required `question`, `draft`, and `review` fields before the request branch;
-- graph evidence only, never source bodies;
-- compiler/LSP truth when available;
-- static indexing fallback when no language server is installed.
+That collapses the token cost. On a 12-language benchmark it cuts the agent's tokens by a **median of 96%** on onboarding questions — while [`codegraph`](https://github.com/colbymchenry/codegraph) cuts 63% and [`serena`](https://github.com/oraios/serena) makes it *worse*.
 
-## Install
+![Agent token cost — onboarding, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-common.svg)
+
+## Setup
+
+### 1. Add the MCP server
 
 ```bash
 npm install -D @samchon/graph
 ```
-
-Add it to an MCP client:
 
 ```json
 {
@@ -31,125 +29,86 @@ Add it to an MCP client:
 }
 ```
 
-Start the client from the project root. The server builds one resident graph and answers all MCP calls from memory.
+Start the client from the project root. The server builds one resident graph and answers every MCP call from memory. With no language server installed it still works — the **static indexer** parses the source directly (every language indexes in ~1–2 seconds, even on large repositories).
 
-## CLI
+### 2. Install a language server (optional, for compiler-grade edges)
 
-```bash
-# Start the MCP server over stdio
-npx @samchon/graph
+A language server sharpens the graph with semantically-resolved edges. Install the one(s) for your stack — nothing else is auto-provided (an installed editor like VS Code does **not** expose a stdio language server):
 
-# Print the graph dump as JSON
-npx @samchon/graph dump --cwd .
+| Language | Server | Install |
+|---|---|---|
+| TypeScript / JavaScript | `typescript-language-server` | `npm i -g typescript-language-server typescript` |
+| Python | `pyright-langserver` | `npm i -g pyright` |
+| Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
+| Rust | `rust-analyzer` | `rustup component add rust-analyzer` |
+| C / C++ | `clangd` | LLVM release, or your package manager |
+| Java | `jdtls` | Eclipse JDT LS (needs JDK 21+) |
+| C# | `csharp-ls` | `dotnet tool install -g csharp-ls` |
+| Kotlin | `kotlin-language-server` | fwcd/kotlin-language-server |
+| Swift | `sourcekit-lsp` | ships with the Swift toolchain |
+| Scala | `metals` | `cs install metals` |
+| Zig | `zls` | zigtools/zls |
+| Ruby | `ruby-lsp` | `gem install ruby-lsp` |
+| PHP | `intelephense` | `npm i -g intelephense` |
+| Lua | `lua-language-server` | LuaLS/lua-language-server |
+| Dart | `dart` | ships with the Dart SDK |
+| Bash | `bash-language-server` | `npm i -g bash-language-server` |
 
-# Force static indexing
-npx @samchon/graph dump --mode static
+Each server must be on `PATH`. If none is present for a file's language, that language falls back to the static indexer automatically.
 
-# Force LSP indexing for one language
-npx @samchon/graph dump --language go --mode lsp --server gopls
-```
+### 3. TypeScript / JavaScript — the fast path
 
-The default `auto` mode tries an LSP server when one is configured or found on `PATH`, then falls back to the static indexer if the server is missing or fails.
-
-When a mixed-language repository has only some language servers available, the available LSP graphs are preserved and the failed languages are filled by the static fallback; the dump is marked as `hybrid` and carries warnings explaining which language fell back.
-
-## Supported Language Defaults
-
-The built-in registry knows the usual file extensions and server commands for:
-
-- TypeScript / JavaScript: `typescript-language-server --stdio`
-- Go: `gopls`
-- Rust: `rust-analyzer`
-- C / C++: `clangd`
-- Java: `jdtls`
-- C#: `csharp-ls`
-- Kotlin: `kotlin-language-server`
-- Swift: `sourcekit-lsp`
-- Scala: `metals`
-- Zig: `zls`
-- Python: `pyright-langserver --stdio`
-- Ruby: `ruby-lsp`
-- PHP: `intelephense --stdio`
-- Lua: `lua-language-server`
-- Bash: `bash-language-server start`
-- Dart: `dart language-server`
-
-Static fallback handles declarations and imports for the same families and keeps the output useful even before language servers are installed.
-
-The language servers are not bundled. Install the matching server in the target repository environment when compiler/LSP diagnostics and reference edges are required.
-
-## Relationships
-
-Both the LSP and static indexers emit the same relationship kinds, so operations behave identically regardless of which produced the graph:
-
-- **Structure**: `contains` (owner → member), `imports`.
-- **Execution**: `calls`, `instantiates`, `accesses`, `references`.
-- **Types**: `type_ref`, `extends`, `implements`, `overrides`, `decorates`.
-
-Inheritance, decorators, and overrides are parsed from the declaration and decorator lines and resolved against the indexed symbols, so they are captured even for language servers that do not expose a type hierarchy (typescript-language-server among them).
-
-## Tuning
-
-`buildGraph` / `buildGraphDump` accept a few knobs for the LSP path:
-
-- `lspConcurrency` (default 16) — how many `textDocument/references` requests to keep in flight.
-- `lspReferenceLimit` (default 250) — the reference budget; product-code symbols are prioritized over test files.
-- `lspReadyQuietMs` (default 1500) / `lspReadyTimeoutMs` (default 30000) — how long to wait for a server's initial indexing (`$/progress`) to settle before collecting references.
-- `lspTimeoutMs` (default 10000) — per-request timeout.
-
-## Programmatic API
-
-```ts
-import { buildGraph, SamchonGraphApplication } from "@samchon/graph";
-
-const graph = await buildGraph({ cwd: process.cwd(), mode: "auto" });
-const app = new SamchonGraphApplication(graph);
-const result = app.inspect_code_graph({
-  question: "What are the main entrypoints?",
-  draft: { reason: "Broad orientation needs a tour.", type: "tour" },
-  review: "A tour is the smallest source-free answer.",
-  request: { type: "tour" },
-});
-```
+The community `typescript-language-server` is an unofficial wrapper over the classic `tsserver` and answers references one symbol at a time. For compiler-grade TS/JS graphs at native speed, point the server at **[`ttscserver`](https://github.com/samchon/ttsc)** (the `typescript-go`–backed LSP host) once it exposes the graph channel — tracked in [samchon/ttsc#335](https://github.com/samchon/ttsc/issues/335) and [#337](https://github.com/samchon/ttsc/issues/337).
 
 ## Benchmark
 
-The agent-cost A/B in `tests/benchmark` ports codegraph's headline benchmark (as `@ttsc/graph` did) across languages: for one question per repository an agent CLI runs headless once per arm — baseline (no MCP) vs `@samchon/graph` vs codegraph vs serena — and the report carries tokens summed per turn, tool calls, and wall time. Prompts are codegraph's own utterances, pinned by SHA-256; checkouts are pinned by commit; the graph arm refuses to run when the language server is missing rather than silently measuring the static fallback.
+A faithful port of `codegraph`'s headline agent-cost benchmark, generalized across languages. For one question per repository the `codex` CLI runs headless, once per arm — **baseline** (no MCP) vs `@samchon/graph` vs `codegraph` vs `serena` — and the report sums tokens per assistant turn, median over the runs. Prompts are `codegraph`'s own utterances, pinned by SHA-256; checkouts are pinned by commit; every arm poses the identical question (tool guidance lives only in each server's MCP descriptions).
+
+**Onboarding question, per repository — @samchon/graph cuts a median of 96% of tokens (n=12), vs codegraph 63% and serena +2% (worse than no tool):**
+
+| | @samchon/graph | codegraph | serena |
+|---|---|---|---|
+| **median vs baseline** | **−96%** | −63% | +2% (worse) |
+| repositories improved | 12 / 12 | 10 / 12 | 3 / 12 |
+
+Ten of twelve languages land between **−92% and −98%** with a single graph call. `@samchon/graph` wins even where the underlying language server is weak: on Ruby (ruby-lsp) it still cuts **−63%**, ahead of codegraph's −49% and serena's −15%.
+
+Run it yourself (spends real credits, never wired into CI):
 
 ```bash
-pnpm --filter @samchon/graph-benchmark corpus      # 15 repos / 15 languages, pinned
+pnpm --filter @samchon/graph-benchmark corpus      # 12 repos / 12 languages, pinned
 pnpm --filter @samchon/graph-benchmark preflight   # zero-spend go/no-go
-pnpm --filter @samchon/graph-benchmark suite-codex -- --runs=1   # spends credits
+pnpm --filter @samchon/graph-benchmark suite-codex -- --runs=1
 pnpm --filter @samchon/graph-benchmark render      # results -> SVG charts
 ```
 
-See `tests/benchmark/README.md` for the full methodology.
+## Why the difference is so large
 
-## Design Notes
+**The baseline agent greps.** With no graph it opens the entry file, follows imports by reading them, `rg`s for symbol names, reads the hits, and repeats — dozens of tool calls and tens of thousands of tokens of source text just to orient itself. That is where a million tokens go on a large repository.
 
-The source-linked design target is the same one described for `@ttsc/graph`: keep the graph as an index, make the agent select one request through a typed contract, and trust resolved compiler/LSP facts enough to stop reading files after graph evidence answers the question.
+**`@samchon/graph` answers structure from structure.** The graph already holds every declaration, its span, and its edges. A `tour` call runs a relevance-scored flow traversal and returns the central entrypoints, the primary runtime flow, the nearby paths, the tests, and citation anchors — the whole orientation surface — in **one call**, as index facts rather than pasted source. The agent reads the map and answers. On the flagship TypeScript repo the tour surfaces the exact canvas/render entrypoints for a canvas-render question, with a 20-step flow, in a single call.
 
-The source layout follows the `@ttsc/graph` file discipline: one TypeScript file may define and export only one top-level symbol, and the filename must exactly match that symbol. Files that only re-export other files are the only exception.
+Three things make that work, all ported faithfully from `@ttsc/graph`:
 
-The e2e suite scans `packages/graph/src/**/*.ts` and `tests/test-graph/src/**/*.ts` and fails when this convention is broken.
+- **A sacred contract.** The tool's own description tells the agent the returned facts are language-server truth: *answer from them, don't re-verify with grep.* That stops the agent from second-guessing a correct graph into another 30 file reads.
+- **A complete engine.** `tour`/`trace`/`details` don't return a thin seed list; they compute the ranked flow, the impact set, the dependency neighborhood — a complete answer, so the agent doesn't fall back to searching.
+- **Bounded, source-free evidence.** Names, signatures, and spans — never file bodies. The payload stays small no matter how large the repository.
 
-## Verification
+**Why serena often costs *more* than no tool:** a broad orientation tool that returns partial evidence invites the agent to call it many times and then grep anyway, stacking overhead on top of the search it was meant to replace. The benchmark shows this directly — serena is a net loss on the median.
 
-The repository is a pnpm workspace with `packages/graph` for the published package, `tests/test-graph` for coverage-gated graph tests, `tests/experiment` for real language-server experiments, and `tests/benchmark` for benchmark harness work.
+The graph itself is built for scale: edges are extracted by a single linear pass over each file (an identifier scan resolved against a name index), so a 2,000-file repository indexes in **~1.6 seconds** rather than the minutes a per-symbol reference sweep would take, and it re-indexes incrementally as source changes.
 
-```bash
-pnpm install
-pnpm build
-pnpm test
-pnpm coverage
-```
+## Sponsors
 
-The e2e suite covers:
+[![Sponsors](https://raw.githubusercontent.com/samchon/sponsor-images/refs/heads/master/public/circle.svg)](https://github.com/sponsors/samchon)
 
-- every advertised language through static fallback fixtures;
-- every graph node kind, edge kind, and request branch through a contract graph;
-- the MCP stdio server and CLI dump command;
-- the LSP JSON-RPC path through a fake language server, including diagnostics, references, missing-server fallback, and per-language hybrid fallback;
-- the actual `@samchon/graph` repository as a real-codebase fixture.
+Thanks for your support.
 
-GitHub Actions runs build, e2e, and coverage gates on Linux, Windows, and macOS for every push and pull request to `master`.
+Your [donation](https://github.com/sponsors/samchon) encourages `@samchon/graph` development.
+
+## References
+
+- Predecessor: [`@ttsc/graph`](https://github.com/samchon/ttsc) — the TypeScript-only, compiler-powered original this generalizes.
+- Compared against: [`codegraph`](https://github.com/colbymchenry/codegraph) and [`serena`](https://github.com/oraios/serena).
+- Protocol: the [Model Context Protocol](https://modelcontextprotocol.io) and the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/).
+- Validation & MCP surface: [`typia`](https://github.com/samchon/typia) and [`@typia/mcp`](https://github.com/samchon/typia).

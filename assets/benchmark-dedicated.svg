@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="930" viewBox="0 0 940 930">
+<style>svg{--f:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;--surface:#ffffff;--text:#1a1a19;--muted:#6b6a64;--grid:#00000018;--baseline:#767672;--s1:#2a78d6;--s2:#1baf7a;--s3:#eda100;}@media (prefers-color-scheme:dark){svg{--surface:#0d1117;--text:#e6edf3;--muted:#9d9d97;--grid:#ffffff1e;--baseline:#9d9d97;--s1:#3987e5;--s2:#199e70;--s3:#c98500;}}.s{fill:var(--surface)}.t{fill:var(--text)}.m{fill:var(--muted)}.g{stroke:var(--grid);stroke-width:1}.b0{fill:var(--baseline)}.b1{fill:var(--s1)}.b2{fill:var(--s2)}.b3{fill:var(--s3)}text{font-family:var(--f)}</style>
+<rect width="940" height="930" class="s"/>
+<text x="24" y="30" font-size="16" font-weight="600" class="t">Agent token cost — dedicated question, per repository</text>
+<text x="24" y="48" font-size="12" class="m">codex / gpt-5.4-mini · reasoning high · N=1 · median tokens per run (input + output, summed per turn) · lower is better</text>
+<rect x="24" y="58" width="10" height="10" rx="2" class="b0"/>
+<text x="39" y="67" font-size="12" class="t">baseline (no MCP)</text>
+<rect x="169.8" y="58" width="10" height="10" rx="2" class="b1"/>
+<text x="184.8" y="67" font-size="12" class="t">@samchon/graph</text>
+<rect x="296.40000000000003" y="58" width="10" height="10" rx="2" class="b2"/>
+<text x="311.40000000000003" y="67" font-size="12" class="t">codegraph</text>
+<rect x="391" y="58" width="10" height="10" rx="2" class="b3"/>
+<text x="406" y="67" font-size="12" class="t">serena</text>
+<line x1="96" y1="80" x2="96" y2="822" class="g"/>
+<text x="96" y="848" font-size="11" class="m" text-anchor="middle">0</text>
+<line x1="265" y1="80" x2="265" y2="822" class="g"/>
+<text x="265" y="848" font-size="11" class="m" text-anchor="middle">166.0k</text>
+<line x1="434" y1="80" x2="434" y2="822" class="g"/>
+<text x="434" y="848" font-size="11" class="m" text-anchor="middle">332.0k</text>
+<line x1="603" y1="80" x2="603" y2="822" class="g"/>
+<text x="603" y="848" font-size="11" class="m" text-anchor="middle">498.0k</text>
+<line x1="772" y1="80" x2="772" y2="822" class="g"/>
+<text x="772" y="848" font-size="11" class="m" text-anchor="middle">664.0k</text>
+<text x="772" y="866" font-size="11" class="m" text-anchor="end">tokens</text>
+<text x="88" y="98" font-size="12" font-weight="600" class="t" text-anchor="end">excalidraw</text>
+<text x="88" y="111" font-size="10" class="m" text-anchor="end">typescript</text>
+<path d="M 96 86 L 691.7305401396095 86 Q 695.7305401396095 86 695.7305401396095 90 L 695.7305401396095 94 Q 695.7305401396095 98 691.7305401396095 98 L 96 98 Z" class="b0"/>
+<text x="701.7305401396095" y="96" font-size="11" class="m">589.1k</text>
+<text x="100" y="110" font-size="10" class="m">not measured</text>
+<path d="M 96 114 L 157.4890112124338 114 Q 161.4890112124338 114 161.4890112124338 118 L 161.4890112124338 122 Q 161.4890112124338 126 157.4890112124338 126 L 96 126 Z" class="b2"/>
+<text x="167.4890112124338" y="124" font-size="11" class="m">64.3k (-89%)</text>
+<path d="M 96 128 L 716.4291598581315 128 Q 720.4291598581315 128 720.4291598581315 132 L 720.4291598581315 136 Q 720.4291598581315 140 716.4291598581315 140 L 96 140 Z" class="b3"/>
+<text x="726.4291598581315" y="138" font-size="11" class="m">613.3k (+4%)</text>
+<text x="88" y="166" font-size="12" font-weight="600" class="t" text-anchor="end">express</text>
+<text x="88" y="179" font-size="10" class="m" text-anchor="end">javascript</text>
+<path d="M 96 154 L 236.28941784200182 154 Q 240.28941784200182 154 240.28941784200182 158 L 240.28941784200182 162 Q 240.28941784200182 166 236.28941784200182 166 L 96 166 Z" class="b0"/>
+<text x="246.28941784200182" y="164" font-size="11" class="m">141.7k</text>
+<text x="100" y="178" font-size="10" class="m">not measured</text>
+<path d="M 96 182 L 227.68969645855765 182 Q 231.68969645855765 182 231.68969645855765 186 L 231.68969645855765 190 Q 231.68969645855765 194 227.68969645855765 194 L 96 194 Z" class="b2"/>
+<text x="237.68969645855765" y="192" font-size="11" class="m">133.3k (-6%)</text>
+<path d="M 96 196 L 227.13280672294218 196 Q 231.13280672294218 196 231.13280672294218 200 L 231.13280672294218 204 Q 231.13280672294218 208 227.13280672294218 208 L 96 208 Z" class="b3"/>
+<text x="237.13280672294218" y="206" font-size="11" class="m">132.7k (-6%)</text>
+<text x="88" y="234" font-size="12" font-weight="600" class="t" text-anchor="end">gin</text>
+<text x="88" y="247" font-size="10" class="m" text-anchor="end">go</text>
+<path d="M 96 222 L 207.2171266349897 222 Q 211.2171266349897 222 211.2171266349897 226 L 211.2171266349897 230 Q 211.2171266349897 234 207.2171266349897 234 L 96 234 Z" class="b0"/>
+<text x="217.2171266349897" y="232" font-size="11" class="m">113.2k</text>
+<text x="100" y="246" font-size="10" class="m">not measured</text>
+<path d="M 96 250 L 175.26570531404604 250 Q 179.26570531404604 250 179.26570531404604 254 L 179.26570531404604 258 Q 179.26570531404604 262 175.26570531404604 262 L 96 262 Z" class="b2"/>
+<text x="185.26570531404604" y="260" font-size="11" class="m">81.8k (-28%)</text>
+<path d="M 96 264 L 194.3231439995783 264 Q 198.3231439995783 264 198.3231439995783 268 L 198.3231439995783 272 Q 198.3231439995783 276 194.3231439995783 276 L 96 276 Z" class="b3"/>
+<text x="204.3231439995783" y="274" font-size="11" class="m">100.5k (-11%)</text>
+<text x="88" y="302" font-size="12" font-weight="600" class="t" text-anchor="end">flask</text>
+<text x="88" y="315" font-size="10" class="m" text-anchor="end">python</text>
+<path d="M 96 290 L 152.17768808500063 290 Q 156.17768808500063 290 156.17768808500063 294 L 156.17768808500063 298 Q 156.17768808500063 302 152.17768808500063 302 L 96 302 Z" class="b0"/>
+<text x="162.17768808500063" y="300" font-size="11" class="m">59.1k</text>
+<text x="100" y="314" font-size="10" class="m">not measured</text>
+<path d="M 96 318 L 179.65261184195663 318 Q 183.65261184195663 318 183.65261184195663 322 L 183.65261184195663 326 Q 183.65261184195663 330 179.65261184195663 330 L 96 330 Z" class="b2"/>
+<text x="189.65261184195663" y="328" font-size="11" class="m">86.1k (+46%)</text>
+<path d="M 96 332 L 317.09951430357154 332 Q 321.09951430357154 332 321.09951430357154 336 L 321.09951430357154 340 Q 321.09951430357154 344 317.09951430357154 344 L 96 344 Z" class="b3"/>
+<text x="327.09951430357154" y="342" font-size="11" class="m">221.1k (+274%)</text>
+<text x="88" y="370" font-size="12" font-weight="600" class="t" text-anchor="end">tokio</text>
+<text x="88" y="383" font-size="10" class="m" text-anchor="end">rust</text>
+<path d="M 96 358 L 495.61576216688377 358 Q 499.61576216688377 358 499.61576216688377 362 L 499.61576216688377 366 Q 499.61576216688377 370 495.61576216688377 370 L 96 370 Z" class="b0"/>
+<text x="505.61576216688377" y="368" font-size="11" class="m">396.4k</text>
+<text x="100" y="382" font-size="10" class="m">not measured</text>
+<path d="M 96 386 L 208.81042176522413 386 Q 212.81042176522413 386 212.81042176522413 390 L 212.81042176522413 394 Q 212.81042176522413 398 208.81042176522413 398 L 96 398 Z" class="b2"/>
+<text x="218.81042176522413" y="396" font-size="11" class="m">114.7k (-71%)</text>
+<path d="M 96 400 L 357.7575554032787 400 Q 361.7575554032787 400 361.7575554032787 404 L 361.7575554032787 408 Q 361.7575554032787 412 357.7575554032787 412 L 96 412 Z" class="b3"/>
+<text x="367.7575554032787" y="410" font-size="11" class="m">261.0k (-34%)</text>
+<text x="88" y="438" font-size="12" font-weight="600" class="t" text-anchor="end">gson</text>
+<text x="88" y="451" font-size="10" class="m" text-anchor="end">java</text>
+<path d="M 96 426 L 259.02416132651604 426 Q 263.02416132651604 426 263.02416132651604 430 L 263.02416132651604 434 Q 263.02416132651604 438 259.02416132651604 438 L 96 438 Z" class="b0"/>
+<text x="269.02416132651604" y="436" font-size="11" class="m">164.1k</text>
+<text x="100" y="450" font-size="10" class="m">not measured</text>
+<path d="M 96 454 L 251.98108419491112 454 Q 255.98108419491112 454 255.98108419491112 458 L 255.98108419491112 462 Q 255.98108419491112 466 251.98108419491112 466 L 96 466 Z" class="b2"/>
+<text x="261.9810841949111" y="464" font-size="11" class="m">157.1k (-4%)</text>
+<path d="M 96 468 L 314.36291538339896 468 Q 318.36291538339896 468 318.36291538339896 472 L 318.36291538339896 476 Q 318.36291538339896 480 314.36291538339896 480 L 96 480 Z" class="b3"/>
+<text x="324.36291538339896" y="478" font-size="11" class="m">218.4k (+33%)</text>
+<text x="88" y="506" font-size="12" font-weight="600" class="t" text-anchor="end">redis</text>
+<text x="88" y="519" font-size="10" class="m" text-anchor="end">c</text>
+<path d="M 96 494 L 461.407257584771 494 Q 465.407257584771 494 465.407257584771 498 L 465.407257584771 502 Q 465.407257584771 506 461.407257584771 506 L 96 506 Z" class="b0"/>
+<text x="471.407257584771" y="504" font-size="11" class="m">362.8k</text>
+<path d="M 96 508 L 338.34175257343804 508 Q 342.34175257343804 508 342.34175257343804 512 L 342.34175257343804 516 Q 342.34175257343804 520 338.34175257343804 520 L 96 520 Z" class="b1"/>
+<text x="348.34175257343804" y="518" font-size="11" class="m">242.0k (-33%)</text>
+<path d="M 96 522 L 263.59941264617953 522 Q 267.59941264617953 522 267.59941264617953 526 L 267.59941264617953 530 Q 267.59941264617953 534 263.59941264617953 534 L 96 534 Z" class="b2"/>
+<text x="273.59941264617953" y="532" font-size="11" class="m">168.6k (-54%)</text>
+<path d="M 96 536 L 464.20595938222425 536 Q 468.20595938222425 536 468.20595938222425 540 L 468.20595938222425 544 Q 468.20595938222425 548 464.20595938222425 548 L 96 548 Z" class="b3"/>
+<text x="474.20595938222425" y="546" font-size="11" class="m">365.6k (+1%)</text>
+<text x="88" y="574" font-size="12" font-weight="600" class="t" text-anchor="end">leveldb</text>
+<text x="88" y="587" font-size="10" class="m" text-anchor="end">cpp</text>
+<path d="M 96 562 L 513.7569288925368 562 Q 517.7569288925368 562 517.7569288925368 566 L 517.7569288925368 570 Q 517.7569288925368 574 513.7569288925368 574 L 96 574 Z" class="b0"/>
+<text x="523.7569288925368" y="572" font-size="11" class="m">414.3k</text>
+<text x="100" y="586" font-size="10" class="m">not measured</text>
+<path d="M 96 590 L 259.3367118728304 590 Q 263.3367118728304 590 263.3367118728304 594 L 263.3367118728304 598 Q 263.3367118728304 602 259.3367118728304 602 L 96 602 Z" class="b2"/>
+<text x="269.3367118728304" y="600" font-size="11" class="m">164.4k (-60%)</text>
+<path d="M 96 604 L 347.5278880112049 604 Q 351.5278880112049 604 351.5278880112049 608 L 351.5278880112049 612 Q 351.5278880112049 616 347.5278880112049 616 L 96 616 Z" class="b3"/>
+<text x="357.5278880112049" y="614" font-size="11" class="m">251.0k (-39%)</text>
+<text x="88" y="642" font-size="12" font-weight="600" class="t" text-anchor="end">slim</text>
+<text x="88" y="655" font-size="10" class="m" text-anchor="end">php</text>
+<path d="M 96 630 L 262.998745472481 630 Q 266.998745472481 630 266.998745472481 634 L 266.998745472481 638 Q 266.998745472481 642 262.998745472481 642 L 96 642 Z" class="b0"/>
+<text x="272.998745472481" y="640" font-size="11" class="m">168.0k</text>
+<text x="100" y="654" font-size="10" class="m">not measured</text>
+<path d="M 96 658 L 175.8775713672543 658 Q 179.8775713672543 658 179.8775713672543 662 L 179.8775713672543 666 Q 179.8775713672543 670 175.8775713672543 670 L 96 670 Z" class="b2"/>
+<text x="185.8775713672543" y="668" font-size="11" class="m">82.4k (-51%)</text>
+<path d="M 96 672 L 222.1075640629824 672 Q 226.1075640629824 672 226.1075640629824 676 L 226.1075640629824 680 Q 226.1075640629824 684 222.1075640629824 684 L 96 684 Z" class="b3"/>
+<text x="232.1075640629824" y="682" font-size="11" class="m">127.8k (-24%)</text>
+<text x="88" y="710" font-size="12" font-weight="600" class="t" text-anchor="end">lualine</text>
+<text x="88" y="723" font-size="10" class="m" text-anchor="end">lua</text>
+<path d="M 96 698 L 588.8443979246831 698 Q 592.8443979246831 698 592.8443979246831 702 L 592.8443979246831 706 Q 592.8443979246831 710 588.8443979246831 710 L 96 710 Z" class="b0"/>
+<text x="598.8443979246831" y="708" font-size="11" class="m">488.0k</text>
+<text x="100" y="722" font-size="10" class="m">not measured</text>
+<path d="M 96 726 L 456.0898259776053 726 Q 460.0898259776053 726 460.0898259776053 730 L 460.0898259776053 734 Q 460.0898259776053 738 456.0898259776053 738 L 96 738 Z" class="b2"/>
+<text x="466.0898259776053" y="736" font-size="11" class="m">357.6k (-27%)</text>
+<path d="M 96 740 L 488.11149481547295 740 Q 492.11149481547295 740 492.11149481547295 744 L 492.11149481547295 748 Q 492.11149481547295 752 488.11149481547295 752 L 96 752 Z" class="b3"/>
+<text x="498.11149481547295" y="750" font-size="11" class="m">389.1k (-20%)</text>
+<text x="88" y="778" font-size="12" font-weight="600" class="t" text-anchor="end">darthttp</text>
+<text x="88" y="791" font-size="10" class="m" text-anchor="end">dart</text>
+<path d="M 96 766 L 398.56932657625435 766 Q 402.56932657625435 766 402.56932657625435 770 L 402.56932657625435 774 Q 402.56932657625435 778 398.56932657625435 778 L 96 778 Z" class="b0"/>
+<text x="408.56932657625435" y="776" font-size="11" class="m">301.1k</text>
+<text x="100" y="790" font-size="10" class="m">not measured</text>
+<path d="M 96 794 L 208.21280883139178 794 Q 212.21280883139178 794 212.21280883139178 798 L 212.21280883139178 802 Q 212.21280883139178 806 208.21280883139178 806 L 96 806 Z" class="b2"/>
+<text x="218.21280883139178" y="804" font-size="11" class="m">114.1k (-62%)</text>
+<path d="M 96 808 L 768 808 Q 772 808 772 812 L 772 816 Q 772 820 768 820 L 96 820 Z" class="b3"/>
+<text x="778" y="818" font-size="11" class="m">664.0k (+121%)</text>
+<text x="24" y="888" font-size="12" font-weight="600" class="t">Median vs baseline: @samchon/graph 33% fewer (n=1) · codegraph 51% fewer (n=11) · serena 6% fewer (n=11)</text>
+</svg>

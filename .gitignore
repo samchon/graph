@@ -22,3 +22,6 @@ tests/benchmark/results/codex-*.json
 
 tests/benchmark/results/*.svg
 tests/benchmark/results/.excluded/
+
+# package README is copied from the root at build time
+packages/graph/README.md

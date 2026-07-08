@@ -128,13 +128,15 @@ export const CORPUS = [
     maxFiles: 1500,
   },
   {
-    name: "flutter",
+    // flutter's 6.5k-file monorepo made the Dart analysis server emit a
+    // pathological ~500MB reference graph; dart-lang/http is a real,
+    // focused multi-package HTTP library that indexes cleanly (339 nodes /
+    // 384 edges, 7MB).
+    name: "darthttp",
     language: "dart",
-    url: "https://github.com/flutter/flutter.git",
-    commit: "23815692ac0dfd036fed2f58ccc9f947bc7df9c3",
-    // flutter is an enormous monorepo; the Dart analysis server scans the whole
-    // workspace, so keep the file cap modest and give initialize room.
-    maxFiles: 400,
+    url: "https://github.com/dart-lang/http.git",
+    commit: "5d94ef52582867e077bf41c3fa20fb8b1d1d834e",
+    maxFiles: 300,
     lspTimeoutMs: 90000,
   },
 ];

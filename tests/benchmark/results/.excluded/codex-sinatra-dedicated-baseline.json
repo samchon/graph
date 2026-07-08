@@ -1,0 +1,52 @@
+{
+  "harness": "codex",
+  "tool": "baseline",
+  "repo": "sinatra",
+  "language": "ruby",
+  "commit": "5236d3459b8b9015e5ce21ddd0c6beb0db4081d4",
+  "repoDir": "C:\\Users\\samch\\AppData\\Local\\Temp\\samchon-graph-corpus\\sinatra",
+  "model": "gpt-5.4-mini",
+  "effort": "high",
+  "promptId": "sinatra-dedicated-v1",
+  "promptFamily": "dedicated",
+  "questionSha256": "104c57cd376b264daac828a6f3e71d347947bbd4b3fa21267006dc71c2bba508",
+  "runs": 1,
+  "question": "How does Sinatra match a request to a route handler?",
+  "traceDir": "D:\\github\\samchon\\graph\\tests\\benchmark\\results\\codex-sinatra-dedicated-baseline.traces",
+  "samples": {
+    "baseline": [
+      {
+        "tokens": 7068,
+        "cached": 1536,
+        "reasoning": 356,
+        "tokensWithReasoning": 7424,
+        "turns": 1,
+        "usage": [
+          {
+            "input": 6406,
+            "cachedInput": 1536,
+            "output": 662,
+            "reasoning": 356
+          }
+        ],
+        "tools": 0,
+        "shell": 0,
+        "graph": 0,
+        "web": 0,
+        "sourceTouches": 0,
+        "shellCommands": [],
+        "types": {
+          "agent_message": 1
+        },
+        "durMs": 19907,
+        "ok": true,
+        "answer": "Sinatra matches a request in two steps:\n\n1. `HTTP method` must match  \n   `get`, `post`, `put`, `delete`, etc. are matched against the request method. `HEAD` is typically handled via `GET` if no explicit `HEAD` route exists.\n\n2. `Path` must match the route pattern  \n   The path is compared against the route definitions in the order they were declared. The first match wins unless the route calls `pass`.\n\nExamples of path patterns Sinatra supports:\n- Static: `get '/about'`\n- Named params: `get '/users/:id'`  \n  `:id` is captured into `params[:id]`\n- Splat: `get '/files/*'`\n- Regex: `get %r{^/items/(\\d+)$}`\n\nSo this:\n\n```ruby\nget '/posts/:id' do\n  \"post #{params[:id]}\"\nend\n```\n\nmatches:\n\n```text\nGET /posts/42\n```\n\nand sets:\n\n```ruby\nparams[:id] == \"42\"\n```\n\nImportant behavior:\n- Routes are checked in declaration order.\n- The first matching route handles the request.\n- If a route calls `pass`, Sinatra keeps searching for the next match.\n- If nothing matches, Sinatra returns `404 Not Found`.\n\nIf you want, I can also show the exact matching order with `before`, `route`, and `pass` in a small example.",
+        "error": "",
+        "promptId": "sinatra-dedicated-v1",
+        "questionSha256": "104c57cd376b264daac828a6f3e71d347947bbd4b3fa21267006dc71c2bba508",
+        "run": 1,
+        "attempts": 1
+      }
+    ]
+  }
+}

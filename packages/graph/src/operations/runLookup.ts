@@ -1,8 +1,10 @@
 import { GraphMemory } from "../model/GraphMemory";
 import { IGraphLookup, IGraphNode } from "../structures";
+import { isSupportPath } from "./isSupportPath";
 import {
   bound,
   isStructural,
+  isTestPath,
   resultGuide,
   resultNext,
   signatureOf,
@@ -10,39 +12,64 @@ import {
   summaryOf,
 } from "./common";
 
+// One file should not crowd out the rest of the ranking, so cap hits per file.
+const PER_FILE = 3;
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 6;
 
+/**
+ * Rank the graph's symbols against a natural query. Scoring blends exact and
+ * dotted-name matches, CamelCase/subword coverage, file-path terms, a prefix
+ * bonus, and dependency centrality, then dampens external, generated, and test
+ * nodes and caps per file so the result is a diverse, relevant shortlist rather
+ * than one file's roster.
+ */
 export function runLookup(
   graph: GraphMemory,
   props: IGraphLookup.IRequest,
 ): IGraphLookup {
-  const query = props.query.trim();
-  const terms = subwords(query);
+  const terms = subwords(props.query);
+  const codeTerms = exactCodeTerms(props.query);
+  const requestedKinds = requestedSymbolKinds(props.query);
+  const queryLc = props.query.trim().toLowerCase();
+  const wantsInternal = wantsInternalSymbol(queryLc, codeTerms);
+  const wantsSupport = wantsSupportSymbol(queryLc);
+  const includeExternal = props.includeExternal === true;
   if (terms.length === 0) {
     return {
       type: "lookup",
       hits: [],
-      next: resultNext("clarify", "The lookup query is empty."),
-      guide: resultGuide("Ask for a concrete symbol, file, or phrase."),
+      next: resultNext(
+        "clarify",
+        "No symbol matched; ask for a concrete symbol or scope.",
+      ),
+      guide: resultGuide(
+        "No symbol matched; answer that the graph did not resolve this name or ask for a more concrete symbol.",
+      ),
     };
   }
 
-  const includeExternal = props.includeExternal === true;
   const scored: IGraphLookup.IHit[] = [];
   for (const node of graph.nodes) {
     if (node.kind === "file") continue;
     if (!includeExternal && node.external) continue;
     if (props.language !== undefined && node.language !== props.language) continue;
     if (props.kind !== undefined && node.kind !== props.kind) continue;
-    const score = scoreNode(graph, node, query, terms);
+    const score = scoreNode(
+      graph,
+      node,
+      queryLc,
+      terms,
+      codeTerms,
+      requestedKinds,
+      wantsInternal,
+      wantsSupport,
+    );
     if (score <= 0) continue;
     const hit: IGraphLookup.IHit = {
       ...summaryOf(node),
       score: Math.round(score),
     };
-    const signature = signatureOf(graph.project, node);
-    if (signature !== undefined) hit.signature = signature;
     if (node.decorators !== undefined && node.decorators.length > 0) {
       hit.decorators = node.decorators;
     }
@@ -50,75 +77,193 @@ export function runLookup(
   }
 
   scored.sort((a, b) => b.score - a.score);
+
+  // Diversity: keep at most PER_FILE hits per file while filling up to the limit.
   const limit = bound(props.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
+  const perFile = new Map<string, number>();
+  const hits: IGraphLookup.IHit[] = [];
+  for (const hit of scored) {
+    const used = perFile.get(hit.file) ?? 0;
+    if (used >= PER_FILE) continue;
+    perFile.set(hit.file, used + 1);
+    hits.push(hit);
+    if (hits.length >= limit) break;
+  }
+
+  // Attach each kept hit's signature only for the shortlist, so the model can
+  // often answer from lookup alone without a details call.
+  for (const hit of hits) {
+    const node = graph.node(hit.id);
+    // hits are built from real graph nodes, so the id always resolves.
+    /* c8 ignore next */
+    if (node === undefined) continue;
+    const sig = signatureOf(graph.project, node);
+    if (sig !== undefined) hit.signature = sig;
+  }
+
+  // Backtick-quoted code handles that matched nothing are worth flagging so the
+  // model does not silently assume they resolved.
+  const matched = new Set(
+    hits.flatMap((hit) => subwords(hit.name)),
+  );
+  const unknown = codeTerms.filter(
+    (term) => !subwords(term).every((sub) => matched.has(sub)),
+  );
+
   return {
     type: "lookup",
-    hits: diversify(scored, limit),
+    hits,
+    ...(unknown.length > 0 ? { unknown } : {}),
     next: resultNext(
       "inspect",
-      "Use one returned id for details or trace when the answer needs selected shape or flow.",
+      "Use one returned id for trace/details when the answer needs flow or shape.",
       "details",
     ),
     guide: resultGuide(
-      "Use ranked hits and signatures as symbol evidence. If the target is clear, answer or make one focused details/trace call.",
+      "Use ranked hits and signatures as symbol evidence. If the target is clear, answer or make one focused trace/details call; do not search files to verify the match.",
     ),
   };
 }
 
+/** Score one node against the query; 0 means no match. */
 function scoreNode(
   graph: GraphMemory,
   node: IGraphNode,
-  query: string,
+  queryLc: string,
   terms: readonly string[],
+  codeTerms: readonly string[],
+  requestedKinds: Set<string>,
+  wantsInternal: boolean,
+  wantsSupport: boolean,
 ): number {
   const name = node.name.toLowerCase();
   const qualified = (node.qualifiedName ?? node.name).toLowerCase();
-  const file = node.file.toLowerCase();
-  const queryLc = query.toLowerCase();
-  let score = 0;
+  const nameSubs = subwords(node.name);
+  const qualifiedSubs = subwords(node.qualifiedName ?? node.name);
+  const pathSubs = subwords(node.file);
 
-  if (queryLc === name || queryLc === qualified || queryLc === node.id.toLowerCase()) {
-    score += 120;
-  } else if (qualified.endsWith(queryLc) || queryLc.includes(qualified)) {
+  let score = 0;
+  if (queryLc === name || queryLc === qualified) {
+    score += 100;
+  } else if (qualified.includes(".") && queryLc.includes(qualified)) {
     score += 85;
-  } else if (file.endsWith(queryLc)) {
-    score += 55;
+  } else if (queryLc.includes(".") && qualified.includes(queryLc)) {
+    score += 60;
   }
 
-  const nameWords = subwords(node.qualifiedName ?? node.name);
-  const fileWords = subwords(node.file);
+  for (const codeTerm of codeTerms) {
+    if (name === codeTerm || qualified === codeTerm) {
+      score += 110;
+    } else if (qualified.endsWith(`.${codeTerm}`)) {
+      score += 95;
+    } else if (codeTerm.includes(".") && qualified.endsWith(codeTerm)) {
+      score += 85;
+    }
+  }
+
+  if (requestedKinds.has(node.kind)) score += 16;
+
   let covered = 0;
   for (const term of terms) {
-    if (nameWords.includes(term)) {
-      score += 14;
+    if (nameSubs.includes(term)) {
+      score += 12;
       covered++;
-    } else if (name.includes(term) || qualified.includes(term)) {
+    } else if (qualifiedSubs.includes(term)) {
       score += 8;
       covered++;
-    } else if (fileWords.includes(term) || file.includes(term)) {
+    } else if (name.includes(term)) {
+      score += 5;
+      covered++;
+    } else if (pathSubs.includes(term)) {
       score += 3;
     }
   }
-  if (covered === terms.length) score += 12;
-  if (node.exported) score += 8;
-  if (node.decorators !== undefined && node.decorators.length > 0) score += 4;
-  const degree =
-    graph.incoming(node.id).filter((edge) => !isStructural(edge.kind)).length +
-    graph.outgoing(node.id).filter((edge) => !isStructural(edge.kind)).length;
-  score += Math.min(10, Math.log2(1 + degree) * 2);
+  // Every query term landed somewhere in the name: a strong whole-query match.
+  if (covered === terms.length) score += 10;
+  if (name.startsWith(terms[0]!)) score += 4;
+
+  if (score <= 0) return 0;
+
+  // Centrality: a symbol the codebase leans on is a likelier target.
+  const fan = degree(graph, node.id);
+  score += Math.min(8, Math.log2(1 + fan) * 2);
+
+  // Dampen what is rarely the intended target.
   if (node.ignored) score *= 0.3;
+  if (isTestPath(node.file)) score *= 0.7;
+  if (!wantsSupport && isSupportPath(node.file)) score *= 0.35;
+  if (!wantsInternal && isInternalish(node)) score *= 0.82;
   return score;
 }
 
-function diversify(hits: IGraphLookup.IHit[], limit: number): IGraphLookup.IHit[] {
-  const out: IGraphLookup.IHit[] = [];
-  const perFile = new Map<string, number>();
-  for (const hit of hits) {
-    const used = perFile.get(hit.file) ?? 0;
-    if (used >= 3) continue;
-    perFile.set(hit.file, used + 1);
-    out.push(hit);
-    if (out.length >= limit) break;
+function wantsSupportSymbol(queryLc: string): boolean {
+  return /\b(test|tests|spec|fixture|fixtures|sample|samples|example|examples|generated|build|dist)\b/.test(
+    queryLc,
+  );
+}
+
+function wantsInternalSymbol(queryLc: string, codeTerms: readonly string[]): boolean {
+  return (
+    /\b(internal|private|implementation|impl)\b/.test(queryLc) ||
+    codeTerms.some((term) => term.startsWith("_") || term.includes("internal"))
+  );
+}
+
+function isInternalish(node: IGraphNode): boolean {
+  const name = node.qualifiedName ?? node.name;
+  return (
+    name.startsWith("_") ||
+    name.includes("._") ||
+    subwords(name).some((word) => word === "internal" || word === "internals")
+  );
+}
+
+function exactCodeTerms(query: string): string[] {
+  const out = new Set<string>();
+  for (const match of query.matchAll(/`([^`]+)`/g)) {
+    const normalized = normalizeCodeTerm(match[1]!);
+    if (normalized !== undefined) out.add(normalized);
   }
-  return out;
+  for (const match of query.matchAll(
+    /\b([A-Za-z_$][\w$]*)\s+(method|function|class|interface|type|variable)\b/gi,
+  )) {
+    const normalized = normalizeCodeTerm(match[1]!);
+    if (normalized !== undefined) out.add(normalized);
+  }
+  for (const match of query.matchAll(
+    /\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+\b/g,
+  )) {
+    const normalized = normalizeCodeTerm(match[0]);
+    if (normalized !== undefined) out.add(normalized);
+  }
+  return [...out];
+}
+
+function requestedSymbolKinds(query: string): Set<string> {
+  const kinds = new Set<string>();
+  const lc = query.toLowerCase();
+  if (/\bmethods?\b/.test(lc)) kinds.add("method");
+  if (/\bfunctions?\b/.test(lc)) {
+    kinds.add("function");
+    kinds.add("method");
+    kinds.add("variable");
+  }
+  if (/\bclasses?\b/.test(lc)) kinds.add("class");
+  if (/\binterfaces?\b/.test(lc)) kinds.add("interface");
+  if (/\btypes?\b/.test(lc)) kinds.add("type");
+  if (/\bvariables?\b|\bconst\b|\blet\b/.test(lc)) kinds.add("variable");
+  return kinds;
+}
+
+function normalizeCodeTerm(raw: string): string | undefined {
+  const value = raw.trim().toLowerCase();
+  return /^[a-z_$][\w$]*(?:\.[a-z_$][\w$]*)*$/.test(value) ? value : undefined;
+}
+
+/** Non-structural in+out degree (code dependency, not nesting). */
+function degree(graph: GraphMemory, id: string): number {
+  let n = 0;
+  for (const edge of graph.outgoing(id)) if (!isStructural(edge.kind)) n++;
+  for (const edge of graph.incoming(id)) if (!isStructural(edge.kind)) n++;
+  return n;
 }

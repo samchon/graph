@@ -6,11 +6,11 @@ catalogs:
     typescript: 7.0.1-rc
   samchon:
     "@nestia/e2e": 12.0.0-rc.2
-    "@ttsc/unplugin": ^0.16.12
-    "@typia/interface": 13.0.0-rc.1
-    "@typia/mcp": 13.0.0-rc.1
-    ttsc: ^0.16.12
-    typia: 13.0.0-rc.1
+    "@ttsc/unplugin": ^0.17.3
+    "@typia/interface": 13.0.0-rc.2
+    "@typia/mcp": 13.0.0-rc.2
+    ttsc: ^0.17.3
+    typia: 13.0.0-rc.2
   bundler:
     esbuild: ^0.25.12
   lsp:

@@ -1,8 +1,9 @@
 import { GraphMemory } from "../model/GraphMemory";
-import { IGraphEdge, IGraphTrace } from "../structures";
+import { IGraphEdge, IGraphNode, IGraphTrace } from "../structures";
 import {
   bound,
   compareEdges,
+  edgeRank,
   isExecution,
   isTestPath,
   isTypeEdge,
@@ -18,15 +19,42 @@ const DEFAULT_DEPTH = 2;
 const DEFAULT_MAX_NODES = 6;
 const MAX_OPEN_DEPTH = 2;
 const MAX_OPEN_NODES = 8;
+const MAX_IMPACT_DEPTH = 4;
+const MAX_IMPACT_NODES = 16;
+const MAX_HOPS_PER_NODE = 2;
+const MAX_STEPS = 6;
 const MAX_PATH_DEPTH = 12;
 
+/**
+ * Breadth-first trace along the dependency graph. Structural
+ * (contains/exports/imports) edges are excluded so the path is real call/type
+ * flow; forward walks callees, reverse and impact walk callers. Impact
+ * additionally tags each reached node's role so the blast radius on the public
+ * surface is legible.
+ */
 export function runTrace(
   graph: GraphMemory,
   props: IGraphTrace.IRequest,
 ): IGraphTrace {
   const direction = props.direction ?? "forward";
   const focus = props.focus ?? "all";
+  const impact = direction === "impact";
+  const reverse = direction === "reverse" || direction === "impact";
   const includeExternal = props.includeExternal === true;
+  const maxDepth = bound(
+    props.maxDepth,
+    DEFAULT_DEPTH,
+    1,
+    impact ? MAX_IMPACT_DEPTH : MAX_OPEN_DEPTH,
+  );
+  const maxNodes = bound(
+    props.maxNodes,
+    DEFAULT_MAX_NODES,
+    1,
+    impact ? MAX_IMPACT_NODES : MAX_OPEN_NODES,
+  );
+  const maxHops = maxNodes * MAX_HOPS_PER_NODE;
+
   const start = resolveHandle(graph, props.from);
   if (start.candidates !== undefined) {
     return {
@@ -52,6 +80,8 @@ export function runTrace(
     };
   }
 
+  // Path mode: with `to`, return the dependency path from `from` to `to`, the
+  // one-call answer for "how does A reach B", instead of an open-ended trace.
   if (props.to !== undefined && props.to.trim() !== "") {
     const target = resolveHandle(graph, props.to);
     const startNode = traceNode(graph, start.node);
@@ -109,41 +139,54 @@ export function runTrace(
     };
   }
 
-  const reverse = direction === "reverse" || direction === "impact";
-  const maxDepth = bound(props.maxDepth, DEFAULT_DEPTH, 1, MAX_OPEN_DEPTH);
-  const maxNodes = bound(props.maxNodes, DEFAULT_MAX_NODES, 1, MAX_OPEN_NODES);
-  const queue: Array<{ id: string; depth: number }> = [{ id: start.node.id, depth: 0 }];
-  const visited = new Set<string>([start.node.id]);
-  const reached = new Map<string, IGraphTrace.INode>();
   const hops: IGraphTrace.IHop[] = [];
+  const reached = new Map<string, IGraphTrace.INode>();
+  const visited = new Set<string>([start.node.id]);
+  let queue: Array<{ id: string; depth: number }> = [{ id: start.node.id, depth: 0 }];
   let truncated = false;
 
   while (queue.length > 0) {
-    const item = queue.shift()!;
-    if (item.depth >= maxDepth) continue;
-    const edges = (reverse ? graph.incoming(item.id) : graph.outgoing(item.id))
-      .filter((edge) => traversable(edge, focus))
-      .sort(compareEdges);
-    for (const edge of edges) {
-      const otherId = reverse ? edge.from : edge.to;
-      const other = graph.node(otherId);
-      if (other === undefined || other.kind === "file") continue;
-      if (!includeExternal && other.external) continue;
-      const hop = hopOf(edge, item.depth + 1);
-      if (visited.has(otherId)) {
-        hops.push(hop);
-        continue;
-      }
-      if (reached.size >= maxNodes) {
+    const next: Array<{ id: string; depth: number }> = [];
+    for (const { id, depth } of queue) {
+      if (depth >= maxDepth) {
         truncated = true;
         continue;
       }
-      visited.add(otherId);
-      const nextNode = traceNode(graph, other, item.depth + 1, false, direction === "impact");
-      reached.set(otherId, nextNode);
-      queue.push({ id: otherId, depth: item.depth + 1 });
-      hops.push(hop);
+      const edges = orderedEdges(
+        graph,
+        reverse ? graph.incoming(id) : graph.outgoing(id),
+        impact,
+      ).filter((edge) => traversable(edge, focus));
+      for (const edge of edges) {
+        const otherId = reverse ? edge.from : edge.to;
+        const other = graph.node(otherId);
+        if (other === undefined || other.kind === "file") continue;
+        if (!includeExternal && other.external) continue;
+        const hop = hopOf(edge, depth + 1);
+        // A back-edge to the start or an already-reached node: record the hop;
+        // its endpoints are already represented.
+        if (visited.has(otherId)) {
+          if (hops.length >= maxHops) truncated = true;
+          else hops.push(hop);
+          continue;
+        }
+        // A new node past the cap is left unrepresented, so drop its hop too:
+        // every hop's endpoints stay resolvable in `reached`/`start`.
+        if (reached.size >= maxNodes) {
+          truncated = true;
+          continue;
+        }
+        if (hops.length >= maxHops) {
+          truncated = true;
+          continue;
+        }
+        visited.add(otherId);
+        reached.set(otherId, traceNode(graph, other, depth + 1, false, impact));
+        next.push({ id: otherId, depth: depth + 1 });
+        hops.push(hop);
+      }
     }
+    queue = next;
   }
 
   return {
@@ -169,7 +212,7 @@ function findPath(
   maxDepth: number,
   focus: IGraphTrace.IRequest["focus"],
   includeExternal: boolean,
-): { path: NonNullable<ReturnType<GraphMemory["node"]>>[]; hops: IGraphTrace.IHop[] } | null {
+): { path: IGraphNode[]; hops: IGraphTrace.IHop[] } | null {
   const parent = new Map<string, { from: string; edge: IGraphEdge }>();
   const queue: Array<{ id: string; depth: number }> = [{ id: startId, depth: 0 }];
   const visited = new Set<string>([startId]);
@@ -192,18 +235,52 @@ function findPath(
           ids.unshift(p.from);
           cursor = p.from;
         }
-        const nodes = ids.map((id) => graph.node(id)).filter((node) => node !== undefined);
-        const hops: IGraphTrace.IHop[] = [];
+        const nodes = ids
+          .map((id) => graph.node(id))
+          .filter((node): node is IGraphNode => node !== undefined);
+        const pathHops: IGraphTrace.IHop[] = [];
         for (let i = 1; i < ids.length; i++) {
           const p = parent.get(ids[i]!);
-          if (p !== undefined) hops.push(hopOf(p.edge, i));
+          if (p !== undefined) pathHops.push(hopOf(p.edge, i));
         }
-        return { path: nodes, hops };
+        return { path: nodes, hops: pathHops };
       }
       queue.push({ id: edge.to, depth: item.depth + 1 });
     }
   }
   return null;
+}
+
+/**
+ * Order edges before traversal. A normal trace ranks by edge kind then
+ * evidence; an impact trace ranks reached endpoints by public-surface role
+ * first so the blast radius on the exported/test surface leads.
+ */
+// Only the impact BFS orders edges here, and it always traverses incoming
+// edges, so the ranked endpoint is the edge's `from`.
+function orderedEdges(
+  graph: GraphMemory,
+  edges: readonly IGraphEdge[],
+  impact: boolean,
+): readonly IGraphEdge[] {
+  if (!impact) return [...edges].sort(compareEdges);
+  return [...edges].sort(
+    (a, b) =>
+      impactEndpointRank(graph, a.from) - impactEndpointRank(graph, b.from) ||
+      edgeRank(a.kind) - edgeRank(b.kind) ||
+      (a.evidence?.startLine ?? 999_999) - (b.evidence?.startLine ?? 999_999),
+  );
+}
+
+function impactEndpointRank(graph: GraphMemory, id: string): number {
+  const node = graph.node(id);
+  // `id` is always an endpoint of a real graph edge, so it resolves.
+  /* c8 ignore next */
+  if (node === undefined) return 9;
+  if (isTestPath(node.file)) return 0;
+  if (node.exported) return 1;
+  if (node.external || node.ignored) return 4;
+  return 2;
 }
 
 function traversable(edge: IGraphEdge, focus: IGraphTrace.IRequest["focus"]): boolean {
@@ -227,7 +304,7 @@ function hopOf(edge: IGraphEdge, depth: number): IGraphTrace.IHop {
 
 function traceNode(
   graph: GraphMemory,
-  node: NonNullable<ReturnType<GraphMemory["node"]>>,
+  node: IGraphNode,
   depth?: number,
   withSignature = false,
   withRoles = false,
@@ -250,7 +327,7 @@ function traceNode(
 }
 
 function steps(graph: GraphMemory, hops: readonly IGraphTrace.IHop[]): string[] {
-  return hops.slice(0, 6).map((hop) => {
+  return hops.slice(0, MAX_STEPS).map((hop) => {
     const from = graph.node(hop.from)!;
     const to = graph.node(hop.to)!;
     const lhs = from.qualifiedName ?? from.name;

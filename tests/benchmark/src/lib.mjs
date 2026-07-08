@@ -29,6 +29,28 @@ if (fs.existsSync(toolsRoot)) {
   if (extra.length > 0) {
     process.env.PATH = `${extra.join(path.delimiter)}${path.delimiter}${process.env.PATH ?? ""}`;
   }
+  // jdtls and kotlin-language-server boot a JVM and honor JAVA_HOME; point it at
+  // the provisioned JDK 21 (jdtls requires 21+) so they resolve the right java
+  // regardless of the machine default.
+  const jdk = fs
+    .readdirSync(toolsRoot, { withFileTypes: true })
+    .find((entry) => entry.isDirectory() && /^jdk-2[1-9]/.test(entry.name));
+  if (jdk !== undefined) {
+    process.env.JAVA_HOME = path.join(toolsRoot, jdk.name);
+    process.env.PATH = `${path.join(toolsRoot, jdk.name, "bin")}${path.delimiter}${process.env.PATH}`;
+  }
+}
+
+// Runtimes installed machine-wide rather than under .work/tools (ruby-lsp ships
+// with the Ruby install; csharp-ls under the dotnet tools dir). Prepend their
+// bin dirs when present so the server binaries resolve from the harness.
+for (const dir of [
+  "C:\\Ruby33-x64\\bin",
+  path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".dotnet", "tools"),
+]) {
+  if (dir && fs.existsSync(dir)) {
+    process.env.PATH = `${dir}${path.delimiter}${process.env.PATH ?? ""}`;
+  }
 }
 
 export function sha256(text) {
@@ -138,7 +160,9 @@ export function run(command, args, options = {}) {
   const result = cp.spawnSync(command, args, {
     encoding: "utf8",
     windowsHide: true,
-    maxBuffer: 64 * 1024 * 1024,
+    // Large trees (flutter's Dart dump) can exceed a 64 MB stdout buffer and
+    // die with ENOBUFS; give the preflight dump room to complete.
+    maxBuffer: 512 * 1024 * 1024,
     ...options,
   });
   if (result.error) throw result.error;

@@ -2,17 +2,13 @@
 
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/samchon/graph/blob/master/LICENSE) [![NPM Version](https://img.shields.io/npm/v/@samchon/graph.svg)](https://www.npmjs.com/package/@samchon/graph) [![NPM Downloads](https://img.shields.io/npm/dm/@samchon/graph.svg)](https://www.npmjs.com/package/@samchon/graph) [![Build Status](https://github.com/samchon/graph/workflows/test/badge.svg)](https://github.com/samchon/graph/actions?query=workflow%3Atest)
 
-A language-neutral code graph over MCP that slashes an agent's token cost.
+**A code graph that answers "how does this repo work?" without your agent reading the repo.**
 
-`@samchon/graph` is the multi-language successor to [`@ttsc/graph`](https://github.com/samchon/ttsc). It exposes **one** MCP tool, `inspect_code_graph`, that returns a bounded, **source-free** index of a repository — declarations, signatures, source-span anchors, and the relationships between them (imports, calls, type references, member access, containment, inheritance, decorators, overrides) — plus diagnostics when a language server can provide them, and a `next` contract telling the agent whether to answer, inspect once more, leave the graph, or ask for clarification.
+`@samchon/graph` is an MCP server. It indexes a codebase — across **18 languages** — into a graph of declarations and their relationships, and answers an agent's orientation questions from that graph instead of from source files. The agent gets the map in one call rather than grepping and reading its way through dozens of files.
 
-Instead of an agent grepping and reading dozens of files to orient itself, one `tour` or `lookup` call returns the answer-ready map. Across a 12-language benchmark that cuts the agent's tokens by a **median of 96%** on onboarding questions — beating [`codegraph`](https://github.com/colbymchenry/codegraph) and [`serena`](https://github.com/oraios/serena).
+That collapses the token cost. On a 12-language benchmark it cuts the agent's tokens by a **median of 96%** on onboarding questions — while [`codegraph`](https://github.com/colbymchenry/codegraph) cuts 63% and [`serena`](https://github.com/oraios/serena) makes it *worse*.
 
-- one tool, not a garden of narrow tools;
-- required `question`, `draft`, and `review` reasoning fields before the request branch;
-- graph evidence only, never source bodies;
-- language-server truth when a server is installed, a fast static fallback when it is not;
-- **18 languages**: TypeScript, JavaScript, Go, Python, Rust, Java, C, C++, C#, Kotlin, Swift, Scala, Zig, Ruby, PHP, Lua, Dart, Bash.
+![Agent token cost — onboarding, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-common.svg)
 
 ## Setup
 
@@ -69,8 +65,6 @@ The community `typescript-language-server` is an unofficial wrapper over the cla
 A faithful port of `codegraph`'s headline agent-cost benchmark, generalized across languages. For one question per repository the `codex` CLI runs headless, once per arm — **baseline** (no MCP) vs `@samchon/graph` vs `codegraph` vs `serena` — and the report sums tokens per assistant turn, median over the runs. Prompts are `codegraph`'s own utterances, pinned by SHA-256; checkouts are pinned by commit; every arm poses the identical question (tool guidance lives only in each server's MCP descriptions).
 
 **Onboarding question, per repository — @samchon/graph cuts a median of 96% of tokens (n=12), vs codegraph 63% and serena +2% (worse than no tool):**
-
-![Agent token cost — onboarding, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-common.svg)
 
 | | @samchon/graph | codegraph | serena |
 |---|---|---|---|

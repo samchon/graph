@@ -1,9 +1,10 @@
+import fs from "node:fs";
+import path from "node:path";
+
 import { GraphMemory } from "../model/GraphMemory";
-import { IGraphDetails } from "../structures";
+import { IGraphDetails, IGraphEvidence, IGraphNode } from "../structures";
 import {
   bound,
-  isExecution,
-  isTypeEdge,
   publicEvidence,
   referencesFromEdges,
   resolveHandle,
@@ -19,7 +20,25 @@ const DEFAULT_MEMBERS = 6;
 const MAX_MEMBERS = 8;
 const DEFAULT_DEPENDENCIES = 2;
 const MAX_DEPENDENCIES = 4;
+// Object literal outlines are navigation aids, not source excerpts.
+const MAX_OBJECT_MEMBER_LINES = 300;
+// Kinds whose value is their member outline, not implementation text.
+const CONTAINER_KINDS = new Set<string>([
+  "class",
+  "interface",
+  "namespace",
+  "module",
+  "enum",
+  "file",
+]);
+const EXECUTION_KINDS = new Set(["calls", "instantiates", "accesses", "renders"]);
+const TYPE_KINDS = new Set(["type_ref", "extends", "implements", "overrides"]);
 
+/**
+ * Resolve each handle to its declared shape: sourceSpan anchors, signature,
+ * direct dependencies, and for containers, member outlines. It answers from the
+ * graph's resolved structure instead of inlining implementation bodies.
+ */
 export function runDetails(
   graph: GraphMemory,
   props: IGraphDetails.IRequest,
@@ -57,7 +76,7 @@ export function runDetails(
       "to",
       dependencyLimit,
       includeExternal,
-      new Set(graph.outgoing(node.id).map((edge) => edge.kind).filter(isExecution)),
+      EXECUTION_KINDS,
     );
     if (calls.length > 0) detail.calls = calls;
 
@@ -67,28 +86,21 @@ export function runDetails(
       "to",
       dependencyLimit,
       includeExternal,
-      new Set(graph.outgoing(node.id).map((edge) => edge.kind).filter(isTypeEdge)),
+      TYPE_KINDS,
     );
     if (types.length > 0) detail.types = types;
 
-    const members = graph
-      .outgoing(node.id)
-      .filter((edge) => edge.kind === "contains")
-      .map((edge) => graph.node(edge.to))
-      .filter((member) => member !== undefined)
-      .slice(0, memberLimit)
-      .map((member) => {
-        const signature = signatureOf(graph.project, member);
-        return {
-          name: member.qualifiedName ?? member.name,
-          kind: member.kind,
-          ...(member.evidence?.startLine !== undefined
-            ? { line: member.evidence.startLine }
-            : {}),
-          ...(signature !== undefined ? { signature } : {}),
-        };
-      });
-    if (members.length > 0) detail.members = members;
+    if (CONTAINER_KINDS.has(node.kind)) {
+      const list = containerMembers(graph, node, memberLimit);
+      if (list.length > 0) detail.members = list;
+    }
+    // A variable bound to an object literal has no `contains` members; parse its
+    // source span for the top-level property/method outline a consumer reaches
+    // for, without inlining the body.
+    if (node.kind === "variable" && detail.sourceSpan !== undefined) {
+      const list = objectLiteralMembers(graph.project, detail.sourceSpan, memberLimit);
+      if (list.length > 0) detail.members = list;
+    }
 
     if (props.neighbors === true) {
       detail.dependsOn = referencesFromEdges(
@@ -124,4 +136,105 @@ export function runDetails(
       "Use signatures, members, calls, types, diagnostics, and sourceSpan anchors as selected symbol facts.",
     ),
   };
+}
+
+/** The members a container owns (via `contains`), each with its own signature. */
+function containerMembers(
+  graph: GraphMemory,
+  node: IGraphNode,
+  limit: number,
+): IGraphDetails.IMember[] {
+  const out: IGraphDetails.IMember[] = [];
+  for (const edge of graph.outgoing(node.id)) {
+    if (edge.kind !== "contains") continue;
+    const member = graph.node(edge.to);
+    if (member === undefined) continue;
+    const signature = signatureOf(graph.project, member);
+    out.push({
+      name: member.qualifiedName ?? member.name,
+      kind: member.kind,
+      ...(member.evidence?.startLine !== undefined ? { line: member.evidence.startLine } : {}),
+      ...(signature !== undefined ? { signature } : {}),
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/**
+ * The top-level members of an object literal, parsed from its source span by
+ * bracket depth. A member is a property (`name:`) or method (`name(`) declared
+ * directly inside the outermost `{ }`.
+ */
+function objectLiteralMembers(
+  project: string,
+  span: Pick<IGraphEvidence, "file" | "startLine" | "endLine">,
+  limit: number,
+): IGraphDetails.IMember[] {
+  if (span.endLine === undefined) return [];
+  if (span.endLine - span.startLine > MAX_OBJECT_MEMBER_LINES) return [];
+  const lines = fileLines(project, span.file);
+  if (lines === undefined) return [];
+  const start = Math.max(0, span.startLine - 1);
+  const end = Math.min(lines.length - 1, span.endLine - 1);
+  const members: IGraphDetails.IMember[] = [];
+  let depth = 0;
+  let entered = false;
+  for (let i = start; i <= end; i++) {
+    // `end` is clamped to lines.length-1, so every index is in range; the `?? ""`
+    // is a defensive fallback that cannot be reached.
+    /* c8 ignore next */
+    const raw = lines[i] ?? "";
+    const text = stripStrings(raw);
+    if (entered && depth === 1) {
+      const member = objectMemberOf(raw, i + 1);
+      if (member !== undefined) {
+        members.push(member);
+        if (members.length >= limit) break;
+      }
+    }
+    for (const char of text) {
+      if (char === "{") {
+        depth++;
+        entered = true;
+      } else if (char === "}") {
+        depth = Math.max(0, depth - 1);
+      }
+    }
+  }
+  return members;
+}
+
+function objectMemberOf(line: string, lineNumber: number): IGraphDetails.IMember | undefined {
+  const text = line.trim();
+  if (text === "" || text.startsWith("//") || text.startsWith("/*") || text.startsWith("*")) {
+    return undefined;
+  }
+  const property = /^(['"]?)([A-Za-z_$][\w$-]*)\1\s*\??\s*:/.exec(text);
+  if (property !== null) {
+    return { name: property[2]!, kind: "property", line: lineNumber, signature: signatureLine(text) };
+  }
+  const method = /^(?:async\s+)?(?:get\s+|set\s+)?([A-Za-z_$][\w$-]*)\s*\(/.exec(text);
+  if (method !== null) {
+    return { name: method[1]!, kind: "method", line: lineNumber, signature: signatureLine(text) };
+  }
+  return undefined;
+}
+
+function signatureLine(text: string): string {
+  return text.replace(/\s+/g, " ").replace(/,$/, "");
+}
+
+function stripStrings(line: string): string {
+  return line.replace(/\/\/.*$/, "").replace(/(['"`])(?:\\.|(?!\1).)*\1/g, "");
+}
+
+/** Read a file's lines once, or undefined when it cannot be read. */
+function fileLines(project: string, file: string): string[] | undefined {
+  if (file === "") return undefined;
+  try {
+    return fs.readFileSync(path.join(project, file), "utf8").split(/\r?\n/);
+  } catch {
+    return undefined;
+  }
 }

@@ -19,3 +19,6 @@ tests/benchmark/.work/
 tests/benchmark/results/*.traces/
 tests/benchmark/results/preflight.json
 tests/benchmark/results/codex-*.json
+
+tests/benchmark/results/*.svg
+tests/benchmark/results/.excluded/

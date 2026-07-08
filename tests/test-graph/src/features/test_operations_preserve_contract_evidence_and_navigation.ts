@@ -8,7 +8,9 @@ export const test_operations_preserve_contract_evidence_and_navigation = async (
   const overview = (await ContractGraph.call(app, { type: "overview", aspect: "all" })).result;
   TestValidator.predicate("overview exposes file count", overview.counts.files >= 1);
   TestValidator.predicate("overview includes diagnostics", overview.diagnostics.some((diagnostic) => diagnostic.code === "C001"));
-  TestValidator.predicate("overview ranks public API", overview.publicApi.some((node) => node.name === "Root.Service.run"));
+  // publicApi ranks true top-level API kinds (class/interface/function/type/enum),
+  // so the Service class surfaces rather than its individual methods.
+  TestValidator.predicate("overview ranks public API", overview.publicApi.some((node) => node.name === "Root.Service"));
 
   const lookup = (await ContractGraph.call(app, { type: "lookup", query: "ExternalApi", includeExternal: true })).result;
   TestValidator.predicate("lookup can include external symbols", lookup.hits.some((hit) => hit.name === "ExternalApi"));

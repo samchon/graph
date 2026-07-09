@@ -58,7 +58,7 @@ A language server improves the graph with semantically resolved edges. Install t
 
 Each server must be on `PATH`. If none is present for a file's language, that language falls back to the static indexer automatically.
 
-JavaScript is intentionally not indexed: in arbitrary repositories, `.js`/`.jsx`/`.mjs`/`.cjs` files are often TypeScript build output or vendored bundles, and the graph cannot distinguish those from handwritten source without project-specific provenance.
+JavaScript is intentionally not indexed. In an arbitrary repository, `.js`/`.jsx`/`.mjs`/`.cjs` files are as often build output or vendored bundles as handwritten source, and the graph cannot tell which without project-specific provenance.
 
 ## Benchmark
 
@@ -160,14 +160,29 @@ export namespace ISamchonGraphApplication {
 
 > [`packages/graph/src/structures/ISamchonGraphApplication.ts`](https://github.com/samchon/graph/blob/master/packages/graph/src/structures/ISamchonGraphApplication.ts)
 
-The whole surface is one tool with one typed contract.
+### Chain of thought
 
-`serena` and `codegraph` steer the agent with instructions: `serena` replaces about 150 lines of system prompt, `codegraph` ships about 100 lines plus a skill file, and both spend most of that on telling the agent not to grep. `@samchon/graph` encodes the policy in the tool's type signature instead:
+`question`, `draft`, and `review` are required fields, so the model writes its reasoning into the call itself: state the question, draft the smallest request, then review the draft. A prompt line can be ignored; a required field cannot.
 
-- There is a single tool. `serena` spreads its graph over about 50 tools and the agent often picks the wrong one; here the request union routes every question through one entry point.
-- The required `question`, `draft`, and `review` fields cannot be skipped the way a prompt line can be ignored, so the model reasons about the request before making it, and a wrong draft is corrected at the `review` step or redirected to `escape`.
-- Results carry names, signatures, and spans, never file bodies. Pasting source into context is where the baseline agent's tokens go, and that cost is what the index removes.
-- The tool description states when the graph applies and when to stop, rather than forbidding file reads, so the agent still opens files when that is the right move.
+The review is allowed to overturn the draft, and that matters more than the planning. When an agent like Claude Code enters the tool with a question the graph cannot answer, `review` replaces the drafted request on the spot, and `escape` backs out entirely. A wrong entry costs one small call instead of a derailed session.
+
+### Precision over restriction
+
+Nothing is forbidden. The tool description says when the graph applies and when to stop. Grep and file reads stay available, and the agent still uses them when they are the right move.
+
+What keeps the agent on the graph is precision. Answers carry names, signatures, edges, and spans resolved by a language server, so the agent accepts them as final instead of re-verifying with its own reads. And since no file body is ever included, a large repository cannot inflate the response.
+
+### Comparison
+
+[`serena`](https://github.com/oraios/serena) and [`codegraph`](https://github.com/colbymchenry/codegraph) fight the agent instead:
+
+- dozens of tools around one graph, so the agent often picks the wrong entry point
+- 100–150 lines of injected instructions, spent mostly on forbidding grep and file reads
+- source snippets inlined into answers, which reintroduces the reading cost a graph exists to remove
+- loosely structured answers the agent does not trust, so it goes back to reading the files to verify them
+- no way to back out, so a wrong entry keeps paying tool calls instead of escaping
+
+Here the same policy fits in one typed contract, enforced by schema instead of pleaded for in prose.
 
 ## Sponsors
 
@@ -179,7 +194,8 @@ Your [donation](https://github.com/sponsors/samchon) encourages `@samchon/graph`
 
 ## References
 
-- Predecessor: [`@ttsc/graph`](https://github.com/samchon/ttsc), the TypeScript-only original that this project generalizes.
+- Predecessor: [`@ttsc/graph`](https://github.com/samchon/ttsc), the TypeScript-only original that this project generalizes; its [launch post](https://ttsc.dev/blog/i-made-ts-compiler-graph-mcp/) analyzes why earlier graph tools did not reduce the token bill.
+- Function calling harness: [part 1 — validation feedback](https://dev.to/samchon/qwen-meetup-function-calling-harness-from-675-to-100-3830) and [part 2 — CoT compliance](https://dev.to/samchon/function-calling-harness-2-cot-compliance-from-991-to-100-4f0h), the typia technique the contract is built on.
 - Compared against: [`codegraph`](https://github.com/colbymchenry/codegraph) and [`serena`](https://github.com/oraios/serena).
 - Protocol: the [Model Context Protocol](https://modelcontextprotocol.io) and the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/).
 - Validation & MCP surface: [`typia`](https://github.com/samchon/typia) and [`@typia/mcp`](https://github.com/samchon/typia).

@@ -27,6 +27,12 @@ const options = {
 };
 let diagnosticSeverities = [2];
 let hangMethod;
+if (process.env.SAMCHON_GRAPH_FAKE_LSP_ARGS_FILE) {
+  fs.writeFileSync(
+    process.env.SAMCHON_GRAPH_FAKE_LSP_ARGS_FILE,
+    JSON.stringify(process.argv.slice(2)),
+  );
+}
 // Delay only the FIRST textDocument/references response by this many ms, then
 // answer the rest immediately — models a server that builds its reference index
 // lazily on the first call and serves the rest from cache.

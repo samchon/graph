@@ -14,13 +14,6 @@
       "questionSha256": "e4f3b02a5d3a1e86a9136d90a4b8bd9c73774733f9f1c021faee61b3ea6e83b5"
     },
     {
-      "id": "express-dedicated-v1",
-      "family": "dedicated",
-      "repo": "express",
-      "file": "express.md",
-      "questionSha256": "63ddb8c8745d0f8aec2a33f077c73e8f4e9c4bcb39d811db063ac7b5aafe07ea"
-    },
-    {
       "id": "gin-dedicated-v1",
       "family": "dedicated",
       "repo": "gin",

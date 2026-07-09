@@ -6,7 +6,7 @@
 // every repo.
 //
 // Coverage standard is codegraph's own: every supported language that appears
-// in its suite is here, one repo each — 15 of the 18 registered languages.
+// in its suite is here, one repo each — 14 of the 17 registered languages.
 // scala, zig, and bash are deliberately absent: codegraph has no dedicated
 // utterance for them, and inventing one would break prompt provenance.
 //
@@ -21,13 +21,6 @@ export const CORPUS = [
     url: "https://github.com/excalidraw/excalidraw.git",
     commit: "dd8296af1802d4920a645591e0de88b9272745fa",
     maxFiles: 2000,
-  },
-  {
-    name: "express",
-    language: "javascript",
-    url: "https://github.com/expressjs/express.git",
-    commit: "ba006766fb964571723138708eacaba0f55759cd",
-    maxFiles: 1500,
   },
   {
     name: "gin",

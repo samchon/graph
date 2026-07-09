@@ -4,15 +4,15 @@
 
 **A code graph that answers "how does this repo work?" without your agent reading the repo.**
 
-`@samchon/graph` is an MCP server. It indexes a codebase — across **18 languages** — into a graph of declarations and their relationships, and answers an agent's orientation questions from that graph instead of from source files. The agent gets the map in one call rather than grepping and reading its way through dozens of files.
+`@samchon/graph` is an MCP server. It indexes a codebase — across **11 languages** — into a graph of declarations and their relationships, and answers an agent's orientation questions from that graph instead of from source files. The agent gets the map in one call rather than grepping and reading its way through dozens of files.
 
-That collapses the token cost. On a 12-language benchmark it cuts the agent's tokens by a **median of 96%** on onboarding questions — while [`codegraph`](https://github.com/colbymchenry/codegraph) cuts 63% and [`serena`](https://github.com/oraios/serena) makes it *worse*.
+That collapses the token cost. On an 11-language benchmark it cuts the agent's tokens by a **median of 96%** on onboarding questions — while [`codegraph`](https://github.com/colbymchenry/codegraph) cuts 63% and [`serena`](https://github.com/oraios/serena) makes it *worse*.
 
 ![Agent token cost — onboarding, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-common.svg)
 
 ## Setup
 
-### 1. Add the MCP server
+### MCP server
 
 ```bash
 npm install -D @samchon/graph
@@ -31,14 +31,14 @@ npm install -D @samchon/graph
 
 Start the client from the project root. The server builds one resident graph and answers every MCP call from memory. With no language server installed it still works — the **static indexer** parses the source directly (every language indexes in ~1–2 seconds, even on large repositories).
 
-### 2. Install a language server (optional, for compiler-grade edges)
+### Language Server
 
 A language server sharpens the graph with semantically-resolved edges. Install the one(s) for your stack — nothing else is auto-provided (an installed editor like VS Code does **not** expose a stdio language server):
 
 | Language | Server | Install |
 |---|---|---|
-| TypeScript / JavaScript | `typescript-language-server` | `npm i -g typescript-language-server typescript` |
-| Python | `pyright-langserver` | `npm i -g pyright` |
+| TypeScript | `ttscserver` | `npm i -D ttsc typescript` |
+| Python | `pyright-langserver` | `npm i -D pyright` |
 | Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
 | Rust | `rust-analyzer` | `rustup component add rust-analyzer` |
 | C / C++ | `clangd` | LLVM release, or your package manager |
@@ -49,16 +49,18 @@ A language server sharpens the graph with semantically-resolved edges. Install t
 | Scala | `metals` | `cs install metals` |
 | Zig | `zls` | zigtools/zls |
 | Ruby | `ruby-lsp` | `gem install ruby-lsp` |
-| PHP | `intelephense` | `npm i -g intelephense` |
+| PHP | `intelephense` | `npm i -D intelephense` |
 | Lua | `lua-language-server` | LuaLS/lua-language-server |
 | Dart | `dart` | ships with the Dart SDK |
-| Bash | `bash-language-server` | `npm i -g bash-language-server` |
+| Bash | `bash-language-server` | `npm i -D bash-language-server` |
 
 Each server must be on `PATH`. If none is present for a file's language, that language falls back to the static indexer automatically.
 
-### 3. TypeScript / JavaScript — the fast path
+### TypeScript — the fast path
 
-The community `typescript-language-server` is an unofficial wrapper over the classic `tsserver` and answers references one symbol at a time. For compiler-grade TS/JS graphs at native speed, point the server at **[`ttscserver`](https://github.com/samchon/ttsc)** (the `typescript-go`–backed LSP host) once it exposes the graph channel — tracked in [samchon/ttsc#335](https://github.com/samchon/ttsc/issues/335) and [#337](https://github.com/samchon/ttsc/issues/337).
+The community `typescript-language-server` is an unofficial wrapper over the classic `tsserver` and answers references one symbol at a time. For compiler-grade TypeScript graphs at native speed, `@samchon/graph` uses **[`ttscserver`](https://github.com/samchon/ttsc)** (the `typescript-go`-backed LSP host). Use `ttscserver` **0.18.0 or newer**, which includes local `textDocument/documentSymbol` and `textDocument/references` answers.
+
+JavaScript is intentionally not indexed as a supported language. In arbitrary repositories, `.js`/`.jsx`/`.mjs`/`.cjs` files are often TypeScript build output, vendored bundles, or handwritten source, and the graph cannot distinguish those cases reliably without project-specific provenance.
 
 ## Benchmark
 
@@ -76,7 +78,13 @@ pnpm --filter @samchon/graph-benchmark render      # results -> SVG charts
 The whole surface is one tool with one typed contract:
 
 ```typescript
+/**
+ * <MCP_SERVER_INSTRUCTION>
+ */
 export interface ISamchonGraphApplication {
+  /**
+   * <TOOL_DESCRPTION>
+   */
   inspect_code_graph(
     props: ISamchonGraphApplication.IProps,
   ): Promise<ISamchonGraphApplication.IResult>;
@@ -98,8 +106,8 @@ export namespace ISamchonGraphApplication {
   }
 
   export interface IDraft {
-    reason: string; //                   why this is the smallest useful step
-    type: IProps["request"]["type"]; //  the request type being considered
+    reason: string;                  // why this is the smallest useful step
+    type: IProps["request"]["type"]; // the request type being considered
   }
 }
 ```
@@ -111,7 +119,7 @@ The other tools try to change what the agent does by *talking* to it — `serena
 - **Index facts, not inlined source.** The result is names, signatures, and spans — never pasted file bodies. That is where the tokens actually go: the baseline agent blows its budget dumping source into context, while the graph answers the same question from the index.
 - **It respects the agent, it doesn't cage it.** No "use this instead of Read." It states a condition, then tells the agent where to stop — so the agent reaches for the graph when it should and skips it when it shouldn't.
 
-This is the design proven by the TypeScript-only predecessor, [`@ttsc/graph`](https://ttsc.dev/blog/i-made-ts-compiler-graph-mcp) — the launch post is the full autopsy of why the tools before it don't move the token bill. `@samchon/graph` generalizes it to 18 languages over LSP, with edges built by a single linear pass per file (a 2,000-file repo indexes in **~1.6 seconds**, re-indexed incrementally as source changes).
+This is the design proven by the TypeScript-only predecessor, [`@ttsc/graph`](https://ttsc.dev/blog/i-made-ts-compiler-graph-mcp) — the launch post is the full autopsy of why the tools before it don't move the token bill. `@samchon/graph` generalizes it to 17 languages over LSP, with edges built by a single linear pass per file (a 2,000-file repo indexes in **~1.6 seconds**, re-indexed incrementally as source changes).
 
 ## Sponsors
 

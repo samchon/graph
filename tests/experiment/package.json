@@ -13,7 +13,7 @@
     "@samchon/graph": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "catalog:lsp",
-    "typescript-language-server": "catalog:lsp"
+    "ttsc": "catalog:samchon",
+    "typescript": "catalog:typescript"
   }
 }

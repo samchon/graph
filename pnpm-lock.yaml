@@ -9,20 +9,13 @@ catalogs:
     esbuild:
       specifier: ^0.25.12
       version: 0.25.12
-  lsp:
-    typescript:
-      specifier: 6.0.3
-      version: 6.0.3
-    typescript-language-server:
-      specifier: ^5.0.0
-      version: 5.3.0
   samchon:
     '@nestia/e2e':
       specifier: ^12.0.0-rc.2
       version: 12.0.0-rc.2
     '@ttsc/unplugin':
-      specifier: ^0.17.4
-      version: 0.17.4
+      specifier: ^0.18.0
+      version: 0.18.0
     '@typia/interface':
       specifier: ^13.0.0
       version: 13.0.0
@@ -30,8 +23,8 @@ catalogs:
       specifier: ^13.0.0
       version: 13.0.0
     ttsc:
-      specifier: ^0.17.4
-      version: 0.17.4
+      specifier: ^0.18.0
+      version: 0.18.0
     typia:
       specifier: ^13.0.0
       version: 13.0.0
@@ -87,7 +80,7 @@ importers:
         version: 6.1.3
       ttsc:
         specifier: catalog:samchon
-        version: 0.17.4
+        version: 0.18.0
       typescript:
         specifier: catalog:typescript
         version: 7.0.2
@@ -104,12 +97,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/graph
     devDependencies:
+      ttsc:
+        specifier: catalog:samchon
+        version: 0.18.0
       typescript:
-        specifier: catalog:lsp
-        version: 6.0.3
-      typescript-language-server:
-        specifier: catalog:lsp
-        version: 5.3.0
+        specifier: catalog:typescript
+        version: 7.0.2
 
   tests/test-graph:
     devDependencies:
@@ -124,7 +117,7 @@ importers:
         version: link:../../packages/graph
       '@ttsc/unplugin':
         specifier: catalog:samchon
-        version: 0.17.4
+        version: 0.18.0
       '@types/node':
         specifier: catalog:utils
         version: 22.20.0
@@ -362,41 +355,41 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@ttsc/darwin-arm64@0.17.4':
-    resolution: {integrity: sha512-afhA3kFUUdUcEnPeiL7Zp/mKwUwg12gHc/SIRlfgRwzG9TAhaWJ2g6v6TcJFQcU+fYIUhOXKFBIZWthUEH+JaQ==}
+  '@ttsc/darwin-arm64@0.18.0':
+    resolution: {integrity: sha512-hE9mPXdIjAIO8YKYLWi1M/P2Wirkymh9gUF9s6HCOWHw2upvk9Y5PAEd1+wkI51p/D+LgpgVnz1j/WRcoXrbNg==}
     cpu: [arm64]
     os: [darwin]
 
-  '@ttsc/darwin-x64@0.17.4':
-    resolution: {integrity: sha512-OLxt7rJ/iUPMNCdOOstreqlBq72tTdgehQuyl0ow4EEAG+l4op0kRFEa7mN/Uf9QYRbciQSzyNwuGVF8L7HbDQ==}
+  '@ttsc/darwin-x64@0.18.0':
+    resolution: {integrity: sha512-GH6hYDB4ES3EYxUbVGIXJ6tFRk6xJwDhY4jwF7DnLihLPuJ6RZC8KQUSBuZMU98Vmjk3S7Loyvw/75UYjrsGrQ==}
     cpu: [x64]
     os: [darwin]
 
-  '@ttsc/linux-arm64@0.17.4':
-    resolution: {integrity: sha512-bysyRNDNv5Tf1gvLzW5Dn0eyZyn2TOCxrr3gHIo5O5FlGAxQutWH2y2rQfarIklpeCuEhoaZfp9/xjZYIsqBZw==}
+  '@ttsc/linux-arm64@0.18.0':
+    resolution: {integrity: sha512-W1qlw51hyE+TfZdVOfxQhjcYw1TsLknibn34ogjapLKqf+c+lfj7XKZcPSf5Jc/ONMMUfGAKrEE4ywr0/iM8HQ==}
     cpu: [arm64]
     os: [linux]
 
-  '@ttsc/linux-arm@0.17.4':
-    resolution: {integrity: sha512-JvKIVldvJYXfsE4Am7FAFZ9zr8k74SrJ8QteAElBOzggfPPdpsC+EV1IIZFOw8/1QH+OrHpW9iNgNrHu2q6YEQ==}
+  '@ttsc/linux-arm@0.18.0':
+    resolution: {integrity: sha512-2U6h38t+lHh/n7U8AO7bOJ3cLRZWHN75lGQhTAwYSv7xgL+BTCnVuShzqDxlGXw71rGm0bB99pFpd04eu+7FPQ==}
     cpu: [arm]
     os: [linux]
 
-  '@ttsc/linux-x64@0.17.4':
-    resolution: {integrity: sha512-t1sjRfFugOBfYXgaChY86+zfcGO//NHORug3qXcB7fA/CU6P9F7b/KhMgWWoExIbTCyQlafFfdgp7WSeVfEF7Q==}
+  '@ttsc/linux-x64@0.18.0':
+    resolution: {integrity: sha512-DDWawo8E8OnbecdUyk9/Rn8jZwYB2h9CInajJQOoJL1P7Ad/ng88OyBQmu2dWW1Q85BITgT/gi/bvcvKEKV9sQ==}
     cpu: [x64]
     os: [linux]
 
-  '@ttsc/unplugin@0.17.4':
-    resolution: {integrity: sha512-KG9YnBkCQ7S6c7Xhg0VXHDRo+XvVCYxtVZquSDkFCRwwVtpZjpdqqiXUif4zIovVaTXEsbTB5lv0b7EmefLQMA==}
+  '@ttsc/unplugin@0.18.0':
+    resolution: {integrity: sha512-sC27T4qfueqZVj5aC79GKWPplcEoaLdvSNFP/pvDZVVG1f0f2LbmaO8LNdegqKYavieEtIuT/LkkXxsKreAsBw==}
 
-  '@ttsc/win32-arm64@0.17.4':
-    resolution: {integrity: sha512-2hj6OrzWTXIXV0PfegxmM052xjDc6eETKVAsrQXez5ogWwGqtIzNjO92YC/y4m3sITRpLr4DXolYT6BVxKSNwg==}
+  '@ttsc/win32-arm64@0.18.0':
+    resolution: {integrity: sha512-+RyYsBjdmfje+EgLysNJoI8dVSFBKsVKGTLtfSq3hsuxPp/OmpMjUv+8Fey0yZkiEu/v8zMKXoYEb8fim2oOTQ==}
     cpu: [arm64]
     os: [win32]
 
-  '@ttsc/win32-x64@0.17.4':
-    resolution: {integrity: sha512-2JRyTFne2GV6OdPmDcKZxlqZnudSUMtNRKnMDEHLydibnKANhvLR4+DkLa2nxzjH+bhLQmqI064CFrV1HaN15A==}
+  '@ttsc/win32-x64@0.18.0':
+    resolution: {integrity: sha512-9aZSnsfhFQsP8zv/tTPWj64+WrTF1QQvGX0nF1G72/Trt6yEinJ10fINslL87GONTy3k4FgapWYT9nW8chVpXQ==}
     cpu: [x64]
     os: [win32]
 
@@ -1307,8 +1300,8 @@ packages:
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
 
-  ttsc@0.17.4:
-    resolution: {integrity: sha512-wrnpvQu9Dtm37/f5TX4YpS29/eV+CbxUOzd8iM9TTGOtTbhFBUtk0qb4fo8ZiJC35IRqD5Y2Oks0p3wt59ie6Q==}
+  ttsc@0.18.0:
+    resolution: {integrity: sha512-XwEUTWQ9zgpM2m7cdZqCsemR5sIes8vN6NWUElPn+WJPc1BUJ9Gm6gZYN/M+lcanplFNAKBqrb3wqrbTbHx+gg==}
     hasBin: true
 
   type-fest@0.21.3:
@@ -1318,16 +1311,6 @@ packages:
   type-is@2.1.0:
     resolution: {integrity: sha512-faYHw0anBbc/kWF3zFTEnxSFOAGUX9GFbOBthvDdLsIlEoWOFOtS0zgCiQYwIskL9iGXZL3kAXD8OoZ4GmMATA==}
     engines: {node: '>= 18'}
-
-  typescript-language-server@5.3.0:
-    resolution: {integrity: sha512-5puofxZHgFdAYtfNpmwCAvgtaYgg8wrUnH30m7Ze3QuguId5RNRadKASpOpyDxTyUdAF51FjhTdjntLw/EuWcQ==}
-    engines: {node: '>=20'}
-    hasBin: true
-
-  typescript@6.0.3:
-    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
-    engines: {node: '>=14.17'}
-    hasBin: true
 
   typescript@7.0.2:
     resolution: {integrity: sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==}
@@ -1359,20 +1342,6 @@ packages:
   vary@1.1.2:
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
     engines: {node: '>= 0.8'}
-
-  vscode-jsonrpc@5.0.1:
-    resolution: {integrity: sha512-JvONPptw3GAQGXlVV2utDcHx0BiY34FupW/kI6mZ5x06ER5DdPG/tXWMVHjTNULF5uKPOUUD0SaXg5QaubJL0A==}
-    engines: {node: '>=8.0.0 || >=10.0.0'}
-
-  vscode-jsonrpc@9.0.1:
-    resolution: {integrity: sha512-rfuA6T75H6m5EkbhtEPzre9pT0HPcDI2MMy4+nPFIBks5J8JBAUHD4tRYSgaBOijIEC7SRkC1kKyXTLqbmh9jw==}
-    engines: {node: '>=14.0.0'}
-
-  vscode-languageserver-protocol@3.18.2:
-    resolution: {integrity: sha512-XRyDbT0Pp3sSNti3JmxVEUMySWCSi1hhM+/KUlCy1hV1zmrqpM1OwO12EAki8blhmLuIMpaJrYbo0OzGVfK2Qg==}
-
-  vscode-languageserver-types@3.18.0:
-    resolution: {integrity: sha512-8TsGPNMIMiiBdkORgRSvLjuiEIiAFtO+KssmYWxQ+uSVvlf7RjK8YKCOjPzZ+YA04jXEV7+7LvkSmHkhpNS99g==}
 
   wcwidth@1.0.1:
     resolution: {integrity: sha512-XHPEwS0q6TaxcvG85+8EYkbiCux2XtWG2mkc47Ng2A77BQu9+DqIOJldST4HgPkuea7dvKSj5VgX3P1d4rW8Tg==}
@@ -1581,29 +1550,29 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@ttsc/darwin-arm64@0.17.4':
+  '@ttsc/darwin-arm64@0.18.0':
     optional: true
 
-  '@ttsc/darwin-x64@0.17.4':
+  '@ttsc/darwin-x64@0.18.0':
     optional: true
 
-  '@ttsc/linux-arm64@0.17.4':
+  '@ttsc/linux-arm64@0.18.0':
     optional: true
 
-  '@ttsc/linux-arm@0.17.4':
+  '@ttsc/linux-arm@0.18.0':
     optional: true
 
-  '@ttsc/linux-x64@0.17.4':
+  '@ttsc/linux-x64@0.18.0':
     optional: true
 
-  '@ttsc/unplugin@0.17.4':
+  '@ttsc/unplugin@0.18.0':
     dependencies:
       unplugin: 2.3.11
 
-  '@ttsc/win32-arm64@0.17.4':
+  '@ttsc/win32-arm64@0.18.0':
     optional: true
 
-  '@ttsc/win32-x64@0.17.4':
+  '@ttsc/win32-x64@0.18.0':
     optional: true
 
   '@types/istanbul-lib-coverage@2.0.6': {}
@@ -2484,15 +2453,15 @@ snapshots:
 
   tslib@2.8.1: {}
 
-  ttsc@0.17.4:
+  ttsc@0.18.0:
     optionalDependencies:
-      '@ttsc/darwin-arm64': 0.17.4
-      '@ttsc/darwin-x64': 0.17.4
-      '@ttsc/linux-arm': 0.17.4
-      '@ttsc/linux-arm64': 0.17.4
-      '@ttsc/linux-x64': 0.17.4
-      '@ttsc/win32-arm64': 0.17.4
-      '@ttsc/win32-x64': 0.17.4
+      '@ttsc/darwin-arm64': 0.18.0
+      '@ttsc/darwin-x64': 0.18.0
+      '@ttsc/linux-arm': 0.18.0
+      '@ttsc/linux-arm64': 0.18.0
+      '@ttsc/linux-x64': 0.18.0
+      '@ttsc/win32-arm64': 0.18.0
+      '@ttsc/win32-x64': 0.18.0
 
   type-fest@0.21.3: {}
 
@@ -2501,13 +2470,6 @@ snapshots:
       content-type: 2.0.0
       media-typer: 1.1.0
       mime-types: 3.0.2
-
-  typescript-language-server@5.3.0:
-    dependencies:
-      vscode-jsonrpc: 5.0.1
-      vscode-languageserver-protocol: 3.18.2
-
-  typescript@6.0.3: {}
 
   typescript@7.0.2:
     optionalDependencies:
@@ -2564,17 +2526,6 @@ snapshots:
       convert-source-map: 2.0.0
 
   vary@1.1.2: {}
-
-  vscode-jsonrpc@5.0.1: {}
-
-  vscode-jsonrpc@9.0.1: {}
-
-  vscode-languageserver-protocol@3.18.2:
-    dependencies:
-      vscode-jsonrpc: 9.0.1
-      vscode-languageserver-types: 3.18.0
-
-  vscode-languageserver-types@3.18.0: {}
 
   wcwidth@1.0.1:
     dependencies:

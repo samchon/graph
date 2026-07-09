@@ -4,13 +4,7 @@ export const LANGUAGE_SPECS: ILanguageSpec[] = [
   {
     language: "typescript",
     extensions: [".ts", ".tsx", ".mts", ".cts"],
-    lsp: { command: "typescript-language-server", args: ["--stdio"] },
-    lineComment: "//",
-  },
-  {
-    language: "javascript",
-    extensions: [".js", ".jsx", ".mjs", ".cjs"],
-    lsp: { command: "typescript-language-server", args: ["--stdio"] },
+    lsp: { command: "ttscserver", args: ["--stdio"] },
     lineComment: "//",
   },
   {

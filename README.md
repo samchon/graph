@@ -4,7 +4,11 @@
 
 `@samchon/graph` is an MCP server that gives AI agents a code graph instead of source files.
 
-On an 11-language benchmark (headless `codex` CLI, gpt-5.4-mini), this reduces the agent's token usage on onboarding questions by a median of 96%. The same benchmark measures [`codegraph`](https://github.com/colbymchenry/codegraph) at 66%, and [`serena`](https://github.com/oraios/serena) at roughly no change (a median 11% reduction, worse than baseline on 5 of 11 repositories).
+It indexes a codebase in 17 languages into a graph of declarations and their relationships, and answers an agent's code questions from that index through a single tool. Semantic edges come from each language's language server when one is installed; otherwise a built-in static parser takes over.
+
+Agents like Claude Code and Codex normally answer a code question by grepping the repository and reading file after file into context, and that reading is most of the token bill. The graph removes the need for it, and its own answers stay small in turn: they carry names, signatures, relationships, and source spans, never file bodies.
+
+Since neither side of that exchange grows with the repository, the cost falls by about the same proportion in every situation, on every codebase. That even distribution is what separates this from [`codegraph`](https://github.com/colbymchenry/codegraph) and [`serena`](https://github.com/oraios/serena), and it shows directly in the chart below:
 
 ![Agent token cost — onboarding, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-codex-gpt-5.4-mini-common.svg)
 
@@ -58,7 +62,7 @@ JavaScript is intentionally not indexed: in arbitrary repositories, `.js`/`.jsx`
 
 ## Benchmark
 
-Each repository is measured with one headless agent run per arm (`baseline` with no MCP, `@samchon/graph`, `codegraph`, `serena`) on two prompt families.
+Each repository is measured with one headless agent run per arm (`baseline` with no MCP, `@samchon/graph`, `codegraph`, `serena`) on two prompt families. The corpus pins 14 repositories, one per language.
 
 ### Onboarding
 
@@ -69,7 +73,7 @@ Every repository is asked the same onboarding question, with no tool guidance ap
 > Find the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.
 
 <details>
-<summary><code>codex</code> · <code>gpt-5.4-mini</code></summary>
+<summary><code>codex</code> · <code>gpt-5.4-mini</code> — median token reduction 96% (codegraph 66%, serena 11%)</summary>
 
 ![Agent token cost — onboarding, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-codex-gpt-5.4-mini-common.svg)
 
@@ -97,7 +101,7 @@ Every repository is asked the same onboarding question, with no tool guidance ap
 | [darthttp](https://github.com/dart-lang/http) | Dart | How does the http package send a request and produce a response? |
 
 <details>
-<summary><code>codex</code> · <code>gpt-5.4-mini</code></summary>
+<summary><code>codex</code> · <code>gpt-5.4-mini</code> — median token reduction 78% (codegraph 52%, serena 5%)</summary>
 
 ![Agent token cost — dedicated question, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-codex-gpt-5.4-mini-dedicated.svg)
 
@@ -118,8 +122,6 @@ pnpm --filter @samchon/graph-benchmark render      # results -> SVG charts
 ```
 
 ## How it works
-
-The whole surface is one tool with one typed contract:
 
 ```typescript
 /**
@@ -157,6 +159,8 @@ export namespace ISamchonGraphApplication {
 ```
 
 > [`packages/graph/src/structures/ISamchonGraphApplication.ts`](https://github.com/samchon/graph/blob/master/packages/graph/src/structures/ISamchonGraphApplication.ts)
+
+The whole surface is one tool with one typed contract.
 
 `serena` and `codegraph` steer the agent with instructions: `serena` replaces about 150 lines of system prompt, `codegraph` ships about 100 lines plus a skill file, and both spend most of that on telling the agent not to grep. `@samchon/graph` encodes the policy in the tool's type signature instead:
 

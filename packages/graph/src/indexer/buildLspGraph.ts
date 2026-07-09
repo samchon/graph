@@ -56,7 +56,11 @@ export async function buildLspGraph(
       continue;
     }
     const command = options.server ?? spec.lsp.command;
-    const args = options.serverArgs ?? spec.lsp.args;
+    const args =
+      options.serverArgs ??
+      (isTtscserverCommand(command)
+        ? [...spec.lsp.args, "--cwd", root]
+        : spec.lsp.args);
     const resolved = resolveCommand(command);
     if (resolved === undefined) {
       warnings.push(`${language}: LSP server not found on PATH: ${command}`);
@@ -64,8 +68,8 @@ export async function buildLspGraph(
       continue;
     }
     // npm installs Windows servers as .cmd shims, which CreateProcess cannot
-    // spawn directly; run those through cmd.exe so typescript-language-server,
-    // pyright-langserver, and friends work from a plain global install.
+    // spawn directly; run those through cmd.exe so ttscserver,
+    // pyright-langserver, and friends work from a plain package install.
     const spawnable = /\.(cmd|bat)$/i.test(resolved)
       ? { command: "cmd.exe", args: ["/d", "/s", "/c", resolved, ...args] }
       : { command, args: [...args] };
@@ -349,8 +353,7 @@ async function collectLanguageGraph(
       edges.push({ from: parent.id, to: node.id, kind: "contains", evidence: node.evidence });
     }
 
-    // Inheritance: the language server does not report supertypes uniformly
-    // (typescript-language-server, for one, has no typeHierarchy), so parse the
+    // Inheritance: language servers do not report supertypes uniformly, so parse the
     // declaration line the same way the static indexer does and resolve the
     // supertypes against the symbols the server did report.
     const byName = new Map<string, IGraphNode[]>();
@@ -664,6 +667,10 @@ function languageIdOf(language: GraphLanguage): string {
   if (language === "csharp") return "csharp";
   if (language === "cpp") return "cpp";
   return language;
+}
+
+function isTtscserverCommand(command: string): boolean {
+  return /^ttscserver(?:\.(?:cmd|bat|exe))?$/i.test(path.basename(command));
 }
 
 // Resolve a server command to the concrete path PATH lookup would run, so the

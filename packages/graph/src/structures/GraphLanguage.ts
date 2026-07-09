@@ -1,7 +1,6 @@
 /** A source language a graph node can be declared in. */
 export type GraphLanguage =
   | "typescript"
-  | "javascript"
   | "go"
   | "rust"
   | "cpp"

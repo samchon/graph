@@ -119,7 +119,6 @@ const findFile = (dir, name) => {
 
 switch (experiment.language) {
   case "typescript":
-  case "javascript":
     break;
   case "go":
     apt(["golang-go"]);

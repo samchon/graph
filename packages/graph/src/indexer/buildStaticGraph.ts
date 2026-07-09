@@ -231,7 +231,7 @@ function parseDeclaration(
       exported: isCapitalized(goType[1]!),
     };
   }
-  if ((language === "typescript" || language === "javascript") && tsVariable !== null) {
+  if (language === "typescript" && tsVariable !== null) {
     return {
       kind: "variable",
       name: tsVariable[1]!,
@@ -296,7 +296,7 @@ function importsOf(
   for (let i = 0; i < lines.length; i++) {
     const text = lines[i]!.trim();
     const names: string[] = [];
-    if (language === "typescript" || language === "javascript") {
+    if (language === "typescript") {
       for (const match of text.matchAll(/\bfrom\s+["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)|^import\s+["']([^"']+)["']/g)) {
         names.push((match[1] ?? match[2] ?? match[3])!);
       }

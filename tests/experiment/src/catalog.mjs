@@ -14,13 +14,6 @@ export const LANGUAGE_EXPERIMENTS = [
     minEdges: 1,
   },
   {
-    language: "javascript",
-    repository: "https://github.com/expressjs/express.git",
-    maxFiles: 120,
-    minNodes: 1,
-    minEdges: 1,
-  },
-  {
     language: "go",
     repository: "https://github.com/gorilla/mux.git",
     maxFiles: 120,

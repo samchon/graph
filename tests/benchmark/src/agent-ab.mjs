@@ -21,7 +21,7 @@
 // Usage:
 //   node tests/benchmark/src/agent-ab.mjs --repo=gin --prompt-family=dedicated --runs=4
 //   node tests/benchmark/src/agent-ab.mjs --repo=flask --prompt-family=common --runs=4 --model=opus
-//   node tests/benchmark/src/agent-ab.mjs --repo=express --serena=1 --runs=2   # comparator arm
+//   node tests/benchmark/src/agent-ab.mjs --repo=tokio --serena=1 --runs=2   # comparator arm
 import cp from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";

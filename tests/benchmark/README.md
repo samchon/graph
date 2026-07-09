@@ -21,7 +21,7 @@ Two harnesses share the same corpus, prompts, and gates:
 
 ### Corpus
 
-15 repos, one per language, taken **verbatim** from codegraph's evaluation suite — repositories and dedicated questions alike (`src/corpus.mjs` + `questions/*.md`). scala, zig, and bash are deliberately absent: codegraph has no dedicated utterance for them, and inventing one would break provenance. The shared `common` onboarding question is asked against every repo.
+14 repos, one per language, taken **verbatim** from codegraph's evaluation suite — repositories and dedicated questions alike (`src/corpus.mjs` + `questions/*.md`). JavaScript is intentionally excluded because `.js`/`.jsx`/`.mjs`/`.cjs` files cannot be distinguished reliably from TypeScript build output in arbitrary repositories; scala, zig, and bash are deliberately absent because codegraph has no dedicated utterance for them. The shared `common` onboarding question is asked against every repo.
 
 ```bash
 pnpm --filter @samchon/graph-benchmark corpus      # list repos, commits, questions

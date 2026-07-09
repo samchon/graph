@@ -6,7 +6,7 @@
 // Usage:
 //   node tests/benchmark/src/run-suite.mjs --runs=4 --model=sonnet
 //   node tests/benchmark/src/run-suite.mjs --prompt-family=common --runs=2
-//   node tests/benchmark/src/run-suite.mjs --repos=gin,flask,express --runs=4
+//   node tests/benchmark/src/run-suite.mjs --repos=gin,flask,tokio --runs=4
 import cp from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

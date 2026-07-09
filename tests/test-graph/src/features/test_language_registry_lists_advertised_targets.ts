@@ -16,4 +16,9 @@ export const test_language_registry_lists_advertised_targets = () => {
       fixture.language,
     );
   }
+  TestValidator.equals(
+    "typescript default server",
+    LANGUAGE_SPECS.find((spec) => spec.language === "typescript")?.lsp,
+    { command: "ttscserver", args: ["--stdio"] },
+  );
 };

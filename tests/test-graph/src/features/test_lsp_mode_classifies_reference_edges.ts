@@ -17,6 +17,11 @@ export const test_lsp_mode_classifies_reference_edges = async () => {
   const kinds = new Set(dump.edges.map((edge) => edge.kind));
   const has = (kind: string) => kinds.has(kind);
 
+  TestValidator.predicate(
+    "LSP struct symbol kind maps to graph type",
+    dump.nodes.some((node) => node.qualifiedName === "Owner.alias" && node.kind === "type"),
+  );
+
   // An identifier followed by `(` invokes: a class/constructor target becomes an
   // instantiation, everything else a call.
   TestValidator.predicate("invoked non-class reference is a call", has("calls"));

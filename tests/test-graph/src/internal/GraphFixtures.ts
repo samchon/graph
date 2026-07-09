@@ -358,12 +358,6 @@ const languageFixtures = [
     source: "export function TypeScriptEntry() { return 1; }\n",
   },
   {
-    language: "javascript",
-    file: "entry.js",
-    symbol: "javascriptEntry",
-    source: "export function javascriptEntry() { return 1; }\n",
-  },
-  {
     language: "go",
     file: "entry.go",
     symbol: "GoEntry",

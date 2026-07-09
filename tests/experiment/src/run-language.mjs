@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
 
 import { buildGraphDump } from "@samchon/graph";
@@ -7,38 +6,12 @@ import { buildGraphDump } from "@samchon/graph";
 import { findExperiment } from "./catalog.mjs";
 import { cloneRepository, ensureDir, parseArgs, resultsRoot, shell } from "./process.mjs";
 
-const require = createRequire(import.meta.url);
 const args = parseArgs(process.argv.slice(2));
 const experiment = findExperiment(args.language);
 const cwd = cloneRepository(experiment, { refresh: args.refresh === "true" });
 // Some language servers need the checkout prepared before they can boot —
 // ruby-lsp, for one, composes a bundle from the project's Gemfile.
 if (experiment.prepare !== undefined) shell(experiment.prepare, { cwd });
-
-const typescriptLanguageServerEntry = () =>
-  path.join(
-    path.dirname(require.resolve("typescript-language-server/package.json")),
-    "lib",
-    "cli.mjs",
-  );
-
-const typescriptTsserverPath = () =>
-  path.join(path.dirname(require.resolve("typescript/package.json")), "lib", "tsserver.js");
-
-const serverFor = (language) => {
-  if (language === "typescript" || language === "javascript") {
-    return {
-      server: process.execPath,
-      serverArgs: [typescriptLanguageServerEntry(), "--stdio"],
-      initializationOptions: {
-        tsserver: {
-          path: typescriptTsserverPath(),
-        },
-      },
-    };
-  }
-  return {};
-};
 
 const started = performance.now();
 const dump = await buildGraphDump({
@@ -47,7 +20,6 @@ const dump = await buildGraphDump({
   languages: [experiment.language],
   maxFiles: experiment.maxFiles,
   ...(experiment.timeoutMs !== undefined ? { lspTimeoutMs: experiment.timeoutMs } : {}),
-  ...serverFor(experiment.language),
 });
 const elapsedMs = Math.round(performance.now() - started);
 const warnings = dump.warnings ?? [];

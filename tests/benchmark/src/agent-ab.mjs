@@ -63,6 +63,9 @@ const claudeRunTimeoutMs = Number(args["claude-run-timeout-ms"] ?? 900000);
 const claudeStartupGraceMs = Number(args["claude-startup-grace-ms"] ?? 5000);
 const serena = args.serena === "1" || args.serena === "true";
 const serenaCommand = args["serena-command"] ?? "uvx";
+const cg = args.cg === "1" || args.cg === "true";
+if (cg && serena) throw new Error("--cg and --serena cannot be combined");
+const toolName = cg ? "codegraph" : serena ? "serena" : "samchon-graph";
 
 const corpusRoot = args.corpus ?? path.join(os.tmpdir(), "samchon-graph-corpus");
 const repoDir = args["repo-dir"]
@@ -79,7 +82,7 @@ if (!armsRequested.baseline && !armsRequested.graph) {
 }
 
 // 1. A built launcher is required for the graph arm.
-if (armsRequested.graph && !serena && !fs.existsSync(graphLauncher)) {
+if (armsRequested.graph && !serena && !cg && !fs.existsSync(graphLauncher)) {
   throw new Error(
     `@samchon/graph launcher not built: ${graphLauncher}\n` +
       "Run `pnpm --filter @samchon/graph build` first.",
@@ -96,7 +99,7 @@ if (!args["repo-dir"]) {
   clonePinned(spec, corpusRoot);
 }
 ensureInstalled(repoDir, { noInstall: args["no-install"] === "1" });
-if (armsRequested.graph && !serena) {
+if (armsRequested.graph && !serena && !cg) {
   const flight = preflightGraph(spec, repoDir);
   if (!flight.ok && args["allow-static"] !== "1") {
     throw new Error(
@@ -104,6 +107,17 @@ if (armsRequested.graph && !serena) {
         `the language server or pass --allow-static=1.\nwarnings: ${flight.warnings.join("; ")}`,
     );
   }
+}
+
+// 2b. codegraph setup cost, mirroring the codex harness: `codegraph init` runs
+// once, outside the measured cell, and its wall time is recorded as toolSetupMs.
+let toolSetupMs;
+if (armsRequested.graph && cg) {
+  const started = Date.now();
+  console.log(`codegraph init ${repoDir} ...`);
+  runOrThrow("codegraph", ["init", repoDir], repoDir);
+  toolSetupMs = Date.now() - started;
+  console.log(`codegraph indexed in ${(toolSetupMs / 1000).toFixed(0)}s`);
 }
 
 // 3. WITH = @samchon/graph (or a comparator); WITHOUT = empty config. Both under
@@ -118,18 +132,20 @@ const emptyCfg = armsRequested.baseline
 if (withCfg) {
   const serverCfg = serena
     ? { serena: serenaServerConfig(repoDir) }
-    : {
-        "samchon-graph": {
-          command: process.execPath,
-          args: [
-            graphLauncher,
-            "--cwd",
-            repoDir,
-            ...(graphMaxFiles ? ["--max-files", String(graphMaxFiles)] : []),
-            ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
-          ],
-        },
-      };
+    : cg
+      ? { codegraph: codegraphServerConfig(repoDir) }
+      : {
+          "samchon-graph": {
+            command: process.execPath,
+            args: [
+              graphLauncher,
+              "--cwd",
+              repoDir,
+              ...(graphMaxFiles ? ["--max-files", String(graphMaxFiles)] : []),
+              ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
+            ],
+          },
+        };
   fs.writeFileSync(withCfg, JSON.stringify({ mcpServers: serverCfg }));
 }
 if (emptyCfg) fs.writeFileSync(emptyCfg, JSON.stringify({ mcpServers: {} }));
@@ -139,20 +155,23 @@ const arms = [
 ].filter((a) => a.cfg);
 
 console.log(
-  `\ncodegraph A/B on ${repoKey} (${spec.language}) — model ${model}, ` +
-    `${runs} run(s) x ${arms.length} arm(s), prompt ${promptFamily}` +
-    (serena ? ", comparator serena" : ""),
+  `\nagent-cost A/B on ${repoKey} (${spec.language}) via claude — model ${model}, ` +
+    `${runs} run(s) x ${arms.length} arm(s), prompt ${promptFamily}, tool ${toolName}`,
 );
 console.log(`Q: ${question}\n`);
 
+// A baseline-only run is tool-independent; name it so every tool's comparison
+// can join against the same cached baseline instead of re-spending on it.
+const reportTool = armsRequested.graph ? toolName : "baseline";
 const reportPath = args.report
   ? path.resolve(args.report)
-  : path.join(benchmarkDir, "results", `agent-ab-${repoKey}-${promptFamily}.json`);
+  : path.join(benchmarkDir, "results", `claude-${repoKey}-${promptFamily}-${reportTool}.json`);
 const traceDir = path.join(
   path.dirname(reportPath),
   `${path.basename(reportPath, path.extname(reportPath))}.traces`,
 );
 fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+fs.rmSync(reportPath, { force: true });
 fs.rmSync(traceDir, { recursive: true, force: true });
 fs.mkdirSync(traceDir, { recursive: true });
 
@@ -200,7 +219,7 @@ const med = (arm, k) =>
   );
 const pct = (g, b) => (b === 0 ? 0 : Math.round((1 - g / b) * 100));
 
-console.log(`\nMedian of ${runs} run(s), codegraph metrics:`);
+console.log(`\nMedian of ${runs} run(s), claude-code metrics:`);
 const line = (label, k, fmt = (x) => x) => {
   const b = med("baseline", k);
   const g = med("graph", k);
@@ -223,7 +242,8 @@ fs.writeFileSync(
   `${JSON.stringify(
     {
       harness: "claude-code",
-      tool: serena ? "serena" : "samchon-graph",
+      tool: reportTool,
+      ...(toolSetupMs !== undefined ? { toolSetupMs } : {}),
       repo: repoKey,
       language: spec.language,
       commit: spec.commit,
@@ -338,6 +358,17 @@ function spawnAsync(command, commandArgs, { input, inputDelayMs = 0, ...spawnOpt
   });
 }
 
+function codegraphServerConfig(targetRepoDir) {
+  const command = process.platform === "win32" ? "cmd.exe" : "codegraph";
+  const cgArgs = (process.platform === "win32" ? ["/d", "/s", "/c", "codegraph"] : []).concat([
+    "serve",
+    "--mcp",
+    "--path",
+    targetRepoDir,
+  ]);
+  return { command, args: cgArgs, env: { CODEGRAPH_NO_DAEMON: "1" } };
+}
+
 function serenaServerConfig(targetRepoDir) {
   return {
     command: serenaCommand,
@@ -423,12 +454,15 @@ function parseStream(text) {
 }
 
 function runOrThrow(command, commandArgs, cwd) {
-  const result = cp.spawnSync(command, commandArgs, { cwd, encoding: "utf8", windowsHide: true });
+  const result = cp.spawnSync(command, commandArgs, {
+    cwd,
+    encoding: "utf8",
+    windowsHide: true,
+    shell: true,
+    stdio: "inherit",
+  });
   if (result.error) throw result.error;
-  if (result.status !== 0) {
-    throw new Error(`${command} ${commandArgs.join(" ")} failed (${result.status})\n${result.stderr ?? ""}`);
-  }
-  return result.stdout ?? "";
+  if (result.status !== 0) throw new Error(`${command} ${commandArgs.join(" ")} failed (${result.status})`);
 }
 
 function median(values) {

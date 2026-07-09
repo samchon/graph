@@ -38,44 +38,54 @@ const DARK = {
   s1: "#3987e5", s2: "#199e70", s3: "#c98500",
 };
 
-const reports = fs
+const allReports = fs
   .readdirSync(resultsRoot)
-  .filter((file) => /^codex-.*\.json$/.test(file))
+  .filter((file) => /^(codex|claude)-.*\.json$/.test(file))
   .map((file) => JSON.parse(fs.readFileSync(path.join(resultsRoot, file), "utf8")));
-if (reports.length === 0) {
-  console.error("No codex-*.json reports in results/; run the suite first.");
+if (allReports.length === 0) {
+  console.error("No codex-*.json or claude-*.json reports in results/; run the suite first.");
   process.exit(1);
 }
 
-const families = [...new Set(reports.map((report) => report.promptFamily))].sort();
-const medianTokens = (report, arm) =>
-  median((report.samples[arm] ?? []).filter((m) => m.tokens > 0).map((m) => m.tokens));
-const cell = (family, repo, tool) => {
-  const report = reports.find(
-    (r) => r.promptFamily === family && r.repo === repo && r.tool === tool,
-  );
-  if (!report) return undefined;
-  const arm = tool === "baseline" ? "baseline" : "graph";
-  const value = medianTokens(report, arm);
-  return value > 0 ? { value } : undefined;
-};
+// Group by (harness, model): each combination gets its own chart set so
+// mixing e.g. codex/gpt-5.4-mini and claude-code/sonnet reports never bleeds
+// into the same bars.
+const groups = new Map();
+for (const report of allReports) {
+  const key = `${report.harness ?? "codex"}::${report.model ?? "unknown"}`;
+  if (!groups.has(key)) groups.set(key, []);
+  groups.get(key).push(report);
+}
 
 const fmt = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n)));
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
-for (const family of families) {
-  const repos = CORPUS.map((entry) => entry.name).filter((repo) =>
-    reports.some((r) => r.promptFamily === family && r.repo === repo),
-  );
-  const sample = reports.find((r) => r.promptFamily === family);
-  const model = sample?.model ?? "gpt-5.4-mini";
+for (const reports of groups.values()) {
+  const families = [...new Set(reports.map((report) => report.promptFamily))].sort();
+  const sample = reports[0];
+  const model = sample?.model ?? "unknown";
   const harness = sample?.harness ?? "codex";
-  const out = path.join(resultsRoot, `benchmark-${harness}-${model}-${family}.svg`);
-  fs.writeFileSync(out, render(family, repos, model));
-  console.log(`Wrote ${out}`);
+  const runs = sample?.runs ?? 1;
+  for (const family of families) {
+    const repos = CORPUS.map((entry) => entry.name).filter((repo) =>
+      reports.some((r) => r.promptFamily === family && r.repo === repo),
+    );
+    const out = path.join(resultsRoot, `benchmark-${harness}-${model}-${family}.svg`);
+    fs.writeFileSync(out, render(family, repos, model, harness, runs, reports));
+    console.log(`Wrote ${out}`);
+  }
 }
 
-function render(family, repos, model) {
+function render(family, repos, model, harness, runs, reports) {
+  const medianTokens = (report, arm) =>
+    median((report.samples[arm] ?? []).filter((m) => m.tokens > 0).map((m) => m.tokens));
+  const cell = (repo, tool) => {
+    const report = reports.find((r) => r.promptFamily === family && r.repo === repo && r.tool === tool);
+    if (!report) return undefined;
+    const arm = tool === "baseline" ? "baseline" : "graph";
+    const value = medianTokens(report, arm);
+    return value > 0 ? { value } : undefined;
+  };
   const width = 940;
   const gutter = 96;
   const plotLeft = gutter;
@@ -92,7 +102,7 @@ function render(family, repos, model) {
 
   const values = [];
   for (const repo of repos) {
-    for (const tool of ["baseline", ...TOOLS]) values.push(cell(family, repo, tool)?.value ?? 0);
+    for (const tool of ["baseline", ...TOOLS]) values.push(cell(repo, tool)?.value ?? 0);
   }
   const max = Math.max(...values, 1);
   const x = (v) => plotLeft + (v / max) * plotWidth;
@@ -117,7 +127,7 @@ function render(family, repos, model) {
     style,
     `<rect width="${width}" height="${height}" class="s"/>`,
     `<text x="24" y="32" font-size="16" font-weight="600" class="t">Agent token cost — ${esc(family)} question, per repository</text>`,
-    `<text x="24" y="52" font-size="12" class="m">codex · ${esc(model)} · N=1 · lower is better</text>`,
+    `<text x="24" y="52" font-size="12" class="m">${esc(harness.replace(/-/g, " "))} · ${esc(model)} · N=${runs} · lower is better</text>`,
   );
 
   // Legend: baseline + fixed tool order.
@@ -155,10 +165,10 @@ function render(family, repos, model) {
       `<text x="${gutter - 8}" y="${top + barH}" font-size="12" font-weight="600" class="t" text-anchor="end">${esc(repo)}</text>`,
       `<text x="${gutter - 8}" y="${top + barH + 13}" font-size="10" class="m" text-anchor="end">${esc(language)}</text>`,
     );
-    const base = cell(family, repo, "baseline")?.value;
+    const base = cell(repo, "baseline")?.value;
     ["baseline", ...TOOLS].forEach((tool, i) => {
       const y = top + i * barStep;
-      const entry = cell(family, repo, tool);
+      const entry = cell(repo, tool);
       if (entry === undefined) {
         parts.push(
           `<text x="${plotLeft + 4}" y="${y + barH - 2}" font-size="10" class="m">not measured</text>`,

@@ -16,10 +16,14 @@
 // stays a bounded, comparable measurement.
 export const CORPUS = [
   {
+    // A fork of excalidraw/excalidraw with `ttsc` pinned as a devDependency
+    // (github.com/samchon/ttsc-benchmark-excalidraw) so ttscserver resolves
+    // from the repo's own node_modules instead of depending on a global
+    // install — otherwise a fresh clone falls back to the static indexer.
     name: "excalidraw",
     language: "typescript",
-    url: "https://github.com/excalidraw/excalidraw.git",
-    commit: "dd8296af1802d4920a645591e0de88b9272745fa",
+    url: "https://github.com/samchon/ttsc-benchmark-excalidraw.git",
+    commit: "bf47d3d0e6cc0784969ec7836084aa430fb51db6",
     maxFiles: 2000,
   },
   {
@@ -108,9 +112,13 @@ export const CORPUS = [
     url: "https://github.com/InsertKoinIO/koin.git",
     commit: "dc86ef8dd8fbe8564fb7453c03f5b738da3450bb",
     maxFiles: 1500,
-    // kotlin-language-server boots a JVM and imports the build before
-    // answering; initialize alone exceeds the default 10s.
-    lspTimeoutMs: 60000,
+    // kotlin-language-server boots a JVM and imports the build via a Gradle
+    // sync (kotlinLSPProjectDeps) before answering `initialize` at all; cold,
+    // this took over ten minutes on a clean Gradle cache. Give initialize
+    // patient room, and the reference warmup too, matching sinatra's
+    // ruby-lsp treatment. A warm Gradle cache makes repeat runs fast.
+    lspTimeoutMs: 420000,
+    lspWarmupTimeoutMs: 300000,
   },
   {
     name: "alamofire",

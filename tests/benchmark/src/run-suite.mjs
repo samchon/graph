@@ -1,66 +1,67 @@
-// Orchestrates the agent-cost A/B (agent-ab.mjs) across the whole cross-language
-// corpus, once per prompt family, and prints a compact per-repo summary. This
-// SPENDS real Claude credits for every repo x family x arm x run, so it is
-// user-triggered only.
+// Orchestrates the Claude Code agent-cost A/B across the corpus: for every
+// repo x prompt family it measures the baseline ONCE (cached as its own
+// report) and then each requested tool with --arm=graph, so no credits are
+// re-spent on identical baselines. Existing reports are skipped, making the
+// suite resumable after an interruption. This SPENDS real Claude credits and
+// is user-triggered only.
 //
 // Usage:
-//   node tests/benchmark/src/run-suite.mjs --runs=4 --model=sonnet
-//   node tests/benchmark/src/run-suite.mjs --prompt-family=common --runs=2
-//   node tests/benchmark/src/run-suite.mjs --repos=gin,flask,tokio --runs=4
+//   node tests/benchmark/src/run-suite.mjs --runs=1
+//   node tests/benchmark/src/run-suite.mjs --repos=gin,flask --families=dedicated --tools=samchon-graph,serena
 import cp from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CORPUS } from "./corpus.mjs";
+import { parseArgs } from "./lib.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const agentAb = path.join(here, "agent-ab.mjs");
 const resultsRoot = path.resolve(here, "..", "results");
 
 const args = parseArgs(process.argv.slice(2));
-const runs = args.runs ?? "4";
+const runs = args.runs ?? "1";
 const model = args.model ?? "sonnet";
-const families = args["prompt-family"] ? [args["prompt-family"]] : ["common", "dedicated"];
+const families = (args.families ?? "common,dedicated").split(",");
 const repos = args.repos ? args.repos.split(",") : CORPUS.map((entry) => entry.name);
+const tools = (args.tools ?? "samchon-graph,codegraph,serena").split(",");
+
+const failures = [];
+const invoke = (repo, family, extra, label) => {
+  const reportName = `claude-${repo}-${family}-${label}.json`;
+  if (fs.existsSync(path.join(resultsRoot, reportName))) {
+    console.log(`\n=== ${repo} / ${family} / ${label}: cached (${reportName}) ===`);
+    return;
+  }
+  console.log(`\n=== ${repo} / ${family} / ${label} ===`);
+  const result = cp.spawnSync(
+    process.execPath,
+    [agentAb, `--repo=${repo}`, `--prompt-family=${family}`, `--runs=${runs}`, `--model=${model}`, ...extra],
+    { stdio: "inherit", windowsHide: true },
+  );
+  if (result.status !== 0) {
+    failures.push(`${repo}/${family}/${label} (exit ${result.status})`);
+    console.log(`  !! ${repo}/${family}/${label} exited ${result.status}`);
+  }
+};
 
 for (const family of families) {
   for (const repo of repos) {
-    console.log(`\n=== ${repo} / ${family} ===`);
-    const result = cp.spawnSync(
-      process.execPath,
-      [agentAb, `--repo=${repo}`, `--prompt-family=${family}`, `--runs=${runs}`, `--model=${model}`],
-      { stdio: "inherit", windowsHide: true },
-    );
-    if (result.status !== 0) console.log(`  (${repo}/${family} exited ${result.status})`);
+    invoke(repo, family, ["--arm=baseline"], "baseline");
+    for (const tool of tools) {
+      const flag = tool === "codegraph" ? ["--cg=1"] : tool === "serena" ? ["--serena=1"] : [];
+      invoke(repo, family, ["--arm=graph", ...flag], tool);
+    }
   }
 }
 
-// Summarize whatever reports landed in results/.
-console.log("\n=== suite summary (median tokens, baseline -> graph) ===");
-for (const family of families) {
-  for (const repo of repos) {
-    const reportPath = path.join(resultsRoot, `agent-ab-${repo}-${family}.json`);
-    if (!fs.existsSync(reportPath)) continue;
-    const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
-    const med = (arm) => {
-      const values = (report.samples[arm] ?? []).filter((m) => m.tokens > 0).map((m) => m.tokens).sort((a, b) => a - b);
-      if (values.length === 0) return 0;
-      const mid = Math.floor(values.length / 2);
-      return values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
-    };
-    const b = med("baseline");
-    const g = med("graph");
-    const pct = b === 0 ? 0 : Math.round((1 - g / b) * 100);
-    console.log(`  ${repo.padEnd(12)} ${family.padEnd(10)} ${String(b).padStart(8)} -> ${String(g).padStart(8)} (${pct}%)`);
-  }
+console.log(`\n=== suite complete ===`);
+if (failures.length > 0) {
+  console.log(`FAILED cells (${failures.length}):`);
+  for (const failure of failures) console.log(`  - ${failure}`);
+  process.exitCode = 1;
+} else {
+  console.log("all cells measured (or cached)");
 }
-
-function parseArgs(argv) {
-  const out = {};
-  for (const arg of argv) {
-    const match = /^--([^=]+)=(.*)$/.exec(arg);
-    if (match) out[match[1]] = match[2];
-  }
-  return out;
-}
+console.log(`render: node tests/benchmark/src/render-svg.mjs`);

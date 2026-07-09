@@ -13,6 +13,7 @@
     "agent-ab": "node src/agent-ab.mjs",
     "codex": "node src/agent-ab-codex.mjs",
     "suite": "node src/run-suite.mjs",
+    "suite-parallel": "node src/run-suite-parallel.mjs",
     "suite-codex": "node src/run-suite-codex.mjs",
     "render": "node src/render-svg.mjs"
   },

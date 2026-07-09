@@ -9,7 +9,8 @@
     "coverage": "pnpm --filter @samchon/graph build && pnpm --filter @samchon/graph-test build && pnpm exec c8 --all --src packages/graph/src --exclude \"tests/**\" --exclude-after-remap --reporter=text --reporter=lcov --check-coverage --lines 100 --functions 100 --branches 100 node tests/test-graph/lib/index.mjs",
     "experiment": "pnpm --filter @samchon/graph-experiment start",
     "benchmark": "pnpm --filter @samchon/graph-benchmark start",
-    "release": "pnpm --filter @samchon/graph build && bumpp --all && pnpm --filter @samchon/graph publish --access public --no-git-checks"
+    "release": "pnpm --filter @samchon/graph build && bumpp --all",
+    "package:latest": "pnpm --filter @samchon/graph publish --access public --tag latest"
   },
   "repository": {
     "type": "git",

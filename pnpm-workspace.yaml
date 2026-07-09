@@ -3,14 +3,14 @@ packages:
   - "tests/*"
 catalogs:
   typescript:
-    typescript: 7.0.1-rc
+    typescript: ^7.0.2
   samchon:
-    "@nestia/e2e": 12.0.0-rc.2
-    "@ttsc/unplugin": ^0.17.3
-    "@typia/interface": 13.0.0-rc.2
-    "@typia/mcp": 13.0.0-rc.2
-    ttsc: ^0.17.3
-    typia: 13.0.0-rc.2
+    "@nestia/e2e": ^12.0.0-rc.2
+    "@ttsc/unplugin": ^0.17.4
+    "@typia/interface": ^13.0.0
+    "@typia/mcp": ^13.0.0
+    ttsc: ^0.17.4
+    typia: ^13.0.0
   bundler:
     esbuild: ^0.25.12
   lsp:

@@ -15,7 +15,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "rimraf lib && node node_modules/ttsc/lib/launcher/ttsc.js -p tsconfig.json && node -e \"require('node:fs').copyFileSync('../../README.md', 'README.md')\"",
+    "build": "rimraf lib && ttsc -p tsconfig.json && node -e \"require('node:fs').copyFileSync('../../README.md', 'README.md')\"",
     "prepublishOnly": "node -e \"require('node:fs').copyFileSync('../../README.md', 'README.md')\""
   },
   "keywords": [

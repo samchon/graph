@@ -6,9 +6,9 @@
 
 It indexes a codebase in 17 languages into a graph of declarations and their relationships, and answers an agent's code questions from that index through a single tool. Semantic edges come from each language's language server when one is installed; otherwise a built-in static parser takes over.
 
-Agents like Claude Code and Codex normally answer a code question by grepping the repository and reading file after file into context, and that reading is most of the token bill. The graph removes the need for it, and its own answers stay small in turn: they carry names, signatures, relationships, and source spans, never file bodies.
+Coding agents normally answer a code question by grepping the repository and reading file after file into context, and that reading is most of the token bill. The graph removes the need for it, and its own answers stay small in turn: they carry names, signatures, relationships, and source spans, never file bodies.
 
-Since neither side of that exchange grows with the repository, the cost falls by about the same proportion in every situation, on every codebase. That even distribution is what separates this from [`codegraph`](https://github.com/colbymchenry/codegraph) and [`serena`](https://github.com/oraios/serena), and it shows directly in the chart below:
+Since neither side of that exchange grows with the repository, the cost falls by about the same proportion in every situation, on every codebase — for an agent that trusts the graph result enough to stop there. codex/gpt-5.4-mini does; see the [Benchmark](#benchmark) section below for a harness where a model doesn't, and reads on top of the graph call anyway. That even distribution is what separates this from [`codegraph`](https://github.com/colbymchenry/codegraph) and [`serena`](https://github.com/oraios/serena) when it holds, and it shows directly in the chart below:
 
 ![Agent token cost — onboarding, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-codex-gpt-5.4-mini-common.svg)
 
@@ -79,6 +79,15 @@ Every repository is asked the same onboarding question, with no tool guidance ap
 
 </details>
 
+<details>
+<summary><code>claude code</code> · <code>sonnet 5</code> — median token change -9% (codegraph 65%, serena -5%)</summary>
+
+![Agent token cost — onboarding, per repository (Claude Code)](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-claude-code-sonnet-common.svg)
+
+Unlike gpt-5.4-mini, Sonnet 5 does not consistently trust a single graph call: on several repos it calls `inspect_code_graph` and then still reads or greps the source anyway, so `@samchon/graph`'s token cost lands close to (and on some repos above) the no-tool baseline. `codegraph` reads more like a familiar file-search tool to it and gets adopted more cleanly.
+
+</details>
+
 ### Dedicated
 
 `codegraph`'s own per-repository questions, verbatim:
@@ -107,6 +116,15 @@ Every repository is asked the same onboarding question, with no tool guidance ap
 
 </details>
 
+<details>
+<summary><code>claude code</code> · <code>sonnet 5</code> — median token change -97% (codegraph 30%, serena -12%)</summary>
+
+![Agent token cost — dedicated question, per repository (Claude Code)](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-claude-code-sonnet-dedicated.svg)
+
+For a narrow, single-answer question, baseline Sonnet 5 often finds it in one or two greps and stops; the graph arm instead makes several `inspect_code_graph` calls exploring the question before answering, so its token cost regularly exceeds baseline by 2-3x on this prompt family. This is a real measured result, not a placeholder — it reflects how this model currently uses the tool, not the graph data itself, which is unchanged between the two harnesses.
+
+</details>
+
 ### Reproduction
 
 Running the suite spends real API credits, so it is never wired into CI:
@@ -117,7 +135,8 @@ cd graph
 pnpm install
 pnpm --filter @samchon/graph-benchmark corpus      # 14 repos / 14 languages, pinned
 pnpm --filter @samchon/graph-benchmark preflight   # zero-spend go/no-go
-pnpm --filter @samchon/graph-benchmark suite-codex -- --runs=1
+pnpm --filter @samchon/graph-benchmark suite-codex -- --runs=1       # codex / gpt-5.4-mini
+pnpm --filter @samchon/graph-benchmark suite-parallel -- --runs=1    # Claude Code / sonnet
 pnpm --filter @samchon/graph-benchmark render      # results -> SVG charts
 ```
 

@@ -4,11 +4,17 @@
 
 **A code graph that answers "how does this repo work?" without your agent reading the repo.**
 
-`@samchon/graph` is an MCP server. It indexes a codebase — across **11 languages** — into a graph of declarations and their relationships, and answers an agent's orientation questions from that graph instead of from source files. The agent gets the map in one call rather than grepping and reading its way through dozens of files.
+`@samchon/graph` is an MCP server. It indexes a codebase — across **17 languages** — into a graph of declarations and their relationships, and answers an agent's orientation questions from that graph instead of from source files. The agent gets the map in one call rather than grepping and reading its way through dozens of files.
 
-That collapses the token cost. On an 11-language benchmark it cuts the agent's tokens by a **median of 96%** on onboarding questions — while [`codegraph`](https://github.com/colbymchenry/codegraph) cuts 63% and [`serena`](https://github.com/oraios/serena) makes it *worse*.
+That collapses the token cost. On an 11-language benchmark (headless `codex` CLI, gpt-5.4-mini) it cuts the agent's tokens by a **median of 96%** on onboarding questions — while [`codegraph`](https://github.com/colbymchenry/codegraph) cuts 66% and [`serena`](https://github.com/oraios/serena) is a wash: a median 11% cut that flips to *worse than baseline* on 5 of the 11 repositories.
 
 ![Agent token cost — onboarding, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-codex-gpt-5.4-mini-common.svg)
+
+Every bar is the same onboarding utterance, asked verbatim against every repository — no tool guidance appended:
+
+> I'm new to this codebase and need a real code-based tour before my first behavior change.
+>
+> Find the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.
 
 ## Setup
 

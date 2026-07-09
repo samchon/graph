@@ -118,6 +118,8 @@ export namespace ISamchonGraphApplication {
 }
 ```
 
+> [`packages/graph/src/structures/ISamchonGraphApplication.ts`](https://github.com/samchon/graph/blob/master/packages/graph/src/structures/ISamchonGraphApplication.ts)
+
 The other tools try to change what the agent does by *talking* to it — `serena` swaps in ~150 lines of system prompt, `codegraph` ships ~100 lines plus a skill file, both spent almost entirely on forbidding the agent from grepping anyway. `@samchon/graph` changes the **shape of the tool** instead:
 
 - **One tool, not fifty.** `serena` buries its graph behind ~50 tools and the agent never finds the right one; `@samchon/graph` has exactly one, and a union type — filled in by the chain-of-thought — routes the request by construction instead of by persuasion.

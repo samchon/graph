@@ -80,11 +80,11 @@ Every repository is asked the same onboarding question, with no tool guidance ap
 </details>
 
 <details>
-<summary><code>claude code</code> · <code>sonnet 5</code> — median token change -9% (codegraph 65%, serena -5%)</summary>
+<summary><code>claude code</code> · <code>sonnet 5</code> — median token change -13% (codegraph 65%, serena -5%)</summary>
 
 ![Agent token cost — onboarding, per repository (Claude Code)](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-claude-code-sonnet-common.svg)
 
-Unlike gpt-5.4-mini, Sonnet 5 does not consistently trust a single graph call: on several repos it calls `inspect_code_graph` and then still reads or greps the source anyway, so `@samchon/graph`'s token cost lands close to (and on some repos above) the no-tool baseline. `codegraph` reads more like a familiar file-search tool to it and gets adopted more cleanly.
+Unlike gpt-5.4-mini, Sonnet 5 does not consistently trust a single graph call: on several repos it calls `inspect_code_graph` and then still reads or greps the source anyway, so `@samchon/graph`'s token cost lands close to (and on some repos above) the no-tool baseline. `codegraph` reads more like a familiar file-search tool to it and gets adopted more cleanly. This holds even after raising the per-language LSP reference-collection cap well past the default (see [Reproduction](#reproduction)) to rule out thin graph data as the cause — it did substantially help the dedicated-question chart below, but not this one.
 
 </details>
 
@@ -117,11 +117,11 @@ Unlike gpt-5.4-mini, Sonnet 5 does not consistently trust a single graph call: o
 </details>
 
 <details>
-<summary><code>claude code</code> · <code>sonnet 5</code> — median token change -97% (codegraph 30%, serena -12%)</summary>
+<summary><code>claude code</code> · <code>sonnet 5</code> — median token change -28% (codegraph 30%, serena -12%)</summary>
 
 ![Agent token cost — dedicated question, per repository (Claude Code)](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-claude-code-sonnet-dedicated.svg)
 
-For a narrow, single-answer question, baseline Sonnet 5 often finds it in one or two greps and stops; the graph arm instead makes several `inspect_code_graph` calls exploring the question before answering, so its token cost regularly exceeds baseline by 2-3x on this prompt family. This is a real measured result, not a placeholder — it reflects how this model currently uses the tool, not the graph data itself, which is unchanged between the two harnesses.
+For a narrow, single-answer question, baseline Sonnet 5 often finds it in one or two greps and stops; the graph arm instead makes several `inspect_code_graph` calls exploring the question before answering. Raising the per-language LSP reference-collection cap well past its default (250) — the multi-language adapter's substitute for `@ttsc/graph`'s uncapped, compiler-native reference resolution — cut the gap roughly in half here (from a 3x baseline cost to closer to 1.3x), confirming graph density was a real factor on top of Sonnet 5's own tool-adoption behavior. It did not meaningfully move the onboarding chart above.
 
 </details>
 

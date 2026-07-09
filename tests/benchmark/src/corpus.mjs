@@ -27,10 +27,17 @@ export const CORPUS = [
     url: "https://github.com/samchon/ttsc-benchmark-excalidraw.git",
     commit: "98a2730b197873d43fddbe3fad6f0812df84b451",
     maxFiles: 2000,
-    // The full-density pre-build (--lsp-reference-limit 2000) walks
-    // documentSymbol across this 2000-file monorepo; the default 10s
-    // per-request timeout isn't enough under concurrent load.
+    // The full-density pre-build walks documentSymbol across this 2000-file
+    // monorepo; the default 10s per-request timeout isn't enough under
+    // concurrent load.
     lspTimeoutMs: 60000,
+    // ttscserver resolves references from the TypeScript checker's own
+    // symbol table (not per-symbol textDocument/references round-trips), so
+    // it stays fast even far past the default cap: the repo has ~4.7k
+    // non-test symbols, and ttscserver covers all of them in single-digit
+    // seconds. Capping at the 3000 default here would silently drop edges
+    // for roughly a third of the codebase.
+    lspReferenceLimit: 6000,
   },
   {
     name: "gin",
@@ -52,6 +59,10 @@ export const CORPUS = [
     url: "https://github.com/tokio-rs/tokio.git",
     commit: "c4c6265a0746a79d4a2f3852f726aa0101f29fd3",
     maxFiles: 2000,
+    // rust-analyzer covers ~2.7k non-test symbols; the default 3000 cap
+    // already fits, but give it headroom since the workspace's true symbol
+    // count runs higher once rust-analyzer's own dependency indexing kicks in.
+    lspReferenceLimit: 4000,
   },
   {
     name: "gson",
@@ -72,6 +83,11 @@ export const CORPUS = [
     // clangd can take tens of seconds on redis's largest translation units;
     // give documentSymbol/references room so the graph does not fall back.
     lspTimeoutMs: 30000,
+    // redis has ~21k non-test symbols -- far past what any cap here can fully
+    // cover -- but even a partial increase over the 3000 default recovers a
+    // meaningful share of the missing edges without materially slowing the
+    // pre-build.
+    lspReferenceLimit: 4000,
   },
   {
     // codegraph's cpp pick (nlohmann/json) is a single-header library — it
@@ -83,6 +99,8 @@ export const CORPUS = [
     url: "https://github.com/google/leveldb.git",
     commit: "7ee830d02b623e8ffe0b95d59a74db1e58da04c5",
     maxFiles: 1500,
+    // ~2.8k non-test symbols; raise past the default 3000 cap to cover them.
+    lspReferenceLimit: 3500,
   },
   {
     name: "sinatra",
@@ -125,6 +143,10 @@ export const CORPUS = [
     // ruby-lsp treatment. A warm Gradle cache makes repeat runs fast.
     lspTimeoutMs: 600000,
     lspWarmupTimeoutMs: 300000,
+    // ~6k non-test symbols across koin's modules; raise past the default
+    // 3000 cap. kotlin-language-server's own JVM warmup dominates the wall
+    // time here regardless, so this adds little on top of it.
+    lspReferenceLimit: 6000,
   },
   {
     name: "alamofire",

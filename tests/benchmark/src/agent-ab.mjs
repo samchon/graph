@@ -138,7 +138,7 @@ if (armsRequested.graph && !serena && !cg) {
       "--max-files",
       String(graphMaxFiles),
       "--lsp-reference-limit",
-      String(args["reference-limit"] ?? 2000),
+      String(args["reference-limit"] ?? spec.lspReferenceLimit ?? 3000),
       ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
       ...(spec.lspWarmupTimeoutMs ? ["--lsp-warmup-timeout-ms", String(spec.lspWarmupTimeoutMs)] : []),
     ],

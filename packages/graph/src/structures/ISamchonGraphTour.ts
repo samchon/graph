@@ -1,8 +1,7 @@
 import { GraphLanguage } from "../typings/GraphLanguage";
+import { ISamchonGraphDecorator } from "./ISamchonGraphDecorator";
 import { ISamchonGraphDiagnostic } from "./ISamchonGraphDiagnostic";
-import { ISamchonGraphEntrypoints } from "./ISamchonGraphEntrypoints";
 import { ISamchonGraphNext } from "./ISamchonGraphNext";
-import { ISamchonGraphOverview } from "./ISamchonGraphOverview";
 
 /** Answer-ready, source-free tour evidence for broad code-flow questions. */
 export interface ISamchonGraphTour {
@@ -10,22 +9,22 @@ export interface ISamchonGraphTour {
   type: "tour";
 
   /** Natural code question this tour was built for. */
-  question?: string;
+  query: string;
 
   /** Central entrypoints selected for the tour. */
-  entrypoints: ISamchonGraphEntrypoints.IEntrypoint[];
+  entrypoints: ISamchonGraphTour.INode[];
 
   /** Selected primary runtime flows; sufficient for an index-level tour. */
-  primaryFlow: string[];
+  primaryFlow: ISamchonGraphTour.IFlow[];
 
   /** Nearby dependency anchors around the selected entrypoints. */
-  nearbyPaths: ISamchonGraphOverview.INode[];
+  nearby: ISamchonGraphTour.IAnchor[];
 
   /** Test or usage anchors reached through graph impact edges. */
-  testAnchors: ISamchonGraphOverview.INode[];
+  tests: ISamchonGraphTour.IAnchor[];
 
   /** Ordered file/line anchors to cite in the final answer, not file reads. */
-  answerAnchors: ISamchonGraphOverview.INode[];
+  answerAnchors: ISamchonGraphTour.IAnchor[];
 
   /** Diagnostics collected while building the tour. */
   diagnostics?: ISamchonGraphDiagnostic[];
@@ -35,6 +34,9 @@ export interface ISamchonGraphTour {
 
   /** Human-readable compatibility note mirroring `next`. */
   guide: string;
+
+  /** True when any internal slice hit its cap. */
+  truncated?: boolean;
 }
 
 export namespace ISamchonGraphTour {
@@ -50,7 +52,7 @@ export namespace ISamchonGraphTour {
     type: "tour";
 
     /** The user's natural code-tour question. */
-    question?: string;
+    query: string;
 
     /** Target source language for the tour. */
     language?: GraphLanguage;
@@ -64,5 +66,93 @@ export namespace ISamchonGraphTour {
      * @default 4
      */
     limit?: number;
+
+    /**
+     * Include graph-reached test or usage anchors when available.
+     *
+     * @default true
+     */
+    includeTests?: boolean;
+  }
+
+  /** A compact symbol coordinate for a tour. */
+  export interface INode {
+    /** Stable node id for later graph calls. */
+    id: string;
+
+    /** Qualified symbol name when available, otherwise the simple name. */
+    name: string;
+
+    /** Declaration kind (`class`, `method`, `function`, ...). */
+    kind: string;
+
+    /** Project-relative declaration file. */
+    file: string;
+
+    /** 1-based declaration line, when known. */
+    line?: number;
+
+    /** Declaration or implementation range, when known. */
+    sourceSpan?: ISamchonGraphTour.ISpan;
+
+    /** Declaration head, when available. */
+    signature?: string;
+
+    /** Decorators written on the declaration, when any. */
+    decorators?: ISamchonGraphDecorator[];
+  }
+
+  /** A primary flow slice from one selected entrypoint. */
+  export interface IFlow {
+    /** Flow start node. */
+    start: ISamchonGraphTour.INode;
+
+    /** Compact edge summaries in graph order. */
+    steps: string[];
+
+    /** Nodes reached by this flow. */
+    reached: ISamchonGraphTour.INode[];
+
+    /** Edge and node anchors that explain the flow. */
+    anchors: ISamchonGraphTour.IAnchor[];
+
+    /** True when the flow hit graph caps. */
+    truncated?: boolean;
+  }
+
+  /** A file/line citation chosen by the graph, not source body text. */
+  export interface IAnchor {
+    /** Why this anchor matters in the tour. */
+    reason: string;
+
+    /** Stable node id when the anchor belongs to a node. */
+    id?: string;
+
+    /** Symbol, edge, or test name to show in the answer. */
+    name: string;
+
+    /** Declaration kind, when this anchor belongs to a node. */
+    kind?: string;
+
+    /** Project-relative file. */
+    file: string;
+
+    /** 1-based start line. */
+    startLine: number;
+
+    /** 1-based end line, when known. */
+    endLine?: number;
+  }
+
+  /** Source coordinates without source text. */
+  export interface ISpan {
+    /** Project-relative file. */
+    file: string;
+
+    /** 1-based start line. */
+    startLine: number;
+
+    /** 1-based end line, when known. */
+    endLine?: number;
   }
 }

@@ -16,15 +16,21 @@
 // stays a bounded, comparable measurement.
 export const CORPUS = [
   {
-    // A fork of excalidraw/excalidraw with `ttsc` pinned as a devDependency
+    // A fork of excalidraw/excalidraw with `ttsc` (and its native TS7
+    // runtime, @typescript/typescript-win32-x64) pinned as devDependencies
     // (github.com/samchon/ttsc-benchmark-excalidraw) so ttscserver resolves
-    // from the repo's own node_modules instead of depending on a global
-    // install — otherwise a fresh clone falls back to the static indexer.
+    // and runs from the repo's own node_modules instead of depending on a
+    // global install — otherwise a fresh clone falls back to the static
+    // indexer, or ttscserver crashes outright without the native binary.
     name: "excalidraw",
     language: "typescript",
     url: "https://github.com/samchon/ttsc-benchmark-excalidraw.git",
-    commit: "bf47d3d0e6cc0784969ec7836084aa430fb51db6",
+    commit: "98a2730b197873d43fddbe3fad6f0812df84b451",
     maxFiles: 2000,
+    // The full-density pre-build (--lsp-reference-limit 2000) walks
+    // documentSymbol across this 2000-file monorepo; the default 10s
+    // per-request timeout isn't enough under concurrent load.
+    lspTimeoutMs: 60000,
   },
   {
     name: "gin",
@@ -117,7 +123,7 @@ export const CORPUS = [
     // this took over ten minutes on a clean Gradle cache. Give initialize
     // patient room, and the reference warmup too, matching sinatra's
     // ruby-lsp treatment. A warm Gradle cache makes repeat runs fast.
-    lspTimeoutMs: 420000,
+    lspTimeoutMs: 600000,
     lspWarmupTimeoutMs: 300000,
   },
   {

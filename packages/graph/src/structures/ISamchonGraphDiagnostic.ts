@@ -1,4 +1,4 @@
-import { IGraphEvidence } from "./IGraphEvidence";
+import { ISamchonGraphEvidence } from "./ISamchonGraphEvidence";
 
 /**
  * A language server or plugin diagnostic, fused onto the graph so an edit-triage
@@ -8,7 +8,7 @@ import { IGraphEvidence } from "./IGraphEvidence";
  * lint rules and transform plugins (typia, nestia, …) contribute `plugin`/`lint`
  * findings whose `code` is a string.
  */
-export interface IGraphDiagnostic {
+export interface ISamchonGraphDiagnostic {
   /** Project-relative path of the file the diagnostic is reported in. */
   file: string;
 
@@ -25,5 +25,5 @@ export interface IGraphDiagnostic {
   code?: string | number;
 
   /** The source span the diagnostic was attributed to, when resolved. */
-  evidence?: IGraphEvidence;
+  evidence?: ISamchonGraphEvidence;
 }

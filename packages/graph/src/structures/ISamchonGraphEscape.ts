@@ -1,7 +1,7 @@
-import { IGraphNext } from "./IGraphNext";
+import { ISamchonGraphNext } from "./ISamchonGraphNext";
 
 /** The no-op result for when graph is not the useful next evidence source. */
-export interface IGraphEscape {
+export interface ISamchonGraphEscape {
   /** Discriminator for the no-op escape route. */
   type: "escape";
 
@@ -15,13 +15,13 @@ export interface IGraphEscape {
   nextStep?: string;
 
   /** How to proceed after skipping graph work. */
-  next: IGraphNext;
+  next: ISamchonGraphNext;
 
   /** Human-readable compatibility note mirroring `next`. */
   guide: string;
 }
 
-export namespace IGraphEscape {
+export namespace ISamchonGraphEscape {
   /** Skip graph work when graph evidence is unnecessary or exhausted. */
   export interface IRequest {
     /** Discriminator for the no-op escape route. */

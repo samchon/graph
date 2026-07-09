@@ -1,11 +1,11 @@
 import { TestValidator } from "@nestia/e2e";
-import { GraphMemory } from "@samchon/graph";
+import { SamchonGraphMemory } from "@samchon/graph";
 
 import { GraphFixtures } from "../internal/GraphFixtures";
 
 export const test_contract_fixture_covers_every_graph_node_and_edge_kind = () => {
   const { dump } = GraphFixtures.createContractFixture();
-  const graph = GraphMemory.from(dump);
+  const graph = SamchonGraphMemory.from(dump);
 
   TestValidator.equals(
     "all graph node kinds are represented",

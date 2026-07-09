@@ -1,10 +1,10 @@
-import { IGraphDetails } from "./IGraphDetails";
-import { IGraphEntrypoints } from "./IGraphEntrypoints";
-import { IGraphEscape } from "./IGraphEscape";
-import { IGraphLookup } from "./IGraphLookup";
-import { IGraphOverview } from "./IGraphOverview";
-import { IGraphTour } from "./IGraphTour";
-import { IGraphTrace } from "./IGraphTrace";
+import { ISamchonGraphDetails } from "./ISamchonGraphDetails";
+import { ISamchonGraphEntrypoints } from "./ISamchonGraphEntrypoints";
+import { ISamchonGraphEscape } from "./ISamchonGraphEscape";
+import { ISamchonGraphLookup } from "./ISamchonGraphLookup";
+import { ISamchonGraphOverview } from "./ISamchonGraphOverview";
+import { ISamchonGraphTour } from "./ISamchonGraphTour";
+import { ISamchonGraphTrace } from "./ISamchonGraphTrace";
 
 /**
  * ## What This MCP Is
@@ -148,13 +148,13 @@ export namespace ISamchonGraphApplication {
 
     /** Final graph operation chosen after review, or a no-op escape. */
     request:
-      | IGraphEntrypoints.IRequest
-      | IGraphLookup.IRequest
-      | IGraphTrace.IRequest
-      | IGraphDetails.IRequest
-      | IGraphOverview.IRequest
-      | IGraphTour.IRequest
-      | IGraphEscape.IRequest;
+      | ISamchonGraphEntrypoints.IRequest
+      | ISamchonGraphLookup.IRequest
+      | ISamchonGraphTrace.IRequest
+      | ISamchonGraphDetails.IRequest
+      | ISamchonGraphOverview.IRequest
+      | ISamchonGraphTour.IRequest
+      | ISamchonGraphEscape.IRequest;
   }
 
   /**
@@ -175,12 +175,12 @@ export namespace ISamchonGraphApplication {
   export interface IResult {
     /** Result branch matching the submitted `request.type`. */
     result:
-      | IGraphEntrypoints
-      | IGraphLookup
-      | IGraphTrace
-      | IGraphDetails
-      | IGraphOverview
-      | IGraphTour
-      | IGraphEscape;
+      | ISamchonGraphEntrypoints
+      | ISamchonGraphLookup
+      | ISamchonGraphTrace
+      | ISamchonGraphDetails
+      | ISamchonGraphOverview
+      | ISamchonGraphTour
+      | ISamchonGraphEscape;
   }
 }

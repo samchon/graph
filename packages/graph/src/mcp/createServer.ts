@@ -1,8 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { createMcpServer } from "@typia/mcp";
 import type { ILlmController } from "@typia/interface";
+import { createMcpServer } from "@typia/mcp";
 import typia from "typia";
-
 import {
   AsyncSamchonGraphSource,
   SamchonGraphApplication,

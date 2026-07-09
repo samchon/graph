@@ -1,7 +1,7 @@
-import { GraphLanguage } from "./GraphLanguage";
-import { IGraphDiagnostic } from "./IGraphDiagnostic";
-import { IGraphEdge } from "./IGraphEdge";
-import { IGraphNode } from "./IGraphNode";
+import { GraphLanguage } from "../typings/GraphLanguage";
+import { ISamchonGraphDiagnostic } from "./ISamchonGraphDiagnostic";
+import { ISamchonGraphEdge } from "./ISamchonGraphEdge";
+import { ISamchonGraphNode } from "./ISamchonGraphNode";
 
 /**
  * The whole-graph export `graph dump` writes and the MCP server loads — the
@@ -15,7 +15,7 @@ import { IGraphNode } from "./IGraphNode";
  * Paths in `project` are absolute; `file` fields on nodes, edges, and
  * diagnostics are project-relative.
  */
-export interface IGraphDump {
+export interface ISamchonGraphDump {
   /** Absolute path of the project root the graph was built for. */
   project: string;
 
@@ -29,16 +29,16 @@ export interface IGraphDump {
   indexer: "lsp" | "static" | "hybrid";
 
   /** Every node the build recorded. */
-  nodes: IGraphNode[];
+  nodes: ISamchonGraphNode[];
 
   /** Every edge the build resolved. */
-  edges: IGraphEdge[];
+  edges: ISamchonGraphEdge[];
 
   /**
    * Fused language server and plugin diagnostics, when diagnostics were
    * collected. Absent when the dump was built without a diagnostics pass.
    */
-  diagnostics?: IGraphDiagnostic[];
+  diagnostics?: ISamchonGraphDiagnostic[];
 
   /** Non-fatal problems encountered while building the graph. */
   warnings?: string[];

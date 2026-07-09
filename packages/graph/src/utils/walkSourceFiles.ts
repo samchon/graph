@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-
 import { DEFAULT_IGNORES } from "./DEFAULT_IGNORES";
 import { IWalkOptions } from "./IWalkOptions";
 

@@ -1,44 +1,42 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-
-import {
-  GraphLanguage,
-  GraphNodeKind,
-  IGraphDiagnostic,
-  IGraphDump,
-  IGraphEdge,
-  IGraphNode,
-} from "../structures";
-import { LspClient } from "../lsp/LspClient";
 import {
   DocumentSymbolResult,
   IDiagnostic,
   IDocumentSymbol,
   ILocation,
-  ISymbolInformation,
   isDocumentSymbol,
-} from "../lsp/types";
+  ISymbolInformation,
+  LspClient,
+} from "../lsp";
 import { isTestPath } from "../operations/isTestPath";
+import {
+  ISamchonGraphDiagnostic,
+  ISamchonGraphDump,
+  ISamchonGraphEdge,
+  ISamchonGraphNode,
+} from "../structures";
+import { GraphLanguage, GraphNodeKind } from "../typings";
 import { projectRelative, readText, walkSourceFiles } from "../utils/fs";
 import { fileFromUri, fileUri, isSubPath } from "../utils/path";
-import { allExtensions, languageOf, specOf } from "./languages";
-import { buildStaticGraph } from "./staticIndexer";
 import { decoratorsAbove } from "./decoratorsAbove";
-import { overrideEdges } from "./overrideEdges";
-import { resolveType } from "./resolveType";
-import { supertypesOf } from "./supertypesOf";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IIndexerResult } from "./IIndexerResult";
+import { allExtensions, languageOf, specOf } from "./languages";
+import { overrideEdges } from "./overrideEdges";
+import { resolveType } from "./resolveType";
+import { buildStaticGraph } from "./staticIndexer";
+import { supertypesOf } from "./supertypesOf";
 
 export async function buildLspGraph(
   options: IBuildGraphOptions = {},
 ): Promise<IIndexerResult> {
   const root = path.resolve(options.cwd ?? process.cwd());
   const languages = options.languages ?? discoverLanguages(root, options);
-  const nodes: IGraphNode[] = [];
-  const edges: IGraphEdge[] = [];
-  const diagnostics: IGraphDiagnostic[] = [];
+  const nodes: ISamchonGraphNode[] = [];
+  const edges: ISamchonGraphEdge[] = [];
+  const diagnostics: ISamchonGraphDiagnostic[] = [];
   const warnings: string[] = [];
   const staticFallbackLanguages: GraphLanguage[] = [];
   let lspNodeCount = 0;
@@ -83,7 +81,9 @@ export async function buildLspGraph(
         options,
       );
       if (result.nodes.length === 0) {
-        warnings.push(`${language}: LSP returned no symbols; using static fallback.`);
+        warnings.push(
+          `${language}: LSP returned no symbols; using static fallback.`,
+        );
         staticFallbackLanguages.push(language);
       } else {
         appendAll(nodes, result.nodes);
@@ -159,7 +159,9 @@ function discoverLanguages(
     extensions: allExtensions(options.languages),
     maxFiles: options.maxFiles,
   });
-  return [...new Set(files.map(languageOf).filter((language) => language !== "unknown"))];
+  return [
+    ...new Set(files.map(languageOf).filter((language) => language !== "unknown")),
+  ];
 }
 
 async function collectLanguageGraph(
@@ -170,13 +172,13 @@ async function collectLanguageGraph(
   files: readonly string[],
   options: IBuildGraphOptions,
 ): Promise<{
-  nodes: IGraphNode[];
-  edges: IGraphEdge[];
-  diagnostics: IGraphDiagnostic[];
+  nodes: ISamchonGraphNode[];
+  edges: ISamchonGraphEdge[];
+  diagnostics: ISamchonGraphDiagnostic[];
   warnings: string[];
 }> {
   const client = new LspClient(command, args, options.lspTimeoutMs ?? 10_000);
-  const diagnostics: IGraphDiagnostic[] = [];
+  const diagnostics: ISamchonGraphDiagnostic[] = [];
   let lastProgressAt = 0;
   client.onNotification("$/progress", () => {
     lastProgressAt = Date.now();
@@ -208,8 +210,8 @@ async function collectLanguageGraph(
     });
     client.notify("initialized", {});
 
-    const nodes: IGraphNode[] = [];
-    const byFile = new Map<string, IGraphNode[]>();
+    const nodes: ISamchonGraphNode[] = [];
+    const byFile = new Map<string, ISamchonGraphNode[]>();
     const opened: Array<{ abs: string; rel: string; text: string }> = [];
     for (const abs of files) {
       const text = readText(abs);
@@ -253,7 +255,7 @@ async function collectLanguageGraph(
       linesByFile.set(openedFile.rel, openedFile.text.split(/\r?\n/));
     }
 
-    const edges: IGraphEdge[] = [];
+    const edges: ISamchonGraphEdge[] = [];
     const referenceLimit = options.lspReferenceLimit ?? 250;
     // When the reference budget is smaller than the symbol count, spend it on
     // product code first: test files (spec callbacks and the like) otherwise
@@ -269,7 +271,7 @@ async function collectLanguageGraph(
     // cold instead makes every request race the same one-time build and time
     // out (ruby-lsp on a fresh project is the pathological case). Results stay
     // indexed by target order to keep edge output deterministic.
-    const referenceParams = (target: IGraphNode): unknown => {
+    const referenceParams = (target: ISamchonGraphNode): unknown => {
       const evidence = target.evidence!;
       return {
         textDocument: { uri: fileUri(path.join(root, target.file)) },
@@ -340,7 +342,7 @@ async function collectLanguageGraph(
     // Make the document-symbol hierarchy explicit: every nested symbol is
     // contained by its owner. The owner is the node whose path is this node's
     // qualified name without its last segment.
-    const nodeByPath = new Map<string, IGraphNode>();
+    const nodeByPath = new Map<string, ISamchonGraphNode>();
     for (const node of nodes) {
       nodeByPath.set(`${node.file}\0${node.qualifiedName ?? node.name}`, node);
     }
@@ -350,13 +352,18 @@ async function collectLanguageGraph(
         `${node.file}\0${node.qualifiedName.slice(0, node.qualifiedName.lastIndexOf("."))}`,
       );
       if (parent === undefined) continue;
-      edges.push({ from: parent.id, to: node.id, kind: "contains", evidence: node.evidence });
+      edges.push({
+        from: parent.id,
+        to: node.id,
+        kind: "contains",
+        evidence: node.evidence,
+      });
     }
 
     // Inheritance: language servers do not report supertypes uniformly, so parse the
     // declaration line the same way the static indexer does and resolve the
     // supertypes against the symbols the server did report.
-    const byName = new Map<string, IGraphNode[]>();
+    const byName = new Map<string, ISamchonGraphNode[]>();
     for (const node of nodes) {
       const list = byName.get(node.name);
       if (list === undefined) byName.set(node.name, [node]);
@@ -372,17 +379,30 @@ async function collectLanguageGraph(
         const key = `${supertype.relation}\0${target.id}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        edges.push({ from: node.id, to: target.id, kind: supertype.relation, evidence: node.evidence });
+        edges.push({
+          from: node.id,
+          to: target.id,
+          kind: supertype.relation,
+          evidence: node.evidence,
+        });
       }
     }
     // Decorators sit on the lines directly above a declaration; link the
     // decorated symbol to the decorator it names.
     for (const node of nodes) {
       const fileLines = linesByFile.get(node.file)!;
-      for (const name of decoratorsAbove(fileLines, node.evidence!.startLine - 1)) {
+      for (const name of decoratorsAbove(
+        fileLines,
+        node.evidence!.startLine - 1,
+      )) {
         const target = resolveType(name, node, byName);
         if (target === undefined) continue;
-        edges.push({ from: node.id, to: target.id, kind: "decorates", evidence: node.evidence });
+        edges.push({
+          from: node.id,
+          to: target.id,
+          kind: "decorates",
+          evidence: node.evidence,
+        });
       }
     }
     appendAll(edges, overrideEdges(nodes, edges));
@@ -414,7 +434,7 @@ function referenceKind(
   targetKind: GraphNodeKind,
   refLine: string | undefined,
   endCol: number,
-): IGraphEdge["kind"] {
+): ISamchonGraphEdge["kind"] {
   const after = refLine === undefined ? "" : refLine.slice(endCol).trimStart();
   if (after.startsWith("(")) {
     return targetKind === "class" || targetKind === "constructor"
@@ -455,8 +475,12 @@ async function safeReferences(
         timeoutMs,
       );
     } catch (error) {
-      if ((error as Error).message.startsWith("LSP request timed out")) return "timeout";
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      if ((error as Error).message.startsWith(
+        "LSP request timed out",
+      )) return "timeout";
+      await new Promise((resolve) => {
+        setTimeout(resolve, 100);
+      });
     }
   }
   return null;
@@ -498,7 +522,9 @@ async function waitForIndexing(
   // Give a server that reports `$/progress` a brief window to begin before we
   // conclude it never will; without this a fast documentSymbol phase could race
   // ahead of the first indexing notification.
-  await new Promise((resolve) => setTimeout(resolve, Math.min(300, timeoutMs)));
+  await new Promise((resolve) => {
+    setTimeout(resolve, Math.min(300, timeoutMs));
+  });
   // A server that never emits progress (lastProgressAt stays 0) is treated as
   // ready immediately; one that does is awaited until it stays quiet for
   // `quietMs` or the overall `timeoutMs` cap elapses.
@@ -507,7 +533,9 @@ async function waitForIndexing(
     Date.now() - lastProgressAt() < quietMs &&
     Date.now() - start < timeoutMs
   ) {
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
   }
 }
 
@@ -515,8 +543,8 @@ function convertSymbols(
   language: GraphLanguage,
   file: string,
   symbols: DocumentSymbolResult,
-): IGraphNode[] {
-  const out: IGraphNode[] = [];
+): ISamchonGraphNode[] {
+  const out: ISamchonGraphNode[] = [];
   const visitDocument = (symbol: IDocumentSymbol, owners: string[]): void => {
     const kind = kindOf(symbol.kind);
     if (kind !== undefined) {
@@ -541,7 +569,10 @@ function convertSymbols(
       });
     }
     for (const child of symbol.children ?? []) {
-      visitDocument(child, kind === undefined ? owners : [...owners, symbol.name]);
+      visitDocument(
+        child,
+        kind === undefined ? owners : [...owners, symbol.name],
+      );
     }
   };
   for (const symbol of symbols ?? []) {
@@ -555,7 +586,7 @@ function convertSymbolInformation(
   language: GraphLanguage,
   file: string,
   symbol: ISymbolInformation,
-): IGraphNode {
+): ISamchonGraphNode {
   const kind = kindOf(symbol.kind) ?? "external_symbol";
   const owners =
     symbol.containerName === undefined || symbol.containerName === ""
@@ -613,7 +644,7 @@ function kindOf(symbolKind: number): GraphNodeKind | undefined {
   }
 }
 
-function ownerAt(nodes: readonly IGraphNode[], line: number): IGraphNode | undefined {
+function ownerAt(nodes: readonly ISamchonGraphNode[], line: number): ISamchonGraphNode | undefined {
   return nodes
     .filter(
       (node) =>
@@ -631,7 +662,7 @@ function ownerAt(nodes: readonly IGraphNode[], line: number): IGraphNode | undef
     )[0];
 }
 
-function convertDiagnostic(file: string, diagnostic: IDiagnostic): IGraphDiagnostic {
+function convertDiagnostic(file: string, diagnostic: IDiagnostic): ISamchonGraphDiagnostic {
   return {
     file,
     message: diagnostic.message,
@@ -648,7 +679,7 @@ function convertDiagnostic(file: string, diagnostic: IDiagnostic): IGraphDiagnos
   };
 }
 
-function severityOf(value: number | undefined): IGraphDiagnostic["severity"] {
+function severityOf(value: number | undefined): ISamchonGraphDiagnostic["severity"] {
   switch (value) {
     case 1:
       return "error";
@@ -704,14 +735,17 @@ function resolveCommand(command: string): string | undefined {
   return [...executable, ...lines][0];
 }
 
-function dedupeNodes(nodes: IGraphNode[]): IGraphNode[] {
-  const map = new Map<string, IGraphNode>();
+function dedupeNodes(nodes: ISamchonGraphNode[]): ISamchonGraphNode[] {
+  const map = new Map<string, ISamchonGraphNode>();
   for (const node of nodes) map.set(node.id, node);
   return [...map.values()];
 }
 
-function dedupeEdges(edges: IGraphEdge[]): IGraphEdge[] {
-  const map = new Map<string, IGraphEdge>();
-  for (const edge of edges) map.set(`${edge.kind}\0${edge.from}\0${edge.to}`, edge);
+function dedupeEdges(edges: ISamchonGraphEdge[]): ISamchonGraphEdge[] {
+  const map = new Map<string, ISamchonGraphEdge>();
+  for (const edge of edges) map.set(
+    `${edge.kind}\0${edge.from}\0${edge.to}`,
+    edge,
+  );
   return [...map.values()];
 }

@@ -1,10 +1,10 @@
-import { GraphLanguage } from "./GraphLanguage";
-import { IGraphDiagnostic } from "./IGraphDiagnostic";
-import { IGraphEvidence } from "./IGraphEvidence";
-import { IGraphNext } from "./IGraphNext";
+import { GraphLanguage } from "../typings/GraphLanguage";
+import { ISamchonGraphDiagnostic } from "./ISamchonGraphDiagnostic";
+import { ISamchonGraphEvidence } from "./ISamchonGraphEvidence";
+import { ISamchonGraphNext } from "./ISamchonGraphNext";
 
 /** A compact, source-read-free project map for broad orientation only. */
-export interface IGraphOverview {
+export interface ISamchonGraphOverview {
   /** Discriminator for source-free project overview. */
   type: "overview";
 
@@ -15,28 +15,28 @@ export interface IGraphOverview {
   languages: GraphLanguage[];
 
   /** Size of the graph. */
-  counts: IGraphOverview.ICounts;
+  counts: ISamchonGraphOverview.ICounts;
 
   /** Folder layering, largest first. */
-  layers?: IGraphOverview.ILayer[];
+  layers?: ISamchonGraphOverview.ILayer[];
 
   /** Highest-dependency symbols, busiest first. */
-  hotspots?: IGraphOverview.IHotspot[];
+  hotspots?: ISamchonGraphOverview.IHotspot[];
 
   /** Exported API symbols, most-depended-on first. */
-  publicApi?: IGraphOverview.IPublicApi[];
+  publicApi?: ISamchonGraphOverview.IPublicApi[];
 
   /** Index diagnostics, when any. */
-  diagnostics?: IGraphDiagnostic[];
+  diagnostics?: ISamchonGraphDiagnostic[];
 
   /** How to use this source-free result next. */
-  next: IGraphNext;
+  next: ISamchonGraphNext;
 
   /** Human-readable compatibility note mirroring `next`. */
   guide: string;
 }
 
-export namespace IGraphOverview {
+export namespace ISamchonGraphOverview {
   /** Which broad architecture facets `overview` should return. */
   export interface IRequest {
     /** Discriminator for source-free project overview. */
@@ -101,7 +101,7 @@ export namespace IGraphOverview {
     /** 1-based declaration line, when known. */
     line?: number;
     /** Source span of the declaration, when known. */
-    sourceSpan?: Pick<IGraphEvidence, "file" | "startLine" | "endLine">;
+    sourceSpan?: Pick<ISamchonGraphEvidence, "file" | "startLine" | "endLine">;
   }
 
   /** A high-dependency symbol with its non-structural fan-in and fan-out. */

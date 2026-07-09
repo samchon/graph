@@ -1,29 +1,29 @@
 import {
-  GraphEdgeKind,
-  IGraphDiagnostic,
-  IGraphDump,
-  IGraphEdge,
-  IGraphNode,
-} from "../structures";
-import { basename } from "../utils/path";
+  ISamchonGraphDiagnostic,
+  ISamchonGraphDump,
+  ISamchonGraphEdge,
+  ISamchonGraphNode,
+} from "./structures";
+import { GraphEdgeKind } from "./typings";
+import { basename } from "./utils/path";
 
-export class GraphMemory {
-  private readonly byId: Map<string, IGraphNode>;
-  private readonly outEdges: Map<string, IGraphEdge[]>;
-  private readonly inEdges: Map<string, IGraphEdge[]>;
-  private readonly byNameIndex: Map<string, IGraphNode[]>;
-  private readonly bySymbolIndex: Map<string, IGraphNode[]>;
-  private readonly diagnosticsByFile: Map<string, IGraphDiagnostic[]>;
+export class SamchonGraphMemory {
+  private readonly byId: Map<string, ISamchonGraphNode>;
+  private readonly outEdges: Map<string, ISamchonGraphEdge[]>;
+  private readonly inEdges: Map<string, ISamchonGraphEdge[]>;
+  private readonly byNameIndex: Map<string, ISamchonGraphNode[]>;
+  private readonly bySymbolIndex: Map<string, ISamchonGraphNode[]>;
+  private readonly diagnosticsByFile: Map<string, ISamchonGraphDiagnostic[]>;
 
   public readonly project: string;
   public readonly languages: readonly string[];
-  public readonly indexer: IGraphDump["indexer"];
-  public readonly nodes: readonly IGraphNode[];
-  public readonly edges: readonly IGraphEdge[];
-  public readonly diagnostics: readonly IGraphDiagnostic[];
+  public readonly indexer: ISamchonGraphDump["indexer"];
+  public readonly nodes: readonly ISamchonGraphNode[];
+  public readonly edges: readonly ISamchonGraphEdge[];
+  public readonly diagnostics: readonly ISamchonGraphDiagnostic[];
   public readonly warnings: readonly string[];
 
-  private constructor(dump: IGraphDump, nodes: IGraphNode[], edges: IGraphEdge[]) {
+  private constructor(dump: ISamchonGraphDump, nodes: ISamchonGraphNode[], edges: ISamchonGraphEdge[]) {
     this.project = dump.project;
     this.languages = dump.languages;
     this.indexer = dump.indexer;
@@ -57,36 +57,36 @@ export class GraphMemory {
     }
   }
 
-  public static from(dump: IGraphDump): GraphMemory {
+  public static from(dump: ISamchonGraphDump): SamchonGraphMemory {
     const { nodes, edges } = synthesize(dump.nodes, dump.edges);
-    return new GraphMemory(dump, nodes, edges);
+    return new SamchonGraphMemory(dump, nodes, edges);
   }
 
-  public node(id: string): IGraphNode | undefined {
+  public node(id: string): ISamchonGraphNode | undefined {
     return this.byId.get(id);
   }
 
-  public outgoing(id: string): readonly IGraphEdge[] {
+  public outgoing(id: string): readonly ISamchonGraphEdge[] {
     return this.outEdges.get(id) ?? [];
   }
 
-  public incoming(id: string): readonly IGraphEdge[] {
+  public incoming(id: string): readonly ISamchonGraphEdge[] {
     return this.inEdges.get(id) ?? [];
   }
 
-  public named(name: string): readonly IGraphNode[] {
+  public named(name: string): readonly ISamchonGraphNode[] {
     return this.byNameIndex.get(name) ?? [];
   }
 
-  public symbols(handle: string): readonly IGraphNode[] {
+  public symbols(handle: string): readonly ISamchonGraphNode[] {
     return this.bySymbolIndex.get(handle) ?? [];
   }
 
-  public exported(): IGraphNode[] {
+  public exported(): ISamchonGraphNode[] {
     return this.nodes.filter((node) => node.exported && !node.external);
   }
 
-  public diagnosticsFor(file: string): readonly IGraphDiagnostic[] {
+  public diagnosticsFor(file: string): readonly ISamchonGraphDiagnostic[] {
     return this.diagnosticsByFile.get(file) ?? [];
   }
 }
@@ -97,7 +97,7 @@ function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   else bucket.push(value);
 }
 
-function keyOf(node: IGraphNode): string {
+function keyOf(node: ISamchonGraphNode): string {
   return node.qualifiedName ?? node.name;
 }
 
@@ -107,13 +107,13 @@ function ownerKey(key: string): string {
 }
 
 function synthesize(
-  rawNodes: readonly IGraphNode[],
-  rawEdges: readonly IGraphEdge[],
-): { nodes: IGraphNode[]; edges: IGraphEdge[] } {
+  rawNodes: readonly ISamchonGraphNode[],
+  rawEdges: readonly ISamchonGraphEdge[],
+): { nodes: ISamchonGraphNode[]; edges: ISamchonGraphEdge[] } {
   const nodes = rawNodes.map((node) => ({ ...node }));
   const edges = rawEdges.map((edge) => ({ ...edge }));
-  const byFileKey = new Map<string, IGraphNode>();
-  const files = new Map<string, IGraphNode>();
+  const byFileKey = new Map<string, ISamchonGraphNode>();
+  const files = new Map<string, ISamchonGraphNode>();
 
   for (const node of nodes) {
     if (!node.external) byFileKey.set(`${node.file}\0${keyOf(node)}`, node);
@@ -132,7 +132,7 @@ function synthesize(
   const edgeKeys = new Set(
     edges.map((edge) => `${edge.kind}\0${edge.from}\0${edge.to}`),
   );
-  const addEdge = (edge: IGraphEdge): void => {
+  const addEdge = (edge: ISamchonGraphEdge): void => {
     const key = `${edge.kind}\0${edge.from}\0${edge.to}`;
     if (edgeKeys.has(key)) return;
     edgeKeys.add(key);
@@ -143,7 +143,9 @@ function synthesize(
     if (node.external || node.file === "") continue;
     const parentKey = ownerKey(keyOf(node));
     const parent =
-      parentKey === "" ? undefined : byFileKey.get(`${node.file}\0${parentKey}`);
+      parentKey === ""
+        ? undefined
+        : byFileKey.get(`${node.file}\0${parentKey}`);
     addEdge({
       from: parent?.id ?? node.file,
       to: node.id,

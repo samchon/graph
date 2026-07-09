@@ -3,12 +3,12 @@
  * span for a node, or the expression range that produced an edge.
  *
  * Evidence is display and grounding only; it is never identity. A node's id is
- * position-invariant (see {@link IGraphNode}), so an edit that shifts a span
+ * position-invariant (see {@link ISamchonGraphNode}), so an edit that shifts a span
  * does not re-key anything. `startLine`/`startCol` are 1-based. MCP output
  * keeps evidence as coordinates; consumers can read the file themselves when
  * they truly need source text.
  */
-export interface IGraphEvidence {
+export interface ISamchonGraphEvidence {
   /** Project-relative path of the file the span lives in. */
   file: string;
 

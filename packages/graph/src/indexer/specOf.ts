@@ -1,4 +1,4 @@
-import { GraphLanguage } from "../structures";
+import { GraphLanguage } from "../typings";
 import { ILanguageSpec } from "./ILanguageSpec";
 import { LANGUAGE_SPECS } from "./LANGUAGE_SPECS";
 

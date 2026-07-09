@@ -1,10 +1,10 @@
-import { GraphMemory, SamchonGraphApplication } from "@samchon/graph";
+import { SamchonGraphMemory, SamchonGraphApplication } from "@samchon/graph";
 import type { ISamchonGraphApplication } from "@samchon/graph";
 
 import { GraphFixtures } from "./GraphFixtures";
 
 const createApplication = (): SamchonGraphApplication =>
-  new SamchonGraphApplication(GraphMemory.from(GraphFixtures.createContractFixture().dump));
+  new SamchonGraphApplication(SamchonGraphMemory.from(GraphFixtures.createContractFixture().dump));
 
 const call = (
   app: SamchonGraphApplication,

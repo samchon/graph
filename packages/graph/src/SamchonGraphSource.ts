@@ -1,3 +1,3 @@
-import { GraphMemory } from "./model/GraphMemory";
+import { SamchonGraphMemory } from "./SamchonGraphMemory";
 
-export type SamchonGraphSource = GraphMemory | (() => GraphMemory);
+export type SamchonGraphSource = SamchonGraphMemory | (() => SamchonGraphMemory);

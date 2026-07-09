@@ -1,24 +1,21 @@
 import path from "node:path";
-
 import {
-  GraphEdgeKind,
-  GraphLanguage,
-  GraphNodeKind,
-  IGraphDump,
-  IGraphEdge,
-  IGraphEvidence,
-  IGraphNode,
+  ISamchonGraphDump,
+  ISamchonGraphEdge,
+  ISamchonGraphEvidence,
+  ISamchonGraphNode,
 } from "../structures";
+import { GraphEdgeKind, GraphLanguage, GraphNodeKind } from "../typings";
 import { projectRelative, readLines, walkSourceFiles } from "../utils/fs";
-import { allExtensions, languageOf } from "./languages";
-import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { decoratorsAbove } from "./decoratorsAbove";
+import { IBuildGraphOptions } from "./IBuildGraphOptions";
+import { allExtensions, languageOf } from "./languages";
 import { overrideEdges } from "./overrideEdges";
 import { resolveType } from "./resolveType";
 import { supertypesOf } from "./supertypesOf";
 
 interface IDeclaration {
-  node: IGraphNode;
+  node: ISamchonGraphNode;
   startIndex: number;
   endIndex: number;
   ownerId?: string;
@@ -26,17 +23,17 @@ interface IDeclaration {
 
 const EXTERNAL_MODULE_LIMIT = 1_500;
 
-export function buildStaticGraph(options: IBuildGraphOptions = {}): IGraphDump {
+export function buildStaticGraph(options: IBuildGraphOptions = {}): ISamchonGraphDump {
   const root = path.resolve(options.cwd ?? process.cwd());
   const files = walkSourceFiles(root, {
     extensions: allExtensions(options.languages),
     maxFiles: options.maxFiles,
   });
-  const nodes: IGraphNode[] = [];
-  const edges: IGraphEdge[] = [];
+  const nodes: ISamchonGraphNode[] = [];
+  const edges: ISamchonGraphEdge[] = [];
   const declarationsByFile = new Map<string, IDeclaration[]>();
-  const byName = new Map<string, IGraphNode[]>();
-  const externalNodes = new Map<string, IGraphNode>();
+  const byName = new Map<string, ISamchonGraphNode[]>();
+  const externalNodes = new Map<string, ISamchonGraphNode>();
   const warnings: string[] = [];
 
   for (const file of files) {
@@ -149,12 +146,18 @@ function declarationsOf(
     // Methods are only declared directly inside a type container. Detecting them
     // inside a function/method body turns bare call statements (`doThing(x)`
     // with no trailing `;`, as in Go and ASI JS/TS) into phantom method nodes.
-    const parsed = parseDeclaration(language, line, isTypeContainer(ownerStack[ownerStack.length - 1]?.kind));
+    const parsed = parseDeclaration(
+      language,
+      line,
+      isTypeContainer(ownerStack[ownerStack.length - 1]?.kind),
+    );
     if (parsed !== undefined) {
       const endIndex = declarationEndIndex(lines, i);
       const owner = ownerStack.map((entry) => entry.name).join(".");
-      const qualifiedName = owner === "" ? parsed.name : `${owner}.${parsed.name}`;
-      const node: IGraphNode = {
+      const qualifiedName = owner === ""
+        ? parsed.name
+        : `${owner}.${parsed.name}`;
+      const node: ISamchonGraphNode = {
         id: `${file}#${qualifiedName}:${parsed.kind}`,
         kind: parsed.kind,
         language,
@@ -198,7 +201,9 @@ function parseDeclaration(
 ): { kind: GraphNodeKind; name: string; exported?: boolean } | undefined {
   const text = line.trim();
   if (text === "" || text.startsWith("//") || text.startsWith("*")) return undefined;
-  const packageDeclaration = /^package\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*;?/.exec(text);
+  const packageDeclaration = /^package\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*;?/.exec(
+    text,
+  );
   if (packageDeclaration !== null) {
     return {
       kind: "package",
@@ -215,14 +220,24 @@ function parseDeclaration(
       return { kind: "method", name: method[1]! };
     }
   }
-  const generic = /^(?:export\s+)?(?:(?:public|private|protected|internal|static|abstract|final|open|override|async|pub|pub\(crate\))\s+)*(class|interface|struct|enum|trait|type|namespace|module|object|protocol|extension|func|fn|function|def|fun|method|const|let|var)\s+([A-Za-z_$][\w$]*)/.exec(text);
-  const cppFunction = /^(?:[\w:<>,~*&\s]+)\s+([A-Za-z_]\w*)\s*\([^;]*\)\s*(?:const\s*)?\{?\s*$/.exec(text);
+  const generic = /^(?:export\s+)?(?:(?:public|private|protected|internal|static|abstract|final|open|override|async|pub|pub\(crate\))\s+)*(class|interface|struct|enum|trait|type|namespace|module|object|protocol|extension|func|fn|function|def|fun|method|const|let|var)\s+([A-Za-z_$][\w$]*)/.exec(
+    text,
+  );
+  const cppFunction = /^(?:[\w:<>,~*&\s]+)\s+([A-Za-z_]\w*)\s*\([^;]*\)\s*(?:const\s*)?\{?\s*$/.exec(
+    text,
+  );
   const goFunc = /^func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)\s*\(/.exec(text);
   const goType = /^type\s+([A-Za-z_]\w*)\s+(struct|interface|\w+)/.exec(text);
-  const tsVariable = /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::|=|\()/ .exec(text);
+  const tsVariable = /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::|=|\()/ .exec(
+    text,
+  );
 
   if (language === "go" && goFunc !== null) {
-    return { kind: "function", name: goFunc[1]!, exported: isCapitalized(goFunc[1]!) };
+    return {
+      kind: "function",
+      name: goFunc[1]!,
+      exported: isCapitalized(goFunc[1]!),
+    };
   }
   if (language === "go" && goType !== null) {
     return {
@@ -290,14 +305,16 @@ function importsOf(
   file: string,
   language: GraphLanguage,
   lines: readonly string[],
-): Array<{ name: string; evidence: IGraphEvidence }> {
-  const out: Array<{ name: string; evidence: IGraphEvidence }> = [];
+): Array<{ name: string; evidence: ISamchonGraphEvidence }> {
+  const out: Array<{ name: string; evidence: ISamchonGraphEvidence }> = [];
   let goImportBlock = false;
   for (let i = 0; i < lines.length; i++) {
     const text = lines[i]!.trim();
     const names: string[] = [];
     if (language === "typescript") {
-      for (const match of text.matchAll(/\bfrom\s+["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)|^import\s+["']([^"']+)["']/g)) {
+      for (const match of text.matchAll(
+        /\bfrom\s+["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)|^import\s+["']([^"']+)["']/g,
+      )) {
         names.push((match[1] ?? match[2] ?? match[3])!);
       }
     } else if (language === "go") {
@@ -311,7 +328,9 @@ function importsOf(
       } else if (/^import\s*\(/.test(text)) {
         goImportBlock = true;
       } else {
-        const match = /^import\s+(?:(?:[._]|\w+)\s+)?["`]([^"`]+)["`]/.exec(text);
+        const match = /^import\s+(?:(?:[._]|\w+)\s+)?["`]([^"`]+)["`]/.exec(
+          text,
+        );
         if (match !== null) names.push(match[1]!);
       }
     } else if (language === "rust") {
@@ -343,20 +362,24 @@ function importsOf(
 const IDENTIFIER = /[A-Za-z_$][A-Za-z0-9_$]*/g;
 
 function dependencyEdges(
-  source: IGraphNode,
+  source: ISamchonGraphNode,
   body: string,
-  byName: Map<string, IGraphNode[]>,
-): IGraphEdge[] {
-  const best = new Map<string, { target: IGraphNode; kind: GraphEdgeKind }>();
+  byName: Map<string, ISamchonGraphNode[]>,
+): ISamchonGraphEdge[] {
+  const best = new Map<string, { target: ISamchonGraphNode; kind: GraphEdgeKind }>();
   IDENTIFIER.lastIndex = 0;
-  for (let match = IDENTIFIER.exec(body); match !== null; match = IDENTIFIER.exec(body)) {
+  for (let match = IDENTIFIER.exec(
+    body,
+  ); match !== null; match = IDENTIFIER.exec(body)) {
     const name = match[0];
     if (name === source.name) continue;
     const targets = byName.get(name);
     if (targets === undefined) continue;
     // `name` differs from `source.name` (skipped above), so `source` is never
     // among these targets and a non-self target always exists.
-    const target = targets.find((node) => node.file !== source.file || node.id !== source.id);
+    const target = targets.find(
+      (node) => node.file !== source.file || node.id !== source.id,
+    );
     /* c8 ignore next */
     if (target === undefined) continue;
     // A `(` after any run of whitespace makes this occurrence a call site.
@@ -373,19 +396,24 @@ function dependencyEdges(
       best.set(target.id, { target, kind });
     }
   }
-  const out: IGraphEdge[] = [];
+  const out: ISamchonGraphEdge[] = [];
   for (const { target, kind } of best.values()) {
-    out.push({ from: source.id, to: target.id, kind, evidence: source.evidence });
+    out.push({
+      from: source.id,
+      to: target.id,
+      kind,
+      evidence: source.evidence,
+    });
   }
   return out;
 }
 
 function inheritanceEdges(
-  source: IGraphNode,
-  byName: Map<string, IGraphNode[]>,
-): IGraphEdge[] {
+  source: ISamchonGraphNode,
+  byName: Map<string, ISamchonGraphNode[]>,
+): ISamchonGraphEdge[] {
   if (source.kind !== "class" && source.kind !== "interface") return [];
-  const out: IGraphEdge[] = [];
+  const out: ISamchonGraphEdge[] = [];
   const seen = new Set<string>();
   for (const supertype of supertypesOf(source.signature!)) {
     const target = resolveType(supertype.name, source, byName);
@@ -405,9 +433,9 @@ function inheritanceEdges(
 
 function externalNode(
   language: GraphLanguage,
-  imported: { name: string; evidence: IGraphEvidence },
-  cache: Map<string, IGraphNode>,
-): IGraphNode {
+  imported: { name: string; evidence: ISamchonGraphEvidence },
+  cache: Map<string, ISamchonGraphNode>,
+): ISamchonGraphNode {
   const key = `external:${language}:${imported.name}`;
   let node = cache.get(key);
   if (node !== undefined) return node;
@@ -423,15 +451,18 @@ function externalNode(
   return node;
 }
 
-function dedupeNodes(nodes: IGraphNode[]): IGraphNode[] {
-  const map = new Map<string, IGraphNode>();
+function dedupeNodes(nodes: ISamchonGraphNode[]): ISamchonGraphNode[] {
+  const map = new Map<string, ISamchonGraphNode>();
   for (const node of nodes) map.set(node.id, node);
   return [...map.values()];
 }
 
-function dedupeEdges(edges: IGraphEdge[]): IGraphEdge[] {
-  const map = new Map<string, IGraphEdge>();
-  for (const edge of edges) map.set(`${edge.kind}\0${edge.from}\0${edge.to}`, edge);
+function dedupeEdges(edges: ISamchonGraphEdge[]): ISamchonGraphEdge[] {
+  const map = new Map<string, ISamchonGraphEdge>();
+  for (const edge of edges) map.set(
+    `${edge.kind}\0${edge.from}\0${edge.to}`,
+    edge,
+  );
   return [...map.values()];
 }
 

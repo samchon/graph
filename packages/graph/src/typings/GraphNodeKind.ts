@@ -6,7 +6,7 @@
  * workspace references but does not declare. The graph keeps it as a named
  * endpoint without walking into the dependency's internals.
  *
- * Used as the `kind` discriminant on {@link IGraphNode}.
+ * Used as the `kind` discriminant on {@link ISamchonGraphNode}.
  */
 export type GraphNodeKind =
   | "file"

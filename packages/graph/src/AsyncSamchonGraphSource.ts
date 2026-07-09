@@ -1,5 +1,5 @@
-import { GraphMemory } from "./model/GraphMemory";
+import { SamchonGraphMemory } from "./SamchonGraphMemory";
 
 export type AsyncSamchonGraphSource =
-  | GraphMemory
-  | (() => GraphMemory | Promise<GraphMemory>);
+  | SamchonGraphMemory
+  | (() => SamchonGraphMemory | Promise<SamchonGraphMemory>);

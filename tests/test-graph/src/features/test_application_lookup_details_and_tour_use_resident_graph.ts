@@ -1,11 +1,11 @@
 import { TestValidator } from "@nestia/e2e";
-import { GraphMemory, SamchonGraphApplication, buildGraphDump } from "@samchon/graph";
+import { SamchonGraphMemory, SamchonGraphApplication, buildGraphDump } from "@samchon/graph";
 
 import { GraphFixtures } from "../internal/GraphFixtures";
 
 export const test_application_lookup_details_and_tour_use_resident_graph = async () => {
   const root = GraphFixtures.createOrderFixture();
-  const graph = GraphMemory.from(await buildGraphDump({ cwd: root, mode: "static" }));
+  const graph = SamchonGraphMemory.from(await buildGraphDump({ cwd: root, mode: "static" }));
   const app = new SamchonGraphApplication(graph);
 
   const lookup = await app.inspect_code_graph({

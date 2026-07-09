@@ -1,10 +1,10 @@
 import { TestValidator } from "@nestia/e2e";
-import { GraphMemory, SamchonGraphApplication, buildGraphDump } from "@samchon/graph";
+import { SamchonGraphMemory, SamchonGraphApplication, buildGraphDump } from "@samchon/graph";
 
 import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_real_codebase_operations_answer_about_package_symbols = async () => {
-  const graph = GraphMemory.from(
+  const graph = SamchonGraphMemory.from(
     await buildGraphDump({
       cwd: GraphPaths.graphPackageRoot,
       mode: "static",
@@ -32,18 +32,18 @@ export const test_real_codebase_operations_answer_about_package_symbols = async 
 
   const details = (
     await app.inspect_code_graph({
-      question: "Inspect GraphMemory",
+      question: "Inspect SamchonGraphMemory",
       draft: { reason: "Selected symbol shape needs details.", type: "details" },
       review: "Details is the right request.",
-      request: { type: "details", handles: ["GraphMemory"], neighbors: true },
+      request: { type: "details", handles: ["SamchonGraphMemory"], neighbors: true },
     })
   ).result;
   TestValidator.predicate(
-    "real codebase details lists GraphMemory members",
+    "real codebase details lists SamchonGraphMemory members",
     details.nodes.some(
       (node) =>
-        node.name === "GraphMemory" &&
-        node.members?.some((member) => member.name === "GraphMemory.node"),
+        node.name === "SamchonGraphMemory" &&
+        node.members?.some((member) => member.name === "SamchonGraphMemory.node"),
     ),
   );
 

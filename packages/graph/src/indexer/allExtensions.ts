@@ -1,4 +1,4 @@
-import { GraphLanguage } from "../structures";
+import { GraphLanguage } from "../typings";
 import { LANGUAGE_SPECS } from "./LANGUAGE_SPECS";
 
 export function allExtensions(languages?: readonly GraphLanguage[]): Set<string> {

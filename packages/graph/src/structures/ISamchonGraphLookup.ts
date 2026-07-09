@@ -1,28 +1,28 @@
-import { GraphLanguage } from "./GraphLanguage";
-import { GraphNodeKind } from "./GraphNodeKind";
-import { IGraphDecorator } from "./IGraphDecorator";
-import { IGraphNext } from "./IGraphNext";
-import { IGraphOverview } from "./IGraphOverview";
+import { GraphLanguage } from "../typings/GraphLanguage";
+import { GraphNodeKind } from "../typings/GraphNodeKind";
+import { ISamchonGraphDecorator } from "./ISamchonGraphDecorator";
+import { ISamchonGraphNext } from "./ISamchonGraphNext";
+import { ISamchonGraphOverview } from "./ISamchonGraphOverview";
 
 /** Targeted symbol lookup when a concrete name or handle is being resolved. */
-export interface IGraphLookup {
+export interface ISamchonGraphLookup {
   /** Discriminator for targeted symbol lookup. */
   type: "lookup";
 
   /** Ranked symbol matches for the query. */
-  hits: IGraphLookup.IHit[];
+  hits: ISamchonGraphLookup.IHit[];
 
   /** Query terms that matched nothing. */
   unknown?: string[];
 
   /** How to use this source-free result next. */
-  next: IGraphNext;
+  next: ISamchonGraphNext;
 
   /** Human-readable compatibility note mirroring `next`. */
   guide: string;
 }
 
-export namespace IGraphLookup {
+export namespace ISamchonGraphLookup {
   /** Find a concrete class, method, function, property, type, or dotted handle. */
   export interface IRequest {
     /** Discriminator for targeted symbol lookup. */
@@ -64,7 +64,7 @@ export namespace IGraphLookup {
   }
 
   /** One ranked hit with a handle to follow via `details` or `trace`. */
-  export interface IHit extends IGraphOverview.INode {
+  export interface IHit extends ISamchonGraphOverview.INode {
     /** Relative relevance; higher is a better match. */
     score: number;
 
@@ -75,6 +75,6 @@ export namespace IGraphLookup {
     signature?: string;
 
     /** Decorators written on this declaration, when any. */
-    decorators?: IGraphDecorator[];
+    decorators?: ISamchonGraphDecorator[];
   }
 }

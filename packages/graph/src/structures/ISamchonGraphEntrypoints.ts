@@ -1,9 +1,9 @@
-import { GraphLanguage } from "./GraphLanguage";
-import { IGraphNext } from "./IGraphNext";
-import { IGraphOverview } from "./IGraphOverview";
+import { GraphLanguage } from "../typings/GraphLanguage";
+import { ISamchonGraphNext } from "./ISamchonGraphNext";
+import { ISamchonGraphOverview } from "./ISamchonGraphOverview";
 
 /** The first compact source-free handle list for a code question. */
-export interface IGraphEntrypoints {
+export interface ISamchonGraphEntrypoints {
   /** Discriminator for first-pass question indexing. */
   type: "entrypoints";
 
@@ -11,22 +11,22 @@ export interface IGraphEntrypoints {
   query: string;
 
   /** Ranked symbols relevant to the query. */
-  ranked: IGraphEntrypoints.IEntrypoint[];
+  ranked: ISamchonGraphEntrypoints.IEntrypoint[];
 
   /** Code handles written directly in the query, resolved when possible. */
-  mentions: IGraphOverview.INode[];
+  mentions: ISamchonGraphOverview.INode[];
 
   /** Direct dependency context for the resolved mentions and highest hits. */
   dependencyOrientation: string[];
 
   /** How to use this source-free result next. */
-  next: IGraphNext;
+  next: ISamchonGraphNext;
 
   /** Human-readable compatibility note mirroring `next`. */
   guide: string;
 }
 
-export namespace IGraphEntrypoints {
+export namespace ISamchonGraphEntrypoints {
   /**
    * Ask for first handles when the question is narrow but the symbol is not yet
    * known. For broad tours, read-next, architecture, or multi-phase runtime
@@ -60,7 +60,7 @@ export namespace IGraphEntrypoints {
   }
 
   /** One ranked search hit. */
-  export interface IEntrypoint extends IGraphOverview.INode {
+  export interface IEntrypoint extends ISamchonGraphOverview.INode {
     /** Relative relevance; higher is a better match. */
     score: number;
 

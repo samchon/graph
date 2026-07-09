@@ -1,8 +1,8 @@
-import { IGraphEvidence } from "./IGraphEvidence";
+import { ISamchonGraphEvidence } from "./ISamchonGraphEvidence";
 
 /**
  * A decorator as written on a declaration, carried on the decorated
- * {@link IGraphNode}'s `decorators`.
+ * {@link ISamchonGraphNode}'s `decorators`.
  *
  * The graph reports the decorator faithfully rather than interpreting any
  * framework's convention: the `name` is the decorator as written (`Controller`,
@@ -10,7 +10,7 @@ import { IGraphEvidence } from "./IGraphEvidence";
  * are preserved so a consumer can apply its own meaning without re-parsing
  * source.
  */
-export interface IGraphDecorator {
+export interface ISamchonGraphDecorator {
   /**
    * The decorator name as written, qualified through its access path:
    * `Controller`, `Get`, `TypedRoute.Get`, `MessagePattern`.
@@ -21,5 +21,5 @@ export interface IGraphDecorator {
   arguments?: string[];
 
   /** The decorator expression span, for display. */
-  evidence?: IGraphEvidence;
+  evidence?: ISamchonGraphEvidence;
 }

@@ -1,5 +1,5 @@
 /** The required next step from a language-server-derived graph result. */
-export interface IGraphNext {
+export interface ISamchonGraphNext {
   /**
    * Answer, continue graph inspection, leave graph, or clarify.
    *

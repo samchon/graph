@@ -1,19 +1,19 @@
-import { GraphMemory } from "../model/GraphMemory";
-import { IGraphDetails, IGraphEdge } from "../structures";
+import { SamchonGraphMemory } from "../SamchonGraphMemory";
+import { ISamchonGraphDetails, ISamchonGraphEdge } from "../structures";
 import { compareEdges } from "./compareEdges";
 import { isStructural } from "./isStructural";
 import { publicEvidence } from "./publicEvidence";
 import { summaryOf } from "./summaryOf";
 
 export function referencesFromEdges(
-  graph: GraphMemory,
-  edges: readonly IGraphEdge[],
+  graph: SamchonGraphMemory,
+  edges: readonly ISamchonGraphEdge[],
   end: "from" | "to",
   limit: number,
   includeExternal: boolean,
   kinds?: ReadonlySet<string>,
-): IGraphDetails.IReference[] {
-  const out: IGraphDetails.IReference[] = [];
+): ISamchonGraphDetails.IReference[] {
+  const out: ISamchonGraphDetails.IReference[] = [];
   const seen = new Set<string>();
   for (const edge of [...edges].sort(compareEdges)) {
     if (kinds !== undefined && !kinds.has(edge.kind)) continue;
@@ -25,11 +25,13 @@ export function referencesFromEdges(
     // (highest-ranked) relation to a node wins.
     if (seen.has(node.id)) continue;
     seen.add(node.id);
-    const ref: IGraphDetails.IReference = {
+    const ref: ISamchonGraphDetails.IReference = {
       ...summaryOf(node),
       relation: edge.kind,
     };
-    if (edge.evidence !== undefined) ref.evidence = publicEvidence(edge.evidence);
+    if (edge.evidence !== undefined) ref.evidence = publicEvidence(
+      edge.evidence,
+    );
     out.push(ref);
     if (out.length >= limit) break;
   }

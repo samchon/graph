@@ -1,9 +1,11 @@
-import { IGraphNext } from "../structures";
+import { ISamchonGraphNext } from "../structures";
 
 export function resultNext(
-  action: IGraphNext["action"],
+  action: ISamchonGraphNext["action"],
   reason: string,
-  request?: IGraphNext["request"],
-): IGraphNext {
-  return request === undefined ? { action, reason } : { action, request, reason };
+  request?: ISamchonGraphNext["request"],
+): ISamchonGraphNext {
+  return request === undefined
+    ? { action, reason }
+    : { action, request, reason };
 }

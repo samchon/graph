@@ -1,7 +1,7 @@
-import { IGraphEdge } from "../structures";
+import { ISamchonGraphEdge } from "../structures";
 import { edgeRank } from "./edgeRank";
 
-export function compareEdges(a: IGraphEdge, b: IGraphEdge): number {
+export function compareEdges(a: ISamchonGraphEdge, b: ISamchonGraphEdge): number {
   return (
     edgeRank(a.kind) - edgeRank(b.kind) ||
     (a.evidence?.startLine ?? 999_999) - (b.evidence?.startLine ?? 999_999) ||

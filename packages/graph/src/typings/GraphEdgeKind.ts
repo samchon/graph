@@ -1,5 +1,5 @@
 /**
- * The relationship a directed edge encodes between two {@link IGraphNode}s.
+ * The relationship a directed edge encodes between two {@link ISamchonGraphNode}s.
  *
  * Structural edges (`contains`, `exports`, `imports`) come from the declaration
  * pass. Value and type edges (`calls`, `accesses`, `instantiates`, `type_ref`,

@@ -1,10 +1,10 @@
 import { TestValidator } from "@nestia/e2e";
-import { GraphMemory, SamchonGraphApplication } from "@samchon/graph";
+import { SamchonGraphMemory, SamchonGraphApplication } from "@samchon/graph";
 
 import { GraphFixtures } from "../internal/GraphFixtures";
 
 export const test_application_retries_after_a_failed_load = async () => {
-  const memory = GraphMemory.from(GraphFixtures.createContractFixture().dump);
+  const memory = SamchonGraphMemory.from(GraphFixtures.createContractFixture().dump);
   let attempt = 0;
   const app = new SamchonGraphApplication(() => {
     attempt += 1;

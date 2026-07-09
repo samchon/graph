@@ -1,6 +1,6 @@
-import { IGraphEvidence } from "../structures";
+import { ISamchonGraphEvidence } from "../structures";
 
-export function publicEvidence(evidence: IGraphEvidence): IGraphEvidence {
+export function publicEvidence(evidence: ISamchonGraphEvidence): ISamchonGraphEvidence {
   return {
     file: evidence.file,
     startLine: evidence.startLine,

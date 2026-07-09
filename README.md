@@ -8,7 +8,7 @@
 
 That collapses the token cost. On an 11-language benchmark it cuts the agent's tokens by a **median of 96%** on onboarding questions — while [`codegraph`](https://github.com/colbymchenry/codegraph) cuts 63% and [`serena`](https://github.com/oraios/serena) makes it *worse*.
 
-![Agent token cost — onboarding, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-common.svg)
+![Agent token cost — onboarding, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-codex-gpt-5.4-mini-common.svg)
 
 ## Setup
 
@@ -96,13 +96,13 @@ export namespace ISamchonGraphApplication {
     draft: IDraft; //    intended request + why it is smallest
     review: string; //   correct the draft before committing
     request:
-      | IGraphTour.IRequest //    broad orientation / runtime flow
-      | IGraphLookup.IRequest //  find a symbol
-      | IGraphTrace.IRequest //   follow a flow
-      | IGraphDetails.IRequest // one symbol's facts
-      | IGraphEntrypoints.IRequest
-      | IGraphOverview.IRequest
-      | IGraphEscape.IRequest; // leave the graph
+      | ISamchonGraphTour.IRequest //    broad orientation / runtime flow
+      | ISamchonGraphLookup.IRequest //  find a symbol
+      | ISamchonGraphTrace.IRequest //   follow a flow
+      | ISamchonGraphDetails.IRequest // one symbol's facts
+      | ISamchonGraphEntrypoints.IRequest
+      | ISamchonGraphOverview.IRequest
+      | ISamchonGraphEscape.IRequest; // leave the graph
   }
 
   export interface IDraft {

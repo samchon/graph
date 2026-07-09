@@ -43,7 +43,7 @@ A language server sharpens the graph with semantically-resolved edges. Install t
 
 | Language | Server | Install |
 |---|---|---|
-| TypeScript | `ttscserver` | `npm i -D ttsc typescript` |
+| TypeScript | `ttscserver` (0.18+) | `npm i -D ttsc typescript` |
 | Python | `pyright-langserver` | `npm i -D pyright` |
 | Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
 | Rust | `rust-analyzer` | `rustup component add rust-analyzer` |
@@ -62,11 +62,7 @@ A language server sharpens the graph with semantically-resolved edges. Install t
 
 Each server must be on `PATH`. If none is present for a file's language, that language falls back to the static indexer automatically.
 
-### TypeScript — the fast path
-
-The community `typescript-language-server` is an unofficial wrapper over the classic `tsserver` and answers references one symbol at a time. For compiler-grade TypeScript graphs at native speed, `@samchon/graph` uses **[`ttscserver`](https://github.com/samchon/ttsc)** (the `typescript-go`-backed LSP host). Use `ttscserver` **0.18.0 or newer**, which includes local `textDocument/documentSymbol` and `textDocument/references` answers.
-
-JavaScript is intentionally not indexed as a supported language. In arbitrary repositories, `.js`/`.jsx`/`.mjs`/`.cjs` files are often TypeScript build output, vendored bundles, or handwritten source, and the graph cannot distinguish those cases reliably without project-specific provenance.
+JavaScript is intentionally not indexed: in arbitrary repositories, `.js`/`.jsx`/`.mjs`/`.cjs` files are often TypeScript build output or vendored bundles, and the graph cannot distinguish those from handwritten source without project-specific provenance.
 
 ## Benchmark
 

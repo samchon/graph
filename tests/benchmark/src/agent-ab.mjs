@@ -35,7 +35,6 @@ import {
   ensureInstalled,
   graphLauncher,
   parseArgs as parseArgsShared,
-  preflightGraph,
   resolvePrompt,
 } from "./lib.mjs";
 
@@ -89,8 +88,7 @@ if (armsRequested.graph && !serena && !cg && !fs.existsSync(graphLauncher)) {
   );
 }
 
-// 2. Pinned checkout + dependencies, then the graph-arm preflight gate: a host
-// missing the language server would silently measure the static fallback.
+// 2. Pinned checkout + dependencies.
 if (args["repo-dir"] && !fs.existsSync(repoDir)) {
   throw new Error(`--repo-dir does not exist: ${repoDir}`);
 }
@@ -99,15 +97,6 @@ if (!args["repo-dir"]) {
   clonePinned(spec, corpusRoot);
 }
 ensureInstalled(repoDir, { noInstall: args["no-install"] === "1" });
-if (armsRequested.graph && !serena && !cg) {
-  const flight = preflightGraph(spec, repoDir);
-  if (!flight.ok && args["allow-static"] !== "1") {
-    throw new Error(
-      `preflight: ${repoKey} (${spec.language}) produced indexer="${flight.indexer}" — install ` +
-        `the language server or pass --allow-static=1.\nwarnings: ${flight.warnings.join("; ")}`,
-    );
-  }
-}
 
 // 2b. codegraph setup cost, mirroring the codex harness: `codegraph init` runs
 // once, outside the measured cell, and its wall time is recorded as toolSetupMs.
@@ -120,9 +109,68 @@ if (armsRequested.graph && cg) {
   console.log(`codegraph indexed in ${(toolSetupMs / 1000).toFixed(0)}s`);
 }
 
+// 2c. @samchon/graph setup: pre-build the full-density dump ONCE, outside the
+// measured cell, and serve it via --graph-file — the same treatment codex's
+// harness gives it (agent-ab-codex.mjs), so both harnesses measure the same
+// graph richness. This is also the preflight gate: a host missing the
+// language server produces indexer:"static" here and the run aborts before
+// any credits are spent, instead of silently corrupting the comparison.
+const graphMaxFiles = args["max-files"] ?? spec.maxFiles;
+const graphFile = path.join(corpusRoot, `${repoKey}.graph.json`);
+if (armsRequested.graph && !serena && !cg) {
+  const started = Date.now();
+  const fd = fs.openSync(graphFile, "w");
+  // Language servers pinned as devDependencies (ttscserver via `ttsc`, etc.)
+  // live in the repo's own node_modules/.bin, which `where.exe`/`command -v`
+  // never searches — only genuine PATH entries. Prepend it so a repo-local
+  // install resolves the same way `npm run`/`yarn` would find it, instead of
+  // silently falling back to whatever (or nothing) is globally on PATH.
+  const localBin = path.join(repoDir, "node_modules", ".bin");
+  const built = cp.spawnSync(
+    process.execPath,
+    [
+      graphLauncher,
+      "dump",
+      "--cwd",
+      repoDir,
+      "--mode",
+      "lsp",
+      "--max-files",
+      String(graphMaxFiles),
+      "--lsp-reference-limit",
+      String(args["reference-limit"] ?? 2000),
+      ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
+      ...(spec.lspWarmupTimeoutMs ? ["--lsp-warmup-timeout-ms", String(spec.lspWarmupTimeoutMs)] : []),
+    ],
+    {
+      stdio: ["ignore", fd, "pipe"],
+      encoding: "utf8",
+      windowsHide: true,
+      env: fs.existsSync(localBin)
+        ? { ...process.env, PATH: `${localBin}${path.delimiter}${process.env.PATH ?? ""}` }
+        : process.env,
+    },
+  );
+  fs.closeSync(fd);
+  if (built.status !== 0) {
+    throw new Error(`graph pre-build failed (${built.status})\n${(built.stderr ?? "").slice(0, 1000)}`);
+  }
+  toolSetupMs = Date.now() - started;
+  const dump = JSON.parse(fs.readFileSync(graphFile, "utf8"));
+  if (dump.indexer === "static" && args["allow-static"] !== "1") {
+    throw new Error(
+      `preflight: ${repoKey} (${spec.language}) produced indexer="static" — install ` +
+        `the language server or pass --allow-static=1.\nwarnings: ${(dump.warnings ?? []).join("; ")}`,
+    );
+  }
+  console.log(
+    `graph pre-built: ${dump.indexer}, ${dump.nodes.length} nodes / ${dump.edges.length} edges ` +
+      `in ${(toolSetupMs / 1000).toFixed(0)}s -> ${graphFile}`,
+  );
+}
+
 // 3. WITH = @samchon/graph (or a comparator); WITHOUT = empty config. Both under
 // --strict-mcp-config so the only difference is the graph server.
-const graphMaxFiles = args["max-files"] ?? spec.maxFiles;
 const withCfg = armsRequested.graph
   ? path.join(os.tmpdir(), `mcp-samchon-graph-${process.pid}.json`)
   : null;
@@ -137,13 +185,7 @@ if (withCfg) {
       : {
           "samchon-graph": {
             command: process.execPath,
-            args: [
-              graphLauncher,
-              "--cwd",
-              repoDir,
-              ...(graphMaxFiles ? ["--max-files", String(graphMaxFiles)] : []),
-              ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
-            ],
+            args: [graphLauncher, "--graph-file", graphFile],
           },
         };
   fs.writeFileSync(withCfg, JSON.stringify({ mcpServers: serverCfg }));

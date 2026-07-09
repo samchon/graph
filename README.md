@@ -62,7 +62,7 @@ JavaScript is intentionally not indexed. In an arbitrary repository, `.js`/`.jsx
 
 ## Benchmark
 
-Each repository is measured with one headless agent run per arm (`baseline` with no MCP, `@samchon/graph`, `codegraph`, `serena`) on two prompt families. The corpus pins 14 repositories, one per language.
+Each repository is measured with one headless agent run per arm (`baseline` with no MCP, `@samchon/graph`, `codegraph`, `serena`) on two prompt families, across two agent CLIs (`codex` and Claude Code). The corpus pins 14 repositories, one per language.
 
 ### Onboarding
 

@@ -14,11 +14,13 @@ pnpm-debug.log*
 tests/experiment/.work/
 tests/experiment/results/
 tests/benchmark/.work/
-# Benchmark reports and rendered charts are committed as the measurement
-# record; only the raw per-run agent traces (full transcripts) stay out.
+# Per-cell benchmark reports, rendered SVGs, and raw agent traces are local
+# reproduction artifacts, not committed; only the aggregate SVGs copied into
+# assets/ are the tracked measurement record.
 tests/benchmark/results/*.traces/
 tests/benchmark/results/preflight.json
 tests/benchmark/results/codex-*.json
+tests/benchmark/results/claude-*.json
 
 tests/benchmark/results/*.svg
 tests/benchmark/results/.excluded/

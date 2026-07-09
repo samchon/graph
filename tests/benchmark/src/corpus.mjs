@@ -25,6 +25,10 @@ export const CORPUS = [
     url: "https://github.com/samchon/ttsc-benchmark-excalidraw.git",
     commit: "bf47d3d0e6cc0784969ec7836084aa430fb51db6",
     maxFiles: 2000,
+    // The full-density pre-build (--lsp-reference-limit 2000) walks
+    // documentSymbol across this 2000-file monorepo; the default 10s
+    // per-request timeout isn't enough under concurrent load.
+    lspTimeoutMs: 60000,
   },
   {
     name: "gin",
@@ -117,7 +121,7 @@ export const CORPUS = [
     // this took over ten minutes on a clean Gradle cache. Give initialize
     // patient room, and the reference warmup too, matching sinatra's
     // ruby-lsp treatment. A warm Gradle cache makes repeat runs fast.
-    lspTimeoutMs: 420000,
+    lspTimeoutMs: 600000,
     lspWarmupTimeoutMs: 300000,
   },
   {

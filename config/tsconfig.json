@@ -9,10 +9,12 @@
     "lib": ["ESNext"],
     "sourceMap": true,
     "resolveJsonModule": true,
+    "newLine": "lf",
     "types": ["node"],
     "strict": true,
     "noImplicitReturns": true,
     "noUncheckedIndexedAccess": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "plugins": [{ "transform": "@ttsc/lint", "configFile": "lint.config.ts" }]
   }
 }

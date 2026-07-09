@@ -50,7 +50,7 @@ Reports land in `results/codex-<repo>-<family>-<tool>.json` (committed as the me
 pnpm --filter @samchon/graph-benchmark render
 ```
 
-Reads every `results/codex-*.json` and writes `results/summary-<family>-{light,dark}.svg`: grouped bars per repo (baseline gray + a fixed, CVD-validated tool order), direct value labels with % vs baseline, and a median-reduction summary line — light and dark variants for a README `<picture>` block.
+Reads every `results/codex-*.json` and writes `results/benchmark-<harness>-<model>-<family>.svg` (e.g. `benchmark-codex-gpt-5.4-mini-common.svg`): grouped bars per repo (baseline gray + a fixed, CVD-validated tool order) with direct value labels and % vs baseline. Each SVG embeds a `prefers-color-scheme` media query, so one file adapts to light and dark in a plain `<img>`.
 
 ## Structural benchmark
 

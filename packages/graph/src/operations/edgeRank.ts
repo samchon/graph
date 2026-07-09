@@ -1,4 +1,4 @@
-import { GraphEdgeKind } from "../structures";
+import { GraphEdgeKind } from "../typings";
 
 export function edgeRank(kind: string): number {
   switch (kind satisfies string as GraphEdgeKind | string) {

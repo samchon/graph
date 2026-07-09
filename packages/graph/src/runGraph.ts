@@ -1,17 +1,19 @@
+import packageJson from "../package.json";
 import { buildGraph } from "./indexer/buildGraph";
 import { buildGraphDump } from "./indexer/buildGraphDump";
 import { LANGUAGE_SPECS } from "./indexer/LANGUAGE_SPECS";
-import { GraphLanguage } from "./structures";
 import { startServer } from "./mcp/startServer";
-import packageJson from "../package.json";
+import { GraphLanguage } from "./typings";
 
 const VERSION: string = packageJson.version;
 
-export function runGraph(argv: readonly string[] = process.argv.slice(2)): number | void {
+export function runGraph(argv: readonly string[] = process.argv.slice(
+  2,
+)): number | undefined {
   try {
     if (argv[0] === "dump") {
       void runDump(argv.slice(1));
-      return;
+      return undefined;
     }
     if (argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
       process.stdout.write(helpText());
@@ -19,11 +21,14 @@ export function runGraph(argv: readonly string[] = process.argv.slice(2)): numbe
     }
 
     const options = parseArgs(argv);
-    void startServer({ ...options, version: VERSION }).catch((error: Error) => {
-      /* c8 ignore next 2 */
-      writeError(error);
-      process.exit(1);
-    });
+    void startServer({ ...options, version: VERSION }).catch(
+      (error: unknown) => {
+        /* c8 ignore next 2 */
+        writeError(error as Error);
+        process.exit(1);
+      },
+    );
+    return undefined;
   } catch (error) {
     writeError(error as Error);
     return 1;
@@ -53,7 +58,10 @@ function parseArgs(argv: readonly string[]) {
     else if (arg.startsWith("--cwd=")) options.cwd = arg.slice("--cwd=".length);
     else if (arg === "--mode") options.mode = parseMode(next());
     else if (arg.startsWith("--mode=")) options.mode = parseMode(arg.slice("--mode=".length));
-    else if (arg === "--language") options.languages = [...(options.languages ?? []), parseLanguage(next())];
+    else if (arg === "--language") options.languages = [
+      ...(options.languages ?? []),
+      parseLanguage(next()),
+    ];
     else if (arg.startsWith("--language=")) {
       options.languages = [
         ...(options.languages ?? []),
@@ -74,19 +82,27 @@ function parseArgs(argv: readonly string[]) {
     } else if (arg === "--lsp-timeout-ms") {
       options.lspTimeoutMs = parseInteger(next());
     } else if (arg.startsWith("--lsp-timeout-ms=")) {
-      options.lspTimeoutMs = parseInteger(arg.slice("--lsp-timeout-ms=".length));
+      options.lspTimeoutMs = parseInteger(
+        arg.slice("--lsp-timeout-ms=".length),
+      );
     } else if (arg === "--lsp-reference-limit") {
       options.lspReferenceLimit = parseInteger(next());
     } else if (arg.startsWith("--lsp-reference-limit=")) {
-      options.lspReferenceLimit = parseInteger(arg.slice("--lsp-reference-limit=".length));
+      options.lspReferenceLimit = parseInteger(
+        arg.slice("--lsp-reference-limit=".length),
+      );
     } else if (arg === "--lsp-concurrency") {
       options.lspConcurrency = parseInteger(next());
     } else if (arg.startsWith("--lsp-concurrency=")) {
-      options.lspConcurrency = parseInteger(arg.slice("--lsp-concurrency=".length));
+      options.lspConcurrency = parseInteger(
+        arg.slice("--lsp-concurrency=".length),
+      );
     } else if (arg === "--lsp-warmup-timeout-ms") {
       options.lspWarmupTimeoutMs = parseInteger(next());
     } else if (arg.startsWith("--lsp-warmup-timeout-ms=")) {
-      options.lspWarmupTimeoutMs = parseInteger(arg.slice("--lsp-warmup-timeout-ms=".length));
+      options.lspWarmupTimeoutMs = parseInteger(
+        arg.slice("--lsp-warmup-timeout-ms=".length),
+      );
     } else if (arg === "--graph-file") {
       options.graphFile = next();
     } else if (arg.startsWith("--graph-file=")) {

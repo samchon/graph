@@ -18,7 +18,7 @@ export const test_real_codebase_static_dump_indexes_source_not_build_output = as
     ["src/SamchonGraphApplication.ts", "SamchonGraphApplication"],
     ["src/indexer/buildGraphDump.ts", "buildGraphDump"],
     ["src/indexer/buildLspGraph.ts", "buildLspGraph"],
-    ["src/model/GraphMemory.ts", "GraphMemory"],
+    ["src/SamchonGraphMemory.ts", "SamchonGraphMemory"],
     ["src/operations/runTrace.ts", "runTrace"],
   ]) {
     TestValidator.predicate(

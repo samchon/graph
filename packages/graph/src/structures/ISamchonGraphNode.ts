@@ -1,7 +1,7 @@
-import { GraphLanguage } from "./GraphLanguage";
-import { GraphNodeKind } from "./GraphNodeKind";
-import { IGraphDecorator } from "./IGraphDecorator";
-import { IGraphEvidence } from "./IGraphEvidence";
+import { GraphLanguage } from "../typings/GraphLanguage";
+import { GraphNodeKind } from "../typings/GraphNodeKind";
+import { ISamchonGraphDecorator } from "./ISamchonGraphDecorator";
+import { ISamchonGraphEvidence } from "./ISamchonGraphEvidence";
 
 /**
  * One node in the graph: a declared symbol or a structural container (file,
@@ -12,7 +12,7 @@ import { IGraphEvidence } from "./IGraphEvidence";
  * declaration does not re-key it. Line and span live in `evidence` and are
  * never part of identity.
  */
-export interface IGraphNode {
+export interface ISamchonGraphNode {
   /** Position-invariant identity (see the interface doc for the id grammar). */
   id: string;
 
@@ -63,14 +63,14 @@ export interface IGraphNode {
    * any: raw decorator facts (`@Controller`, `@Get`) a consumer can interpret
    * without re-parsing source.
    */
-  decorators?: IGraphDecorator[];
+  decorators?: ISamchonGraphDecorator[];
 
   /** The declaration span, for display and signatures. */
-  evidence?: IGraphEvidence;
+  evidence?: ISamchonGraphEvidence;
 
   /**
    * The implementation span when a callable/property member is implemented by a
    * function assignment separate from its declaration.
    */
-  implementation?: IGraphEvidence;
+  implementation?: ISamchonGraphEvidence;
 }

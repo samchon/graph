@@ -1,5 +1,5 @@
 import { TestValidator } from "@nestia/e2e";
-import { GraphMemory, SamchonGraphApplication } from "@samchon/graph";
+import { SamchonGraphMemory, SamchonGraphApplication } from "@samchon/graph";
 import type { ISamchonGraphApplication } from "@samchon/graph";
 import fs from "node:fs";
 import os from "node:os";
@@ -102,7 +102,7 @@ export const test_ported_operation_engines_cover_scoring_branches = async () => 
     edge(hub, "src/prop.ts#config:property", "accesses"),
     edge("src/prop.ts#config:property", "src/main.ts#startServer:function", "calls"),
   ];
-  const app = new SamchonGraphApplication(GraphMemory.from(dumpOf(root, nodes, edges)));
+  const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, nodes, edges)));
 
   // Tour over a rendering query drives the full seed scorer across all files.
   const tour = (await call(app, { type: "tour", question: "how does render mount update the view tree" })).result;
@@ -168,7 +168,7 @@ const scenario_impact_ranks_and_refs = async () => {
     // many callers into the exported api so it ranks as a seed, no outgoing.
     ...["exp", "ext", "ign", "p1", "p2"].map((c) => edge(`src/x.ts#${c}:function`, "src/x.ts#exportedApi:function", "calls", "src/x.ts")),
   ];
-  const app = new SamchonGraphApplication(GraphMemory.from(dumpOf(root, nodes, edges)));
+  const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, nodes, edges)));
   const trace = (await call(app, { type: "trace", from: "hub", direction: "impact", maxNodes: 16 })).result;
   TestValidator.predicate("impact trace reaches its callers", (trace.reached?.length ?? 0) >= 1);
   // hub (with neighbors) and hubHelper (without) both match the query, so the
@@ -187,7 +187,7 @@ const scenario_impact_ranks_and_refs = async () => {
     node("src/m.ts#leaf:variable", "variable", "leaf", "src/m.ts", 3, 3, { exported: false }),
   ];
   const medges = [edge("src/m.ts#alpha:function", "src/m.ts#leaf:variable", "accesses", "src/m.ts")];
-  const miniApp = new SamchonGraphApplication(GraphMemory.from(dumpOf(mini, mnodes, medges)));
+  const miniApp = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(mini, mnodes, medges)));
   const miniTour = (await call(miniApp, { type: "tour", question: "alpha beta" })).result;
   TestValidator.predicate("mini tour surfaces both seeds", miniTour.entrypoints.length >= 1);
 };
@@ -203,7 +203,7 @@ const scenario_seed_fallbacks = async () => {
     node("src/types.ts#Shape:interface", "interface", "Shape", "src/types.ts", 1, 1),
     node("src/types.ts#Point:interface", "interface", "Point", "src/types.ts", 1, 1),
   ];
-  const appI = new SamchonGraphApplication(GraphMemory.from(dumpOf(root, interfaces, [])));
+  const appI = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, interfaces, [])));
   const fallback = (await call(appI, { type: "tour", question: "describe the shape and point interfaces" })).result;
   TestValidator.predicate("tour falls back to ranked seeds", fallback.entrypoints.length >= 0);
 
@@ -212,7 +212,7 @@ const scenario_seed_fallbacks = async () => {
     node("src/e.ts#Mode:enum", "enum", "Mode", "src/e.ts", 1, 1),
     node("src/m.ts#Registry:module", "module", "Registry", "src/m.ts", 1, 1),
   ];
-  const appE = new SamchonGraphApplication(GraphMemory.from(dumpOf(root, enums, [edge("src/m.ts#Registry:module", "src/e.ts#Mode:enum", "references", "src/m.ts")])));
+  const appE = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, enums, [edge("src/m.ts#Registry:module", "src/e.ts#Mode:enum", "references", "src/m.ts")])));
   const enumTour = (await call(appE, { type: "tour", question: "the Mode enum and Registry module" })).result;
   TestValidator.predicate("non-executable seeds still produce a tour", enumTour.entrypoints.length >= 1);
 
@@ -256,7 +256,7 @@ const scenario_details_edges = async () => {
     node("src/c.ts#Box:class", "class", "Box", "src/c.ts", 1, 10),
   ];
   const edges = [edge("src/c.ts#Box:class", "src/c.ts#missing:method", "contains", "src/c.ts")];
-  const app = new SamchonGraphApplication(GraphMemory.from(dumpOf(root, nodes, edges)));
+  const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, nodes, edges)));
   const details = (await call(app, { type: "details", handles: ["ghost", "noEnd", "huge", "Box", "blank"] })).result;
   TestValidator.predicate("details resolves the selected nodes", details.nodes.length >= 1);
   // memberLimit=1 breaks after the first object-literal member.
@@ -282,7 +282,7 @@ const scenario_trace_hop_cap = async () => {
     for (let j = 0; j < 5; j++)
       if (i !== j) edges.push(edge(`src/h.ts#n${i}:function`, `src/h.ts#n${j}:function`, "calls", "src/h.ts"));
   edges.push(edge("src/h.ts#n4:function", "src/h.ts#X:function", "calls", "src/h.ts"));
-  const app = new SamchonGraphApplication(GraphMemory.from(dumpOf(root, nodes, edges)));
+  const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, nodes, edges)));
   const trace = (await call(app, { type: "trace", from: "s", direction: "forward", maxNodes: 7 })).result;
   TestValidator.predicate("dense forward trace truncates", trace.truncated === true);
 };

@@ -1,6 +1,6 @@
 import { TestValidator } from "@nestia/e2e";
-import { GraphMemory, LANGUAGE_SPECS, SamchonGraphApplication, buildGraphDump, languageOf } from "@samchon/graph";
-import type { IGraphDump, IGraphNode } from "@samchon/graph";
+import { SamchonGraphMemory, LANGUAGE_SPECS, SamchonGraphApplication, buildGraphDump, languageOf } from "@samchon/graph";
+import type { ISamchonGraphDump, ISamchonGraphNode } from "@samchon/graph";
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -85,7 +85,7 @@ export const test_coverage_edge_cases = async () => {
   }
 
   const { dump } = GraphFixtures.createContractFixture();
-  const graph = GraphMemory.from(dump);
+  const graph = SamchonGraphMemory.from(dump);
   const app = new SamchonGraphApplication(graph);
   try {
     await app.inspect_code_graph({
@@ -421,7 +421,7 @@ export const test_coverage_edge_cases = async () => {
   }
 
   const { buildStaticGraph } = await importLib<{
-    buildStaticGraph: (options?: { cwd?: string; languages?: string[]; maxFiles?: number }) => IGraphDump;
+    buildStaticGraph: (options?: { cwd?: string; languages?: string[]; maxFiles?: number }) => ISamchonGraphDump;
   }>("indexer/buildStaticGraph.js");
   const { buildLspGraph } = await importLib<{
     buildLspGraph: (options?: {
@@ -429,7 +429,7 @@ export const test_coverage_edge_cases = async () => {
       server?: string;
       serverArgs?: string[];
       lspReferenceLimit?: number;
-    }) => Promise<{ dump: IGraphDump }>;
+    }) => Promise<{ dump: ISamchonGraphDump }>;
   }>("indexer/buildLspGraph.js");
   process.chdir(staticRoot);
   try {
@@ -539,11 +539,11 @@ export const test_coverage_edge_cases = async () => {
   });
   const branchNode = (
     id: string,
-    kind: IGraphNode["kind"],
+    kind: ISamchonGraphNode["kind"],
     name: string,
     file: string,
-    extra: Partial<IGraphNode> = {},
-  ): IGraphNode => ({
+    extra: Partial<ISamchonGraphNode> = {},
+  ): ISamchonGraphNode => ({
     id,
     kind,
     language: "typescript",
@@ -566,7 +566,7 @@ export const test_coverage_edge_cases = async () => {
     endLine: 2,
     endCol: 15,
   };
-  const branchDump: IGraphDump = {
+  const branchDump: ISamchonGraphDump = {
     project: branchRoot,
     languages: ["typescript"],
     generatedAt: new Date(0).toISOString(),
@@ -633,7 +633,7 @@ export const test_coverage_edge_cases = async () => {
       { from: plainId, to: exactId, kind: "references", evidence: branchEvidence("src/b.ts", 2) },
     ],
   };
-  const branchGraph = GraphMemory.from(branchDump);
+  const branchGraph = SamchonGraphMemory.from(branchDump);
   TestValidator.equals("missing incoming edges default to empty", branchGraph.incoming("absent-node"), []);
   TestValidator.equals("missing named nodes default to empty", branchGraph.named("absent"), []);
 
@@ -868,7 +868,7 @@ export const test_coverage_edge_cases = async () => {
 
   const { publicEvidence, summaryOf } = await importLib<{
     publicEvidence: (evidence: { file: string; startLine: number; startCol?: number; endLine?: number; endCol?: number }) => Record<string, unknown>;
-    summaryOf: (node: IGraphNode) => Record<string, any>;
+    summaryOf: (node: ISamchonGraphNode) => Record<string, any>;
   }>("operations/common.js");
   TestValidator.equals("public evidence preserves optional columns", publicEvidence(fullEvidence).endCol, 15);
   TestValidator.equals("summary omits absent endLine", summaryOf(branchGraph.node(duplicateAId)!).sourceSpan.endLine, undefined);

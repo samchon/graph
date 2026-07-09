@@ -1,51 +1,51 @@
-import { IGraphEvidence } from "./IGraphEvidence";
-import { IGraphNext } from "./IGraphNext";
-import { IGraphOverview } from "./IGraphOverview";
+import { ISamchonGraphEvidence } from "./ISamchonGraphEvidence";
+import { ISamchonGraphNext } from "./ISamchonGraphNext";
+import { ISamchonGraphOverview } from "./ISamchonGraphOverview";
 
 /** The compact dependency or caller flow returned from a selected start symbol. */
-export interface IGraphTrace {
+export interface ISamchonGraphTrace {
   /** Discriminator for dependency tracing. */
   type: "trace";
 
   /** The resolved start node, or undefined when `from` matched nothing. */
-  start?: IGraphTrace.INode;
+  start?: ISamchonGraphTrace.INode;
 
   /** Trace direction actually used by this result. */
   direction: string;
 
   /** Edges traversed, in breadth-first order. */
-  hops: IGraphTrace.IHop[];
+  hops: ISamchonGraphTrace.IHop[];
 
   /** Unique nodes reached (excluding the start), each with its depth and roles. */
-  reached: IGraphTrace.INode[];
+  reached: ISamchonGraphTrace.INode[];
 
   /** True when the trace hit maxNodes or maxDepth and more flow exists. */
   truncated: boolean;
 
   /** The resolved `to` target, when a path was requested. */
-  target?: IGraphTrace.INode;
+  target?: ISamchonGraphTrace.INode;
 
   /**
    * When `to` was given: the ordered dependency path from `from` to `to`
    * (`from` first, `to` last), or empty when `to` is not reachable from
    * `from`.
    */
-  path?: IGraphTrace.INode[];
+  path?: ISamchonGraphTrace.INode[];
 
   /** Compact hop summaries preserving node names and edge evidence, capped. */
   steps?: string[];
 
   /** When `from` was an ambiguous name, the matches to disambiguate with. */
-  candidates?: IGraphTrace.INode[];
+  candidates?: ISamchonGraphTrace.INode[];
 
   /** How to use this source-free result next. */
-  next: IGraphNext;
+  next: ISamchonGraphNext;
 
   /** Human-readable compatibility note mirroring `next`. */
   guide: string;
 }
 
-export namespace IGraphTrace {
+export namespace ISamchonGraphTrace {
   /** Where and how far to trace dependency flow. */
   export interface IRequest {
     /** Discriminator for dependency tracing. */
@@ -137,11 +137,11 @@ export namespace IGraphTrace {
      * Source span for the expression that produced this hop. It is repository
      * evidence for the hop and can be cited without opening the file.
      */
-    evidence?: IGraphEvidence;
+    evidence?: ISamchonGraphEvidence;
   }
 
   /** A node on the trace: the start, a reached node, or a candidate. */
-  export interface INode extends IGraphOverview.INode {
+  export interface INode extends ISamchonGraphOverview.INode {
     /** Hops from the start, on a reached node. */
     depth?: number;
 

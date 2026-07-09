@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-
-import { GraphMemory } from "../model/GraphMemory";
-import { IGraphDetails, IGraphEvidence, IGraphNode } from "../structures";
+import { SamchonGraphMemory } from "../SamchonGraphMemory";
+import {
+  ISamchonGraphDetails,
+  ISamchonGraphEvidence,
+  ISamchonGraphNode,
+} from "../structures";
 import {
   bound,
   publicEvidence,
@@ -31,7 +34,12 @@ const CONTAINER_KINDS = new Set<string>([
   "enum",
   "file",
 ]);
-const EXECUTION_KINDS = new Set(["calls", "instantiates", "accesses", "renders"]);
+const EXECUTION_KINDS = new Set([
+  "calls",
+  "instantiates",
+  "accesses",
+  "renders",
+]);
 const TYPE_KINDS = new Set(["type_ref", "extends", "implements", "overrides"]);
 
 /**
@@ -40,10 +48,15 @@ const TYPE_KINDS = new Set(["type_ref", "extends", "implements", "overrides"]);
  * graph's resolved structure instead of inlining implementation bodies.
  */
 export function runDetails(
-  graph: GraphMemory,
-  props: IGraphDetails.IRequest,
-): IGraphDetails {
-  const neighborLimit = bound(props.neighborLimit, DEFAULT_NEIGHBORS, 1, MAX_NEIGHBORS);
+  graph: SamchonGraphMemory,
+  props: ISamchonGraphDetails.IRequest,
+): ISamchonGraphDetails {
+  const neighborLimit = bound(
+    props.neighborLimit,
+    DEFAULT_NEIGHBORS,
+    1,
+    MAX_NEIGHBORS,
+  );
   const memberLimit = bound(props.memberLimit, DEFAULT_MEMBERS, 1, MAX_MEMBERS);
   const dependencyLimit = bound(
     props.dependencyLimit,
@@ -52,7 +65,7 @@ export function runDetails(
     MAX_DEPENDENCIES,
   );
   const includeExternal = props.includeExternal === true;
-  const nodes: IGraphDetails.INode[] = [];
+  const nodes: ISamchonGraphDetails.INode[] = [];
   const unknown: string[] = [];
 
   for (const handle of props.handles.slice(0, 6)) {
@@ -62,13 +75,15 @@ export function runDetails(
       continue;
     }
     const node = resolved.node;
-    const detail: IGraphDetails.INode = { ...summaryOf(node) };
+    const detail: ISamchonGraphDetails.INode = { ...summaryOf(node) };
     const signature = signatureOf(graph.project, node);
     if (signature !== undefined) detail.signature = signature;
     if (node.decorators !== undefined && node.decorators.length > 0) {
       detail.decorators = node.decorators;
     }
-    if (node.implementation !== undefined) detail.implementation = publicEvidence(node.implementation);
+    if (node.implementation !== undefined) detail.implementation = publicEvidence(
+      node.implementation,
+    );
 
     const calls = referencesFromEdges(
       graph,
@@ -98,7 +113,11 @@ export function runDetails(
     // source span for the top-level property/method outline a consumer reaches
     // for, without inlining the body.
     if (node.kind === "variable" && detail.sourceSpan !== undefined) {
-      const list = objectLiteralMembers(graph.project, detail.sourceSpan, memberLimit);
+      const list = objectLiteralMembers(
+        graph.project,
+        detail.sourceSpan,
+        memberLimit,
+      );
       if (list.length > 0) detail.members = list;
     }
 
@@ -140,11 +159,11 @@ export function runDetails(
 
 /** The members a container owns (via `contains`), each with its own signature. */
 function containerMembers(
-  graph: GraphMemory,
-  node: IGraphNode,
+  graph: SamchonGraphMemory,
+  node: ISamchonGraphNode,
   limit: number,
-): IGraphDetails.IMember[] {
-  const out: IGraphDetails.IMember[] = [];
+): ISamchonGraphDetails.IMember[] {
+  const out: ISamchonGraphDetails.IMember[] = [];
   for (const edge of graph.outgoing(node.id)) {
     if (edge.kind !== "contains") continue;
     const member = graph.node(edge.to);
@@ -168,16 +187,16 @@ function containerMembers(
  */
 function objectLiteralMembers(
   project: string,
-  span: Pick<IGraphEvidence, "file" | "startLine" | "endLine">,
+  span: Pick<ISamchonGraphEvidence, "file" | "startLine" | "endLine">,
   limit: number,
-): IGraphDetails.IMember[] {
+): ISamchonGraphDetails.IMember[] {
   if (span.endLine === undefined) return [];
   if (span.endLine - span.startLine > MAX_OBJECT_MEMBER_LINES) return [];
   const lines = fileLines(project, span.file);
   if (lines === undefined) return [];
   const start = Math.max(0, span.startLine - 1);
   const end = Math.min(lines.length - 1, span.endLine - 1);
-  const members: IGraphDetails.IMember[] = [];
+  const members: ISamchonGraphDetails.IMember[] = [];
   let depth = 0;
   let entered = false;
   for (let i = start; i <= end; i++) {
@@ -205,18 +224,30 @@ function objectLiteralMembers(
   return members;
 }
 
-function objectMemberOf(line: string, lineNumber: number): IGraphDetails.IMember | undefined {
+function objectMemberOf(line: string, lineNumber: number): ISamchonGraphDetails.IMember | undefined {
   const text = line.trim();
   if (text === "" || text.startsWith("//") || text.startsWith("/*") || text.startsWith("*")) {
     return undefined;
   }
   const property = /^(['"]?)([A-Za-z_$][\w$-]*)\1\s*\??\s*:/.exec(text);
   if (property !== null) {
-    return { name: property[2]!, kind: "property", line: lineNumber, signature: signatureLine(text) };
+    return {
+      name: property[2]!,
+      kind: "property",
+      line: lineNumber,
+      signature: signatureLine(text),
+    };
   }
-  const method = /^(?:async\s+)?(?:get\s+|set\s+)?([A-Za-z_$][\w$-]*)\s*\(/.exec(text);
+  const method = /^(?:async\s+)?(?:get\s+|set\s+)?([A-Za-z_$][\w$-]*)\s*\(/.exec(
+    text,
+  );
   if (method !== null) {
-    return { name: method[1]!, kind: "method", line: lineNumber, signature: signatureLine(text) };
+    return {
+      name: method[1]!,
+      kind: "method",
+      line: lineNumber,
+      signature: signatureLine(text),
+    };
   }
   return undefined;
 }

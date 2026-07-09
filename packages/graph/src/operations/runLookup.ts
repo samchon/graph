@@ -1,6 +1,5 @@
-import { GraphMemory } from "../model/GraphMemory";
-import { IGraphLookup, IGraphNode } from "../structures";
-import { isSupportPath } from "./isSupportPath";
+import { SamchonGraphMemory } from "../SamchonGraphMemory";
+import { ISamchonGraphLookup, ISamchonGraphNode } from "../structures";
 import {
   bound,
   isStructural,
@@ -11,6 +10,7 @@ import {
   subwords,
   summaryOf,
 } from "./common";
+import { isSupportPath } from "./isSupportPath";
 
 // One file should not crowd out the rest of the ranking, so cap hits per file.
 const PER_FILE = 3;
@@ -25,9 +25,9 @@ const MAX_LIMIT = 6;
  * than one file's roster.
  */
 export function runLookup(
-  graph: GraphMemory,
-  props: IGraphLookup.IRequest,
-): IGraphLookup {
+  graph: SamchonGraphMemory,
+  props: ISamchonGraphLookup.IRequest,
+): ISamchonGraphLookup {
   const terms = subwords(props.query);
   const codeTerms = exactCodeTerms(props.query);
   const requestedKinds = requestedSymbolKinds(props.query);
@@ -49,7 +49,7 @@ export function runLookup(
     };
   }
 
-  const scored: IGraphLookup.IHit[] = [];
+  const scored: ISamchonGraphLookup.IHit[] = [];
   for (const node of graph.nodes) {
     if (node.kind === "file") continue;
     if (!includeExternal && node.external) continue;
@@ -66,7 +66,7 @@ export function runLookup(
       wantsSupport,
     );
     if (score <= 0) continue;
-    const hit: IGraphLookup.IHit = {
+    const hit: ISamchonGraphLookup.IHit = {
       ...summaryOf(node),
       score: Math.round(score),
     };
@@ -81,7 +81,7 @@ export function runLookup(
   // Diversity: keep at most PER_FILE hits per file while filling up to the limit.
   const limit = bound(props.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
   const perFile = new Map<string, number>();
-  const hits: IGraphLookup.IHit[] = [];
+  const hits: ISamchonGraphLookup.IHit[] = [];
   for (const hit of scored) {
     const used = perFile.get(hit.file) ?? 0;
     if (used >= PER_FILE) continue;
@@ -103,9 +103,7 @@ export function runLookup(
 
   // Backtick-quoted code handles that matched nothing are worth flagging so the
   // model does not silently assume they resolved.
-  const matched = new Set(
-    hits.flatMap((hit) => subwords(hit.name)),
-  );
+  const matched = new Set(hits.flatMap((hit) => subwords(hit.name)));
   const unknown = codeTerms.filter(
     (term) => !subwords(term).every((sub) => matched.has(sub)),
   );
@@ -127,8 +125,8 @@ export function runLookup(
 
 /** Score one node against the query; 0 means no match. */
 function scoreNode(
-  graph: GraphMemory,
-  node: IGraphNode,
+  graph: SamchonGraphMemory,
+  node: ISamchonGraphNode,
   queryLc: string,
   terms: readonly string[],
   codeTerms: readonly string[],
@@ -209,7 +207,7 @@ function wantsInternalSymbol(queryLc: string, codeTerms: readonly string[]): boo
   );
 }
 
-function isInternalish(node: IGraphNode): boolean {
+function isInternalish(node: ISamchonGraphNode): boolean {
   const name = node.qualifiedName ?? node.name;
   return (
     name.startsWith("_") ||
@@ -261,7 +259,7 @@ function normalizeCodeTerm(raw: string): string | undefined {
 }
 
 /** Non-structural in+out degree (code dependency, not nesting). */
-function degree(graph: GraphMemory, id: string): number {
+function degree(graph: SamchonGraphMemory, id: string): number {
   let n = 0;
   for (const edge of graph.outgoing(id)) if (!isStructural(edge.kind)) n++;
   for (const edge of graph.incoming(id)) if (!isStructural(edge.kind)) n++;

@@ -2,13 +2,15 @@
 
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/samchon/graph/blob/master/LICENSE) [![NPM Version](https://img.shields.io/npm/v/@samchon/graph.svg)](https://www.npmjs.com/package/@samchon/graph) [![NPM Downloads](https://img.shields.io/npm/dm/@samchon/graph.svg)](https://www.npmjs.com/package/@samchon/graph) [![Build Status](https://github.com/samchon/graph/workflows/test/badge.svg)](https://github.com/samchon/graph/actions?query=workflow%3Atest)
 
-**A code graph that answers "how does this repo work?" without your agent reading the repo.**
+`@samchon/graph` is an MCP server that gives AI agents a code graph instead of source files.
 
-`@samchon/graph` is an MCP server. It indexes a codebase — across **11 languages** — into a graph of declarations and their relationships, and answers an agent's orientation questions from that graph instead of from source files. The agent gets the map in one call rather than grepping and reading its way through dozens of files.
+It indexes a codebase in 17 languages into a graph of declarations and their relationships, and answers an agent's code questions from that index through a single tool. Semantic edges come from each language's language server when one is installed; otherwise a built-in static parser takes over.
 
-That collapses the token cost. On an 11-language benchmark it cuts the agent's tokens by a **median of 96%** on onboarding questions — while [`codegraph`](https://github.com/colbymchenry/codegraph) cuts 63% and [`serena`](https://github.com/oraios/serena) makes it *worse*.
+Agents like Claude Code and Codex normally answer a code question by grepping the repository and reading file after file into context, and that reading is most of the token bill. The graph removes the need for it, and its own answers stay small in turn: they carry names, signatures, relationships, and source spans, never file bodies.
 
-![Agent token cost — onboarding, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-common.svg)
+Since neither side of that exchange grows with the repository, the cost falls by about the same proportion in every situation, on every codebase. That even distribution is what separates this from [`codegraph`](https://github.com/colbymchenry/codegraph) and [`serena`](https://github.com/oraios/serena), and it shows directly in the chart below:
+
+![Agent token cost — onboarding, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-codex-gpt-5.4-mini-common.svg)
 
 ## Setup
 
@@ -29,15 +31,15 @@ npm install -D @samchon/graph
 }
 ```
 
-Start the client from the project root. The server builds one resident graph and answers every MCP call from memory. With no language server installed it still works — the **static indexer** parses the source directly (every language indexes in ~1–2 seconds, even on large repositories).
+Start the client from the project root. The server builds one resident graph and answers every MCP call from memory. If no language server is installed, a built-in static indexer parses the source directly; every language indexes in about 1–2 seconds, even on large repositories.
 
 ### Language Server
 
-A language server sharpens the graph with semantically-resolved edges. Install the one(s) for your stack — nothing else is auto-provided (an installed editor like VS Code does **not** expose a stdio language server):
+A language server improves the graph with semantically resolved edges. Install the ones for your stack; nothing is provided automatically, and an installed editor such as VS Code does not expose a stdio language server:
 
 | Language | Server | Install |
 |---|---|---|
-| TypeScript | `ttscserver` | `npm i -D ttsc typescript` |
+| TypeScript | `ttscserver` (0.18+) | `npm i -D ttsc typescript` |
 | Python | `pyright-langserver` | `npm i -D pyright` |
 | Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
 | Rust | `rust-analyzer` | `rustup component add rust-analyzer` |
@@ -56,18 +58,64 @@ A language server sharpens the graph with semantically-resolved edges. Install t
 
 Each server must be on `PATH`. If none is present for a file's language, that language falls back to the static indexer automatically.
 
-### TypeScript — the fast path
-
-The community `typescript-language-server` is an unofficial wrapper over the classic `tsserver` and answers references one symbol at a time. For compiler-grade TypeScript graphs at native speed, `@samchon/graph` uses **[`ttscserver`](https://github.com/samchon/ttsc)** (the `typescript-go`-backed LSP host). Use `ttscserver` **0.18.0 or newer**, which includes local `textDocument/documentSymbol` and `textDocument/references` answers.
-
-JavaScript is intentionally not indexed as a supported language. In arbitrary repositories, `.js`/`.jsx`/`.mjs`/`.cjs` files are often TypeScript build output, vendored bundles, or handwritten source, and the graph cannot distinguish those cases reliably without project-specific provenance.
+JavaScript is intentionally not indexed. In an arbitrary repository, `.js`/`.jsx`/`.mjs`/`.cjs` files are as often build output or vendored bundles as handwritten source, and the graph cannot tell which without project-specific provenance.
 
 ## Benchmark
 
-Reproduce the numbers yourself (spends real credits, never wired into CI):
+Each repository is measured with one headless agent run per arm (`baseline` with no MCP, `@samchon/graph`, `codegraph`, `serena`) on two prompt families. The corpus pins 14 repositories, one per language.
+
+### Onboarding
+
+Every repository is asked the same onboarding question, with no tool guidance appended:
+
+> I'm new to this codebase and need a real code-based tour before my first behavior change.
+>
+> Find the central runtime flow, trace it from the public API to the code that does the work, and show the nearby code paths and tests I should read next.
+
+<details>
+<summary><code>codex</code> · <code>gpt-5.4-mini</code> — median token reduction 96% (codegraph 66%, serena 11%)</summary>
+
+![Agent token cost — onboarding, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-codex-gpt-5.4-mini-common.svg)
+
+</details>
+
+### Dedicated
+
+`codegraph`'s own per-repository questions, verbatim:
+
+| Project | Language | Prompt |
+|---|---|---|
+| [excalidraw](https://github.com/excalidraw/excalidraw) | TypeScript | How does Excalidraw render and update canvas elements? |
+| [gin](https://github.com/gin-gonic/gin) | Go | How does gin route requests through its middleware chain? |
+| [flask](https://github.com/pallets/flask) | Python | How does Flask dispatch a request to a view function? |
+| [tokio](https://github.com/tokio-rs/tokio) | Rust | How does tokio schedule and run async tasks on its runtime? |
+| [gson](https://github.com/google/gson) | Java | How does Gson serialize an object to JSON? |
+| [redis](https://github.com/redis/redis) | C | How does Redis parse and dispatch a client command? |
+| [leveldb](https://github.com/google/leveldb) | C++ | How does LevelDB read and write a key through its storage engine? |
+| [sinatra](https://github.com/sinatra/sinatra) | Ruby | How does Sinatra match a request to a route handler? |
+| [slim](https://github.com/slimphp/Slim) | PHP | How does Slim handle a request through its middleware? |
+| [serilog](https://github.com/serilog/serilog) | C# | How does Serilog route a log event to its sinks? |
+| [koin](https://github.com/InsertKoinIO/koin) | Kotlin | How does Koin resolve and inject dependencies? |
+| [alamofire](https://github.com/Alamofire/Alamofire) | Swift | How does Alamofire build, send, and validate a request? |
+| [lualine](https://github.com/nvim-lualine/lualine.nvim) | Lua | How does lualine assemble and render its statusline sections and components? |
+| [darthttp](https://github.com/dart-lang/http) | Dart | How does the http package send a request and produce a response? |
+
+<details>
+<summary><code>codex</code> · <code>gpt-5.4-mini</code> — median token reduction 78% (codegraph 52%, serena 5%)</summary>
+
+![Agent token cost — dedicated question, per repository](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-codex-gpt-5.4-mini-dedicated.svg)
+
+</details>
+
+### Reproduction
+
+Running the suite spends real API credits, so it is never wired into CI:
 
 ```bash
-pnpm --filter @samchon/graph-benchmark corpus      # 12 repos / 12 languages, pinned
+git clone https://github.com/samchon/graph
+cd graph
+pnpm install
+pnpm --filter @samchon/graph-benchmark corpus      # 14 repos / 14 languages, pinned
 pnpm --filter @samchon/graph-benchmark preflight   # zero-spend go/no-go
 pnpm --filter @samchon/graph-benchmark suite-codex -- --runs=1
 pnpm --filter @samchon/graph-benchmark render      # results -> SVG charts
@@ -75,15 +123,13 @@ pnpm --filter @samchon/graph-benchmark render      # results -> SVG charts
 
 ## How it works
 
-The whole surface is one tool with one typed contract:
-
 ```typescript
 /**
  * <MCP_SERVER_INSTRUCTION>
  */
 export interface ISamchonGraphApplication {
   /**
-   * <TOOL_DESCRPTION>
+   * <TOOL_DESCRIPTION>
    */
   inspect_code_graph(
     props: ISamchonGraphApplication.IProps,
@@ -92,17 +138,17 @@ export interface ISamchonGraphApplication {
 
 export namespace ISamchonGraphApplication {
   export interface IProps {
-    question: string; // restate the code question
-    draft: IDraft; //    intended request + why it is smallest
-    review: string; //   correct the draft before committing
-    request:
-      | IGraphTour.IRequest //    broad orientation / runtime flow
-      | IGraphLookup.IRequest //  find a symbol
-      | IGraphTrace.IRequest //   follow a flow
-      | IGraphDetails.IRequest // one symbol's facts
-      | IGraphEntrypoints.IRequest
-      | IGraphOverview.IRequest
-      | IGraphEscape.IRequest; // leave the graph
+    question: string; // restate the code question being asked
+    draft: IDraft;    // the request type it plans, and why it is the smallest
+    review: string;   // self-correct a wrong/broad draft; pick `escape` if off-graph
+    request:          // the final operation, chosen after review
+      | ISamchonGraphEntrypoints.IRequest // orientation: where to start reading
+      | ISamchonGraphLookup.IRequest      // find a symbol by name
+      | ISamchonGraphTrace.IRequest       // trace call / data flow
+      | ISamchonGraphDetails.IRequest     // a symbol's signature, members, neighbors
+      | ISamchonGraphOverview.IRequest    // repo-level overview
+      | ISamchonGraphTour.IRequest        // broad code tour, answered in one call
+      | ISamchonGraphEscape.IRequest;     // not a graph question -> bail out
   }
 
   export interface IDraft {
@@ -112,14 +158,31 @@ export namespace ISamchonGraphApplication {
 }
 ```
 
-The other tools try to change what the agent does by *talking* to it — `serena` swaps in ~150 lines of system prompt, `codegraph` ships ~100 lines plus a skill file, both spent almost entirely on forbidding the agent from grepping anyway. `@samchon/graph` changes the **shape of the tool** instead:
+> [`packages/graph/src/structures/ISamchonGraphApplication.ts`](https://github.com/samchon/graph/blob/master/packages/graph/src/structures/ISamchonGraphApplication.ts)
 
-- **One tool, not fifty.** `serena` buries its graph behind ~50 tools and the agent never finds the right one; `@samchon/graph` has exactly one, and a union type — filled in by the chain-of-thought — routes the request by construction instead of by persuasion.
-- **CoT compliance, not a wall of rules.** A required schema field can't be skipped the way a prompt line can be ignored. `props` makes the model write `question` → `draft` → `review` before it may act — so it reasons first, and a `review`/`escape` step catches a wrong turn.
-- **Index facts, not inlined source.** The result is names, signatures, and spans — never pasted file bodies. That is where the tokens actually go: the baseline agent blows its budget dumping source into context, while the graph answers the same question from the index.
-- **It respects the agent, it doesn't cage it.** No "use this instead of Read." It states a condition, then tells the agent where to stop — so the agent reaches for the graph when it should and skips it when it shouldn't.
+### Chain of thought
 
-This is the design proven by the TypeScript-only predecessor, [`@ttsc/graph`](https://ttsc.dev/blog/i-made-ts-compiler-graph-mcp) — the launch post is the full autopsy of why the tools before it don't move the token bill. `@samchon/graph` generalizes it to 17 languages over LSP, with edges built by a single linear pass per file (a 2,000-file repo indexes in **~1.6 seconds**, re-indexed incrementally as source changes).
+`question`, `draft`, and `review` are required fields, so the model writes its reasoning into the call itself: state the question, draft the smallest request, then review the draft. A prompt line can be ignored; a required field cannot.
+
+The review is allowed to overturn the draft, and that matters more than the planning. When an agent like Claude Code enters the tool with a question the graph cannot answer, `review` replaces the drafted request on the spot, and `escape` backs out entirely. A wrong entry costs one small call instead of a derailed session.
+
+### Precision over restriction
+
+Nothing is forbidden. The tool description says when the graph applies and when to stop. Grep and file reads stay available, and the agent still uses them when they are the right move.
+
+What keeps the agent on the graph is precision. Answers carry names, signatures, edges, and spans resolved by a language server, so the agent accepts them as final instead of re-verifying with its own reads. And since no file body is ever included, a large repository cannot inflate the response.
+
+### Comparison
+
+[`serena`](https://github.com/oraios/serena) and [`codegraph`](https://github.com/colbymchenry/codegraph) fight the agent instead:
+
+- dozens of tools around one graph, so the agent often picks the wrong entry point
+- 100–150 lines of injected instructions, spent mostly on forbidding grep and file reads
+- source snippets inlined into answers, which reintroduces the reading cost a graph exists to remove
+- loosely structured answers the agent does not trust, so it goes back to reading the files to verify them
+- no way to back out, so a wrong entry keeps paying tool calls instead of escaping
+
+Here the same policy fits in one typed contract, enforced by schema instead of pleaded for in prose.
 
 ## Sponsors
 
@@ -131,7 +194,8 @@ Your [donation](https://github.com/sponsors/samchon) encourages `@samchon/graph`
 
 ## References
 
-- Predecessor: [`@ttsc/graph`](https://github.com/samchon/ttsc) — the TypeScript-only, compiler-powered original this generalizes.
+- Predecessor: [`@ttsc/graph`](https://github.com/samchon/ttsc), the TypeScript-only original that this project generalizes; its [launch post](https://ttsc.dev/blog/i-made-ts-compiler-graph-mcp/) analyzes why earlier graph tools did not reduce the token bill.
+- Function calling harness: [part 1 — validation feedback](https://dev.to/samchon/qwen-meetup-function-calling-harness-from-675-to-100-3830) and [part 2 — CoT compliance](https://dev.to/samchon/function-calling-harness-2-cot-compliance-from-991-to-100-4f0h), the typia technique the contract is built on.
 - Compared against: [`codegraph`](https://github.com/colbymchenry/codegraph) and [`serena`](https://github.com/oraios/serena).
 - Protocol: the [Model Context Protocol](https://modelcontextprotocol.io) and the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/).
 - Validation & MCP surface: [`typia`](https://github.com/samchon/typia) and [`@typia/mcp`](https://github.com/samchon/typia).

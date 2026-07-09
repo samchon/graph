@@ -1,6 +1,6 @@
-import { IGraphDump } from "../structures";
+import { ISamchonGraphDump } from "../structures";
 
 export interface IIndexerResult {
-  dump: IGraphDump;
+  dump: ISamchonGraphDump;
   warnings: string[];
 }

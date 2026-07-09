@@ -70,7 +70,7 @@ for (const family of families) {
   const sample = reports.find((r) => r.promptFamily === family);
   const model = sample?.model ?? "gpt-5.4-mini";
   const harness = sample?.harness ?? "codex";
-  const out = path.join(resultsRoot, `${harness}-${model}-${family}.svg`);
+  const out = path.join(resultsRoot, `benchmark-${harness}-${model}-${family}.svg`);
   fs.writeFileSync(out, render(family, repos, model));
   console.log(`Wrote ${out}`);
 }

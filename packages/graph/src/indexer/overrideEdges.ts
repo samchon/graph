@@ -1,14 +1,14 @@
-import { IGraphEdge, IGraphNode } from "../structures";
+import { ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
 
 // Given a graph that already carries `contains` (owner -> member) and
 // `extends`/`implements` (subtype -> supertype) edges, link a method to the
 // supertype method it overrides: a same-named method reachable on a supertype.
 export function overrideEdges(
-  nodes: readonly IGraphNode[],
-  edges: readonly IGraphEdge[],
-): IGraphEdge[] {
+  nodes: readonly ISamchonGraphNode[],
+  edges: readonly ISamchonGraphEdge[],
+): ISamchonGraphEdge[] {
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  const methodsByOwner = new Map<string, Map<string, IGraphNode>>();
+  const methodsByOwner = new Map<string, Map<string, ISamchonGraphNode>>();
   for (const edge of edges) {
     if (edge.kind !== "contains") continue;
     const member = byId.get(edge.to);
@@ -21,7 +21,7 @@ export function overrideEdges(
     methods.set(member.name, member);
   }
 
-  const out: IGraphEdge[] = [];
+  const out: ISamchonGraphEdge[] = [];
   for (const edge of edges) {
     if (edge.kind !== "extends" && edge.kind !== "implements") continue;
     const subMethods = methodsByOwner.get(edge.from);

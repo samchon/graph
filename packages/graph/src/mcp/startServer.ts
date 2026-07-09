@@ -1,10 +1,9 @@
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import fs from "node:fs";
-
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { buildGraph } from "../indexer/buildGraph";
 import { IBuildGraphOptions } from "../indexer/IBuildGraphOptions";
-import { GraphMemory } from "../model/GraphMemory";
-import { IGraphDump } from "../structures";
+import { SamchonGraphMemory } from "../SamchonGraphMemory";
+import { ISamchonGraphDump } from "../structures";
 import { createServer } from "./createServer";
 
 export async function startServer(
@@ -15,7 +14,9 @@ export async function startServer(
   // their `init`. Without it the resident graph builds lazily on first use.
   const source =
     options.graphFile !== undefined
-      ? () => GraphMemory.from(JSON.parse(fs.readFileSync(options.graphFile!, "utf8")) as IGraphDump)
+      ? () => SamchonGraphMemory.from(
+          JSON.parse(fs.readFileSync(options.graphFile!, "utf8")) as ISamchonGraphDump,
+        )
       : () => buildGraph(options);
   const server = createServer(source, options.version);
   const transport = new StdioServerTransport();

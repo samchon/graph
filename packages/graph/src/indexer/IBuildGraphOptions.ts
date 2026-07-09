@@ -1,4 +1,4 @@
-import { GraphLanguage } from "../structures";
+import { GraphLanguage } from "../typings";
 
 export interface IBuildGraphOptions {
   cwd?: string;

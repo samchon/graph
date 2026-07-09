@@ -1,5 +1,5 @@
 import { TestValidator } from "@nestia/e2e";
-import { GraphMemory, SamchonGraphApplication } from "@samchon/graph";
+import { SamchonGraphMemory, SamchonGraphApplication } from "@samchon/graph";
 import type { ISamchonGraphApplication } from "@samchon/graph";
 import fs from "node:fs";
 import os from "node:os";
@@ -107,7 +107,7 @@ const createRichFixture = () => {
 
 export const test_ported_operation_engines_cover_rich_branches = async () => {
   const { dump } = createRichFixture();
-  const app = new SamchonGraphApplication(GraphMemory.from(dump));
+  const app = new SamchonGraphApplication(SamchonGraphMemory.from(dump));
 
   // runDetails.objectLiteralMembers: the `settings` variable's object literal is
   // parsed from disk into a property (host) and a method (connect).

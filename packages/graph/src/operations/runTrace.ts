@@ -1,5 +1,9 @@
-import { GraphMemory } from "../model/GraphMemory";
-import { IGraphEdge, IGraphNode, IGraphTrace } from "../structures";
+import { SamchonGraphMemory } from "../SamchonGraphMemory";
+import {
+  ISamchonGraphEdge,
+  ISamchonGraphNode,
+  ISamchonGraphTrace,
+} from "../structures";
 import {
   bound,
   compareEdges,
@@ -33,9 +37,9 @@ const MAX_PATH_DEPTH = 12;
  * surface is legible.
  */
 export function runTrace(
-  graph: GraphMemory,
-  props: IGraphTrace.IRequest,
-): IGraphTrace {
+  graph: SamchonGraphMemory,
+  props: ISamchonGraphTrace.IRequest,
+): ISamchonGraphTrace {
   const direction = props.direction ?? "forward";
   const focus = props.focus ?? "all";
   const impact = direction === "impact";
@@ -139,10 +143,12 @@ export function runTrace(
     };
   }
 
-  const hops: IGraphTrace.IHop[] = [];
-  const reached = new Map<string, IGraphTrace.INode>();
+  const hops: ISamchonGraphTrace.IHop[] = [];
+  const reached = new Map<string, ISamchonGraphTrace.INode>();
   const visited = new Set<string>([start.node.id]);
-  let queue: Array<{ id: string; depth: number }> = [{ id: start.node.id, depth: 0 }];
+  let queue: Array<{ id: string; depth: number }> = [
+    { id: start.node.id, depth: 0 },
+  ];
   let truncated = false;
 
   while (queue.length > 0) {
@@ -206,21 +212,25 @@ export function runTrace(
 }
 
 function findPath(
-  graph: GraphMemory,
+  graph: SamchonGraphMemory,
   startId: string,
   targetId: string,
   maxDepth: number,
-  focus: IGraphTrace.IRequest["focus"],
+  focus: ISamchonGraphTrace.IRequest["focus"],
   includeExternal: boolean,
-): { path: IGraphNode[]; hops: IGraphTrace.IHop[] } | null {
-  const parent = new Map<string, { from: string; edge: IGraphEdge }>();
-  const queue: Array<{ id: string; depth: number }> = [{ id: startId, depth: 0 }];
+): { path: ISamchonGraphNode[]; hops: ISamchonGraphTrace.IHop[] } | null {
+  const parent = new Map<string, { from: string; edge: ISamchonGraphEdge }>();
+  const queue: Array<{ id: string; depth: number }> = [
+    { id: startId, depth: 0 },
+  ];
   const visited = new Set<string>([startId]);
   while (queue.length > 0) {
     const item = queue.shift()!;
     /* c8 ignore next */
     if (item.depth >= maxDepth) continue;
-    for (const edge of graph.outgoing(item.id).filter((e) => traversable(e, focus)).sort(compareEdges)) {
+    for (const edge of graph.outgoing(item.id).filter((e) => traversable(e, focus)).sort(
+      compareEdges,
+    )) {
       const other = graph.node(edge.to);
       if (other === undefined || other.kind === "file") continue;
       if (!includeExternal && other.external) continue;
@@ -237,8 +247,8 @@ function findPath(
         }
         const nodes = ids
           .map((id) => graph.node(id))
-          .filter((node): node is IGraphNode => node !== undefined);
-        const pathHops: IGraphTrace.IHop[] = [];
+          .filter((node): node is ISamchonGraphNode => node !== undefined);
+        const pathHops: ISamchonGraphTrace.IHop[] = [];
         for (let i = 1; i < ids.length; i++) {
           const p = parent.get(ids[i]!);
           if (p !== undefined) pathHops.push(hopOf(p.edge, i));
@@ -259,10 +269,10 @@ function findPath(
 // Only the impact BFS orders edges here, and it always traverses incoming
 // edges, so the ranked endpoint is the edge's `from`.
 function orderedEdges(
-  graph: GraphMemory,
-  edges: readonly IGraphEdge[],
+  graph: SamchonGraphMemory,
+  edges: readonly ISamchonGraphEdge[],
   impact: boolean,
-): readonly IGraphEdge[] {
+): readonly ISamchonGraphEdge[] {
   if (!impact) return [...edges].sort(compareEdges);
   return [...edges].sort(
     (a, b) =>
@@ -272,7 +282,7 @@ function orderedEdges(
   );
 }
 
-function impactEndpointRank(graph: GraphMemory, id: string): number {
+function impactEndpointRank(graph: SamchonGraphMemory, id: string): number {
   const node = graph.node(id);
   // `id` is always an endpoint of a real graph edge, so it resolves.
   /* c8 ignore next */
@@ -283,7 +293,7 @@ function impactEndpointRank(graph: GraphMemory, id: string): number {
   return 2;
 }
 
-function traversable(edge: IGraphEdge, focus: IGraphTrace.IRequest["focus"]): boolean {
+function traversable(edge: ISamchonGraphEdge, focus: ISamchonGraphTrace.IRequest["focus"]): boolean {
   if (edge.kind === "contains" || edge.kind === "exports" || edge.kind === "imports") {
     return false;
   }
@@ -292,7 +302,7 @@ function traversable(edge: IGraphEdge, focus: IGraphTrace.IRequest["focus"]): bo
   return true;
 }
 
-function hopOf(edge: IGraphEdge, depth: number): IGraphTrace.IHop {
+function hopOf(edge: ISamchonGraphEdge, depth: number): ISamchonGraphTrace.IHop {
   return {
     from: edge.from,
     to: edge.to,
@@ -303,13 +313,13 @@ function hopOf(edge: IGraphEdge, depth: number): IGraphTrace.IHop {
 }
 
 function traceNode(
-  graph: GraphMemory,
-  node: IGraphNode,
+  graph: SamchonGraphMemory,
+  node: ISamchonGraphNode,
   depth?: number,
   withSignature = false,
   withRoles = false,
-): IGraphTrace.INode {
-  const out: IGraphTrace.INode = {
+): ISamchonGraphTrace.INode {
+  const out: ISamchonGraphTrace.INode = {
     ...summaryOf(node),
     ...(depth !== undefined ? { depth } : {}),
   };
@@ -326,7 +336,7 @@ function traceNode(
   return out;
 }
 
-function steps(graph: GraphMemory, hops: readonly IGraphTrace.IHop[]): string[] {
+function steps(graph: SamchonGraphMemory, hops: readonly ISamchonGraphTrace.IHop[]): string[] {
   return hops.slice(0, MAX_STEPS).map((hop) => {
     const from = graph.node(hop.from)!;
     const to = graph.node(hop.to)!;

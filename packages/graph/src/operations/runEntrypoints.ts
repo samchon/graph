@@ -1,5 +1,5 @@
-import { GraphMemory } from "../model/GraphMemory";
-import { IGraphEntrypoints, IGraphNode } from "../structures";
+import { SamchonGraphMemory } from "../SamchonGraphMemory";
+import { ISamchonGraphEntrypoints, ISamchonGraphNode } from "../structures";
 import {
   bound,
   isStructural,
@@ -23,9 +23,9 @@ const NEIGHBOR_LIMIT = 2;
  * shape and ranges, not implementation text.
  */
 export function runEntrypoints(
-  graph: GraphMemory,
-  props: IGraphEntrypoints.IRequest,
-): IGraphEntrypoints {
+  graph: SamchonGraphMemory,
+  props: ISamchonGraphEntrypoints.IRequest,
+): ISamchonGraphEntrypoints {
   const query = props.query.trim();
   const limit = bound(props.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
 
@@ -41,7 +41,7 @@ export function runEntrypoints(
   }));
 
   // Code handles written directly in the query, resolved to concrete nodes.
-  const mentions: IGraphNode[] = [];
+  const mentions: ISamchonGraphNode[] = [];
   const mentionSeen = new Set<string>();
   for (const handle of directMentions(graph, query)) {
     const resolved = resolveHandle(graph, handle);
@@ -53,10 +53,12 @@ export function runEntrypoints(
 
   // Seeds for dependency orientation: resolved mentions first (the user named
   // them), then the ranked hits.
-  const seeds: IGraphNode[] = [];
+  const seeds: ISamchonGraphNode[] = [];
   const seedSeen = new Set<string>();
-  const addSeed = (node: IGraphNode | undefined): void => {
-    if (node === undefined || node.kind === "file" || seedSeen.has(node.id)) return;
+  const addSeed = (node: ISamchonGraphNode | undefined): void => {
+    if (node === undefined || node.kind === "file" || seedSeen.has(
+      node.id,
+    )) return;
     seedSeen.add(node.id);
     seeds.push(node);
   };
@@ -84,15 +86,19 @@ export function runEntrypoints(
   };
 }
 
-function reasonOf(graph: GraphMemory, id: string): string {
-  const fanIn = graph.incoming(id).filter((edge) => !isStructural(edge.kind)).length;
-  const fanOut = graph.outgoing(id).filter((edge) => !isStructural(edge.kind)).length;
+function reasonOf(graph: SamchonGraphMemory, id: string): string {
+  const fanIn = graph.incoming(id).filter(
+    (edge) => !isStructural(edge.kind),
+  ).length;
+  const fanOut = graph.outgoing(id).filter(
+    (edge) => !isStructural(edge.kind),
+  ).length;
   if (fanOut > fanIn) return "High outgoing dependency flow for this query.";
   if (fanIn > 0) return "Referenced by other indexed symbols.";
   return "Name/path match in the resident graph.";
 }
 
-function orientationLines(graph: GraphMemory, node: IGraphNode): string[] {
+function orientationLines(graph: SamchonGraphMemory, node: ISamchonGraphNode): string[] {
   const dependsOn = referencesFromEdges(
     graph,
     graph.outgoing(node.id),
@@ -109,12 +115,16 @@ function orientationLines(graph: GraphMemory, node: IGraphNode): string[] {
   );
   const name = node.qualifiedName ?? node.name;
   const out: string[] = [];
-  for (const ref of dependsOn) out.push(`${name} -[${ref.relation}]-> ${ref.name}`);
-  for (const ref of dependedOnBy) out.push(`${ref.name} -[${ref.relation}]-> ${name}`);
+  for (const ref of dependsOn) out.push(
+    `${name} -[${ref.relation}]-> ${ref.name}`,
+  );
+  for (const ref of dependedOnBy) out.push(
+    `${ref.name} -[${ref.relation}]-> ${name}`,
+  );
   return out;
 }
 
-function directMentions(graph: GraphMemory, query: string): string[] {
+function directMentions(graph: SamchonGraphMemory, query: string): string[] {
   const handles = new Set<string>();
   for (const token of query.split(/\s+/)) {
     const handle = normalizeNodeIdToken(token);
@@ -149,5 +159,7 @@ function normalizeNodeIdToken(raw: string): string | undefined {
 
 function normalizeHandle(raw: string): string | undefined {
   const value = raw.trim();
-  return /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(value) ? value : undefined;
+  return /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(value)
+    ? value
+    : undefined;
 }

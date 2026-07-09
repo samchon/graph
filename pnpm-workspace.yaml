@@ -1,4 +1,5 @@
 packages:
+  - "config"
   - "packages/*"
   - "tests/*"
 catalogs:
@@ -6,11 +7,12 @@ catalogs:
     typescript: ^7.0.2
   samchon:
     "@nestia/e2e": ^12.0.0-rc.2
-    "@ttsc/unplugin": ^0.18.0
-    "@typia/interface": ^13.0.0
-    "@typia/mcp": ^13.0.0
-    ttsc: ^0.18.0
-    typia: ^13.0.0
+    ttsc: &ttsc ^0.18.0
+    "@ttsc/lint": *ttsc
+    "@ttsc/unplugin": *ttsc
+    typia: &typia ^13.0.0
+    "@typia/interface": *typia
+    "@typia/mcp": *typia
   bundler:
     esbuild: ^0.25.12
   utils:

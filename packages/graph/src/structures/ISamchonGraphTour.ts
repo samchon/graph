@@ -1,11 +1,11 @@
-import { GraphLanguage } from "./GraphLanguage";
-import { IGraphDiagnostic } from "./IGraphDiagnostic";
-import { IGraphEntrypoints } from "./IGraphEntrypoints";
-import { IGraphNext } from "./IGraphNext";
-import { IGraphOverview } from "./IGraphOverview";
+import { GraphLanguage } from "../typings/GraphLanguage";
+import { ISamchonGraphDiagnostic } from "./ISamchonGraphDiagnostic";
+import { ISamchonGraphEntrypoints } from "./ISamchonGraphEntrypoints";
+import { ISamchonGraphNext } from "./ISamchonGraphNext";
+import { ISamchonGraphOverview } from "./ISamchonGraphOverview";
 
 /** Answer-ready, source-free tour evidence for broad code-flow questions. */
-export interface IGraphTour {
+export interface ISamchonGraphTour {
   /** Discriminator for code-tour indexing. */
   type: "tour";
 
@@ -13,31 +13,31 @@ export interface IGraphTour {
   question?: string;
 
   /** Central entrypoints selected for the tour. */
-  entrypoints: IGraphEntrypoints.IEntrypoint[];
+  entrypoints: ISamchonGraphEntrypoints.IEntrypoint[];
 
   /** Selected primary runtime flows; sufficient for an index-level tour. */
   primaryFlow: string[];
 
   /** Nearby dependency anchors around the selected entrypoints. */
-  nearbyPaths: IGraphOverview.INode[];
+  nearbyPaths: ISamchonGraphOverview.INode[];
 
   /** Test or usage anchors reached through graph impact edges. */
-  testAnchors: IGraphOverview.INode[];
+  testAnchors: ISamchonGraphOverview.INode[];
 
   /** Ordered file/line anchors to cite in the final answer, not file reads. */
-  answerAnchors: IGraphOverview.INode[];
+  answerAnchors: ISamchonGraphOverview.INode[];
 
   /** Diagnostics collected while building the tour. */
-  diagnostics?: IGraphDiagnostic[];
+  diagnostics?: ISamchonGraphDiagnostic[];
 
   /** How to use this source-free result next. */
-  next: IGraphNext;
+  next: ISamchonGraphNext;
 
   /** Human-readable compatibility note mirroring `next`. */
   guide: string;
 }
 
-export namespace IGraphTour {
+export namespace ISamchonGraphTour {
   /**
    * Build the complete index-level answer surface for broad code tours: central
    * entrypoints, primary flow, nearby paths, tests, and answer anchors. Use

@@ -1,9 +1,8 @@
 import path from "node:path";
-
-import { IGraphNode } from "../structures";
+import { ISamchonGraphNode } from "../structures";
 import { readLines } from "../utils/fs";
 
-export function signatureOf(project: string, node: IGraphNode): string | undefined {
+export function signatureOf(project: string, node: ISamchonGraphNode): string | undefined {
   if (node.signature !== undefined && node.signature.trim() !== "") {
     return compactSignature(node.signature);
   }

@@ -1,8 +1,8 @@
-import { IGraphDecorator } from "./IGraphDecorator";
-import { IGraphDiagnostic } from "./IGraphDiagnostic";
-import { IGraphEvidence } from "./IGraphEvidence";
-import { IGraphNext } from "./IGraphNext";
-import { IGraphOverview } from "./IGraphOverview";
+import { ISamchonGraphDecorator } from "./ISamchonGraphDecorator";
+import { ISamchonGraphDiagnostic } from "./ISamchonGraphDiagnostic";
+import { ISamchonGraphEvidence } from "./ISamchonGraphEvidence";
+import { ISamchonGraphNext } from "./ISamchonGraphNext";
+import { ISamchonGraphOverview } from "./ISamchonGraphOverview";
 
 /**
  * The source-free facts for a few selected handles.
@@ -11,24 +11,24 @@ import { IGraphOverview } from "./IGraphOverview";
  * calls, direct types, implementation candidates, dependency summaries, and
  * sourceSpan citation anchors.
  */
-export interface IGraphDetails {
+export interface ISamchonGraphDetails {
   /** Discriminator for selected symbol inspection. */
   type: "details";
 
   /** Selected node facts, in the same order as resolved handles when possible. */
-  nodes: IGraphDetails.INode[];
+  nodes: ISamchonGraphDetails.INode[];
 
   /** Handles that resolved to no node, or that were ambiguous. */
   unknown: string[];
 
   /** How to use this source-free result next. */
-  next: IGraphNext;
+  next: ISamchonGraphNext;
 
   /** Human-readable compatibility note mirroring `next`. */
   guide: string;
 }
 
-export namespace IGraphDetails {
+export namespace ISamchonGraphDetails {
   /** Which selected handles to inspect, and how much of each to return. */
   export interface IRequest {
     /** Discriminator for selected symbol inspection. */
@@ -92,15 +92,15 @@ export namespace IGraphDetails {
   }
 
   /** One inspected node: its declared shape and graph coordinates. */
-  export interface INode extends IGraphOverview.INode {
+  export interface INode extends ISamchonGraphOverview.INode {
     /** The declaration signature: its first line(s) up to the body. */
     signature?: string;
 
     /** Decorators written on this declaration, when any. */
-    decorators?: IGraphDecorator[];
+    decorators?: ISamchonGraphDecorator[];
 
     /** Assigned implementation span, when source comes from one. */
-    implementation?: IGraphEvidence;
+    implementation?: ISamchonGraphEvidence;
 
     /**
      * For a container or object-literal variable: the owned symbol or top-level
@@ -121,7 +121,7 @@ export namespace IGraphDetails {
     dependedOnBy?: IReference[];
 
     /** Diagnostics reported on this node's declaration, when any. */
-    diagnostics?: IGraphDiagnostic[];
+    diagnostics?: ISamchonGraphDiagnostic[];
   }
 
   /** One member of a container node, with its signature but not its body. */
@@ -140,7 +140,7 @@ export namespace IGraphDetails {
   }
 
   /** A dependency neighbor of an inspected node and the edge that links them. */
-  export interface IReference extends IGraphOverview.INode {
+  export interface IReference extends ISamchonGraphOverview.INode {
     /** The edge kind connecting the two (`calls`, `type_ref`, ...). */
     relation: string;
 
@@ -148,6 +148,6 @@ export namespace IGraphDetails {
      * Source span for the expression that produced this relationship. It is
      * repository evidence for the edge, not a file-read instruction.
      */
-    evidence?: IGraphEvidence;
+    evidence?: ISamchonGraphEvidence;
   }
 }

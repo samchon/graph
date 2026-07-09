@@ -6,3 +6,4 @@ export * from "./IPosition";
 export * from "./IRange";
 export * from "./ISymbolInformation";
 export * from "./isDocumentSymbol";
+export * from "./LspClient";

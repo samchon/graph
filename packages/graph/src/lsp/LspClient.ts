@@ -30,7 +30,9 @@ export class LspClient {
     this.process.on("error", (error) => this.rejectAll(error));
     this.process.on("exit", (code, signal) => {
       this.rejectAll(
-        new Error(`Language server exited (${code ?? "null"}, ${signal ?? "null"}).`),
+        new Error(
+          `Language server exited (${code ?? "null"}, ${signal ?? "null"}).`,
+        ),
       );
     });
   }
@@ -86,7 +88,10 @@ export class LspClient {
 
   private write(payload: unknown): void {
     const body = Buffer.from(JSON.stringify(payload), "utf8");
-    const header = Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, "ascii");
+    const header = Buffer.from(
+      `Content-Length: ${body.length}\r\n\r\n`,
+      "ascii",
+    );
     this.process.stdin.write(Buffer.concat([header, body]));
   }
 
@@ -146,13 +151,18 @@ export class LspClient {
       this.pending.delete(message.id);
       clearTimeout(pending.timer);
       if (message.error !== undefined) {
-        pending.reject(new Error(message.error.message ?? "LSP request failed."));
+        pending.reject(
+          new Error(message.error.message ?? "LSP request failed."),
+        );
       } else {
         pending.resolve(message.result);
       }
       return;
     }
-    if (message.method !== undefined) this.events.emit(message.method, message.params);
+    if (message.method !== undefined) this.events.emit(
+      message.method,
+      message.params,
+    );
   }
 
   private rejectAll(error: Error): void {

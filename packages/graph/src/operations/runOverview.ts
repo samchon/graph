@@ -1,9 +1,10 @@
-import { GraphMemory } from "../model/GraphMemory";
-import { GraphLanguage, IGraphNode, IGraphOverview } from "../structures";
+import { SamchonGraphMemory } from "../SamchonGraphMemory";
+import { ISamchonGraphNode, ISamchonGraphOverview } from "../structures";
+import { GraphLanguage } from "../typings";
 import { dirname } from "../utils/path";
+import { isStructural, resultGuide, resultNext, summaryOf } from "./common";
 import { isPublicApiNoisePath } from "./isPublicApiNoisePath";
 import { isSupportPath } from "./isSupportPath";
-import { isStructural, resultGuide, resultNext, summaryOf } from "./common";
 
 /** Declaration kinds that make up a meaningful public API surface. */
 const API_KINDS = new Set<string>([
@@ -22,16 +23,16 @@ const API_KINDS = new Set<string>([
  * reads structure cheaply.
  */
 export function runOverview(
-  graph: GraphMemory,
-  props: IGraphOverview.IRequest,
-): IGraphOverview {
+  graph: SamchonGraphMemory,
+  props: ISamchonGraphOverview.IRequest,
+): ISamchonGraphOverview {
   const aspect = props.aspect ?? "all";
-  const want = (a: IGraphOverview.IRequest["aspect"]): boolean =>
+  const want = (a: ISamchonGraphOverview.IRequest["aspect"]): boolean =>
     aspect === "all" || aspect === a;
   return {
     type: "overview",
     project: graph.project,
-    languages: graph.languages as IGraphOverview["languages"],
+    languages: graph.languages as ISamchonGraphOverview["languages"],
     counts: counts(graph),
     ...(want("layers") ? { layers: layers(graph) } : {}),
     ...(want("hotspots") ? { hotspots: hotspots(graph) } : {}),
@@ -47,7 +48,7 @@ export function runOverview(
   };
 }
 
-function counts(graph: GraphMemory): IGraphOverview.ICounts {
+function counts(graph: SamchonGraphMemory): ISamchonGraphOverview.ICounts {
   const byKind: Record<string, number> = {};
   const byLanguage: Record<string, number> = {};
   let files = 0;
@@ -66,7 +67,7 @@ function counts(graph: GraphMemory): IGraphOverview.ICounts {
 }
 
 /** Folder-level layering: how source and its export surface spread by directory. */
-function layers(graph: GraphMemory): IGraphOverview.ILayer[] {
+function layers(graph: SamchonGraphMemory): ISamchonGraphOverview.ILayer[] {
   const byDir = new Map<
     string,
     { files: Set<string>; exported: number; languages: Set<GraphLanguage> }
@@ -105,7 +106,7 @@ function layers(graph: GraphMemory): IGraphOverview.ILayer[] {
  * fan-out. Structural `contains`/`exports`/`imports` edges are excluded so the
  * ranking reflects code dependency, not nesting.
  */
-function hotspots(graph: GraphMemory): IGraphOverview.IHotspot[] {
+function hotspots(graph: SamchonGraphMemory): ISamchonGraphOverview.IHotspot[] {
   const real = (id: string, side: "in" | "out"): number => {
     const edges = side === "in" ? graph.incoming(id) : graph.outgoing(id);
     let n = 0;
@@ -138,7 +139,7 @@ function hotspots(graph: GraphMemory): IGraphOverview.IHotspot[] {
  * bundles the most aliases; test, typings, and generated files are dropped so
  * they cannot crowd the real surface out.
  */
-function publicApi(graph: GraphMemory): IGraphOverview.IPublicApi[] {
+function publicApi(graph: SamchonGraphMemory): ISamchonGraphOverview.IPublicApi[] {
   const degree = (id: string): number => {
     let n = 0;
     for (const edge of graph.outgoing(id)) if (!isStructural(edge.kind)) n++;
@@ -148,7 +149,7 @@ function publicApi(graph: GraphMemory): IGraphOverview.IPublicApi[] {
   return graph
     .exported()
     .filter(
-      (node: IGraphNode) =>
+      (node: ISamchonGraphNode) =>
         API_KINDS.has(node.kind) && !isPublicApiNoisePath(node.file),
     )
     .map((node) => ({ node, degree: degree(node.id) }))

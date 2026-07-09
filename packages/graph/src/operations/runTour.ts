@@ -1,11 +1,17 @@
-import { GraphMemory } from "../model/GraphMemory";
+import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import {
-  IGraphEntrypoints,
-  IGraphNode,
-  IGraphOverview,
-  IGraphTour,
+  ISamchonGraphEntrypoints,
+  ISamchonGraphNode,
+  ISamchonGraphOverview,
+  ISamchonGraphTour,
 } from "../structures";
-import { bound, isTestPath, resultGuide, resultNext, summaryOf } from "./common";
+import {
+  bound,
+  isTestPath,
+  resultGuide,
+  resultNext,
+  summaryOf,
+} from "./common";
 import { runDetails } from "./runDetails";
 import { runEntrypoints } from "./runEntrypoints";
 import { runTrace } from "./runTrace";
@@ -40,14 +46,67 @@ const TOUR_SEED_KINDS = new Set<string>([
   "enum",
 ]);
 const QUERY_STOP_WORDS = new Set<string>([
-  "about", "after", "and", "are", "api", "architecture", "around", "before",
-  "based", "behavior", "between", "but", "can", "central", "change", "changes",
-  "code", "does", "for", "first", "find", "flow", "from", "has", "have", "how",
-  "include", "including", "implementation", "into", "its", "nearby", "need",
-  "needs", "new", "next", "path", "paths", "project", "public", "read", "real",
-  "runtime", "should", "show", "that", "the", "this", "test", "tests", "trace",
-  "through", "with", "without", "tour", "typescript", "user", "what", "where",
-  "which", "work",
+  "about",
+  "after",
+  "and",
+  "are",
+  "api",
+  "architecture",
+  "around",
+  "before",
+  "based",
+  "behavior",
+  "between",
+  "but",
+  "can",
+  "central",
+  "change",
+  "changes",
+  "code",
+  "does",
+  "for",
+  "first",
+  "find",
+  "flow",
+  "from",
+  "has",
+  "have",
+  "how",
+  "include",
+  "including",
+  "implementation",
+  "into",
+  "its",
+  "nearby",
+  "need",
+  "needs",
+  "new",
+  "next",
+  "path",
+  "paths",
+  "project",
+  "public",
+  "read",
+  "real",
+  "runtime",
+  "should",
+  "show",
+  "that",
+  "the",
+  "this",
+  "test",
+  "tests",
+  "trace",
+  "through",
+  "with",
+  "without",
+  "tour",
+  "typescript",
+  "user",
+  "what",
+  "where",
+  "which",
+  "work",
 ]);
 
 /**
@@ -55,7 +114,7 @@ const QUERY_STOP_WORDS = new Set<string>([
  * operations. It returns selected symbols, flows, nearby edges, test anchors,
  * and answer anchors without reading or embedding source bodies.
  */
-export function runTour(graph: GraphMemory, props: IGraphTour.IRequest): IGraphTour {
+export function runTour(graph: SamchonGraphMemory, props: ISamchonGraphTour.IRequest): ISamchonGraphTour {
   const query = (props.question ?? "project architecture").trim();
   const limit = bound(props.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
   const entry = runEntrypoints(graph, {
@@ -69,14 +128,16 @@ export function runTour(graph: GraphMemory, props: IGraphTour.IRequest): IGraphT
   const seedIds = seeds.map((node) => node.id);
   const flowSeedIds = flowSeedIdsOf(seeds);
 
-  const entrypoints: IGraphEntrypoints.IEntrypoint[] = seeds.map((node) => ({
-    ...summaryOf(node),
-    score: Math.round(tourSeedScore(graph, node, terms)),
-    reason: seedReason(graph, node, terms),
-  }));
+  const entrypoints: ISamchonGraphEntrypoints.IEntrypoint[] = seeds.map(
+    (node) => ({
+      ...summaryOf(node),
+      score: Math.round(tourSeedScore(graph, node, terms)),
+      reason: seedReason(graph, node, terms),
+    }),
+  );
 
   const primaryFlow: string[] = [];
-  const flowReached: IGraphNode[] = [];
+  const flowReached: ISamchonGraphNode[] = [];
   for (const id of flowSeedIds.slice(0, FLOW_SEEDS)) {
     const trace = runTrace(graph, {
       type: "trace",
@@ -151,15 +212,15 @@ export function runTour(graph: GraphMemory, props: IGraphTour.IRequest): IGraphT
 // mentions and explicit handles from the query first, then query-scored
 // high-degree seeds, falling back to the raw ranked hits.
 function tourSeedsOf(
-  graph: GraphMemory,
-  entry: IGraphEntrypoints,
+  graph: SamchonGraphMemory,
+  entry: ISamchonGraphEntrypoints,
   query: string,
   terms: string[],
   limit: number,
-): IGraphNode[] {
-  const out: IGraphNode[] = [];
+): ISamchonGraphNode[] {
+  const out: ISamchonGraphNode[] = [];
   const seen = new Set<string>();
-  const add = (node: IGraphNode | undefined): void => {
+  const add = (node: ISamchonGraphNode | undefined): void => {
     if (node === undefined || seen.has(node.id) || !isTourSeed(graph, node)) return;
     seen.add(node.id);
     out.push(node);
@@ -175,23 +236,26 @@ function tourSeedsOf(
   return out.slice(0, limit);
 }
 
-function seedReason(graph: GraphMemory, node: IGraphNode, terms: string[]): string {
-  if (matchedQueryTerms(node, terms).size > 0) return "Name matches the question terms.";
+function seedReason(graph: SamchonGraphMemory, node: ISamchonGraphNode, terms: string[]): string {
+  if (matchedQueryTerms(
+    node,
+    terms,
+  ).size > 0) return "Name matches the question terms.";
   const execution = executionDegree(graph, node.id);
   if (execution.out > 0) return "Central runtime flow for this question.";
   if (node.exported === true) return "Exported entrypoint on the public surface.";
   return "High-degree symbol relevant to the question.";
 }
 
-function stripEntrypoint(node: IGraphEntrypoints.IEntrypoint): IGraphOverview.INode {
+function stripEntrypoint(node: ISamchonGraphEntrypoints.IEntrypoint): ISamchonGraphOverview.INode {
   const { score: _score, reason: _reason, ...rest } = node;
   void _score;
   void _reason;
   return rest;
 }
 
-function nearbyNodesOf(details: ReturnType<typeof runDetails>): IGraphOverview.INode[] {
-  const out: IGraphOverview.INode[] = [];
+function nearbyNodesOf(details: ReturnType<typeof runDetails>): ISamchonGraphOverview.INode[] {
+  const out: ISamchonGraphOverview.INode[] = [];
   for (const node of details.nodes) {
     // calls/types/dependsOn/dependedOnBy are all optional reference arrays; a
     // single `?? []` normalizes each, so both the defined and undefined cases
@@ -216,8 +280,8 @@ function nearbyNodesOf(details: ReturnType<typeof runDetails>): IGraphOverview.I
 
 // Collect test/usage anchors: test-file callers pointing at the seeds, plus
 // test-role nodes reached through the impact edges.
-function testNodesOf(graph: GraphMemory, seedIds: string[]): IGraphOverview.INode[] {
-  const out: IGraphOverview.INode[] = [];
+function testNodesOf(graph: SamchonGraphMemory, seedIds: string[]): ISamchonGraphOverview.INode[] {
+  const out: ISamchonGraphOverview.INode[] = [];
   for (const id of seedIds) {
     for (const edge of graph.incoming(id)) {
       const node = graph.node(edge.from);
@@ -243,14 +307,14 @@ function testNodesOf(graph: GraphMemory, seedIds: string[]): IGraphOverview.INod
 
 // --- query relevance scoring (ported from the reference engine) -------------
 
-function queryTerms(graph: GraphMemory, query: string): string[] {
+function queryTerms(graph: SamchonGraphMemory, query: string): string[] {
   const projectTerms = new Set(subwords(graph.project));
   return subwords(query).filter(
     (term) => term.length > 2 && !QUERY_STOP_WORDS.has(term) && !projectTerms.has(term),
   );
 }
 
-function rankedTourSeeds(graph: GraphMemory, terms: string[]): IGraphNode[] {
+function rankedTourSeeds(graph: SamchonGraphMemory, terms: string[]): ISamchonGraphNode[] {
   const items = graph.nodes
     .filter((node) => isTourSeed(graph, node))
     .map((node) => ({
@@ -263,7 +327,7 @@ function rankedTourSeeds(graph: GraphMemory, terms: string[]): IGraphNode[] {
   return diverseTourSeeds(items, terms).map((item) => item.node);
 }
 
-function tourSeedScore(graph: GraphMemory, node: IGraphNode, terms: string[]): number {
+function tourSeedScore(graph: SamchonGraphMemory, node: ISamchonGraphNode, terms: string[]): number {
   const degree = realDegree(graph, node.id);
   const execution = executionDegree(graph, node.id);
   const queryWords = new Set(terms);
@@ -283,7 +347,7 @@ function tourSeedScore(graph: GraphMemory, node: IGraphNode, terms: string[]): n
   return score;
 }
 
-function isTourSeed(graph: GraphMemory, node: IGraphNode): boolean {
+function isTourSeed(graph: SamchonGraphMemory, node: ISamchonGraphNode): boolean {
   return (
     TOUR_SEED_KINDS.has(node.kind) &&
     (node.kind !== "property" || executionDegree(graph, node.id).out > 0) &&
@@ -294,7 +358,7 @@ function isTourSeed(graph: GraphMemory, node: IGraphNode): boolean {
   );
 }
 
-function flowSeedIdsOf(seeds: IGraphNode[]): string[] {
+function flowSeedIdsOf(seeds: ISamchonGraphNode[]): string[] {
   const executable = seeds.filter((node) =>
     ["function", "method", "property", "variable"].includes(node.kind),
   );
@@ -302,7 +366,7 @@ function flowSeedIdsOf(seeds: IGraphNode[]): string[] {
   return source.map((node) => node.id);
 }
 
-function realDegree(graph: GraphMemory, id: string): { in: number; out: number } {
+function realDegree(graph: SamchonGraphMemory, id: string): { in: number; out: number } {
   let incoming = 0;
   let outgoing = 0;
   for (const edge of graph.outgoing(id)) if (!STRUCTURAL_KINDS.has(edge.kind)) outgoing++;
@@ -310,7 +374,7 @@ function realDegree(graph: GraphMemory, id: string): { in: number; out: number }
   return { in: incoming, out: outgoing };
 }
 
-function executionDegree(graph: GraphMemory, id: string): { in: number; out: number } {
+function executionDegree(graph: SamchonGraphMemory, id: string): { in: number; out: number } {
   let incoming = 0;
   let outgoing = 0;
   for (const edge of graph.outgoing(id)) if (EXECUTION_KINDS.has(edge.kind)) outgoing++;
@@ -341,7 +405,7 @@ function kindScore(kind: string): number {
   }
 }
 
-function entrySurfaceScore(node: IGraphNode): number {
+function entrySurfaceScore(node: ISamchonGraphNode): number {
   const file = node.file.replace(/\\/g, "/");
   const base = file.slice(file.lastIndexOf("/") + 1).toLowerCase();
   const stem = base.replace(/\.[cm]?[tj]sx?$/, "");
@@ -362,13 +426,31 @@ function entrySurfaceScore(node: IGraphNode): number {
   return score;
 }
 
-function runtimeEntryScore(node: IGraphNode, surface: number): number {
-  const words = new Set([...subwords(node.name), ...subwords(node.qualifiedName ?? "")]);
+function runtimeEntryScore(node: ISamchonGraphNode, surface: number): number {
+  const words = new Set([
+    ...subwords(node.name),
+    ...subwords(node.qualifiedName ?? ""),
+  ]);
   if (isPrivateLike(node, words)) return 0;
   const hasVerb = hasAny(words, [
-    "bootstrap", "create", "execute", "handle", "init", "initialize", "listen",
-    "mount", "open", "parse", "render", "run", "safe", "safeparse", "start",
-    "startup", "subscribe", "update",
+    "bootstrap",
+    "create",
+    "execute",
+    "handle",
+    "init",
+    "initialize",
+    "listen",
+    "mount",
+    "open",
+    "parse",
+    "render",
+    "run",
+    "safe",
+    "safeparse",
+    "start",
+    "startup",
+    "subscribe",
+    "update",
   ]);
   if (node.kind === "method" && hasVerb) return 90;
   if (
@@ -381,7 +463,13 @@ function runtimeEntryScore(node: IGraphNode, surface: number): number {
   if (
     node.kind === "class" &&
     hasAny(words, [
-      "application", "app", "backend", "client", "datasource", "factory", "server",
+      "application",
+      "app",
+      "backend",
+      "client",
+      "datasource",
+      "factory",
+      "server",
     ])
   ) {
     return 45;
@@ -392,20 +480,23 @@ function runtimeEntryScore(node: IGraphNode, surface: number): number {
 function sourceDepth(file: string): number {
   const parts = file.split("/").filter(Boolean);
   if (parts[0] === "src") return Math.max(0, parts.length - 2);
-  if (parts[0] === "packages" && parts.length >= 3) return Math.max(0, parts.length - 3);
+  if (parts[0] === "packages" && parts.length >= 3) return Math.max(
+    0,
+    parts.length - 3,
+  );
   return Math.max(0, parts.length - 1);
 }
 
-function queryMatchScore(node: IGraphNode, terms: string[]): number {
+function queryMatchScore(node: ISamchonGraphNode, terms: string[]): number {
   return matchedQueryTerms(node, terms).size * 8 + matchedFileTerms(node, terms).size * 2;
 }
 
-function matchedQueryTerms(node: IGraphNode, terms: string[]): Set<string> {
+function matchedQueryTerms(node: ISamchonGraphNode, terms: string[]): Set<string> {
   const words = [...subwords(node.name), ...subwords(node.qualifiedName ?? "")];
   return matchedTerms(words, terms);
 }
 
-function matchedFileTerms(node: IGraphNode, terms: string[]): Set<string> {
+function matchedFileTerms(node: ISamchonGraphNode, terms: string[]): Set<string> {
   return matchedTerms(subwords(node.file), terms);
 }
 
@@ -417,7 +508,9 @@ function matchedTerms(words: string[], terms: string[]): Set<string> {
     if (
       wordSet.has(term) ||
       stems.has(stemWord(term)) ||
-      words.some((word) => commonPrefixLength(stemWord(term), stemWord(word)) >= 6)
+      words.some(
+        (word) => commonPrefixLength(stemWord(term), stemWord(word)) >= 6,
+      )
     ) {
       matched.add(term);
     }
@@ -460,7 +553,7 @@ function queryAlignmentFactor(matchScore: number, queryWords: ReadonlySet<string
   return 0.45;
 }
 
-function broadTourDamping(node: IGraphNode, queryWords: ReadonlySet<string>): number {
+function broadTourDamping(node: ISamchonGraphNode, queryWords: ReadonlySet<string>): number {
   const words = new Set([
     ...subwords(node.name),
     ...subwords(node.qualifiedName ?? ""),
@@ -478,21 +571,41 @@ function broadTourDamping(node: IGraphNode, queryWords: ReadonlySet<string>): nu
   }
   if (
     !hasAny(queryWords, [
-      "config", "configuration", "env", "environment", "option", "options", "port",
+      "config",
+      "configuration",
+      "env",
+      "environment",
+      "option",
+      "options",
+      "port",
     ]) &&
     (node.kind === "variable" || node.kind === "property") &&
     hasAny(words, [
-      "config", "configuration", "env", "environment", "option", "options", "port",
+      "config",
+      "configuration",
+      "env",
+      "environment",
+      "option",
+      "options",
+      "port",
     ])
   ) {
     factor *= 0.35;
   }
   if (
     !hasAny(queryWords, [
-      "deserialize", "deserializer", "serializer", "serialize", "serialization",
+      "deserialize",
+      "deserializer",
+      "serializer",
+      "serialize",
+      "serialization",
     ]) &&
     hasAny(words, [
-      "deserialize", "deserializer", "serializer", "serialize", "serialization",
+      "deserialize",
+      "deserializer",
+      "serializer",
+      "serialize",
+      "serialization",
     ])
   ) {
     factor *= 0.25;
@@ -504,7 +617,7 @@ function hasAny(words: ReadonlySet<string>, candidates: readonly string[]): bool
   return candidates.some((word) => words.has(word));
 }
 
-function isPrivateLike(node: IGraphNode, words: ReadonlySet<string>): boolean {
+function isPrivateLike(node: ISamchonGraphNode, words: ReadonlySet<string>): boolean {
   const name = node.qualifiedName ?? node.name;
   return (
     name.startsWith("_") ||
@@ -570,8 +683,8 @@ function uniqueIds(ids: string[]): string[] {
   return out;
 }
 
-function uniqueNodes(nodes: IGraphOverview.INode[]): IGraphOverview.INode[] {
-  const out: IGraphOverview.INode[] = [];
+function uniqueNodes(nodes: ISamchonGraphOverview.INode[]): ISamchonGraphOverview.INode[] {
+  const out: ISamchonGraphOverview.INode[] = [];
   const seen = new Set<string>();
   for (const node of nodes) {
     if (seen.has(node.id)) continue;

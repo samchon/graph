@@ -89,7 +89,7 @@ The whole surface is one tool with one typed contract:
  */
 export interface ISamchonGraphApplication {
   /**
-   * <TOOL_DESCRPTION>
+   * <TOOL_DESCRIPTION>
    */
   inspect_code_graph(
     props: ISamchonGraphApplication.IProps,
@@ -98,17 +98,17 @@ export interface ISamchonGraphApplication {
 
 export namespace ISamchonGraphApplication {
   export interface IProps {
-    question: string; // restate the code question
-    draft: IDraft; //    intended request + why it is smallest
-    review: string; //   correct the draft before committing
-    request:
-      | ISamchonGraphTour.IRequest //    broad orientation / runtime flow
-      | ISamchonGraphLookup.IRequest //  find a symbol
-      | ISamchonGraphTrace.IRequest //   follow a flow
-      | ISamchonGraphDetails.IRequest // one symbol's facts
-      | ISamchonGraphEntrypoints.IRequest
-      | ISamchonGraphOverview.IRequest
-      | ISamchonGraphEscape.IRequest; // leave the graph
+    question: string; // restate the code question being asked
+    draft: IDraft;    // the request type it plans, and why it is the smallest
+    review: string;   // self-correct a wrong/broad draft; pick `escape` if off-graph
+    request:          // the final operation, chosen after review
+      | ISamchonGraphEntrypoints.IRequest // orientation: where to start reading
+      | ISamchonGraphLookup.IRequest      // find a symbol by name
+      | ISamchonGraphTrace.IRequest       // trace call / data flow
+      | ISamchonGraphDetails.IRequest     // a symbol's signature, members, neighbors
+      | ISamchonGraphOverview.IRequest    // repo-level overview
+      | ISamchonGraphTour.IRequest        // broad code tour, answered in one call
+      | ISamchonGraphEscape.IRequest;     // not a graph question -> bail out
   }
 
   export interface IDraft {

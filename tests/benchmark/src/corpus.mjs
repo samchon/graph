@@ -63,6 +63,13 @@ export const CORPUS = [
     // already fits, but give it headroom since the workspace's true symbol
     // count runs higher once rust-analyzer's own dependency indexing kicks in.
     lspReferenceLimit: 4000,
+    // rust-analyzer's initial cross-crate index on a workspace this size can
+    // still be running well past the library's own 180s default; without
+    // enough headroom here, reference collection starts before indexing
+    // finishes and every edge request comes back empty (confirmed: an
+    // earlier run produced a graph with zero calls/type_ref/references
+    // edges, only structural `contains` edges).
+    lspReadyTimeoutMs: 300000,
   },
   {
     name: "gson",

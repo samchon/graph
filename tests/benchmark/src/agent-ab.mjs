@@ -141,6 +141,7 @@ if (armsRequested.graph && !serena && !cg) {
       String(args["reference-limit"] ?? spec.lspReferenceLimit ?? 3000),
       ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
       ...(spec.lspWarmupTimeoutMs ? ["--lsp-warmup-timeout-ms", String(spec.lspWarmupTimeoutMs)] : []),
+      ...(spec.lspReadyTimeoutMs ? ["--lsp-ready-timeout-ms", String(spec.lspReadyTimeoutMs)] : []),
     ],
     {
       stdio: ["ignore", fd, "pipe"],

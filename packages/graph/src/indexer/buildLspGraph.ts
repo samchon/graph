@@ -259,10 +259,16 @@ async function openLanguageSession(
     // requests: jdtls blocks them (a longer request timeout suffices), but
     // csharp-ls answers documentSymbol with an empty list until its solution is
     // loaded — collecting symbols first would silently index nothing.
+    //
+    // The wait exits early once progress goes quiet for `lspReadyQuietMs`, so
+    // this ceiling only costs time on servers that are still actively
+    // indexing when it's hit — a large rust-analyzer/clangd/jdtls workspace
+    // can still be mid-index at 30s, which silently starves reference
+    // collection (see `lspReadyTimeoutMs`'s doc comment) rather than erroring.
     await waitForIndexing(
       () => lastProgressAt,
       options.lspReadyQuietMs ?? 1_500,
-      options.lspReadyTimeoutMs ?? 30_000,
+      options.lspReadyTimeoutMs ?? 180_000,
     );
     return session;
   } catch (error) {

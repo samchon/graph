@@ -8,6 +8,7 @@ export * from "./createResidentGraphSource";
 export * from "./decoratorsAbove";
 export * from "./dedupeEdges";
 export * from "./dedupeNodes";
+export * from "./ensureCompileCommands";
 export * from "./IBuildGraphOptions";
 export * from "./IIndexerResult";
 export * from "./ILanguageSpec";

@@ -47,4 +47,11 @@ export interface IBuildGraphOptions {
    * `dump` CLI command never does.
    */
   keepAlive?: boolean;
+  /**
+   * Command (and any leading arguments) used to bootstrap a missing
+   * `compile_commands.json` for cpp/c projects that configure CMake.
+   * Defaults to `["cmake"]`; overridable so tests can substitute a fake
+   * binary instead of depending on a real cmake install.
+   */
+  cmakeCommand?: string[];
 }

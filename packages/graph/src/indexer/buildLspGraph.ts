@@ -13,6 +13,7 @@ import { fileFromUri, fileUri, isSubPath } from "../utils/path";
 import { appendAll } from "./appendAll";
 import { dedupeEdges } from "./dedupeEdges";
 import { dedupeNodes } from "./dedupeNodes";
+import { ensureCompileCommands } from "./ensureCompileCommands";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IIndexerResult } from "./IIndexerResult";
 import { ILspSession } from "./ILspSession";
@@ -33,6 +34,12 @@ export async function buildLspGraph(
   const staticFallbackLanguages: GraphLanguage[] = [];
   const sessions = new Map<GraphLanguage, ILspSession>();
   let lspNodeCount = 0;
+  // Computed once (not per-language) since cpp and c share the same clangd
+  // compilation database and root.
+  const compileCommandsDir =
+    languages.includes("cpp") || languages.includes("c")
+      ? ensureCompileCommands(root, options.cmakeCommand)
+      : undefined;
 
   for (const language of languages) {
     const files = walkSourceFiles(root, {
@@ -47,11 +54,19 @@ export async function buildLspGraph(
       continue;
     }
     const command = options.server ?? spec.lsp.command;
-    const args =
+    const baseArgs =
       options.serverArgs ??
       (isTtscserverCommand(command)
         ? [...spec.lsp.args, "--cwd", root]
         : spec.lsp.args);
+    // Appended regardless of a custom serverArgs override — which binary to
+    // run and which compilation database to hint at are orthogonal, and a
+    // test/user overriding serverArgs to swap the server binary should not
+    // also have to know to re-specify this.
+    const args =
+      (language === "cpp" || language === "c") && compileCommandsDir !== undefined
+        ? [...baseArgs, `--compile-commands-dir=${compileCommandsDir}`]
+        : baseArgs;
     const resolved = resolveCommand(command);
     if (resolved === undefined) {
       warnings.push(`${language}: LSP server not found on PATH: ${command}`);

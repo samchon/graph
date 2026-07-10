@@ -9,6 +9,7 @@ export * from "./decoratorsAbove";
 export * from "./dedupeEdges";
 export * from "./dedupeNodes";
 export * from "./ensureCompileCommands";
+export * from "./ensurePubDeps";
 export * from "./IBuildGraphOptions";
 export * from "./IIndexerResult";
 export * from "./ILanguageSpec";

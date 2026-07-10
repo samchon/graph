@@ -14,6 +14,7 @@ import { appendAll } from "./appendAll";
 import { dedupeEdges } from "./dedupeEdges";
 import { dedupeNodes } from "./dedupeNodes";
 import { ensureCompileCommands } from "./ensureCompileCommands";
+import { ensurePubDeps } from "./ensurePubDeps";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IIndexerResult } from "./IIndexerResult";
 import { ILspSession } from "./ILspSession";
@@ -40,6 +41,7 @@ export async function buildLspGraph(
     languages.includes("cpp") || languages.includes("c")
       ? ensureCompileCommands(root, options.cmakeCommand)
       : undefined;
+  if (languages.includes("dart")) ensurePubDeps(root, options.pubCommand);
 
   for (const language of languages) {
     const files = walkSourceFiles(root, {

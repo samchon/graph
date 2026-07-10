@@ -13,6 +13,7 @@ import { fileFromUri, fileUri, isSubPath } from "../utils/path";
 import { appendAll } from "./appendAll";
 import { dedupeEdges } from "./dedupeEdges";
 import { dedupeNodes } from "./dedupeNodes";
+import { discoverLanguages } from "./discoverLanguages";
 import { ensureCompileCommands } from "./ensureCompileCommands";
 import { ensurePubDeps } from "./ensurePubDeps";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
@@ -164,19 +165,6 @@ export async function buildLspGraph(
     warnings,
     ...(options.keepAlive ? { sessions } : {}),
   };
-}
-
-function discoverLanguages(
-  root: string,
-  options: IBuildGraphOptions,
-): GraphLanguage[] {
-  const files = walkSourceFiles(root, {
-    extensions: allExtensions(options.languages),
-    maxFiles: options.maxFiles,
-  });
-  return [
-    ...new Set(files.map(languageOf).filter((language) => language !== "unknown")),
-  ];
 }
 
 // Opens a fresh LSP connection and hands back BOTH the extracted graph slice

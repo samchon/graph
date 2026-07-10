@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "@samchon/graph-workspace",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Language-server-backed code graph over MCP for statically typed compiled languages.",
   "scripts": {
     "build": "pnpm --filter @samchon/graph build",

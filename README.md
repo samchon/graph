@@ -125,6 +125,29 @@ For a narrow, single-answer question, baseline Sonnet 5 often finds it in one or
 
 </details>
 
+### Indexing time
+
+`@samchon/graph`'s first index of a repository pays for spawning a real language server, letting it finish its own project-wide indexing, then collecting `textDocument/references` for every symbol up to the language's reference-collection cap. This is a one-time cost per session: the MCP server keeps the LSP connection alive and only re-scans files whose mtime changed since the last call (see [How it works](#how-it-works)). The numbers below are that one-time cost, measured during the benchmark runs above, not the cost of each tool call.
+
+| Project | Language | First index |
+|---|---|---|
+| [slim](https://github.com/slimphp/Slim) | PHP | 5s |
+| [excalidraw](https://github.com/excalidraw/excalidraw) | TypeScript | 5s |
+| [gin](https://github.com/gin-gonic/gin) | Go | 15s |
+| [leveldb](https://github.com/google/leveldb) | C++ | 16s |
+| [darthttp](https://github.com/dart-lang/http) | Dart | 23s |
+| [lualine](https://github.com/nvim-lualine/lualine.nvim) | Lua | 25s |
+| [flask](https://github.com/pallets/flask) | Python | 55s |
+| [gson](https://github.com/google/gson) | Java | 2m22s |
+| [sinatra](https://github.com/sinatra/sinatra) | Ruby | 2m35s |
+| [redis](https://github.com/redis/redis) | C | 2m50s |
+| [tokio](https://github.com/tokio-rs/tokio) | Rust | 3m |
+| [koin](https://github.com/InsertKoinIO/koin) | Kotlin | 19m25s |
+| [serilog](https://github.com/serilog/serilog) | C# | not recorded — the language server never produced a graph in this session's runs |
+| [alamofire](https://github.com/Alamofire/Alamofire) | Swift | not recorded — the language server never produced a graph in this session's runs |
+
+Kotlin is the outlier, and it is not close: kotlin-language-server resolves the whole project through Gradle before it answers anything, and that cold start dominates everything else in the table by an order of magnitude. `@ttsc/graph`'s TypeScript-only predecessor indexes a comparable repository in 2-3s because it talks to the compiler directly instead of a general-purpose LSP server — no project-sync handshake, no protocol overhead, no per-symbol round trip. A generic LSP adapter cannot close that gap for languages whose server was built around IDE-editing latency, not batch indexing. Getting kotlin, and likely java and C#/csharp-ls, down to `@ttsc/graph`-class speed means the same move `@ttsc/graph` already made for TypeScript: a per-language indexer built on the language's own compiler or build-tool API instead of its LSP server. That is out of scope for this repository today and tracked as follow-up work, not a promise.
+
 ### Reproduction
 
 Running the suite spends real API credits, so it is never wired into CI:
@@ -213,6 +236,7 @@ Your [donation](https://github.com/sponsors/samchon) encourages `@samchon/graph`
 
 ## References
 
+- Motivation: this project started from using [`codegraph`](https://github.com/colbymchenry/codegraph) in real work and finding that it did not just fail to cut token usage — it used more tokens than no tool at all, and the agent's own reasoning got noticeably worse while it was wired in, degradation that was obvious without needing a benchmark to see it. That observation is what led to digging into why, and to building this alongside [`@ttsc/graph`](https://github.com/samchon/ttsc) as an alternative worth actually measuring.
 - Predecessor: [`@ttsc/graph`](https://github.com/samchon/ttsc), the TypeScript-only original that this project generalizes; its [launch post](https://ttsc.dev/blog/i-made-ts-compiler-graph-mcp/) analyzes why earlier graph tools did not reduce the token bill.
 - Function calling harness: [part 1 — validation feedback](https://dev.to/samchon/qwen-meetup-function-calling-harness-from-675-to-100-3830) and [part 2 — CoT compliance](https://dev.to/samchon/function-calling-harness-2-cot-compliance-from-991-to-100-4f0h), the typia technique the contract is built on.
 - Compared against: [`codegraph`](https://github.com/colbymchenry/codegraph) and [`serena`](https://github.com/oraios/serena).

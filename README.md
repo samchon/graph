@@ -127,8 +127,6 @@ For a narrow, single-answer question, baseline Sonnet 5 often finds it in one or
 
 ### Indexing time
 
-The one-time cost of the first index per repository, measured during the runs above. The MCP server keeps the LSP connection alive after that and only re-scans files whose mtime changed (see [How it works](#how-it-works)), so later tool calls do not pay this again.
-
 | Project | Language | First index |
 |---|---|---|
 | [slim](https://github.com/slimphp/Slim) | PHP | 5s |
@@ -143,10 +141,14 @@ The one-time cost of the first index per repository, measured during the runs ab
 | [redis](https://github.com/redis/redis) | C | 2m50s |
 | [tokio](https://github.com/tokio-rs/tokio) | Rust | 3m |
 | [koin](https://github.com/InsertKoinIO/koin) | Kotlin | 19m25s |
-| [serilog](https://github.com/serilog/serilog) | C# | not recorded — the language server never produced a graph in this session's runs |
-| [alamofire](https://github.com/Alamofire/Alamofire) | Swift | not recorded — the language server never produced a graph in this session's runs |
+| [serilog](https://github.com/serilog/serilog) | C# | not recorded |
+| [alamofire](https://github.com/Alamofire/Alamofire) | Swift | not recorded |
 
-Kotlin is an order of magnitude past everything else because kotlin-language-server resolves the whole project through Gradle before answering anything. `@ttsc/graph` indexes a comparable TypeScript repository in 2-3s by talking to the compiler directly instead of a general-purpose LSP server; closing that gap for kotlin, java, and csharp-ls means the same move — a per-language indexer on the compiler or build-tool API instead of the LSP server. Not done here; tracked as follow-up.
+One-time cost per repository. The server re-scans only changed files after that (see [How it works](#how-it-works)); later calls are free.
+
+kotlin-language-server, jdtls, and csharp-ls are particularly slow: each resolves the whole project before answering anything.
+
+Closing that gap needs what `@ttsc/graph` already does for TypeScript: a compiler-native indexer instead of a generic LSP server. Not done here.
 
 ### Reproduction
 
@@ -236,7 +238,7 @@ Your [donation](https://github.com/sponsors/samchon) encourages `@samchon/graph`
 
 ## References
 
-- Motivation: real-world use of [`codegraph`](https://github.com/colbymchenry/codegraph) that raised token cost instead of lowering it and visibly degraded agent reasoning — the reason this project exists.
+- Motivation: real-world use of [`codegraph`](https://github.com/colbymchenry/codegraph) that raised token cost instead of lowering it and visibly degraded agent reasoning.
 - Predecessor: [`@ttsc/graph`](https://github.com/samchon/ttsc), the TypeScript-only original that this project generalizes; its [launch post](https://ttsc.dev/blog/i-made-ts-compiler-graph-mcp/) analyzes why earlier graph tools did not reduce the token bill.
 - Function calling harness: [part 1 — validation feedback](https://dev.to/samchon/qwen-meetup-function-calling-harness-from-675-to-100-3830) and [part 2 — CoT compliance](https://dev.to/samchon/function-calling-harness-2-cot-compliance-from-991-to-100-4f0h), the typia technique the contract is built on.
 - Compared against: [`codegraph`](https://github.com/colbymchenry/codegraph) and [`serena`](https://github.com/oraios/serena).

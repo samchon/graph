@@ -33,6 +33,11 @@ export const LANGUAGE_EXPERIMENTS = [
     maxFiles: 120,
     minNodes: 1,
     minEdges: 1,
+    // fmt has a CMakeLists.txt, so clangd now gets a real compile_commands.json
+    // (ensureCompileCommands) instead of guessed flags — real parsing is
+    // slower than the fallback, and the default 10s request timeout isn't
+    // enough for the first documentSymbol call on a cold clangd start.
+    timeoutMs: 30000,
   },
   {
     language: "c",
@@ -69,6 +74,9 @@ export const LANGUAGE_EXPERIMENTS = [
     maxFiles: 120,
     minNodes: 1,
     minEdges: 1,
+    // kotlin-language-server is JVM-based like jdtls; a cold JVM start under
+    // CI load can occasionally exceed the default 10s `initialize` timeout.
+    timeoutMs: 60000,
   },
   {
     language: "swift",

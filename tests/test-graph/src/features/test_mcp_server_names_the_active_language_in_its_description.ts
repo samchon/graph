@@ -26,7 +26,10 @@ const sessionOf = async (
   });
   await client.connect(transport);
   try {
-    const tools = await client.listTools();
+    // Coverage instrumentation adds real overhead to every spawned child
+    // process; the SDK's 60s default has been observed to trip under a
+    // fully-instrumented suite run even though the call itself is fast.
+    const tools = await client.listTools(undefined, { timeout: 120_000 });
     return {
       description: tools.tools[0]?.description ?? "",
       instructions: client.getInstructions() ?? "",

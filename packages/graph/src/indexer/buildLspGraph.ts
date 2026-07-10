@@ -217,7 +217,13 @@ async function openLanguageSession(
   files: readonly string[],
   options: IBuildGraphOptions,
 ): Promise<ILspSession> {
-  const client = new LspClient(command, args, options.lspTimeoutMs ?? 10_000);
+  // A per-request deadline is still necessary — a crashed-without-exiting or
+  // deadlocked server would otherwise hang the whole build forever — but 10s
+  // was too tight even for legitimate slow starts (jdtls importing a Maven/
+  // Gradle project, kotlin-language-server's JVM cold start, clangd parsing
+  // with a real compile database instead of guessed flags), which kept
+  // forcing per-repo overrides. 60s covers all of those without needing one.
+  const client = new LspClient(command, args, options.lspTimeoutMs ?? 60_000);
   const diagnostics: ISamchonGraphDiagnostic[] = [];
   let lastProgressAt = 0;
   client.onNotification("$/progress", () => {

@@ -127,7 +127,7 @@ For a narrow, single-answer question, baseline Sonnet 5 often finds it in one or
 
 ### Indexing time
 
-`@samchon/graph`'s first index of a repository pays for spawning a real language server, letting it finish its own project-wide indexing, then collecting `textDocument/references` for every symbol up to the language's reference-collection cap. This is a one-time cost per session: the MCP server keeps the LSP connection alive and only re-scans files whose mtime changed since the last call (see [How it works](#how-it-works)). The numbers below are that one-time cost, measured during the benchmark runs above, not the cost of each tool call.
+The one-time cost of the first index per repository, measured during the runs above. The MCP server keeps the LSP connection alive after that and only re-scans files whose mtime changed (see [How it works](#how-it-works)), so later tool calls do not pay this again.
 
 | Project | Language | First index |
 |---|---|---|
@@ -146,7 +146,7 @@ For a narrow, single-answer question, baseline Sonnet 5 often finds it in one or
 | [serilog](https://github.com/serilog/serilog) | C# | not recorded — the language server never produced a graph in this session's runs |
 | [alamofire](https://github.com/Alamofire/Alamofire) | Swift | not recorded — the language server never produced a graph in this session's runs |
 
-Kotlin is the outlier, and it is not close: kotlin-language-server resolves the whole project through Gradle before it answers anything, and that cold start dominates everything else in the table by an order of magnitude. `@ttsc/graph`'s TypeScript-only predecessor indexes a comparable repository in 2-3s because it talks to the compiler directly instead of a general-purpose LSP server — no project-sync handshake, no protocol overhead, no per-symbol round trip. A generic LSP adapter cannot close that gap for languages whose server was built around IDE-editing latency, not batch indexing. Getting kotlin, and likely java and C#/csharp-ls, down to `@ttsc/graph`-class speed means the same move `@ttsc/graph` already made for TypeScript: a per-language indexer built on the language's own compiler or build-tool API instead of its LSP server. That is out of scope for this repository today and tracked as follow-up work, not a promise.
+Kotlin is an order of magnitude past everything else because kotlin-language-server resolves the whole project through Gradle before answering anything. `@ttsc/graph` indexes a comparable TypeScript repository in 2-3s by talking to the compiler directly instead of a general-purpose LSP server; closing that gap for kotlin, java, and csharp-ls means the same move — a per-language indexer on the compiler or build-tool API instead of the LSP server. Not done here; tracked as follow-up.
 
 ### Reproduction
 
@@ -236,7 +236,7 @@ Your [donation](https://github.com/sponsors/samchon) encourages `@samchon/graph`
 
 ## References
 
-- Motivation: this project started from using [`codegraph`](https://github.com/colbymchenry/codegraph) in real work and finding that it did not just fail to cut token usage — it used more tokens than no tool at all, and the agent's own reasoning got noticeably worse while it was wired in, degradation that was obvious without needing a benchmark to see it. That observation is what led to digging into why, and to building this alongside [`@ttsc/graph`](https://github.com/samchon/ttsc) as an alternative worth actually measuring.
+- Motivation: real-world use of [`codegraph`](https://github.com/colbymchenry/codegraph) that raised token cost instead of lowering it and visibly degraded agent reasoning — the reason this project exists.
 - Predecessor: [`@ttsc/graph`](https://github.com/samchon/ttsc), the TypeScript-only original that this project generalizes; its [launch post](https://ttsc.dev/blog/i-made-ts-compiler-graph-mcp/) analyzes why earlier graph tools did not reduce the token bill.
 - Function calling harness: [part 1 — validation feedback](https://dev.to/samchon/qwen-meetup-function-calling-harness-from-675-to-100-3830) and [part 2 — CoT compliance](https://dev.to/samchon/function-calling-harness-2-cot-compliance-from-991-to-100-4f0h), the typia technique the contract is built on.
 - Compared against: [`codegraph`](https://github.com/colbymchenry/codegraph) and [`serena`](https://github.com/oraios/serena).

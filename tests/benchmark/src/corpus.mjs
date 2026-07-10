@@ -27,10 +27,6 @@ export const CORPUS = [
     url: "https://github.com/samchon/ttsc-benchmark-excalidraw.git",
     commit: "98a2730b197873d43fddbe3fad6f0812df84b451",
     maxFiles: 2000,
-    // The full-density pre-build walks documentSymbol across this 2000-file
-    // monorepo; the default 10s per-request timeout isn't enough under
-    // concurrent load.
-    lspTimeoutMs: 60000,
     // ttscserver resolves references from the TypeScript checker's own
     // symbol table (not per-symbol textDocument/references round-trips), so
     // it stays fast even far past the default cap: the repo has ~4.7k
@@ -63,6 +59,13 @@ export const CORPUS = [
     // already fits, but give it headroom since the workspace's true symbol
     // count runs higher once rust-analyzer's own dependency indexing kicks in.
     lspReferenceLimit: 4000,
+    // rust-analyzer's initial cross-crate index on a workspace this size can
+    // still be running well past the library's own 180s default; without
+    // enough headroom here, reference collection starts before indexing
+    // finishes and every edge request comes back empty (confirmed: an
+    // earlier run produced a graph with zero calls/type_ref/references
+    // edges, only structural `contains` edges).
+    lspReadyTimeoutMs: 300000,
   },
   {
     name: "gson",
@@ -80,9 +83,6 @@ export const CORPUS = [
     url: "https://github.com/redis/redis.git",
     commit: "6bf6224c3dad518329ddc893ef9c5d58dcbabdeb",
     maxFiles: 2000,
-    // clangd can take tens of seconds on redis's largest translation units;
-    // give documentSymbol/references room so the graph does not fall back.
-    lspTimeoutMs: 30000,
     // redis has ~21k non-test symbols -- far past what any cap here can fully
     // cover -- but even a partial increase over the 3000 default recovers a
     // meaningful share of the missing edges without materially slowing the
@@ -109,11 +109,10 @@ export const CORPUS = [
     commit: "5236d3459b8b9015e5ce21ddd0c6beb0db4081d4",
     maxFiles: 1500,
     // ruby-lsp composes a bundle from the project's Gemfile; install it into a
-    // vendored path first, then give initialize room. ruby-lsp is also very slow
-    // on textDocument/references (tens of seconds each), so give the warmup a
-    // patient budget to land the reference index before the batch.
+    // vendored path first. ruby-lsp is also very slow on textDocument/references
+    // (tens of seconds each), so give the warmup a patient budget to land the
+    // reference index before the batch.
     prepare: "bundle config set --local path vendor/bundle && bundle install",
-    lspTimeoutMs: 60000,
     lspWarmupTimeoutMs: 180000,
   },
   {

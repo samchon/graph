@@ -24,6 +24,10 @@ export function walkSourceFiles(root: string, options: IWalkOptions): string[] {
       }
       /* c8 ignore next */
       if (!entry.isFile()) continue;
+      // `.d.ts` declaration files end in `.ts` (path.extname keeps only the
+      // last dot segment), so without this check a compiled `lib/*.d.ts`
+      // output tree would be indexed as if it were real TypeScript source.
+      if (entry.name.endsWith(".d.ts")) continue;
       if (options.extensions.has(path.extname(entry.name).toLowerCase())) {
         out.push(abs);
       }

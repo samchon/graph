@@ -110,6 +110,9 @@ if (armsRequested.graph) {
         ...(spec.lspWarmupTimeoutMs
           ? ["--lsp-warmup-timeout-ms", String(spec.lspWarmupTimeoutMs)]
           : []),
+        ...(spec.lspReadyTimeoutMs
+          ? ["--lsp-ready-timeout-ms", String(spec.lspReadyTimeoutMs)]
+          : []),
       ],
       { stdio: ["ignore", fd, "pipe"], encoding: "utf8", windowsHide: true },
     );

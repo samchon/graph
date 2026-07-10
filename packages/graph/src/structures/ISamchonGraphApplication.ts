@@ -9,7 +9,7 @@ import { ISamchonGraphTrace } from "./ISamchonGraphTrace";
 /**
  * ## What This MCP Is
  *
- * `inspect_code_graph` returns a compiler-built code graph contract
+ * `inspect_code_graph` returns a compiler-built __LANG__ graph contract
  * for the current on-disk source snapshot. Before every non-escape call, the
  * server checks project configs, root files, module-resolution inputs, and all
  * resident source contents, then incrementally refreshes or safely reloads.
@@ -38,12 +38,11 @@ import { ISamchonGraphTrace } from "./ISamchonGraphTrace";
  * - When `next.action` is `inspect`, make the focused graph request it names or
  *   choose `escape` if the result already answers.
  * - Read files only for exact source body text, configs, docs, generated output,
- *   exact text search, files outside the indexed languages, or facts the graph
- *   marks outside itself. A returned span is a citation anchor, not a reading
- *   command.
- * - After editing source, facts from an earlier call no longer govern changed
- *   code. Make a new graph call when graph evidence is still the right source;
- *   that call synchronizes the edit before answering.
+ *   exact text search, non-__LANG__ files, or facts the graph marks outside
+ *   itself. A returned span is a citation anchor, not a reading command.
+ * - After editing __LANG__ source, facts from an earlier call no longer govern
+ *   changed code. Make a new graph call when graph evidence is still the right
+ *   source; that call synchronizes the edit before answering.
  *
  * ## Sacred Contract
  *
@@ -74,9 +73,9 @@ import { ISamchonGraphTrace } from "./ISamchonGraphTrace";
  * 7. Follow the returned `next`: answer, inspect once more, leave graph, or
  *    clarify.
  * 8. Use `escape` when another graph call would repeat evidence or the remaining
- *    evidence is outside the code graph.
+ *    evidence is outside the __LANG__ graph.
  *
- * Most code structure answers need one or two graph calls.
+ * Most __LANG__ structure answers need one or two graph calls.
  *
  * ## Request Fields
  *
@@ -86,7 +85,7 @@ import { ISamchonGraphTrace } from "./ISamchonGraphTrace";
  * - `draft`: initial request type and why it seems smallest.
  * - `review`: correct a wrong, broad, stale, or duplicate draft. If graph facts
  *   already answer, if prior `next.action` was `answer`, or if the next
- *   evidence is outside the indexed code graph, say so here and make
+ *   evidence is outside the indexed __LANG__ graph, say so here and make
  *   `request.type` be `escape`. If a broad flow draft is not `tour`, correct it
  *   here.
  * - `request`: final request after review.
@@ -103,9 +102,9 @@ import { ISamchonGraphTrace } from "./ISamchonGraphTrace";
  */
 export interface ISamchonGraphApplication {
   /**
-   * Inspect the code graph contract.
+   * Inspect the __LANG__ compiler graph contract.
    *
-   * Use this before repository search when an answer depends on code
+   * Use this before repository search when an answer depends on __LANG__
    * symbols, calls, types, decorators, references, ranges, or runtime/source
    * relationships. For repository orientation, read-next, architecture, and
    * broad runtime flow questions, use `tour`.
@@ -127,11 +126,11 @@ export namespace ISamchonGraphApplication {
   /** Draft, review, then submit exactly one graph request or escape. */
   export interface IProps {
     /**
-     * User's code question.
+     * User's __LANG__ code question.
      *
      * Restate the code question being considered. If the next evidence is a
-     * script, config, doc, generated output, exact text, a file outside the
-     * indexed languages, or source body text, choose `escape`.
+     * script, config, doc, generated output, exact text, non-__LANG__ file,
+     * or source body text, choose `escape`.
      */
     question: string;
 

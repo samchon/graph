@@ -18,21 +18,28 @@ const overview = async (args: string[]) => {
   });
   await client.connect(transport);
   try {
-    const tools = await client.listTools();
+    // Coverage instrumentation adds real overhead to every spawned child
+    // process; the SDK's 60s default has been observed to trip under a
+    // fully-instrumented suite run even though the call itself is fast.
+    const tools = await client.listTools(undefined, { timeout: 120_000 });
     TestValidator.equals(
       "MCP exposes one graph tool",
       tools.tools.map((tool) => tool.name),
       ["inspect_code_graph"],
     );
-    const result = await client.callTool({
-      name: "inspect_code_graph",
-      arguments: {
-        question: "Show project overview",
-        draft: { reason: "Overview is the smallest project map.", type: "overview" },
-        review: "Overview is appropriate.",
-        request: { type: "overview" },
+    const result = await client.callTool(
+      {
+        name: "inspect_code_graph",
+        arguments: {
+          question: "Show project overview",
+          draft: { reason: "Overview is the smallest project map.", type: "overview" },
+          review: "Overview is appropriate.",
+          request: { type: "overview" },
+        },
       },
-    });
+      undefined,
+      { timeout: 120_000 },
+    );
     const text = result.content?.find((item) => item.type === "text")?.text;
     TestValidator.predicate("MCP call returns text content", typeof text === "string");
     return JSON.parse(text);

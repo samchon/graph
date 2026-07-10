@@ -88,6 +88,12 @@ const createOrderFixture = () => {
   return root;
 };
 
+const createCmakeFixture = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-cmake-root-"));
+  fs.writeFileSync(path.join(root, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.10)\n");
+  return root;
+};
+
 const createLspFixture = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-lsp-"));
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
@@ -462,6 +468,7 @@ export const GraphFixtures = {
   GRAPH_NODE_KINDS,
   GRAPH_REQUEST_TYPES,
   createClassifyFixture,
+  createCmakeFixture,
   createContractFixture,
   createInheritanceFixture,
   createLspInheritanceFixture,

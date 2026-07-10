@@ -46,15 +46,22 @@ export const test_real_codebase_cli_and_mcp_run_against_repository_root = async 
   });
   await client.connect(transport);
   try {
-    const result = await client.callTool({
-      name: "inspect_code_graph",
-      arguments: {
-        question: "Find buildGraphDump in this package",
-        draft: { reason: "Named package symbol lookup.", type: "lookup" },
-        review: "Lookup is sufficient for the real-codebase e2e.",
-        request: { type: "lookup", query: "buildGraphDump" },
+    // Coverage instrumentation adds real overhead to every spawned child
+    // process; the SDK's 60s default has been observed to trip under a
+    // fully-instrumented suite run even though the call itself is fast.
+    const result = await client.callTool(
+      {
+        name: "inspect_code_graph",
+        arguments: {
+          question: "Find buildGraphDump in this package",
+          draft: { reason: "Named package symbol lookup.", type: "lookup" },
+          review: "Lookup is sufficient for the real-codebase e2e.",
+          request: { type: "lookup", query: "buildGraphDump" },
+        },
       },
-    });
+      undefined,
+      { timeout: 120_000 },
+    );
     const text = result.content?.find((item) => item.type === "text")?.text;
     TestValidator.predicate("real codebase MCP returns text", typeof text === "string");
     const parsed = JSON.parse(text);

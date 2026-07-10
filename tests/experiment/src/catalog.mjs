@@ -47,7 +47,6 @@ export const LANGUAGE_EXPERIMENTS = [
     maxFiles: 120,
     minNodes: 1,
     minEdges: 0,
-    timeoutMs: 60000,
   },
   {
     // serilog has a root .sln, which csharp-ls needs to load a project context;
@@ -57,7 +56,6 @@ export const LANGUAGE_EXPERIMENTS = [
     maxFiles: 120,
     minNodes: 1,
     minEdges: 0,
-    timeoutMs: 60000,
     // csharp-ls loads the solution; restored packages make that load succeed.
     // Drop the fixture's global.json SDK pin (exact-band 10.0.100) so restore
     // runs on the installed SDK.
@@ -106,10 +104,8 @@ export const LANGUAGE_EXPERIMENTS = [
     minEdges: 0,
     // ruby-lsp composes a bundle from the project's Gemfile; the dependencies
     // must be installed or the server exits at launch. Vendor the bundle —
-    // an unprivileged install into the system gem path is denied. First boot
-    // composes another bundle, which exceeds the default request timeout.
+    // an unprivileged install into the system gem path is denied.
     prepare: "bundle config set --local path vendor/bundle && bundle install",
-    timeoutMs: 60000,
   },
   {
     language: "php",

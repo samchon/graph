@@ -13,6 +13,9 @@ import { fileFromUri, fileUri, isSubPath } from "../utils/path";
 import { appendAll } from "./appendAll";
 import { dedupeEdges } from "./dedupeEdges";
 import { dedupeNodes } from "./dedupeNodes";
+import { discoverLanguages } from "./discoverLanguages";
+import { ensureCompileCommands } from "./ensureCompileCommands";
+import { ensurePubDeps } from "./ensurePubDeps";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IIndexerResult } from "./IIndexerResult";
 import { ILspSession } from "./ILspSession";
@@ -33,6 +36,13 @@ export async function buildLspGraph(
   const staticFallbackLanguages: GraphLanguage[] = [];
   const sessions = new Map<GraphLanguage, ILspSession>();
   let lspNodeCount = 0;
+  // Computed once (not per-language) since cpp and c share the same clangd
+  // compilation database and root.
+  const compileCommandsDir =
+    languages.includes("cpp") || languages.includes("c")
+      ? ensureCompileCommands(root, options.cmakeCommand)
+      : undefined;
+  if (languages.includes("dart")) ensurePubDeps(root, options.pubCommand);
 
   for (const language of languages) {
     const files = walkSourceFiles(root, {
@@ -47,11 +57,19 @@ export async function buildLspGraph(
       continue;
     }
     const command = options.server ?? spec.lsp.command;
-    const args =
+    const baseArgs =
       options.serverArgs ??
       (isTtscserverCommand(command)
         ? [...spec.lsp.args, "--cwd", root]
         : spec.lsp.args);
+    // Appended regardless of a custom serverArgs override — which binary to
+    // run and which compilation database to hint at are orthogonal, and a
+    // test/user overriding serverArgs to swap the server binary should not
+    // also have to know to re-specify this.
+    const args =
+      (language === "cpp" || language === "c") && compileCommandsDir !== undefined
+        ? [...baseArgs, `--compile-commands-dir=${compileCommandsDir}`]
+        : baseArgs;
     const resolved = resolveCommand(command);
     if (resolved === undefined) {
       warnings.push(`${language}: LSP server not found on PATH: ${command}`);
@@ -149,19 +167,6 @@ export async function buildLspGraph(
   };
 }
 
-function discoverLanguages(
-  root: string,
-  options: IBuildGraphOptions,
-): GraphLanguage[] {
-  const files = walkSourceFiles(root, {
-    extensions: allExtensions(options.languages),
-    maxFiles: options.maxFiles,
-  });
-  return [
-    ...new Set(files.map(languageOf).filter((language) => language !== "unknown")),
-  ];
-}
-
 // Opens a fresh LSP connection and hands back BOTH the extracted graph slice
 // and the live session (opened files, diagnostics buffer). The caller decides
 // whether to close the client (a one-shot `dump`) or keep it (a resident
@@ -212,7 +217,13 @@ async function openLanguageSession(
   files: readonly string[],
   options: IBuildGraphOptions,
 ): Promise<ILspSession> {
-  const client = new LspClient(command, args, options.lspTimeoutMs ?? 10_000);
+  // A per-request deadline is still necessary — a crashed-without-exiting or
+  // deadlocked server would otherwise hang the whole build forever — but 10s
+  // was too tight even for legitimate slow starts (jdtls importing a Maven/
+  // Gradle project, kotlin-language-server's JVM cold start, clangd parsing
+  // with a real compile database instead of guessed flags), which kept
+  // forcing per-repo overrides. 60s covers all of those without needing one.
+  const client = new LspClient(command, args, options.lspTimeoutMs ?? 60_000);
   const diagnostics: ISamchonGraphDiagnostic[] = [];
   let lastProgressAt = 0;
   client.onNotification("$/progress", () => {
@@ -259,10 +270,16 @@ async function openLanguageSession(
     // requests: jdtls blocks them (a longer request timeout suffices), but
     // csharp-ls answers documentSymbol with an empty list until its solution is
     // loaded — collecting symbols first would silently index nothing.
+    //
+    // The wait exits early once progress goes quiet for `lspReadyQuietMs`, so
+    // this ceiling only costs time on servers that are still actively
+    // indexing when it's hit — a large rust-analyzer/clangd/jdtls workspace
+    // can still be mid-index at 30s, which silently starves reference
+    // collection (see `lspReadyTimeoutMs`'s doc comment) rather than erroring.
     await waitForIndexing(
       () => lastProgressAt,
       options.lspReadyQuietMs ?? 1_500,
-      options.lspReadyTimeoutMs ?? 30_000,
+      options.lspReadyTimeoutMs ?? 180_000,
     );
     return session;
   } catch (error) {

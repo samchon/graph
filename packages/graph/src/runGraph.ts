@@ -103,6 +103,18 @@ function parseArgs(argv: readonly string[]) {
       options.lspWarmupTimeoutMs = parseInteger(
         arg.slice("--lsp-warmup-timeout-ms=".length),
       );
+    } else if (arg === "--lsp-ready-timeout-ms") {
+      options.lspReadyTimeoutMs = parseInteger(next());
+    } else if (arg.startsWith("--lsp-ready-timeout-ms=")) {
+      options.lspReadyTimeoutMs = parseInteger(
+        arg.slice("--lsp-ready-timeout-ms=".length),
+      );
+    } else if (arg === "--lsp-ready-quiet-ms") {
+      options.lspReadyQuietMs = parseInteger(next());
+    } else if (arg.startsWith("--lsp-ready-quiet-ms=")) {
+      options.lspReadyQuietMs = parseInteger(
+        arg.slice("--lsp-ready-quiet-ms=".length),
+      );
     } else if (arg === "--graph-file") {
       options.graphFile = next();
     } else if (arg.startsWith("--graph-file=")) {
@@ -151,6 +163,9 @@ Options:
   --lsp-timeout-ms N        Per-request LSP timeout.
   --lsp-reference-limit N   Reference targets to collect edges for.
   --lsp-concurrency N       Concurrent reference requests.
+  --lsp-warmup-timeout-ms N Timeout for the first references request.
+  --lsp-ready-timeout-ms N  Max wait for a server's initial indexing to settle.
+  --lsp-ready-quiet-ms N    Quiet period that marks initial indexing settled.
   --graph-file PATH         Serve a pre-built dump instead of indexing.
 `;
 }

@@ -20,10 +20,10 @@ const apt = (packages) => {
 
 // GitHub release download URLs (and coursier/eclipse mirrors) answer with a 302
 // to a CDN host, so follow redirects instead of treating them as failures.
-const openStream = (url, redirects = 0) =>
+const openStream = (url, redirects = 0, headers = {}) =>
   new Promise((resolve, reject) => {
     https
-      .get(url, { headers: { "User-Agent": "samchon-graph-experiment" } }, (response) => {
+      .get(url, { headers: { "User-Agent": "samchon-graph-experiment", ...headers } }, (response) => {
         const status = response.statusCode ?? 0;
         if (status >= 300 && status < 400 && response.headers.location) {
           response.resume();
@@ -31,7 +31,7 @@ const openStream = (url, redirects = 0) =>
             reject(new Error(`Too many redirects for ${url}`));
             return;
           }
-          resolve(openStream(new URL(response.headers.location, url).toString(), redirects + 1));
+          resolve(openStream(new URL(response.headers.location, url).toString(), redirects + 1, headers));
           return;
         }
         if (status !== 200) {
@@ -44,8 +44,8 @@ const openStream = (url, redirects = 0) =>
       .on("error", reject);
   });
 
-const downloadJson = async (url) => {
-  const response = await openStream(url);
+const downloadJson = async (url, headers = {}) => {
+  const response = await openStream(url, 0, headers);
   const chunks = [];
   return await new Promise((resolve, reject) => {
     response.on("data", (chunk) => chunks.push(chunk));
@@ -64,8 +64,14 @@ const downloadFile = async (url, file) => {
   });
 };
 
+// Unauthenticated requests to api.github.com share a 60/hour rate limit across
+// the whole runner IP pool; a GITHUB_TOKEN raises that to 5000/hour and is
+// never sent past api.github.com since this call never redirects elsewhere.
 const latestAsset = async (repository, pattern) => {
-  const release = await downloadJson(`https://api.github.com/repos/${repository}/releases/latest`);
+  const headers = process.env.GITHUB_TOKEN
+    ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
+    : {};
+  const release = await downloadJson(`https://api.github.com/repos/${repository}/releases/latest`, headers);
   const asset = release.assets.find((item) => pattern.test(item.name));
   if (asset === undefined) throw new Error(`No release asset matching ${pattern} in ${repository}`);
   return asset.browser_download_url;

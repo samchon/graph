@@ -23,7 +23,4 @@ export interface ISamchonGraphEvidence {
 
   /** 1-based column where the span ends, when known. */
   endCol?: number;
-
-  /** The source text of the span, when captured. */
-  text?: string;
 }

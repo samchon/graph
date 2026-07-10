@@ -15,12 +15,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 
 import { CORPUS } from "./corpus.mjs";
 import { median } from "./lib.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const resultsRoot = path.resolve(here, "..", "results");
+const assetsRoot = path.resolve(here, "..", "..", "..", "assets");
 
 const TOOLS = ["samchon-graph", "codegraph", "serena"];
 // The report/data key stays `samchon-graph` (it matches the result filenames);
@@ -70,10 +72,22 @@ for (const reports of groups.values()) {
     const repos = CORPUS.map((entry) => entry.name).filter((repo) =>
       reports.some((r) => r.promptFamily === family && r.repo === repo),
     );
-    const out = path.join(resultsRoot, `benchmark-${harness}-${model}-${family}.svg`);
-    fs.writeFileSync(out, render(family, repos, model, harness, runs, reports));
+    const svg = render(family, repos, model, harness, runs, reports);
+    const out = path.join(assetsRoot, `benchmark-${harness}-${model}-${family}.svg`);
+    fs.writeFileSync(out, svg);
     console.log(`Wrote ${out}`);
+
+    const pngOut = path.join(assetsRoot, `benchmark-${harness}-${model}-${family}.png`);
+    fs.writeFileSync(pngOut, await svgToPng(svg));
+    console.log(`Wrote ${pngOut}`);
   }
+}
+
+// GitHub-safe raster fallback: PNGs cannot evaluate `@media
+// (prefers-color-scheme)`, so this always renders the light palette (the
+// SVG's default, unmatched-media styling) at 2x density for crisp text.
+async function svgToPng(svg) {
+  return sharp(Buffer.from(svg), { density: 192 }).png().toBuffer();
 }
 
 function render(family, repos, model, harness, runs, reports) {

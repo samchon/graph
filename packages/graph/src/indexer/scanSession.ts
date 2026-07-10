@@ -318,7 +318,6 @@ function convertSymbols(
         file,
         external: false,
         exported: true,
-        signature: symbol.detail,
         evidence: {
           file,
           startLine: symbol.selectionRange.start.line + 1,

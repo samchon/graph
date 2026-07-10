@@ -98,7 +98,11 @@ export function buildStaticGraph(options: IBuildGraphOptions = {}): ISamchonGrap
       for (const edge of dependencyEdges(declaration.node, body, byName)) {
         edges.push(edge);
       }
-      for (const edge of inheritanceEdges(declaration.node, byName)) {
+      for (const edge of inheritanceEdges(
+        declaration.node,
+        lines[declaration.startIndex]!.trim(),
+        byName,
+      )) {
         edges.push(edge);
       }
       for (const name of decoratorsAbove(lines, declaration.startIndex)) {
@@ -166,13 +170,11 @@ function declarationsOf(
         file,
         external: false,
         exported: parsed.exported,
-        signature: line.trim(),
         evidence: {
           file,
           startLine: i + 1,
           startCol: Math.max(1, line.indexOf(parsed.name) + 1),
           endLine: i + 1,
-          text: line.trim(),
         },
       };
       declarations.push({
@@ -346,7 +348,7 @@ function importsOf(
     for (const name of names.filter((value) => value !== "")) {
       out.push({
         name,
-        evidence: { file, startLine: i + 1, endLine: i + 1, text },
+        evidence: { file, startLine: i + 1, endLine: i + 1 },
       });
     }
   }
@@ -410,12 +412,13 @@ function dependencyEdges(
 
 function inheritanceEdges(
   source: ISamchonGraphNode,
+  line: string,
   byName: Map<string, ISamchonGraphNode[]>,
 ): ISamchonGraphEdge[] {
   if (source.kind !== "class" && source.kind !== "interface") return [];
   const out: ISamchonGraphEdge[] = [];
   const seen = new Set<string>();
-  for (const supertype of supertypesOf(source.signature!)) {
+  for (const supertype of supertypesOf(line)) {
     const target = resolveType(supertype.name, source, byName);
     if (target === undefined) continue;
     const key = `${supertype.relation}\0${target.id}`;

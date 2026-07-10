@@ -3,9 +3,6 @@ import { ISamchonGraphNode } from "../structures";
 import { readLines } from "../utils/fs";
 
 export function signatureOf(project: string, node: ISamchonGraphNode): string | undefined {
-  if (node.signature !== undefined && node.signature.trim() !== "") {
-    return compactSignature(node.signature);
-  }
   if (node.evidence === undefined || node.file === "") return undefined;
   const lines = readLines(path.join(project, node.evidence.file));
   if (lines === undefined) return undefined;

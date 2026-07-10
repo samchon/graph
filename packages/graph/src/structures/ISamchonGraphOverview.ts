@@ -1,6 +1,3 @@
-import { GraphLanguage } from "../typings/GraphLanguage";
-import { ISamchonGraphDiagnostic } from "./ISamchonGraphDiagnostic";
-import { ISamchonGraphEvidence } from "./ISamchonGraphEvidence";
 import { ISamchonGraphNext } from "./ISamchonGraphNext";
 
 /** A compact, source-read-free project map for broad orientation only. */
@@ -11,11 +8,14 @@ export interface ISamchonGraphOverview {
   /** Absolute project root. */
   project: string;
 
-  /** Languages present in the project. */
-  languages: GraphLanguage[];
-
   /** Size of the graph. */
   counts: ISamchonGraphOverview.ICounts;
+
+  /** How to use this source-free result next. */
+  next: ISamchonGraphNext;
+
+  /** Human-readable compatibility note mirroring `next`. */
+  guide: string;
 
   /** Folder layering, largest first. */
   layers?: ISamchonGraphOverview.ILayer[];
@@ -25,17 +25,7 @@ export interface ISamchonGraphOverview {
 
   /** Exported API symbols, most-depended-on first. */
   publicApi?: ISamchonGraphOverview.IPublicApi[];
-
-  /** Index diagnostics, when any. */
-  diagnostics?: ISamchonGraphDiagnostic[];
-
-  /** How to use this source-free result next. */
-  next: ISamchonGraphNext;
-
-  /** Human-readable compatibility note mirroring `next`. */
-  guide: string;
 }
-
 export namespace ISamchonGraphOverview {
   /** Which broad architecture facets `overview` should return. */
   export interface IRequest {
@@ -53,7 +43,7 @@ export namespace ISamchonGraphOverview {
      *
      * @default "all"
      */
-    aspect?: "all" | "layers" | "hotspots" | "publicApi" | "diagnostics";
+    aspect?: "all" | "layers" | "hotspots" | "publicApi";
   }
 
   /** Size of the graph by node/edge totals and per-kind node counts. */
@@ -69,9 +59,6 @@ export namespace ISamchonGraphOverview {
 
     /** Node count per kind. */
     byKind: Record<string, number>;
-
-    /** Node count per language. */
-    byLanguage: Record<string, number>;
   }
 
   /** One folder layer: its source files and export surface. */
@@ -82,8 +69,6 @@ export namespace ISamchonGraphOverview {
     files: number;
     /** Exported symbols declared under it. */
     exported: number;
-    /** Languages present under it. */
-    languages: GraphLanguage[];
   }
 
   /** A compact symbol coordinate that can be passed to deeper graph tools. */
@@ -94,14 +79,10 @@ export namespace ISamchonGraphOverview {
     name: string;
     /** Its declaration kind (`class`, `interface`, `function`, ...). */
     kind: string;
-    /** Language the symbol is written in. */
-    language: GraphLanguage;
     /** Project-relative path of the file that declares it. */
     file: string;
     /** 1-based declaration line, when known. */
     line?: number;
-    /** Source span of the declaration, when known. */
-    sourceSpan?: Pick<ISamchonGraphEvidence, "file" | "startLine" | "endLine">;
   }
 
   /** A high-dependency symbol with its non-structural fan-in and fan-out. */

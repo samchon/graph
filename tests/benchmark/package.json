@@ -19,5 +19,8 @@
   },
   "dependencies": {
     "@samchon/graph": "workspace:*"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.3"
   }
 }

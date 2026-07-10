@@ -324,17 +324,11 @@ async function waitForIndexing(
 function convertDiagnostic(file: string, diagnostic: IDiagnostic): ISamchonGraphDiagnostic {
   return {
     file,
+    line: diagnostic.range.start.line + 1,
+    column: diagnostic.range.start.character + 1,
+    code: diagnostic.code ?? diagnostic.source ?? "unknown",
     message: diagnostic.message,
     severity: severityOf(diagnostic.severity),
-    ...(diagnostic.source !== undefined ? { source: diagnostic.source } : {}),
-    ...(diagnostic.code !== undefined ? { code: diagnostic.code } : {}),
-    evidence: {
-      file,
-      startLine: diagnostic.range.start.line + 1,
-      startCol: diagnostic.range.start.character + 1,
-      endLine: diagnostic.range.end.line + 1,
-      endCol: diagnostic.range.end.character + 1,
-    },
   };
 }
 
@@ -345,11 +339,11 @@ function severityOf(value: number | undefined): ISamchonGraphDiagnostic["severit
     case 2:
       return "warning";
     case 3:
-      return "information";
+      return "info";
     case 4:
       return "hint";
     default:
-      return "information";
+      return undefined;
   }
 }
 

@@ -13,7 +13,6 @@ export class SamchonGraphMemory {
   private readonly inEdges: Map<string, ISamchonGraphEdge[]>;
   private readonly byNameIndex: Map<string, ISamchonGraphNode[]>;
   private readonly bySymbolIndex: Map<string, ISamchonGraphNode[]>;
-  private readonly diagnosticsByFile: Map<string, ISamchonGraphDiagnostic[]>;
 
   public readonly project: string;
   public readonly languages: readonly string[];
@@ -37,7 +36,6 @@ export class SamchonGraphMemory {
     this.inEdges = new Map();
     this.byNameIndex = new Map();
     this.bySymbolIndex = new Map();
-    this.diagnosticsByFile = new Map();
 
     for (const node of nodes) {
       push(this.byNameIndex, node.name, node);
@@ -51,9 +49,6 @@ export class SamchonGraphMemory {
     for (const edge of edges) {
       push(this.outEdges, edge.from, edge);
       push(this.inEdges, edge.to, edge);
-    }
-    for (const diagnostic of this.diagnostics) {
-      push(this.diagnosticsByFile, diagnostic.file, diagnostic);
     }
   }
 
@@ -84,10 +79,6 @@ export class SamchonGraphMemory {
 
   public exported(): ISamchonGraphNode[] {
     return this.nodes.filter((node) => node.exported && !node.external);
-  }
-
-  public diagnosticsFor(file: string): readonly ISamchonGraphDiagnostic[] {
-    return this.diagnosticsByFile.get(file) ?? [];
   }
 }
 

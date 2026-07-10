@@ -123,6 +123,9 @@ export const test_ported_operation_engines_cover_scoring_branches = async () => 
   await scenario_trace_hop_cap();
   await scenario_impact_ranks_and_refs();
   await scenario_evidence_less_flow_and_test_nodes();
+  await scenario_bundled_neighbor_rank();
+  await scenario_normal_trace_ranks_test_path_endpoint();
+  await scenario_tour_unresolved_mention_and_edgeless_seed();
 };
 
 // Exercises impactEndpointRank tiers (exported / external / ignored / test) and
@@ -225,7 +228,7 @@ const scenario_seed_fallbacks = async () => {
   // Entrypoints: a backtick handle that resolves plus one that is not a valid
   // handle (contains a space) so normalizeHandle rejects it.
   const ep = (await call(appE, { type: "entrypoints", query: "look at `Registry` and `not a handle` orientation" })).result;
-  TestValidator.predicate("entrypoints resolves backtick handle", ep.ranked.length >= 0);
+  TestValidator.predicate("entrypoints resolves backtick handle", ep.hits.length >= 0);
 };
 
 // Exercises runDetails object-literal edge cases: a variable with no endLine, an
@@ -240,8 +243,19 @@ const scenario_details_edges = async () => {
     path.join(root, "src", "obj.ts"),
     ["export const opts = {", "  host: \"h\",", "  connect() { return 1; },", "};"].join("\n"),
   );
+  // A declaration line packed with literal tokens. "dup" repeats, the long
+  // string and "()" are placed early so they land within detail.literals'
+  // exposed 6-item slice (exercising cleanLiteral's dedup/overlong/
+  // punctuation-only rejection branches), and 25 filler tokens after them
+  // push literalSummaries' own internal candidate list past its 20-item cap.
+  const fillers = Array.from({ length: 25 }, (_, i) => `"f${i}"`).join(", ");
+  fs.writeFileSync(
+    path.join(root, "src", "literals.ts"),
+    `export const labels = ["dup", "dup", "${"x".repeat(41)}", "()", ${fillers}];\n`,
+  );
   const nodes = [
     node("src/obj.ts#opts:variable", "variable", "opts", "src/obj.ts", 1, 4),
+    node("src/literals.ts#labels:variable", "variable", "labels", "src/literals.ts", 1, 1),
     // object-literal variable whose file does not exist → fileLines catch
     node("src/gone.ts#ghost:variable", "variable", "ghost", "src/gone.ts", 1, 3),
     // variable whose evidence file is empty → fileLines file==="" guard
@@ -265,6 +279,12 @@ const scenario_details_edges = async () => {
   const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, nodes, edges)));
   const details = (await call(app, { type: "details", handles: ["ghost", "noEnd", "huge", "Box", "blank"] })).result;
   TestValidator.predicate("details resolves the selected nodes", details.nodes.length >= 1);
+  const literalsDetails = (await call(app, { type: "details", handles: ["labels"] })).result;
+  const literals = literalsDetails.nodes.find((n) => n.name === "labels")?.literals ?? [];
+  // detail.literals exposes at most 6 of literalSummaries' (up to 20) candidates.
+  TestValidator.equals("exposed literals cap at 6", literals.length, 6);
+  TestValidator.predicate("literal summaries dedupe repeats", literals.filter((l) => l === "dup").length === 1);
+  TestValidator.predicate("literal summaries drop overlong and punctuation-only tokens", !literals.includes("()") && !literals.some((l) => l.length > 40));
   // memberLimit=1 breaks after the first object-literal member.
   const capped = (await call(app, { type: "details", handles: ["opts"], memberLimit: 1 })).result;
   TestValidator.equals("object-literal members respect the limit", capped.nodes.find((n) => n.name === "opts")?.members?.length ?? 0, 1);
@@ -342,4 +362,71 @@ const scenario_evidence_less_flow_and_test_nodes = async () => {
 
   const noTests = (await call(app, { type: "tour", query: "seedFn", includeTests: false })).result;
   TestValidator.equals("includeTests=false yields no test anchors", noTests.tests.length, 0);
+};
+
+// Exercises refRank's bundled-declaration boost: a neighbor whose file starts
+// with "bundled://" (a node_modules-style type-declaration marker) ranks
+// behind an otherwise-identical local neighbor.
+const scenario_bundled_neighbor_rank = async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-bundled-"));
+  const seed = node("src/b.ts#seedFn:function", "function", "seedFn", "src/b.ts", 1, 1, { exported: false });
+  const localDep = node("src/b.ts#localDep:function", "function", "localDep", "src/b.ts", 2, 2, { exported: false });
+  const bundledDep = node("bundled://types.d.ts#BundledType:type", "type", "BundledType", "bundled://types.d.ts", 1, 1, { exported: false });
+  const nodes = [seed, localDep, bundledDep];
+  const edges = [
+    edge("src/b.ts#seedFn:function", "src/b.ts#localDep:function", "calls", "src/b.ts"),
+    edge("src/b.ts#seedFn:function", "bundled://types.d.ts#BundledType:type", "type_ref", "src/b.ts"),
+  ];
+  const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, nodes, edges)));
+  const entry = (await call(app, { type: "entrypoints", query: "seedFn", neighbors: 5 })).result;
+  const neighborhood = entry.neighborhood.find((n) => n.name === "seedFn");
+  const neighborNames = neighborhood?.dependsOn.map((ref) => ref.name) ?? [];
+  TestValidator.predicate(
+    "a bundled-declaration neighbor still surfaces",
+    neighborNames.includes("BundledType"),
+  );
+  TestValidator.predicate(
+    "the local neighbor ranks ahead of the bundled one",
+    neighborNames.indexOf("localDep") < neighborNames.indexOf("BundledType"),
+  );
+};
+
+// Exercises traceEndpointRank's test-path branch: a normal (non-impact)
+// forward trace reaching a node under a test path ranks it behind a
+// same-kind production node.
+const scenario_normal_trace_ranks_test_path_endpoint = async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-trace-rank-"));
+  const seed = node("src/r.ts#seedFn:function", "function", "seedFn", "src/r.ts", 1, 1, { exported: false });
+  const prodCallee = node("src/r.ts#prodCallee:function", "function", "prodCallee", "src/r.ts", 2, 2, { exported: false });
+  const testCallee = node("tests/r.test.ts#testCallee:function", "function", "testCallee", "tests/r.test.ts", 1, 1, { exported: false });
+  const nodes = [seed, prodCallee, testCallee];
+  const edges = [
+    edge("src/r.ts#seedFn:function", "src/r.ts#prodCallee:function", "calls", "src/r.ts"),
+    edge("src/r.ts#seedFn:function", "tests/r.test.ts#testCallee:function", "calls", "src/r.ts"),
+  ];
+  const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, nodes, edges)));
+  const trace = (await call(app, { type: "trace", from: "seedFn", direction: "forward" })).result;
+  const order = trace.reached.map((n) => n.name);
+  TestValidator.predicate("both callees are reached", order.includes("prodCallee") && order.includes("testCallee"));
+  TestValidator.predicate(
+    "the production callee ranks ahead of the test-path callee",
+    order.indexOf("prodCallee") < order.indexOf("testCallee"),
+  );
+
+  // A path trace from a handle to itself short-circuits to a trivial,
+  // single-node path with no hops.
+  const samePath = (await call(app, { type: "trace", from: "seedFn", to: "seedFn" })).result;
+  TestValidator.equals("a same-node path is trivial", samePath.path?.length, 1);
+  TestValidator.equals("a same-node path has no hops", samePath.path?.[0]?.name, "seedFn");
+};
+
+// Exercises tourSeedsOf's unresolved-mention branch (a backtick handle that
+// matches nothing) and nearbyAnchorsOf's absent dependsOn/dependedOnBy
+// branches (a seed with no edges at all).
+const scenario_tour_unresolved_mention_and_edgeless_seed = async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-lonely-"));
+  const lonely = node("src/l.ts#lonely:function", "function", "lonely", "src/l.ts", 1, 1, { exported: false });
+  const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, [lonely], [])));
+  const tour = (await call(app, { type: "tour", query: "lonely `NoSuchSymbol`" })).result;
+  TestValidator.predicate("the edgeless seed still becomes an entrypoint", tour.entrypoints.some((n) => n.name === "lonely"));
 };

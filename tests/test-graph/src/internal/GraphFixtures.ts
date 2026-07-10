@@ -275,7 +275,7 @@ const createContractFixture = () => {
     }),
     node(`${file}#Root.Service.run:method`, "method", "run", 6, {
       qualifiedName: "Root.Service.run",
-      decorators: [{ name: "Route", arguments: ["/run"], evidence: evidence(6, "@Route('/run')") }],
+      decorators: [{ name: "Route", arguments: [{ literal: "/run" }] }],
     }),
     node(`${file}#Root.Service.value:property`, "property", "value", 7, {
       qualifiedName: "Root.Service.value",
@@ -338,11 +338,10 @@ const createContractFixture = () => {
     diagnostics: [
       {
         file,
+        line: 13,
+        code: "C001",
         message: "contract warning",
         severity: "warning",
-        source: "fixture",
-        code: "C001",
-        evidence: evidence(13, "const settings = {}"),
       },
     ],
     warnings: [],

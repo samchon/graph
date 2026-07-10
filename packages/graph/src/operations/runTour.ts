@@ -1,5 +1,6 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import {
+  ISamchonGraphDecorator,
   ISamchonGraphDetails,
   ISamchonGraphEntrypoints,
   ISamchonGraphEvidence,
@@ -7,7 +8,8 @@ import {
   ISamchonGraphTour,
   ISamchonGraphTrace,
 } from "../structures";
-import { bound, isTestPath, resultGuide, resultNext } from "./common";
+import { bound, isTestPath, resultGuide, resultNext, signatureOf } from "./common";
+import { isSupportPath } from "./isSupportPath";
 import { runDetails } from "./runDetails";
 import { runEntrypoints } from "./runEntrypoints";
 import { runTrace } from "./runTrace";
@@ -110,21 +112,22 @@ const QUERY_STOP_WORDS = new Set<string>([
  * operations. It returns selected symbols, flows, nearby edges, test anchors,
  * and answer anchors without reading or embedding source bodies.
  */
-export function runTour(graph: SamchonGraphMemory, props: ISamchonGraphTour.IRequest): ISamchonGraphTour {
+export function runTour(
+  graph: SamchonGraphMemory,
+  props: ISamchonGraphTour.IRequest,
+): ISamchonGraphTour {
   const query = props.query.trim();
   const limit = bound(props.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
   const entry = runEntrypoints(graph, {
     type: "entrypoints",
     query,
-    language: props.language,
     limit,
+    neighbors: 1,
   });
-  const terms = queryTerms(graph, query);
-  const seeds = tourSeedsOf(graph, entry, query, terms, limit);
+  const seeds = tourSeedsOf(graph, entry, query, limit);
   const seedIds = seeds.map((node) => node.id);
   const flowSeedIds = flowSeedIdsOf(seeds);
-
-  const entrypoints: ISamchonGraphTour.INode[] = seeds.map((node) => graphNodeOf(node));
+  const entrypoints = seeds.map((node) => graphNodeOf(graph, node));
 
   const primaryFlow: ISamchonGraphTour.IFlow[] = [];
   for (const id of flowSeedIds.slice(0, FLOW_SEEDS)) {
@@ -136,21 +139,20 @@ export function runTour(graph: SamchonGraphMemory, props: ISamchonGraphTour.IReq
       maxDepth: TOUR_TRACE_MAX_DEPTH,
       maxNodes: TOUR_TRACE_MAX_NODES,
     });
-    // `id` is always a real node's id from this same graph, so `runTrace`
-    // always resolves it in practice; kept for parity with the reference
-    // engine, which does not assume its own callers this tightly.
     const start = trace.start;
+    // `id` is always a real node's id from this same graph, so `runTrace`
+    // always resolves it: `trace.start` is never absent here.
     /* c8 ignore next */
     if (start === undefined) continue;
-    const reached = trace.reached.filter((node) => !isNoisePath(node.file));
+    const hops = trace.hops.filter((hop) => isTourHop(graph, hop));
+    const reached = trace.reached.filter(isTourTraceNode);
     primaryFlow.push({
       start: traceNodeOf(start),
-      // trace.steps always mirrors trace.hops for a forward trace; the `?? []`
-      // is a type-level guard.
-      /* c8 ignore next */
-      steps: (trace.steps ?? []).slice(0, MAX_FLOW_ANCHORS),
+      steps: hops
+        .slice(0, MAX_FLOW_ANCHORS)
+        .map((hop) => flowStepOf(graph, hop)),
       reached: reached.map(traceNodeOf),
-      anchors: flowAnchorsOf(graph, trace, reached).slice(0, MAX_FLOW_ANCHORS),
+      anchors: flowAnchorsOf(trace, hops, reached).slice(0, MAX_FLOW_ANCHORS),
       ...(trace.truncated ? { truncated: true } : {}),
     });
   }
@@ -175,12 +177,15 @@ export function runTour(graph: SamchonGraphMemory, props: ISamchonGraphTour.IReq
           graph,
           uniqueIds([
             ...seedIds.slice(0, TEST_SEEDS),
-            ...primaryFlow.flatMap((flow) => flow.reached.map((node) => node.id)),
+            ...primaryFlow.flatMap((flow) =>
+              flow.reached.map((node) => node.id),
+            ),
           ]),
         );
-
   const answerAnchors = uniqueAnchors([
-    ...entrypoints.flatMap((node) => anchorFromNode("central entrypoint", node)),
+    ...entrypoints.flatMap((node) =>
+      anchorFromNode("central entrypoint", node),
+    ),
     ...primaryFlow.flatMap((flow) => flow.anchors),
     ...nearby,
     ...tests,
@@ -202,50 +207,66 @@ export function runTour(graph: SamchonGraphMemory, props: ISamchonGraphTour.IReq
     guide: resultGuide(
       "Use this tour as the answer-ready index. Do not split it into extra lookup/details/trace calls unless the user asks for a named missing symbol or exact source text.",
     ),
-    ...(primaryFlow.some((flow) => flow.truncated === true) || nearby.length > MAX_NEARBY || tests.length > MAX_TESTS
+    ...(entry.truncated ||
+    primaryFlow.some((flow) => flow.truncated === true) ||
+    nearby.length > MAX_NEARBY ||
+    tests.length > MAX_TESTS
       ? { truncated: true }
       : {}),
   };
 }
 
-// Rank and select the central symbols the tour is built around: named
-// mentions and explicit handles from the query first, then query-scored
-// high-degree seeds, falling back to the raw ranked hits.
 function tourSeedsOf(
   graph: SamchonGraphMemory,
   entry: ISamchonGraphEntrypoints,
   query: string,
-  terms: string[],
   limit: number,
 ): ISamchonGraphNode[] {
   const out: ISamchonGraphNode[] = [];
   const seen = new Set<string>();
   const add = (node: ISamchonGraphNode | undefined): void => {
-    if (node === undefined || seen.has(node.id) || !isTourSeed(graph, node)) return;
+    if (node === undefined || seen.has(node.id) || !isTourSeed(graph, node))
+      return;
     seen.add(node.id);
     out.push(node);
   };
-  for (const mention of entry.mentions) add(graph.node(mention.id));
-  if (hasExplicitSymbolHandle(query)) {
-    for (const hit of entry.ranked) add(graph.node(hit.id));
+  for (const mention of entry.mentions) {
+    add(mention.node === undefined ? undefined : graph.node(mention.node.id));
   }
-  for (const node of rankedTourSeeds(graph, terms)) add(node);
+  if (hasExplicitSymbolHandle(query)) {
+    for (const hit of entry.hits) add(graph.node(hit.id));
+  }
+  for (const node of rankedTourSeeds(graph, query)) add(node);
   if (out.length === 0) {
-    for (const hit of entry.ranked) add(graph.node(hit.id));
+    for (const hit of entry.hits) add(graph.node(hit.id));
   }
   return out.slice(0, limit);
 }
 
-// --- result packaging (ported verbatim from the reference engine) ---------
+/** Decorator facts already captured on a node, omitted when absent. */
+function decoratorsOf(
+  node: ISamchonGraphNode,
+): ISamchonGraphDecorator[] | undefined {
+  return node.decorators !== undefined && node.decorators.length > 0
+    ? node.decorators
+    : undefined;
+}
 
-function graphNodeOf(node: ISamchonGraphNode): ISamchonGraphTour.INode {
+function graphNodeOf(
+  graph: SamchonGraphMemory,
+  node: ISamchonGraphNode,
+): ISamchonGraphTour.INode {
   const span = node.implementation ?? node.evidence;
+  const signature = signatureOf(graph.project, node);
+  const decorators = decoratorsOf(node);
   return {
     id: node.id,
     name: node.qualifiedName ?? node.name,
     kind: node.kind,
     file: node.file,
-    ...(node.evidence?.startLine !== undefined ? { line: node.evidence.startLine } : {}),
+    ...(node.evidence?.startLine !== undefined
+      ? { line: node.evidence.startLine }
+      : {}),
     ...(span !== undefined
       ? {
           sourceSpan: {
@@ -255,8 +276,8 @@ function graphNodeOf(node: ISamchonGraphNode): ISamchonGraphTour.INode {
           },
         }
       : {}),
-    ...(node.signature !== undefined ? { signature: node.signature } : {}),
-    ...(node.decorators !== undefined ? { decorators: node.decorators } : {}),
+    ...(signature !== undefined ? { signature } : {}),
+    ...(decorators !== undefined ? { decorators } : {}),
   };
 }
 
@@ -272,179 +293,45 @@ function traceNodeOf(node: ISamchonGraphTrace.INode): ISamchonGraphTour.INode {
           sourceSpan: {
             file: node.sourceSpan.file,
             startLine: node.sourceSpan.startLine,
-            ...(node.sourceSpan.endLine !== undefined ? { endLine: node.sourceSpan.endLine } : {}),
+            ...(node.sourceSpan.endLine !== undefined
+              ? { endLine: node.sourceSpan.endLine }
+              : {}),
           },
         }
       : {}),
     // `runTrace` never sets `signature` on the `start`/`reached` nodes this
     // helper actually receives from the tour (only on `trace.path` nodes,
-    // which the tour never reads); kept for parity with the reference engine.
+    // which the tour never reads).
     /* c8 ignore next */
     ...(node.signature !== undefined ? { signature: node.signature } : {}),
   };
-}
-
-function detailNodeOf(node: ISamchonGraphDetails.INode): ISamchonGraphTour.INode {
-  // `node` always comes from a tour seed's own details (`runDetails` on
-  // `seedIds`), and `isTourSeed` requires evidence, which always carries a
-  // required `startLine` -- so `line`/`sourceSpan` are never absent here in
-  // practice. Kept for parity with the reference engine.
-  return {
-    id: node.id,
-    name: node.name,
-    kind: node.kind,
-    file: node.file,
-    /* c8 ignore next */
-    ...(node.line !== undefined ? { line: node.line } : {}),
-    /* c8 ignore start */
-    ...(node.sourceSpan !== undefined
-      ? {
-          sourceSpan: {
-            file: node.sourceSpan.file,
-            startLine: node.sourceSpan.startLine,
-            ...(node.sourceSpan.endLine !== undefined ? { endLine: node.sourceSpan.endLine } : {}),
-          },
-        }
-      : {}),
-    /* c8 ignore stop */
-    ...(node.signature !== undefined ? { signature: node.signature } : {}),
-    ...(node.decorators !== undefined ? { decorators: node.decorators } : {}),
-  };
-}
-
-function anchorFromNode(
-  reason: string,
-  node: ISamchonGraphTour.INode | undefined,
-): ISamchonGraphTour.IAnchor[] {
-  // Kept for parity with the reference engine: every current caller already
-  // guarantees a defined node, so this guard is not reachable here.
-  /* c8 ignore next */
-  if (node === undefined) return [];
-  // The `line`-without-`sourceSpan` fallback below is likewise unreachable in
-  // practice: every converter that builds an `ISamchonGraphTour.INode` sets
-  // both fields from the same evidence, or neither. Kept for parity with the
-  // reference engine.
-  /* c8 ignore next */
-  const span = node.sourceSpan ?? (node.line !== undefined ? { file: node.file, startLine: node.line } : undefined);
-  if (span === undefined) return [];
-  return [
-    {
-      reason,
-      id: node.id,
-      name: node.name,
-      kind: node.kind,
-      file: span.file,
-      startLine: span.startLine,
-      ...(span.endLine !== undefined ? { endLine: span.endLine } : {}),
-    },
-  ];
-}
-
-function anchorFromEvidence(
-  reason: string,
-  name: string,
-  evidence: ISamchonGraphEvidence | undefined,
-): ISamchonGraphTour.IAnchor[] {
-  if (evidence === undefined) return [];
-  return [
-    {
-      reason,
-      name,
-      file: evidence.file,
-      startLine: evidence.startLine,
-      ...(evidence.endLine !== undefined ? { endLine: evidence.endLine } : {}),
-    },
-  ];
 }
 
 function flowAnchorsOf(
-  graph: SamchonGraphMemory,
   trace: ISamchonGraphTrace,
+  hops: ISamchonGraphTrace.IHop[],
   reached: ISamchonGraphTrace.INode[],
 ): ISamchonGraphTour.IAnchor[] {
-  const hops = trace.hops.filter((hop) => isTourHop(graph, hop));
-  // The caller already skips any trace whose start did not resolve, so
-  // `trace.start` is always defined by the time this runs; the ternary is
-  // kept for parity with the reference engine.
-  /* c8 ignore next */
-  const flowStart = trace.start === undefined ? undefined : traceNodeOf(trace.start);
   return uniqueAnchors([
-    ...anchorFromNode("flow start", flowStart),
-    ...reached.flatMap((node) => anchorFromNode("flow node", traceNodeOf(node))),
-    ...hops.flatMap((hop) => anchorFromEvidence("flow edge", `${hop.from} -> ${hop.to}`, hop.evidence)),
+    ...anchorFromNode("flow start", trace.start),
+    ...reached.flatMap((node) => anchorFromNode("flow node", node)),
+    ...hops.flatMap((hop) =>
+      anchorFromEvidence("flow edge", `${hop.from} -> ${hop.to}`, hop.evidence),
+    ),
   ]);
 }
 
-// Collect nearby dependency anchors from the selected seeds' resolved
-// details: the seed itself, plus every direct call/type/dependency edge,
-// each tagged with the edge relation as its reason.
-function nearbyAnchorsOf(details: ISamchonGraphDetails): ISamchonGraphTour.IAnchor[] {
-  const anchors: ISamchonGraphTour.IAnchor[] = [];
-  for (const node of details.nodes) {
-    anchors.push(...anchorFromNode("selected symbol", detailNodeOf(node)));
-    const refs = [node.calls, node.types, node.dependsOn, node.dependedOnBy].flatMap((group) => group ?? []);
-    for (const ref of refs) {
-      anchors.push(...anchorFromEvidence(`${ref.relation} ${ref.name}`, ref.name, ref.evidence));
-    }
-  }
-  return uniqueAnchors(anchors);
-}
-
-// Collect test/usage anchors: test-file callers pointing at the seeds, plus
-// test-role nodes reached through the impact edges.
-function testAnchorsOf(graph: SamchonGraphMemory, seedIds: string[]): ISamchonGraphTour.IAnchor[] {
-  const anchors: ISamchonGraphTour.IAnchor[] = [];
-  for (const id of seedIds) {
-    for (const edge of graph.incoming(id)) {
-      const node = graph.node(edge.from);
-      if (node === undefined || !isTestPath(node.file)) continue;
-      anchors.push(...anchorFromNode("test coverage", graphNodeOf(node)));
-      anchors.push(
-        ...anchorFromEvidence(
-          `${edge.kind} ${node.qualifiedName ?? node.name}`,
-          node.qualifiedName ?? node.name,
-          edge.evidence,
-        ),
-      );
-    }
-    const impact = runTrace(graph, {
-      type: "trace",
-      from: id,
-      direction: "impact",
-      maxDepth: 4,
-      maxNodes: 16,
-    });
-    for (const node of impact.reached) {
-      if (node.roles?.includes("test") === true) {
-        anchors.push(...anchorFromNode("test coverage", traceNodeOf(node)));
-      }
-    }
-  }
-  return uniqueAnchors(anchors);
-}
-
-function uniqueAnchors(anchors: ISamchonGraphTour.IAnchor[]): ISamchonGraphTour.IAnchor[] {
-  const out: ISamchonGraphTour.IAnchor[] = [];
-  const seen = new Set<string>();
-  for (const anchor of anchors) {
-    const key = `${anchor.file}:${anchor.startLine}:${anchor.name}:${anchor.reason}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(anchor);
-  }
-  return out;
-}
-
-// --- query relevance scoring (ported from the reference engine) -------------
-
-function queryTerms(graph: SamchonGraphMemory, query: string): string[] {
+function rankedTourSeeds(
+  graph: SamchonGraphMemory,
+  query: string,
+): ISamchonGraphNode[] {
   const projectTerms = new Set(subwords(graph.project));
-  return subwords(query).filter(
-    (term) => term.length > 2 && !QUERY_STOP_WORDS.has(term) && !projectTerms.has(term),
+  const terms = subwords(
+    query.replace(/\btypescript\b/gi, "typescript"),
+  ).filter(
+    (term) =>
+      term.length > 2 && !QUERY_STOP_WORDS.has(term) && !projectTerms.has(term),
   );
-}
-
-function rankedTourSeeds(graph: SamchonGraphMemory, terms: string[]): ISamchonGraphNode[] {
   const items = graph.nodes
     .filter((node) => isTourSeed(graph, node))
     .map((node) => ({
@@ -457,7 +344,11 @@ function rankedTourSeeds(graph: SamchonGraphMemory, terms: string[]): ISamchonGr
   return diverseTourSeeds(items, terms).map((item) => item.node);
 }
 
-function tourSeedScore(graph: SamchonGraphMemory, node: ISamchonGraphNode, terms: string[]): number {
+function tourSeedScore(
+  graph: SamchonGraphMemory,
+  node: ISamchonGraphNode,
+  terms: string[],
+): number {
   const degree = realDegree(graph, node.id);
   const execution = executionDegree(graph, node.id);
   const queryWords = new Set(terms);
@@ -469,7 +360,7 @@ function tourSeedScore(graph: SamchonGraphMemory, node: ISamchonGraphNode, terms
   score += Math.min(14, Math.log2(1 + degree.in) * 4);
   score += Math.min(30, Math.log2(1 + degree.out) * 9);
   score += Math.min(28, Math.log2(1 + execution.out) * 10);
-  if (node.exported === true) score += 14;
+  if (node.exported) score += 14;
   if (node.decorators !== undefined && node.decorators.length > 0) score += 10;
   score += matchScore;
   score *= queryAlignmentFactor(matchScore, queryWords);
@@ -482,7 +373,7 @@ function isTourSeed(graph: SamchonGraphMemory, node: ISamchonGraphNode): boolean
     TOUR_SEED_KINDS.has(node.kind) &&
     (node.kind !== "property" || executionDegree(graph, node.id).out > 0) &&
     !node.external &&
-    node.ignored !== true &&
+    !node.ignored &&
     node.evidence !== undefined &&
     !isNoisePath(node.file)
   );
@@ -494,6 +385,10 @@ function flowSeedIdsOf(seeds: ISamchonGraphNode[]): string[] {
   );
   const source = executable.length === 0 ? seeds : executable;
   return source.map((node) => node.id);
+}
+
+function isTourTraceNode(node: ISamchonGraphTrace.INode): boolean {
+  return !isNoisePath(node.file);
 }
 
 function isTourHop(graph: SamchonGraphMemory, hop: ISamchonGraphTrace.IHop): boolean {
@@ -508,19 +403,48 @@ function isTourHop(graph: SamchonGraphMemory, hop: ISamchonGraphTrace.IHop): boo
   );
 }
 
-function realDegree(graph: SamchonGraphMemory, id: string): { in: number; out: number } {
+function flowStepOf(graph: SamchonGraphMemory, hop: ISamchonGraphTrace.IHop): string {
+  const from = graph.node(hop.from);
+  const to = graph.node(hop.to);
+  // Every hop's endpoints came from a real edge in this same graph.
+  /* c8 ignore next 2 */
+  const lhs = from?.qualifiedName ?? from?.name ?? hop.from;
+  const rhs = to?.qualifiedName ?? to?.name ?? hop.to;
+  const evidence = hop.evidence;
+  const at =
+    evidence === undefined ? "" : ` at ${evidence.file}:${evidence.startLine}`;
+  return `${lhs} -[${hop.kind}${at}]-> ${rhs}`;
+}
+
+function realDegree(
+  graph: SamchonGraphMemory,
+  id: string,
+): {
+  in: number;
+  out: number;
+} {
   let incoming = 0;
   let outgoing = 0;
-  for (const edge of graph.outgoing(id)) if (!STRUCTURAL_KINDS.has(edge.kind)) outgoing++;
-  for (const edge of graph.incoming(id)) if (!STRUCTURAL_KINDS.has(edge.kind)) incoming++;
+  for (const edge of graph.outgoing(id))
+    if (!STRUCTURAL_KINDS.has(edge.kind)) outgoing++;
+  for (const edge of graph.incoming(id))
+    if (!STRUCTURAL_KINDS.has(edge.kind)) incoming++;
   return { in: incoming, out: outgoing };
 }
 
-function executionDegree(graph: SamchonGraphMemory, id: string): { in: number; out: number } {
+function executionDegree(
+  graph: SamchonGraphMemory,
+  id: string,
+): {
+  in: number;
+  out: number;
+} {
   let incoming = 0;
   let outgoing = 0;
-  for (const edge of graph.outgoing(id)) if (EXECUTION_KINDS.has(edge.kind)) outgoing++;
-  for (const edge of graph.incoming(id)) if (EXECUTION_KINDS.has(edge.kind)) incoming++;
+  for (const edge of graph.outgoing(id))
+    if (EXECUTION_KINDS.has(edge.kind)) outgoing++;
+  for (const edge of graph.incoming(id))
+    if (EXECUTION_KINDS.has(edge.kind)) incoming++;
   return { in: incoming, out: outgoing };
 }
 
@@ -539,8 +463,8 @@ function kindScore(kind: string): number {
       return 16;
     case "enum":
       return 10;
-    // every TOUR_SEED_KIND has an explicit case above; the default is a
-    // defensive fallback unreachable from the seed filter.
+    // Every caller only scores a kind already in TOUR_SEED_KINDS, which this
+    // switch covers exhaustively.
     /* c8 ignore next 2 */
     default:
       return 0;
@@ -557,14 +481,15 @@ function entrySurfaceScore(node: ISamchonGraphNode): number {
     if (depth <= 0) score += 48;
     else if (depth === 1) score += 32;
     else if (depth === 2) score += 12;
-  } else if (stem === "main" || stem === "server" || stem === "bootstrap") score += 42;
+  } else if (stem === "main" || stem === "server" || stem === "bootstrap")
+    score += 42;
   else if (stem === "app" || stem === "application") score += 28;
 
   if (depth <= 1) score += 22;
   else if (depth === 2) score += 12;
   else if (depth === 3) score += 5;
 
-  if (node.exported === true && score > 0) score += 12;
+  if (node.exported && score > 0) score += 12;
   return score;
 }
 
@@ -596,7 +521,9 @@ function runtimeEntryScore(node: ISamchonGraphNode, surface: number): number {
   ]);
   if (node.kind === "method" && hasVerb) return 90;
   if (
-    (node.kind === "function" || node.kind === "property" || node.kind === "variable") &&
+    (node.kind === "function" ||
+      node.kind === "property" ||
+      node.kind === "variable") &&
     surface > 0 &&
     hasVerb
   ) {
@@ -622,15 +549,17 @@ function runtimeEntryScore(node: ISamchonGraphNode, surface: number): number {
 function sourceDepth(file: string): number {
   const parts = file.split("/").filter(Boolean);
   if (parts[0] === "src") return Math.max(0, parts.length - 2);
-  if (parts[0] === "packages" && parts.length >= 3) return Math.max(
-    0,
-    parts.length - 3,
-  );
+  if (parts[0] === "packages" && parts.length >= 3) {
+    return Math.max(0, parts.length - 3);
+  }
   return Math.max(0, parts.length - 1);
 }
 
 function queryMatchScore(node: ISamchonGraphNode, terms: string[]): number {
-  return matchedQueryTerms(node, terms).size * 8 + matchedFileTerms(node, terms).size * 2;
+  return (
+    matchedQueryTerms(node, terms).size * 8 +
+    matchedFileTerms(node, terms).size * 2
+  );
 }
 
 function matchedQueryTerms(node: ISamchonGraphNode, terms: string[]): Set<string> {
@@ -660,10 +589,9 @@ function matchedTerms(words: string[], terms: string[]): Set<string> {
   return matched;
 }
 
-function diverseTourSeeds<T extends { score: number; matchedTerms: Set<string> }>(
-  items: T[],
-  terms: string[],
-): T[] {
+function diverseTourSeeds<
+  T extends { score: number; matchedTerms: Set<string> },
+>(items: T[], terms: string[]): T[] {
   if (items.length <= 1 || terms.length === 0) return items;
   const out: T[] = [];
   const remaining = [...items];
@@ -688,21 +616,30 @@ function diverseTourSeeds<T extends { score: number; matchedTerms: Set<string> }
   return out;
 }
 
-function queryAlignmentFactor(matchScore: number, queryWords: ReadonlySet<string>): number {
+function queryAlignmentFactor(
+  matchScore: number,
+  queryWords: ReadonlySet<string>,
+): number {
   if (queryWords.size === 0) return 1;
   if (matchScore >= 24) return 1.45;
   if (matchScore >= 8) return 1.15;
   return 0.45;
 }
 
-function broadTourDamping(node: ISamchonGraphNode, queryWords: ReadonlySet<string>): number {
+function broadTourDamping(
+  node: ISamchonGraphNode,
+  queryWords: ReadonlySet<string>,
+): number {
   const words = new Set([
     ...subwords(node.name),
     ...subwords(node.qualifiedName ?? ""),
     ...subwords(node.file),
   ]);
   let factor = 1;
-  if (!hasAny(queryWords, ["internal", "private"]) && isPrivateLike(node, words)) {
+  if (
+    !hasAny(queryWords, ["internal", "private"]) &&
+    isPrivateLike(node, words)
+  ) {
     factor *= 0.25;
   }
   if (
@@ -755,11 +692,17 @@ function broadTourDamping(node: ISamchonGraphNode, queryWords: ReadonlySet<strin
   return factor;
 }
 
-function hasAny(words: ReadonlySet<string>, candidates: readonly string[]): boolean {
+function hasAny(
+  words: ReadonlySet<string>,
+  candidates: readonly string[],
+): boolean {
   return candidates.some((word) => words.has(word));
 }
 
-function isPrivateLike(node: ISamchonGraphNode, words: ReadonlySet<string>): boolean {
+function isPrivateLike(
+  node: ISamchonGraphNode,
+  words: ReadonlySet<string>,
+): boolean {
   const name = node.qualifiedName ?? node.name;
   return (
     name.startsWith("_") ||
@@ -769,24 +712,14 @@ function isPrivateLike(node: ISamchonGraphNode, words: ReadonlySet<string>): boo
 }
 
 function hasExplicitSymbolHandle(query: string): boolean {
-  return /`[^`]+`/.test(query) || /\b[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*\b/.test(query);
+  return (
+    /`[^`]+`/.test(query) ||
+    /\b[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*\b/.test(query)
+  );
 }
 
-// Tests, examples, fixtures, generated output, and build artifacts are noise
-// for tour seeding (ported from the reference isSupportPath).
 function isNoisePath(file: string): boolean {
-  return (
-    file === "" ||
-    file.startsWith("bundled://") ||
-    /(^|\/)node_modules\//.test(file) ||
-    /(^|\/)(test|tests|__tests__|spec|sample|samples|fixture|fixtures|__fixtures__|example|examples)\//.test(
-      file,
-    ) ||
-    /\.(test|spec)\.[cm]?[tj]sx?$/.test(file) ||
-    /(^|\/)typings\.[cm]?ts$/.test(file) ||
-    /\.d\.[cm]?ts$/.test(file) ||
-    /(^|\/)(dist|build|coverage|generated|__generated__)\//.test(file)
-  );
+  return isSupportPath(file);
 }
 
 function subwords(text: string): string[] {
@@ -814,6 +747,100 @@ function commonPrefixLength(a: string, b: string): number {
   return i;
 }
 
+function nearbyAnchorsOf(details: ISamchonGraphDetails): ISamchonGraphTour.IAnchor[] {
+  const anchors: ISamchonGraphTour.IAnchor[] = [];
+  for (const node of details.nodes) {
+    anchors.push(...anchorFromNode("selected symbol", detailNodeOf(node)));
+    // runDetails always assigns dependsOn/dependedOnBy (even to an empty
+    // array) once `neighbors: true` is set, which the tour's own call below
+    // always does -- so these two fallbacks are never absent in practice.
+    /* c8 ignore start */
+    for (const ref of [
+      ...(node.calls ?? []),
+      ...(node.types ?? []),
+      ...(node.implementedBy ?? []),
+      ...(node.dependsOn ?? []),
+      ...(node.dependedOnBy ?? []),
+    ]) {
+      /* c8 ignore stop */
+      anchors.push(
+        ...anchorFromEvidence(
+          `${ref.relation} ${ref.name}`,
+          ref.name,
+          ref.evidence,
+        ),
+      );
+    }
+  }
+  return uniqueAnchors(anchors);
+}
+
+function detailNodeOf(node: ISamchonGraphDetails.INode): ISamchonGraphTour.INode {
+  // `node` always comes from a tour seed's own details (`runDetails` on
+  // `seedIds`), and `isTourSeed` requires evidence, which always carries a
+  // required `startLine` -- so `line`/`sourceSpan` are never absent here in
+  // practice. Kept for parity with the reference engine.
+  return {
+    id: node.id,
+    name: node.name,
+    kind: node.kind,
+    file: node.file,
+    /* c8 ignore next */
+    ...(node.line !== undefined ? { line: node.line } : {}),
+    /* c8 ignore start */
+    ...(node.sourceSpan !== undefined
+      ? {
+          sourceSpan: {
+            file: node.sourceSpan.file,
+            startLine: node.sourceSpan.startLine,
+            ...(node.sourceSpan.endLine !== undefined
+              ? { endLine: node.sourceSpan.endLine }
+              : {}),
+          },
+        }
+      : {}),
+    /* c8 ignore stop */
+    ...(node.signature !== undefined ? { signature: node.signature } : {}),
+    ...(node.decorators !== undefined ? { decorators: node.decorators } : {}),
+  };
+}
+
+function testAnchorsOf(
+  graph: SamchonGraphMemory,
+  seedIds: string[],
+): ISamchonGraphTour.IAnchor[] {
+  const anchors: ISamchonGraphTour.IAnchor[] = [];
+  for (const id of seedIds) {
+    for (const edge of graph.incoming(id)) {
+      const node = graph.node(edge.from);
+      if (node === undefined || !isTestPath(node.file)) continue;
+      anchors.push(
+        ...anchorFromNode("test coverage", graphNodeOf(graph, node)),
+      );
+      anchors.push(
+        ...anchorFromEvidence(
+          `${edge.kind} ${node.qualifiedName ?? node.name}`,
+          node.qualifiedName ?? node.name,
+          edge.evidence,
+        ),
+      );
+    }
+    const impact = runTrace(graph, {
+      type: "trace",
+      from: id,
+      direction: "impact",
+      maxDepth: 4,
+      maxNodes: 16,
+    });
+    for (const node of impact.reached) {
+      if (node.roles?.includes("test")) {
+        anchors.push(...anchorFromNode("test coverage", node));
+      }
+    }
+  }
+  return uniqueAnchors(anchors);
+}
+
 function uniqueIds(ids: string[]): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -821,6 +848,68 @@ function uniqueIds(ids: string[]): string[] {
     if (seen.has(id)) continue;
     seen.add(id);
     out.push(id);
+  }
+  return out;
+}
+
+function anchorFromNode(
+  reason: string,
+  node: ISamchonGraphTour.INode | ISamchonGraphTrace.INode | undefined,
+): ISamchonGraphTour.IAnchor[] {
+  // Every current caller already guarantees a defined node.
+  /* c8 ignore next */
+  if (node === undefined) return [];
+  const span =
+    "sourceSpan" in node && node.sourceSpan !== undefined
+      ? node.sourceSpan
+      : // Every converter that sets `line` derives it from the same evidence
+        // that also produces `sourceSpan`, so `line`-without-`sourceSpan`
+        // does not occur in practice.
+        /* c8 ignore next 3 */
+        node.line !== undefined
+        ? { file: node.file, startLine: node.line }
+        : undefined;
+  if (span === undefined) return [];
+  return [
+    {
+      reason,
+      id: node.id,
+      name: node.name,
+      kind: node.kind,
+      file: span.file,
+      startLine: span.startLine,
+      ...(span.endLine !== undefined ? { endLine: span.endLine } : {}),
+    },
+  ];
+}
+
+function anchorFromEvidence(
+  reason: string,
+  name: string,
+  evidence: ISamchonGraphEvidence | undefined,
+): ISamchonGraphTour.IAnchor[] {
+  if (evidence === undefined) return [];
+  return [
+    {
+      reason,
+      name,
+      file: evidence.file,
+      startLine: evidence.startLine,
+      ...(evidence.endLine !== undefined ? { endLine: evidence.endLine } : {}),
+    },
+  ];
+}
+
+function uniqueAnchors(
+  anchors: ISamchonGraphTour.IAnchor[],
+): ISamchonGraphTour.IAnchor[] {
+  const out: ISamchonGraphTour.IAnchor[] = [];
+  const seen = new Set<string>();
+  for (const anchor of anchors) {
+    const key = `${anchor.file}:${anchor.startLine}:${anchor.name}:${anchor.reason}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(anchor);
   }
   return out;
 }

@@ -4,6 +4,7 @@ import {
   ISamchonGraphNode,
   ISamchonGraphTrace,
 } from "../structures";
+import { accessAliasesFor } from "./accessAliasesFor";
 import {
   bound,
   isExecution,
@@ -15,6 +16,7 @@ import {
   resultNext,
   signatureOf,
 } from "./common";
+import { edgeEvidenceTextOf } from "./edgeEvidenceTextOf";
 
 const DEFAULT_DEPTH = 2;
 const DEFAULT_MAX_NODES = 6;
@@ -189,7 +191,7 @@ export function runTrace(
         const other = graph.node(otherId);
         if (other === undefined || other.kind === "file") continue;
         if (!includeExternal && other.external) continue;
-        const hop = hopOf(edge, depth + 1);
+        const hop = hopOf(graph, edge, depth + 1);
         // A back-edge to the start or an already-reached node: record the hop;
         // its endpoints are already represented.
         if (visited.has(otherId)) {
@@ -283,7 +285,7 @@ function findPath(
         const pathHops: ISamchonGraphTrace.IHop[] = [];
         for (let i = 1; i < ids.length; i++) {
           const p = parent.get(ids[i]!);
-          if (p !== undefined) pathHops.push(hopOf(p.edge, i));
+          if (p !== undefined) pathHops.push(hopOf(graph, p.edge, i));
         }
         return { path: nodes, hops: pathHops };
       }
@@ -372,16 +374,21 @@ function traversable(
   return true;
 }
 
-function hopOf(edge: ISamchonGraphEdge, depth: number): ISamchonGraphTrace.IHop {
-  return {
+function hopOf(
+  graph: SamchonGraphMemory,
+  edge: ISamchonGraphEdge,
+  depth: number,
+): ISamchonGraphTrace.IHop {
+  const hop: ISamchonGraphTrace.IHop = {
     from: edge.from,
     to: edge.to,
     kind: edge.kind,
     depth,
-    ...(edge.evidence !== undefined
-      ? { evidence: publicEvidence(edge.evidence) }
-      : {}),
   };
+  if (edge.evidence !== undefined) hop.evidence = publicEvidence(edge.evidence);
+  const aliases = accessAliasesFor(graph.node(edge.to), edgeEvidenceTextOf(edge));
+  if (aliases !== undefined) hop.aliases = aliases;
+  return hop;
 }
 
 /**

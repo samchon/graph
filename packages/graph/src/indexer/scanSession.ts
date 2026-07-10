@@ -121,6 +121,7 @@ export async function scanSession(
       const owner = ownerAt(owners, ref.range.start.line + 1);
       if (owner === undefined || owner.id === target.id) continue;
       const refLine = linesByFile.get(rel)?.[ref.range.start.line];
+      const accessText = accessExpressionAt(refLine, ref.range.end.character);
       edges.push({
         from: owner.id,
         to: target.id,
@@ -131,6 +132,9 @@ export async function scanSession(
           startCol: ref.range.start.character + 1,
           endLine: ref.range.end.line + 1,
           endCol: ref.range.end.character + 1,
+          // Not part of the public evidence contract; an internal hint
+          // `accessAliasesFor` reads via `edgeEvidenceTextOf`.
+          ...(accessText !== undefined ? { text: accessText } : {}),
         },
       });
     }
@@ -217,6 +221,22 @@ export async function scanSession(
         : []),
     ],
   };
+}
+
+// The dotted access expression ending exactly at a reference's end column
+// (e.g. `this._internals.foo` for a reference to `foo`), when the reference
+// sits at the end of one. This is the source-text hint `accessAliasesFor`
+// resolves into alternate access-path aliases; it is not part of the public
+// evidence contract.
+function accessExpressionAt(
+  line: string | undefined,
+  endCol: number,
+): string | undefined {
+  if (line === undefined) return undefined;
+  const match = /[A-Za-z_$][\w$]*(?:\?\.[A-Za-z_$][\w$]*|\.[A-Za-z_$][\w$]*)*$/.exec(
+    line.slice(0, endCol),
+  );
+  return match?.[0];
 }
 
 // Classify a reference the same way the static indexer does, but with the

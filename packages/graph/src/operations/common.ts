@@ -1,5 +1,7 @@
+export * from "./accessAliasesFor";
 export * from "./bound";
 export * from "./compareEdges";
+export * from "./edgeEvidenceTextOf";
 export * from "./edgeRank";
 export * from "./isExecution";
 export * from "./isStructural";

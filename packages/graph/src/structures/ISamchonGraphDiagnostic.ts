@@ -1,29 +1,34 @@
-import { ISamchonGraphEvidence } from "./ISamchonGraphEvidence";
-
 /**
- * A language server or plugin diagnostic, fused onto the graph so an edit-triage
- * query can name the owning symbol of an error.
+ * A compiler or plugin diagnostic, fused onto the graph so an edit-triage query
+ * can name the owning symbol of an error.
  *
  * The language server's semantic pass contributes numeric-coded diagnostics;
- * lint rules and transform plugins (typia, nestia, …) contribute `plugin`/`lint`
- * findings whose `code` is a string.
+ * `@samchon/lint` rules and transform plugins (typia, nestia, …) contribute
+ * `plugin`/`lint` findings whose `code` is a string. `node` is set when the
+ * finding's position was attributed to a graph node.
  */
 export interface ISamchonGraphDiagnostic {
   /** Project-relative path of the file the diagnostic is reported in. */
   file: string;
 
+  /** 1-based line of the diagnostic. */
+  line: number;
+
+  /** 1-based column of the diagnostic, when known. */
+  column?: number;
+
+  /** Numeric `tsc` code, or string rule id for a lint/plugin finding. */
+  code: number | string;
+
   /** The human-readable diagnostic message. */
   message: string;
 
   /** Severity, when the producer distinguishes it. */
-  severity: "error" | "warning" | "information" | "hint";
+  severity?: "error" | "warning" | "info" | "hint";
 
-  /** Which producer emitted the diagnostic. */
-  source?: string;
+  /** Which lane produced the diagnostic. */
+  origin?: "tsc" | "plugin" | "lint";
 
-  /** Numeric language server code, or string rule id for a lint/plugin finding. */
-  code?: string | number;
-
-  /** The source span the diagnostic was attributed to, when resolved. */
-  evidence?: ISamchonGraphEvidence;
+  /** Node id the diagnostic was fused onto, when resolved. */
+  node?: string;
 }

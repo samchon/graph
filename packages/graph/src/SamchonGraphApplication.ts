@@ -11,7 +11,6 @@ import { ISamchonGraphApplication, ISamchonGraphEscape } from "./structures";
 
 export class SamchonGraphApplication implements ISamchonGraphApplication {
   private readonly graph: () => SamchonGraphMemory | Promise<SamchonGraphMemory>;
-  private promise?: Promise<SamchonGraphMemory>;
 
   public constructor(source: AsyncSamchonGraphSource) {
     this.graph = typeof source === "function" ? source : () => source;
@@ -61,20 +60,13 @@ export class SamchonGraphApplication implements ISamchonGraphApplication {
   }
 
   private async load(): Promise<SamchonGraphMemory> {
-    // Cache the built graph on success only. Caching a rejected promise would
-    // brick the resident server for the whole session after one transient index
-    // failure (e.g. a slow language-server cold start); clear it so the next
-    // call rebuilds.
-    if (this.promise === undefined) {
-      // `void`: the rejection is handled by whoever awaits `this.promise`;
-      // the cache-clearing catch above rethrows on purpose.
-      void (this.promise = Promise.resolve(this.graph()).catch(
-        (error: unknown) => {
-          this.promise = undefined;
-          throw error;
-        },
-      ));
-    }
-    return this.promise;
+    // Call the source on every request instead of caching its result forever:
+    // the source itself now owns staleness (a resident source refreshes only
+    // when a file actually changed since its last snapshot; a static
+    // `--graph-file` source memoizes since it never changes). This is what
+    // lets `inspect_code_graph` honor its own "rebuild after an edit"
+    // guidance automatically instead of serving a permanently stale graph
+    // until the whole MCP server is restarted.
+    return this.graph();
   }
 }

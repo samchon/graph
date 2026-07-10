@@ -40,7 +40,7 @@ export const test_ported_operation_engines_cover_query_branches = async () => {
   ).result;
   TestValidator.predicate(
     "entrypoints resolve mention handles",
-    entry.ranked.length >= 1,
+    entry.hits.length >= 1,
   );
 
   // runTrace path mode by dotted names, and the "X function" lookup pattern.

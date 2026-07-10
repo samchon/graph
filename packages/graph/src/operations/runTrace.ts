@@ -4,10 +4,9 @@ import {
   ISamchonGraphNode,
   ISamchonGraphTrace,
 } from "../structures";
+import { accessAliasesFor } from "./accessAliasesFor";
 import {
   bound,
-  compareEdges,
-  edgeRank,
   isExecution,
   isTestPath,
   isTypeEdge,
@@ -16,8 +15,8 @@ import {
   resultGuide,
   resultNext,
   signatureOf,
-  summaryOf,
 } from "./common";
+import { edgeEvidenceTextOf } from "./edgeEvidenceTextOf";
 
 const DEFAULT_DEPTH = 2;
 const DEFAULT_MAX_NODES = 6;
@@ -43,8 +42,6 @@ export function runTrace(
   const direction = props.direction ?? "forward";
   const focus = props.focus ?? "all";
   const impact = direction === "impact";
-  const reverse = direction === "reverse" || direction === "impact";
-  const includeExternal = props.includeExternal === true;
   const maxDepth = bound(
     props.maxDepth,
     DEFAULT_DEPTH,
@@ -58,6 +55,11 @@ export function runTrace(
     impact ? MAX_IMPACT_NODES : MAX_OPEN_NODES,
   );
   const maxHops = maxNodes * MAX_HOPS_PER_NODE;
+  const reverse = direction === "reverse" || direction === "impact";
+  const includeExternal = props.includeExternal === true;
+  // Only an impact trace tags reached nodes with their public-surface role; for
+  // forward/reverse the role is noise.
+  const withRoles = direction === "impact";
 
   const start = resolveHandle(graph, props.from);
   if (start.candidates !== undefined) {
@@ -67,9 +69,14 @@ export function runTrace(
       hops: [],
       reached: [],
       truncated: false,
+      next: resultNext(
+        "clarify",
+        "The start handle is ambiguous; choose one returned candidate.",
+      ),
+      guide: resultGuide(
+        "Disambiguate with the returned candidates, or ask the user for the intended symbol.",
+      ),
       candidates: start.candidates.map((node) => traceNode(graph, node)),
-      next: resultNext("clarify", "The start handle is ambiguous; choose one candidate."),
-      guide: resultGuide("Disambiguate with returned candidates."),
     };
   }
   if (start.node === undefined) {
@@ -79,8 +86,13 @@ export function runTrace(
       hops: [],
       reached: [],
       truncated: false,
-      next: resultNext("clarify", "The start handle did not resolve in the graph."),
-      guide: resultGuide("Answer that the graph has no trace from this handle."),
+      next: resultNext(
+        "clarify",
+        "The start handle did not resolve in the graph.",
+      ),
+      guide: resultGuide(
+        "The start symbol was not resolved; answer that the graph has no trace from this handle.",
+      ),
     };
   }
 
@@ -100,9 +112,12 @@ export function runTrace(
         hops: [],
         reached: [],
         truncated: false,
-        candidates: target.candidates.map((node) => traceNode(graph, node)),
-        next: resultNext("clarify", "The target handle is ambiguous; choose one candidate."),
+        next: resultNext(
+          "clarify",
+          "The target handle is ambiguous; choose one candidate.",
+        ),
         guide: resultGuide("Disambiguate the target with returned candidates."),
+        candidates: target.candidates.map((node) => traceNode(graph, node)),
       };
     }
     if (target.node === undefined) {
@@ -113,7 +128,10 @@ export function runTrace(
         hops: [],
         reached: [],
         truncated: false,
-        next: resultNext("clarify", "The target handle did not resolve in the graph."),
+        next: resultNext(
+          "clarify",
+          "The target handle did not resolve in the graph.",
+        ),
         guide: resultGuide("Answer that the graph has no path to this target."),
       };
     }
@@ -130,16 +148,20 @@ export function runTrace(
       direction: "path",
       start: startNode,
       target: traceNode(graph, target.node),
-      path: (found?.path ?? []).map((node, depth) => traceNode(graph, node, depth, true)),
+      path: (found?.path ?? []).map((node, depth) =>
+        traceNode(graph, node, depth, true),
+      ),
       hops: found?.hops ?? [],
       reached: [],
       truncated: false,
       steps: steps(graph, found?.hops ?? []),
       next: resultNext(
         "answer",
-        "The path result is the flow answer; cite path nodes and evidence ranges.",
+        "The path result is the structural flow answer; cite path nodes and evidence ranges.",
       ),
-      guide: resultGuide("Use path, hops, and evidence as the flow answer."),
+      guide: resultGuide(
+        "Use the returned path, hops, and evidence ranges as the flow answer.",
+      ),
     };
   }
 
@@ -162,13 +184,14 @@ export function runTrace(
         graph,
         reverse ? graph.incoming(id) : graph.outgoing(id),
         impact,
+        reverse,
       ).filter((edge) => traversable(edge, focus));
       for (const edge of edges) {
         const otherId = reverse ? edge.from : edge.to;
         const other = graph.node(otherId);
         if (other === undefined || other.kind === "file") continue;
         if (!includeExternal && other.external) continue;
-        const hop = hopOf(edge, depth + 1);
+        const hop = hopOf(graph, edge, depth + 1);
         // A back-edge to the start or an already-reached node: record the hop;
         // its endpoints are already represented.
         if (visited.has(otherId)) {
@@ -187,7 +210,7 @@ export function runTrace(
           continue;
         }
         visited.add(otherId);
-        reached.set(otherId, traceNode(graph, other, depth + 1, false, impact));
+        reached.set(otherId, traceNode(graph, other, depth + 1, false, withRoles));
         next.push({ id: otherId, depth: depth + 1 });
         hops.push(hop);
       }
@@ -207,10 +230,17 @@ export function runTrace(
       "answer",
       "Steps, hops, reached nodes, and evidence ranges are the flow answer surface.",
     ),
-    guide: resultGuide("Use steps, hops, reached nodes, and evidence ranges as the flow answer."),
+    guide: resultGuide(
+      "Use steps, hops, reached nodes, and evidence ranges as the flow answer or reading-list anchor.",
+    ),
   };
 }
 
+/**
+ * The shortest dependency path from `startId` to `targetId` over real (non-
+ * structural) forward edges, breadth-first, or null when `targetId` is not
+ * reachable within maxDepth. Returns the nodes in order and the hops between.
+ */
 function findPath(
   graph: SamchonGraphMemory,
   startId: string,
@@ -219,6 +249,11 @@ function findPath(
   focus: ISamchonGraphTrace.IRequest["focus"],
   includeExternal: boolean,
 ): { path: ISamchonGraphNode[]; hops: ISamchonGraphTrace.IHop[] } | null {
+  const startNode = graph.node(startId);
+  // The caller already resolved startId to a real node in this same graph.
+  /* c8 ignore next */
+  if (startNode === undefined) return null;
+  if (startId === targetId) return { path: [startNode], hops: [] };
   const parent = new Map<string, { from: string; edge: ISamchonGraphEdge }>();
   const queue: Array<{ id: string; depth: number }> = [
     { id: startId, depth: 0 },
@@ -228,9 +263,8 @@ function findPath(
     const item = queue.shift()!;
     /* c8 ignore next */
     if (item.depth >= maxDepth) continue;
-    for (const edge of graph.outgoing(item.id).filter((e) => traversable(e, focus)).sort(
-      compareEdges,
-    )) {
+    for (const edge of graph.outgoing(item.id)) {
+      if (!traversable(edge, focus)) continue;
       const other = graph.node(edge.to);
       if (other === undefined || other.kind === "file") continue;
       if (!includeExternal && other.external) continue;
@@ -251,7 +285,7 @@ function findPath(
         const pathHops: ISamchonGraphTrace.IHop[] = [];
         for (let i = 1; i < ids.length; i++) {
           const p = parent.get(ids[i]!);
-          if (p !== undefined) pathHops.push(hopOf(p.edge, i));
+          if (p !== undefined) pathHops.push(hopOf(graph, p.edge, i));
         }
         return { path: nodes, hops: pathHops };
       }
@@ -262,23 +296,32 @@ function findPath(
 }
 
 /**
- * Order edges before traversal. A normal trace ranks by edge kind then
- * evidence; an impact trace ranks reached endpoints by public-surface role
- * first so the blast radius on the exported/test surface leads.
+ * Order edges before traversal. A normal trace ranks by edge kind, then the
+ * traversed endpoint's declaration kind, then evidence position; an impact
+ * trace ranks reached endpoints by public-surface role first so the blast
+ * radius on the exported/test surface leads.
  */
-// Only the impact BFS orders edges here, and it always traverses incoming
-// edges, so the ranked endpoint is the edge's `from`.
+// Impact always traverses incoming edges, so its ranked endpoint is always
+// the edge's `from`.
 function orderedEdges(
   graph: SamchonGraphMemory,
   edges: readonly ISamchonGraphEdge[],
   impact: boolean,
+  reverse: boolean,
 ): readonly ISamchonGraphEdge[] {
-  if (!impact) return [...edges].sort(compareEdges);
+  if (!impact)
+    return [...edges].sort(
+      (a, b) =>
+        edgeKindRank(a.kind) - edgeKindRank(b.kind) ||
+        traceEndpointRank(graph, reverse ? a.from : a.to) -
+          traceEndpointRank(graph, reverse ? b.from : b.to) ||
+        evidenceRank(a) - evidenceRank(b),
+    );
   return [...edges].sort(
     (a, b) =>
       impactEndpointRank(graph, a.from) - impactEndpointRank(graph, b.from) ||
-      edgeRank(a.kind) - edgeRank(b.kind) ||
-      (a.evidence?.startLine ?? 999_999) - (b.evidence?.startLine ?? 999_999),
+      edgeKindRank(a.kind) - edgeKindRank(b.kind) ||
+      evidenceRank(a) - evidenceRank(b),
   );
 }
 
@@ -293,8 +336,37 @@ function impactEndpointRank(graph: SamchonGraphMemory, id: string): number {
   return 2;
 }
 
-function traversable(edge: ISamchonGraphEdge, focus: ISamchonGraphTrace.IRequest["focus"]): boolean {
-  if (edge.kind === "contains" || edge.kind === "exports" || edge.kind === "imports") {
+function traceEndpointRank(graph: SamchonGraphMemory, id: string): number {
+  const node = graph.node(id);
+  if (node === undefined) return 9;
+  if (isTestPath(node.file)) return 6;
+  switch (node.kind) {
+    case "function":
+    case "method":
+    case "class":
+      return 0;
+    case "variable":
+      return 1;
+    case "property":
+      return 2;
+    case "interface":
+    case "type":
+      return 4;
+    default:
+      return 3;
+  }
+}
+
+/** An edge the trace should follow: a real dependency, not a structural edge. */
+function traversable(
+  edge: ISamchonGraphEdge,
+  focus: ISamchonGraphTrace.IRequest["focus"],
+): boolean {
+  if (
+    edge.kind === "contains" ||
+    edge.kind === "exports" ||
+    edge.kind === "imports"
+  ) {
     return false;
   }
   if (focus === "execution") return isExecution(edge.kind);
@@ -302,16 +374,27 @@ function traversable(edge: ISamchonGraphEdge, focus: ISamchonGraphTrace.IRequest
   return true;
 }
 
-function hopOf(edge: ISamchonGraphEdge, depth: number): ISamchonGraphTrace.IHop {
-  return {
+function hopOf(
+  graph: SamchonGraphMemory,
+  edge: ISamchonGraphEdge,
+  depth: number,
+): ISamchonGraphTrace.IHop {
+  const hop: ISamchonGraphTrace.IHop = {
     from: edge.from,
     to: edge.to,
     kind: edge.kind,
     depth,
-    ...(edge.evidence !== undefined ? { evidence: publicEvidence(edge.evidence) } : {}),
   };
+  if (edge.evidence !== undefined) hop.evidence = publicEvidence(edge.evidence);
+  const aliases = accessAliasesFor(graph.node(edge.to), edgeEvidenceTextOf(edge));
+  if (aliases !== undefined) hop.aliases = aliases;
+  return hop;
 }
 
+/**
+ * Summarize a node for a trace result. With `withRoles`, tag the public-surface
+ * roles (exported / test) an impact trace reports; other directions omit them.
+ */
 function traceNode(
   graph: SamchonGraphMemory,
   node: ISamchonGraphNode,
@@ -320,9 +403,21 @@ function traceNode(
   withRoles = false,
 ): ISamchonGraphTrace.INode {
   const out: ISamchonGraphTrace.INode = {
-    ...summaryOf(node),
-    ...(depth !== undefined ? { depth } : {}),
+    id: node.id,
+    name: node.qualifiedName ?? node.name,
+    kind: node.kind,
+    file: node.file,
   };
+  if (node.evidence?.startLine !== undefined) out.line = node.evidence.startLine;
+  const span = node.implementation ?? node.evidence;
+  if (span !== undefined) {
+    out.sourceSpan = {
+      file: span.file,
+      startLine: span.startLine,
+      ...(span.endLine !== undefined ? { endLine: span.endLine } : {}),
+    };
+  }
+  if (depth !== undefined) out.depth = depth;
   if (withSignature) {
     const signature = signatureOf(graph.project, node);
     if (signature !== undefined) out.signature = signature;
@@ -336,14 +431,53 @@ function traceNode(
   return out;
 }
 
-function steps(graph: SamchonGraphMemory, hops: readonly ISamchonGraphTrace.IHop[]): string[] {
+function steps(
+  graph: SamchonGraphMemory,
+  hops: readonly ISamchonGraphTrace.IHop[],
+): string[] {
   return hops.slice(0, MAX_STEPS).map((hop) => {
-    const from = graph.node(hop.from)!;
-    const to = graph.node(hop.to)!;
-    const lhs = from.qualifiedName ?? from.name;
-    const rhs = to.qualifiedName ?? to.name;
+    const from = graph.node(hop.from);
+    const to = graph.node(hop.to);
+    // Every hop's endpoints came from a real edge in this same graph.
+    /* c8 ignore next 2 */
+    const lhs = from?.qualifiedName ?? from?.name ?? hop.from;
+    const rhs = to?.qualifiedName ?? to?.name ?? hop.to;
     const at =
-      hop.evidence === undefined ? "" : ` at ${hop.evidence.file}:${hop.evidence.startLine}`;
+      hop.evidence === undefined
+        ? ""
+        : ` at ${hop.evidence.file}:${hop.evidence.startLine}`;
     return `${lhs} -[${hop.kind}${at}]-> ${rhs}`;
   });
+}
+
+function edgeKindRank(kind: string): number {
+  switch (kind) {
+    case "calls":
+      return 0;
+    case "instantiates":
+      return 1;
+    case "renders":
+      return 2;
+    case "accesses":
+    case "references":
+      return 3;
+    case "tests":
+      return 4;
+    case "overrides":
+    case "decorates":
+      return 5;
+    case "extends":
+    case "implements":
+      return 6;
+    case "type_ref":
+      return 7;
+    default:
+      return 10;
+  }
+}
+
+function evidenceRank(edge: ISamchonGraphEdge): number {
+  const line = edge.evidence?.startLine ?? 9_999;
+  const col = edge.evidence?.startCol ?? 999;
+  return line * 100 + col;
 }

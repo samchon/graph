@@ -7,7 +7,6 @@ export const test_operations_preserve_contract_evidence_and_navigation = async (
 
   const overview = (await ContractGraph.call(app, { type: "overview", aspect: "all" })).result;
   TestValidator.predicate("overview exposes file count", overview.counts.files >= 1);
-  TestValidator.predicate("overview includes diagnostics", overview.diagnostics.some((diagnostic) => diagnostic.code === "C001"));
   // publicApi ranks true top-level API kinds (class/interface/function/type/enum),
   // so the Service class surfaces rather than its individual methods.
   TestValidator.predicate("overview ranks public API", overview.publicApi.some((node) => node.name === "Root.Service"));
@@ -38,10 +37,6 @@ export const test_operations_preserve_contract_evidence_and_navigation = async (
   TestValidator.predicate(
     "details returns members",
     details.nodes.some((node) => node.members?.some((member) => member.name === "Root.Service.run")),
-  );
-  TestValidator.predicate(
-    "details carries diagnostics",
-    details.nodes.some((node) => node.diagnostics?.some((diagnostic) => diagnostic.code === "C001")),
   );
 
   const forward = (
@@ -89,14 +84,14 @@ export const test_operations_preserve_contract_evidence_and_navigation = async (
       limit: 4,
     })
   ).result;
-  TestValidator.predicate("entrypoints returns ranked handles", entrypoints.ranked.some((node) => node.name === "Root.Service.run"));
+  TestValidator.predicate("entrypoints returns ranked handles", entrypoints.hits.some((node) => node.name === "Root.Service.run"));
 
   const tour = (
     await ContractGraph.call(app, {
       type: "tour",
-      question: "Root.Service.run helper",
+      query: "Root.Service.run helper",
       limit: 4,
     })
   ).result;
-  TestValidator.predicate("tour returns anchors", tour.answerAnchors.length > 0 && tour.nearbyPaths.length > 0);
+  TestValidator.predicate("tour returns anchors", tour.answerAnchors.length > 0 && tour.nearby.length > 0);
 };

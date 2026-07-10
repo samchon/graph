@@ -11,14 +11,14 @@ export interface ISamchonGraphEscape {
   /** Why no graph operation should run. */
   reason: string;
 
-  /** Optional note about the next non-graph step. */
-  nextStep?: string;
-
   /** How to proceed after skipping graph work. */
   next: ISamchonGraphNext;
 
   /** Human-readable compatibility note mirroring `next`. */
   guide: string;
+
+  /** Optional note about the next non-graph step. */
+  nextStep?: string;
 }
 
 export namespace ISamchonGraphEscape {

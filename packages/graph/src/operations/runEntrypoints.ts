@@ -1,20 +1,26 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
-import { ISamchonGraphEntrypoints, ISamchonGraphNode } from "../structures";
+import {
+  ISamchonGraphDecorator,
+  ISamchonGraphEdge,
+  ISamchonGraphEntrypoints,
+  ISamchonGraphNode,
+} from "../structures";
 import {
   bound,
   isStructural,
-  referencesFromEdges,
+  publicEvidence,
   resolveHandle,
   resultGuide,
   resultNext,
-  summaryOf,
+  signatureOf,
 } from "./common";
 import { runLookup } from "./runLookup";
 
 const DEFAULT_LIMIT = 4;
 const MAX_LIMIT = 8;
+const DEFAULT_NEIGHBORS = 0;
+const MAX_NEIGHBORS = 2;
 const MAX_SEEDS = 3;
-const NEIGHBOR_LIMIT = 2;
 
 /**
  * Build the first source-free entrypoints list for a code question. The result
@@ -28,110 +34,195 @@ export function runEntrypoints(
 ): ISamchonGraphEntrypoints {
   const query = props.query.trim();
   const limit = bound(props.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
+  const neighborLimit = bound(
+    props.neighbors,
+    DEFAULT_NEIGHBORS,
+    0,
+    MAX_NEIGHBORS,
+  );
 
-  const lookup = runLookup(graph, {
-    type: "lookup",
-    query,
-    language: props.language,
-    limit,
-  });
-  const ranked = lookup.hits.map((hit) => ({
-    ...hit,
-    reason: reasonOf(graph, hit.id),
-  }));
+  const lookupResult = runLookup(graph, { type: "lookup", query, limit });
+  const hits = lookupResult.hits.map((hit) => ({ ...hit }));
 
-  // Code handles written directly in the query, resolved to concrete nodes.
-  const mentions: ISamchonGraphNode[] = [];
-  const mentionSeen = new Set<string>();
-  for (const handle of directMentions(graph, query)) {
+  const mentions = directMentions(graph, query).map((handle) => {
     const resolved = resolveHandle(graph, handle);
-    if (resolved.node !== undefined && !mentionSeen.has(resolved.node.id)) {
-      mentionSeen.add(resolved.node.id);
-      mentions.push(resolved.node);
+    const mention: ISamchonGraphEntrypoints.IMention = { handle };
+    if (resolved.node !== undefined)
+      mention.node = nodeOf(graph, resolved.node);
+    if (resolved.candidates !== undefined) {
+      mention.candidates = resolved.candidates.map((node) =>
+        nodeOf(graph, node),
+      );
     }
-  }
+    return mention;
+  });
 
-  // Seeds for dependency orientation: resolved mentions first (the user named
-  // them), then the ranked hits.
   const seeds: ISamchonGraphNode[] = [];
-  const seedSeen = new Set<string>();
+  const seen = new Set<string>();
   const addSeed = (node: ISamchonGraphNode | undefined): void => {
-    if (node === undefined || node.kind === "file" || seedSeen.has(
-      node.id,
-    )) return;
-    seedSeen.add(node.id);
+    if (node === undefined || seen.has(node.id)) return;
+    seen.add(node.id);
     seeds.push(node);
   };
-  for (const node of mentions) addSeed(node);
-  for (const hit of ranked) addSeed(graph.node(hit.id));
+  for (const mention of mentions) {
+    if (mention.node !== undefined) addSeed(graph.node(mention.node.id));
+  }
+  for (const hit of hits) addSeed(graph.node(hit.id));
 
-  const dependencyOrientation = seeds
-    .slice(0, MAX_SEEDS)
-    .flatMap((node) => orientationLines(graph, node));
+  let truncated = seeds.length > MAX_SEEDS;
+  const neighborhood: ISamchonGraphEntrypoints.INeighborhood[] = [];
+  for (const seed of seeds.slice(0, MAX_SEEDS)) {
+    const outgoing = refs(graph, graph.outgoing(seed.id), "to", neighborLimit);
+    const incoming = refs(
+      graph,
+      graph.incoming(seed.id),
+      "from",
+      neighborLimit,
+    );
+    if (outgoing.truncated || incoming.truncated) truncated = true;
+    neighborhood.push({
+      ...nodeOf(graph, seed),
+      dependsOn: outgoing.items,
+      dependedOnBy: incoming.items,
+    });
+  }
 
   return {
     type: "entrypoints",
     query,
-    ranked,
-    mentions: mentions.map(summaryOf),
-    dependencyOrientation,
+    hits,
+    mentions,
+    neighborhood,
     next: resultNext(
       "inspect",
       "Use one returned handle for trace/details when the answer needs flow or selected shape.",
       "trace",
     ),
     guide: resultGuide(
-      "Use ranked hits, mentions, and dependency orientation as the code index. If they identify the relevant files and symbols, answer or make one focused trace/details call; do not search the repository to verify them.",
+      "Use hits, mentions, and neighborhood as the code index. If they identify the relevant files and symbols, answer or make one focused trace/details call; do not search the repository to verify them.",
     ),
+    ...(truncated ? { truncated: true } : {}),
   };
 }
 
-function reasonOf(graph: SamchonGraphMemory, id: string): string {
-  const fanIn = graph.incoming(id).filter(
-    (edge) => !isStructural(edge.kind),
-  ).length;
-  const fanOut = graph.outgoing(id).filter(
-    (edge) => !isStructural(edge.kind),
-  ).length;
-  if (fanOut > fanIn) return "High outgoing dependency flow for this query.";
-  if (fanIn > 0) return "Referenced by other indexed symbols.";
-  return "Name/path match in the resident graph.";
+function nodeOf(
+  graph: SamchonGraphMemory,
+  node: ISamchonGraphNode,
+): ISamchonGraphEntrypoints.INode {
+  const out: ISamchonGraphEntrypoints.INode = {
+    id: node.id,
+    name: node.qualifiedName ?? node.name,
+    kind: node.kind,
+    file: node.file,
+  };
+  if (node.evidence?.startLine !== undefined)
+    out.line = node.evidence.startLine;
+  const signature = signatureOf(graph.project, node);
+  if (signature !== undefined) out.signature = signature;
+  const decorators = decoratorsOf(node);
+  if (decorators !== undefined) out.decorators = decorators;
+  return out;
 }
 
-function orientationLines(graph: SamchonGraphMemory, node: ISamchonGraphNode): string[] {
-  const dependsOn = referencesFromEdges(
-    graph,
-    graph.outgoing(node.id),
-    "to",
-    NEIGHBOR_LIMIT,
-    false,
-  );
-  const dependedOnBy = referencesFromEdges(
-    graph,
-    graph.incoming(node.id),
-    "from",
-    NEIGHBOR_LIMIT,
-    false,
-  );
-  const name = node.qualifiedName ?? node.name;
-  const out: string[] = [];
-  for (const ref of dependsOn) out.push(
-    `${name} -[${ref.relation}]-> ${ref.name}`,
-  );
-  for (const ref of dependedOnBy) out.push(
-    `${ref.name} -[${ref.relation}]-> ${name}`,
-  );
+function refOf(
+  node: ISamchonGraphNode,
+  edge: ISamchonGraphEdge,
+): ISamchonGraphEntrypoints.IReference {
+  const out: ISamchonGraphEntrypoints.IReference = {
+    id: node.id,
+    name: node.qualifiedName ?? node.name,
+    kind: node.kind,
+    file: node.file,
+    relation: edge.kind,
+  };
+  if (node.evidence?.startLine !== undefined)
+    out.line = node.evidence.startLine;
+  if (edge.evidence !== undefined) out.evidence = publicEvidence(edge.evidence);
   return out;
+}
+
+function refs(
+  graph: SamchonGraphMemory,
+  edges: readonly ISamchonGraphEdge[],
+  end: "to" | "from",
+  limit: number,
+): { items: ISamchonGraphEntrypoints.IReference[]; truncated: boolean } {
+  const ranked: Array<{ ref: ISamchonGraphEntrypoints.IReference; rank: number }> =
+    [];
+  const seen = new Set<string>();
+  let available = 0;
+  for (const edge of edges) {
+    if (isStructural(edge.kind)) continue;
+    const other = graph.node(end === "to" ? edge.to : edge.from);
+    if (other === undefined || other.kind === "file") continue;
+    const key = `${edge.kind}:${other.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    available++;
+    const ref = refOf(other, edge);
+    ranked.push({ ref, rank: refRank(ref, edge) });
+  }
+  ranked.sort((a, b) => a.rank - b.rank);
+  const items: ISamchonGraphEntrypoints.IReference[] = [];
+  for (const item of ranked) {
+    if (items.length < limit) items.push(item.ref);
+  }
+  return { items, truncated: available > items.length };
+}
+
+function refRank(
+  ref: ISamchonGraphEntrypoints.IReference,
+  edge: ISamchonGraphEdge,
+): number {
+  return (
+    edgeKindRank(edge.kind) * 100_000 +
+    evidenceRank(edge) +
+    (ref.file.startsWith("bundled://") ? 20_000 : 0)
+  );
+}
+
+function evidenceRank(edge: ISamchonGraphEdge): number {
+  const line = edge.evidence?.startLine ?? 9_999;
+  const col = edge.evidence?.startCol ?? 999;
+  return line * 100 + col;
+}
+
+function edgeKindRank(kind: string): number {
+  switch (kind) {
+    case "calls":
+      return 0;
+    case "instantiates":
+      return 1;
+    case "accesses":
+    case "renders":
+      return 2;
+    case "tests":
+      return 3;
+    case "overrides":
+    case "decorates":
+      return 4;
+    case "extends":
+    case "implements":
+      return 5;
+    case "type_ref":
+      return 6;
+    default:
+      return 10;
+  }
 }
 
 function directMentions(graph: SamchonGraphMemory, query: string): string[] {
   const handles = new Set<string>();
   for (const token of query.split(/\s+/)) {
     const handle = normalizeNodeIdToken(token);
-    if (handle !== undefined && graph.node(handle) !== undefined) handles.add(handle);
+    if (handle !== undefined && graph.node(handle) !== undefined) {
+      handles.add(handle);
+    }
   }
   for (const match of query.matchAll(/`([^`]+)`/g)) {
-    const raw = match[1]!;
+    // The capture group is required (`+`), so a match always has it.
+    /* c8 ignore next */
+    const raw = match[1] ?? "";
     const id = normalizeNodeIdToken(raw);
     if (id !== undefined && graph.node(id) !== undefined) {
       handles.add(id);
@@ -161,5 +252,14 @@ function normalizeHandle(raw: string): string | undefined {
   const value = raw.trim();
   return /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(value)
     ? value
+    : undefined;
+}
+
+/** Decorator facts already captured on a node, omitted when absent. */
+function decoratorsOf(
+  node: ISamchonGraphNode,
+): ISamchonGraphDecorator[] | undefined {
+  return node.decorators !== undefined && node.decorators.length > 0
+    ? node.decorators
     : undefined;
 }

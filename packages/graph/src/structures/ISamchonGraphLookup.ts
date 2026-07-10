@@ -1,8 +1,5 @@
-import { GraphLanguage } from "../typings/GraphLanguage";
-import { GraphNodeKind } from "../typings/GraphNodeKind";
 import { ISamchonGraphDecorator } from "./ISamchonGraphDecorator";
 import { ISamchonGraphNext } from "./ISamchonGraphNext";
-import { ISamchonGraphOverview } from "./ISamchonGraphOverview";
 
 /** Targeted symbol lookup when a concrete name or handle is being resolved. */
 export interface ISamchonGraphLookup {
@@ -12,16 +9,12 @@ export interface ISamchonGraphLookup {
   /** Ranked symbol matches for the query. */
   hits: ISamchonGraphLookup.IHit[];
 
-  /** Query terms that matched nothing. */
-  unknown?: string[];
-
   /** How to use this source-free result next. */
   next: ISamchonGraphNext;
 
   /** Human-readable compatibility note mirroring `next`. */
   guide: string;
 }
-
 export namespace ISamchonGraphLookup {
   /** Find a concrete class, method, function, property, type, or dotted handle. */
   export interface IRequest {
@@ -37,12 +30,6 @@ export namespace ISamchonGraphLookup {
      */
     query: string;
 
-    /** Restrict hits to this language. */
-    language?: GraphLanguage;
-
-    /** Restrict hits to this declaration kind. */
-    kind?: GraphNodeKind;
-
     /**
      * Maximum hits to return.
      *
@@ -54,9 +41,9 @@ export namespace ISamchonGraphLookup {
     limit?: number;
 
     /**
-     * Include dependency-boundary declarations from bundled libraries. Leave
-     * false for project-source answers; enable only when external type/API
-     * boundaries are the question.
+     * Include dependency-boundary declarations from node_modules or bundled
+     * `.d.ts` libraries. Leave false for project-source answers; enable only
+     * when external type/API boundaries are the question.
      *
      * @default false
      */
@@ -64,9 +51,21 @@ export namespace ISamchonGraphLookup {
   }
 
   /** One ranked hit with a handle to follow via `details` or `trace`. */
-  export interface IHit extends ISamchonGraphOverview.INode {
-    /** Relative relevance; higher is a better match. */
-    score: number;
+  export interface IHit {
+    /** Stable node id for subsequent graph calls. */
+    id: string;
+
+    /** Qualified symbol name when available, otherwise the simple name. */
+    name: string;
+
+    /** Declaration kind (`class`, `method`, `function`, ...). */
+    kind: string;
+
+    /** Project-relative path of the declaration file. */
+    file: string;
+
+    /** 1-based declaration line, when known. */
+    line?: number;
 
     /**
      * The hit's declaration signature, so you can often answer without
@@ -76,5 +75,8 @@ export namespace ISamchonGraphLookup {
 
     /** Decorators written on this declaration, when any. */
     decorators?: ISamchonGraphDecorator[];
+
+    /** Relative relevance; higher is a better match. */
+    score: number;
   }
 }

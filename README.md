@@ -1,5 +1,7 @@
 # `@samchon/graph`
 
+![Logo](assets/og.jpg)
+
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/samchon/graph/blob/master/LICENSE) [![NPM Version](https://img.shields.io/npm/v/@samchon/graph.svg)](https://www.npmjs.com/package/@samchon/graph) [![NPM Downloads](https://img.shields.io/npm/dm/@samchon/graph.svg)](https://www.npmjs.com/package/@samchon/graph) [![Build Status](https://github.com/samchon/graph/workflows/test/badge.svg)](https://github.com/samchon/graph/actions?query=workflow%3Atest)
 
 `@samchon/graph` is an MCP server that gives AI agents a code graph instead of source files.
@@ -79,15 +81,6 @@ Every repository is asked the same onboarding question, with no tool guidance ap
 
 </details>
 
-<details>
-<summary><code>claude code</code> · <code>sonnet 5</code> — median token change -9% (codegraph 65%, serena -5%)</summary>
-
-![Agent token cost — onboarding, per repository (Claude Code)](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-claude-code-sonnet-common.svg)
-
-Unlike gpt-5.4-mini, Sonnet 5 does not consistently trust a single graph call: on several repos it calls `inspect_code_graph` and then still reads or greps the source anyway, so `@samchon/graph`'s token cost lands close to (and on some repos above) the no-tool baseline. `codegraph` reads more like a familiar file-search tool to it and gets adopted more cleanly.
-
-</details>
-
 ### Dedicated
 
 `codegraph`'s own per-repository questions, verbatim:
@@ -116,14 +109,30 @@ Unlike gpt-5.4-mini, Sonnet 5 does not consistently trust a single graph call: o
 
 </details>
 
-<details>
-<summary><code>claude code</code> · <code>sonnet 5</code> — median token change -97% (codegraph 30%, serena -12%)</summary>
+### Indexing time
 
-![Agent token cost — dedicated question, per repository (Claude Code)](https://raw.githubusercontent.com/samchon/graph/master/assets/benchmark-claude-code-sonnet-dedicated.svg)
+| Project | Language | First index |
+|---|---|---|
+| [slim](https://github.com/slimphp/Slim) | PHP | 5s |
+| [excalidraw](https://github.com/excalidraw/excalidraw) | TypeScript | 5s |
+| [gin](https://github.com/gin-gonic/gin) | Go | 15s |
+| [leveldb](https://github.com/google/leveldb) | C++ | 16s |
+| [darthttp](https://github.com/dart-lang/http) | Dart | 23s |
+| [lualine](https://github.com/nvim-lualine/lualine.nvim) | Lua | 25s |
+| [flask](https://github.com/pallets/flask) | Python | 55s |
+| [gson](https://github.com/google/gson) | Java | 2m22s |
+| [sinatra](https://github.com/sinatra/sinatra) | Ruby | 2m35s |
+| [redis](https://github.com/redis/redis) | C | 2m50s |
+| [tokio](https://github.com/tokio-rs/tokio) | Rust | 3m |
+| [koin](https://github.com/InsertKoinIO/koin) | Kotlin | 19m25s |
+| [serilog](https://github.com/serilog/serilog) | C# | not recorded |
+| [alamofire](https://github.com/Alamofire/Alamofire) | Swift | not recorded |
 
-For a narrow, single-answer question, baseline Sonnet 5 often finds it in one or two greps and stops; the graph arm instead makes several `inspect_code_graph` calls exploring the question before answering, so its token cost regularly exceeds baseline by 2-3x on this prompt family. This is a real measured result, not a placeholder — it reflects how this model currently uses the tool, not the graph data itself, which is unchanged between the two harnesses.
+One-time cost per repository. The server re-scans only changed files after that (see [How it works](#how-it-works)); later calls are free.
 
-</details>
+kotlin-language-server, jdtls, and csharp-ls are particularly slow: each resolves the whole project before answering anything.
+
+Closing that gap needs what `@ttsc/graph` already does for TypeScript: a compiler-native indexer instead of a generic LSP server. Not done here.
 
 ### Reproduction
 
@@ -213,6 +222,7 @@ Your [donation](https://github.com/sponsors/samchon) encourages `@samchon/graph`
 
 ## References
 
+- Motivation: real-world use of [`codegraph`](https://github.com/colbymchenry/codegraph) that raised token cost instead of lowering it and visibly degraded agent reasoning.
 - Predecessor: [`@ttsc/graph`](https://github.com/samchon/ttsc), the TypeScript-only original that this project generalizes; its [launch post](https://ttsc.dev/blog/i-made-ts-compiler-graph-mcp/) analyzes why earlier graph tools did not reduce the token bill.
 - Function calling harness: [part 1 — validation feedback](https://dev.to/samchon/qwen-meetup-function-calling-harness-from-675-to-100-3830) and [part 2 — CoT compliance](https://dev.to/samchon/function-calling-harness-2-cot-compliance-from-991-to-100-4f0h), the typia technique the contract is built on.
 - Compared against: [`codegraph`](https://github.com/colbymchenry/codegraph) and [`serena`](https://github.com/oraios/serena).

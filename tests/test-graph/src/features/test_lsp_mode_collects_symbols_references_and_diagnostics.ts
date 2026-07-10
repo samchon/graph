@@ -45,7 +45,6 @@ export const test_lsp_mode_collects_symbols_references_and_diagnostics = async (
     "LSP diagnostics are captured",
     dump.diagnostics?.some(
       (diagnostic) =>
-        diagnostic.source === "fake-lsp" &&
         diagnostic.code === "FAKE001" &&
         diagnostic.severity === "warning",
     ) === true,

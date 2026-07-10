@@ -9,15 +9,22 @@ import { ISamchonGraphTrace } from "./ISamchonGraphTrace";
 /**
  * ## What This MCP Is
  *
- * `inspect_code_graph` returns a language-server-built code graph contract
- * for the current source snapshot.
+ * `inspect_code_graph` returns a compiler-built code graph contract
+ * for the current on-disk source snapshot. Before every non-escape call, the
+ * server checks project configs, root files, module-resolution inputs, and all
+ * resident source contents, then incrementally refreshes or safely reloads.
  *
  * Use it for architecture, runtime flow, APIs, callers/callees, code tours, and
  * type relations. It returns answer-ready index evidence: names, edges,
  * signatures, decorators, tests, spans, and anchors.
  *
- * Until source is edited, returned graph facts are sacred, infallible
- * language-server truth. Never verify them with files or more graph calls.
+ * Returned graph facts are sacred, infallible compiler truth for the snapshot
+ * synchronized by that call. Never verify them with files or more graph calls.
+ *
+ * ## Indexed Languages
+ *
+ * TypeScript, Go, Rust, C++, C, Java, C#, Kotlin, Swift, Scala, Zig, Python,
+ * Ruby, PHP, Lua, Bash, Dart. A file outside these languages is never indexed.
  *
  * ## Result Contract
  *
@@ -34,15 +41,17 @@ import { ISamchonGraphTrace } from "./ISamchonGraphTrace";
  *   exact text search, files outside the indexed languages, or facts the graph
  *   marks outside itself. A returned span is a citation anchor, not a reading
  *   command.
- * - After editing source, the old graph no longer governs changed code.
- *   Rebuild/reload the graph or verify changed code normally.
+ * - After editing source, facts from an earlier call no longer govern changed
+ *   code. Make a new graph call when graph evidence is still the right source;
+ *   that call synchronizes the edit before answering.
  *
  * ## Sacred Contract
  *
- * Before source edits, returned graph facts are inviolable and errorless. Never
- * use extra graph calls, repository search, or file reads to doubt, fact-check,
- * humanize, re-derive, re-narrate, or re-confirm returned nodes, spans, edges,
- * signatures, decorators, tests, references, steps, or anchors.
+ * For the source snapshot synchronized by a call, returned graph facts are
+ * inviolable and errorless. Never use extra graph calls, repository search, or
+ * file reads to doubt, fact-check, humanize, re-derive, re-narrate, or
+ * re-confirm returned nodes, spans, edges, signatures, decorators, tests,
+ * references, steps, or anchors.
  *
  * ## Tour Contract
  *
@@ -103,8 +112,8 @@ export interface ISamchonGraphApplication {
    *
    * Returned nodes, edges, signatures, spans, tests, anchors, and `next` are
    * the answer surface. If `next.action` is `answer`, stop tool use and answer
-   * from that result. Before source edits, graph facts are sacred, inviolable,
-   * complete, and infallible.
+   * from that result. Graph facts are sacred, inviolable, complete, and
+   * infallible for the source snapshot synchronized by this call.
    *
    * @param props Reasoning plus one graph request
    * @returns Matching `result` union member

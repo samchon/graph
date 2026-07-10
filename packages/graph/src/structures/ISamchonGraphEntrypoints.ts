@@ -1,6 +1,6 @@
-import { GraphLanguage } from "../typings/GraphLanguage";
+import { ISamchonGraphDecorator } from "./ISamchonGraphDecorator";
+import { ISamchonGraphEvidence } from "./ISamchonGraphEvidence";
 import { ISamchonGraphNext } from "./ISamchonGraphNext";
-import { ISamchonGraphOverview } from "./ISamchonGraphOverview";
 
 /** The first compact source-free handle list for a code question. */
 export interface ISamchonGraphEntrypoints {
@@ -11,19 +11,22 @@ export interface ISamchonGraphEntrypoints {
   query: string;
 
   /** Ranked symbols relevant to the query. */
-  ranked: ISamchonGraphEntrypoints.IEntrypoint[];
+  hits: ISamchonGraphEntrypoints.IHit[];
 
   /** Code handles written directly in the query, resolved when possible. */
-  mentions: ISamchonGraphOverview.INode[];
+  mentions: ISamchonGraphEntrypoints.IMention[];
 
   /** Direct dependency context for the resolved mentions and highest hits. */
-  dependencyOrientation: string[];
+  neighborhood: ISamchonGraphEntrypoints.INeighborhood[];
 
   /** How to use this source-free result next. */
   next: ISamchonGraphNext;
 
   /** Human-readable compatibility note mirroring `next`. */
   guide: string;
+
+  /** True when result caps hid additional seeds or references. */
+  truncated?: boolean;
 }
 
 export namespace ISamchonGraphEntrypoints {
@@ -45,9 +48,6 @@ export namespace ISamchonGraphEntrypoints {
      */
     query: string;
 
-    /** Target source language for the entrypoints. */
-    language?: GraphLanguage;
-
     /**
      * Maximum ranked hits to return.
      *
@@ -57,14 +57,93 @@ export namespace ISamchonGraphEntrypoints {
      * @default 4
      */
     limit?: number;
+
+    /**
+     * Maximum direct dependencies and dependents to return per indexed symbol.
+     * This is an orientation slice, not a dependency dump; use `trace` or
+     * `details` with `neighbors:true` after choosing the specific handles.
+     * Prefer the default zero for the first call.
+     *
+     * @default 0
+     */
+    neighbors?: number;
+  }
+
+  /** A compact symbol coordinate, optionally with its declaration signature. */
+  export interface INode {
+    /** Stable node id for subsequent graph calls. */
+    id: string;
+
+    /** Qualified symbol name when available, otherwise the simple name. */
+    name: string;
+
+    /** Declaration kind (`class`, `method`, `function`, ...). */
+    kind: string;
+
+    /** Project-relative path of the declaration file. */
+    file: string;
+
+    /** 1-based declaration line, when known. */
+    line?: number;
+
+    /** Declaration head, included only for indexed symbols. */
+    signature?: string;
+
+    /** Decorators written on this declaration, when any. */
+    decorators?: ISamchonGraphDecorator[];
   }
 
   /** One ranked search hit. */
-  export interface IEntrypoint extends ISamchonGraphOverview.INode {
+  export interface IHit extends INode {
     /** Relative relevance; higher is a better match. */
     score: number;
+  }
 
-    /** Why this entrypoint was ranked for the query. */
-    reason: string;
+  /** A code handle written in the query, with its resolution status. */
+  export interface IMention {
+    /** The exact handle text found in the query. */
+    handle: string;
+
+    /** Resolved node when the handle maps unambiguously. */
+    node?: INode;
+
+    /** Candidate nodes when the handle is ambiguous. */
+    candidates?: INode[];
+  }
+
+  /** Direct dependency context around one indexed symbol. */
+  export interface INeighborhood extends INode {
+    /** Symbols this node directly uses, capped by `neighbors`. */
+    dependsOn: IReference[];
+
+    /** Symbols that directly use this node, capped by `neighbors`. */
+    dependedOnBy: IReference[];
+  }
+
+  /** One neighboring symbol and the relationship leading to it. */
+  export interface IReference {
+    /** Stable id of the neighboring node. */
+    id: string;
+
+    /** Neighbor symbol name, qualified when available. */
+    name: string;
+
+    /** Neighbor declaration kind. */
+    kind: string;
+
+    /** Project-relative declaration file for the neighbor. */
+    file: string;
+
+    /** 1-based declaration line, when known. */
+    line?: number;
+
+    /** Edge kind connecting the indexed node and this neighbor. */
+    relation: string;
+
+    /**
+     * Source span for the expression that produced this relationship. It lets
+     * an agent see why the edge exists without opening the file.
+     */
+    evidence?: ISamchonGraphEvidence;
   }
 }

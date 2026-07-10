@@ -2,6 +2,7 @@ import { GraphLanguage } from "../typings/GraphLanguage";
 import { GraphNodeKind } from "../typings/GraphNodeKind";
 import { ISamchonGraphDecorator } from "./ISamchonGraphDecorator";
 import { ISamchonGraphEvidence } from "./ISamchonGraphEvidence";
+import { SamchonGraphNodeModifier } from "./SamchonGraphNodeModifier";
 
 /**
  * One node in the graph: a declared symbol or a structural container (file,
@@ -52,11 +53,8 @@ export interface ISamchonGraphNode {
   /** True when the symbol is part of its module's export surface. */
   exported?: boolean;
 
-  /** The declaration signature, for display. */
-  signature?: string;
-
   /** Declaration modifiers, when the declaration pass recorded any. */
-  modifiers?: string[];
+  modifiers?: SamchonGraphNodeModifier[];
 
   /**
    * The decorators written on this declaration, in source order, when it has

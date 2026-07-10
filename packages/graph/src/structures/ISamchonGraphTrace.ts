@@ -1,6 +1,5 @@
 import { ISamchonGraphEvidence } from "./ISamchonGraphEvidence";
 import { ISamchonGraphNext } from "./ISamchonGraphNext";
-import { ISamchonGraphOverview } from "./ISamchonGraphOverview";
 
 /** The compact dependency or caller flow returned from a selected start symbol. */
 export interface ISamchonGraphTrace {
@@ -35,16 +34,15 @@ export interface ISamchonGraphTrace {
   /** Compact hop summaries preserving node names and edge evidence, capped. */
   steps?: string[];
 
-  /** When `from` was an ambiguous name, the matches to disambiguate with. */
-  candidates?: ISamchonGraphTrace.INode[];
-
   /** How to use this source-free result next. */
   next: ISamchonGraphNext;
 
   /** Human-readable compatibility note mirroring `next`. */
   guide: string;
-}
 
+  /** When `from` was an ambiguous name, the matches to disambiguate with. */
+  candidates?: ISamchonGraphTrace.INode[];
+}
 export namespace ISamchonGraphTrace {
   /** Where and how far to trace dependency flow. */
   export interface IRequest {
@@ -110,9 +108,9 @@ export namespace ISamchonGraphTrace {
     maxNodes?: number;
 
     /**
-     * Include dependency-boundary nodes from bundled libraries. Leave false for
-     * source-flow tours; enable only when the user asks about external type/API
-     * boundaries.
+     * Include dependency-boundary nodes from node_modules or bundled `.d.ts`
+     * libraries. Leave false for source-flow tours; enable only when the user
+     * asks about external type/API boundaries.
      *
      * @default false
      */
@@ -138,10 +136,35 @@ export namespace ISamchonGraphTrace {
      * evidence for the hop and can be cited without opening the file.
      */
     evidence?: ISamchonGraphEvidence;
+
+    /**
+     * Stable access-path aliases derived from edge evidence. These preserve a
+     * resolved member's owner and the concrete property path used at the call
+     * site.
+     */
+    aliases?: string[];
   }
 
   /** A node on the trace: the start, a reached node, or a candidate. */
-  export interface INode extends ISamchonGraphOverview.INode {
+  export interface INode {
+    /** Stable node id for subsequent graph calls. */
+    id: string;
+
+    /** Qualified symbol name when available, otherwise the simple name. */
+    name: string;
+
+    /** Declaration kind (`class`, `method`, `function`, ...). */
+    kind: string;
+
+    /** Project-relative path of the declaration file. */
+    file: string;
+
+    /** 1-based declaration line, when known. */
+    line?: number;
+
+    /** Declaration or implementation citation range, when known. */
+    sourceSpan?: Pick<ISamchonGraphEvidence, "file" | "startLine" | "endLine">;
+
     /** Hops from the start, on a reached node. */
     depth?: number;
 

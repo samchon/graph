@@ -1,5 +1,9 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
-import { ISamchonGraphLookup, ISamchonGraphNode } from "../structures";
+import {
+  ISamchonGraphDecorator,
+  ISamchonGraphLookup,
+  ISamchonGraphNode,
+} from "../structures";
 import {
   bound,
   isStructural,
@@ -8,7 +12,6 @@ import {
   resultNext,
   signatureOf,
   subwords,
-  summaryOf,
 } from "./common";
 import { isSupportPath } from "./isSupportPath";
 
@@ -35,7 +38,7 @@ export function runLookup(
   const wantsInternal = wantsInternalSymbol(queryLc, codeTerms);
   const wantsSupport = wantsSupportSymbol(queryLc);
   const includeExternal = props.includeExternal === true;
-  if (terms.length === 0) {
+  if (terms.length === 0)
     return {
       type: "lookup",
       hits: [],
@@ -47,14 +50,11 @@ export function runLookup(
         "No symbol matched; answer that the graph did not resolve this name or ask for a more concrete symbol.",
       ),
     };
-  }
 
   const scored: ISamchonGraphLookup.IHit[] = [];
   for (const node of graph.nodes) {
     if (node.kind === "file") continue;
     if (!includeExternal && node.external) continue;
-    if (props.language !== undefined && node.language !== props.language) continue;
-    if (props.kind !== undefined && node.kind !== props.kind) continue;
     const score = scoreNode(
       graph,
       node,
@@ -67,12 +67,15 @@ export function runLookup(
     );
     if (score <= 0) continue;
     const hit: ISamchonGraphLookup.IHit = {
-      ...summaryOf(node),
+      id: node.id,
+      name: node.qualifiedName ?? node.name,
+      kind: node.kind,
+      file: node.file,
+      line: node.evidence?.startLine,
       score: Math.round(score),
     };
-    if (node.decorators !== undefined && node.decorators.length > 0) {
-      hit.decorators = node.decorators;
-    }
+    const decorators = decoratorsOf(node);
+    if (decorators !== undefined) hit.decorators = decorators;
     scored.push(hit);
   }
 
@@ -94,24 +97,15 @@ export function runLookup(
   // often answer from lookup alone without a details call.
   for (const hit of hits) {
     const node = graph.node(hit.id);
-    // hits are built from real graph nodes, so the id always resolves.
+    // Every hit's id came from a node in this same graph just above.
     /* c8 ignore next */
     if (node === undefined) continue;
     const sig = signatureOf(graph.project, node);
     if (sig !== undefined) hit.signature = sig;
   }
-
-  // Backtick-quoted code handles that matched nothing are worth flagging so the
-  // model does not silently assume they resolved.
-  const matched = new Set(hits.flatMap((hit) => subwords(hit.name)));
-  const unknown = codeTerms.filter(
-    (term) => !subwords(term).every((sub) => matched.has(sub)),
-  );
-
   return {
     type: "lookup",
     hits,
-    ...(unknown.length > 0 ? { unknown } : {}),
     next: resultNext(
       "inspect",
       "Use one returned id for trace/details when the answer needs flow or shape.",
@@ -128,8 +122,8 @@ function scoreNode(
   graph: SamchonGraphMemory,
   node: ISamchonGraphNode,
   queryLc: string,
-  terms: readonly string[],
-  codeTerms: readonly string[],
+  terms: string[],
+  codeTerms: string[],
   requestedKinds: Set<string>,
   wantsInternal: boolean,
   wantsSupport: boolean,
@@ -200,7 +194,7 @@ function wantsSupportSymbol(queryLc: string): boolean {
   );
 }
 
-function wantsInternalSymbol(queryLc: string, codeTerms: readonly string[]): boolean {
+function wantsInternalSymbol(queryLc: string, codeTerms: string[]): boolean {
   return (
     /\b(internal|private|implementation|impl)\b/.test(queryLc) ||
     codeTerms.some((term) => term.startsWith("_") || term.includes("internal"))
@@ -219,13 +213,17 @@ function isInternalish(node: ISamchonGraphNode): boolean {
 function exactCodeTerms(query: string): string[] {
   const out = new Set<string>();
   for (const match of query.matchAll(/`([^`]+)`/g)) {
-    const normalized = normalizeCodeTerm(match[1]!);
+    // The capture group is required (`+`), so a match always has it.
+    /* c8 ignore next */
+    const normalized = normalizeCodeTerm(match[1] ?? "");
     if (normalized !== undefined) out.add(normalized);
   }
   for (const match of query.matchAll(
     /\b([A-Za-z_$][\w$]*)\s+(method|function|class|interface|type|variable)\b/gi,
   )) {
-    const normalized = normalizeCodeTerm(match[1]!);
+    // The first capture group is required, so a match always has it.
+    /* c8 ignore next */
+    const normalized = normalizeCodeTerm(match[1] ?? "");
     if (normalized !== undefined) out.add(normalized);
   }
   for (const match of query.matchAll(
@@ -264,4 +262,13 @@ function degree(graph: SamchonGraphMemory, id: string): number {
   for (const edge of graph.outgoing(id)) if (!isStructural(edge.kind)) n++;
   for (const edge of graph.incoming(id)) if (!isStructural(edge.kind)) n++;
   return n;
+}
+
+/** Decorator facts already captured on a node, omitted when absent. */
+function decoratorsOf(
+  node: ISamchonGraphNode,
+): ISamchonGraphDecorator[] | undefined {
+  return node.decorators !== undefined && node.decorators.length > 0
+    ? node.decorators
+    : undefined;
 }

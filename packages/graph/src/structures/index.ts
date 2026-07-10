@@ -13,3 +13,4 @@ export * from "./ISamchonGraphOverview";
 export * from "./ISamchonGraphTour";
 export * from "./ISamchonGraphTrace";
 export * from "./ISamchonGraphApplication";
+export * from "./SamchonGraphNodeModifier";

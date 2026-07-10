@@ -171,7 +171,7 @@ export const test_coverage_edge_cases = async () => {
   TestValidator.equals(
     "all LSP diagnostic severities are normalized",
     symbolInformation.diagnostics?.map((diagnostic) => diagnostic.severity),
-    ["error", "warning", "information", "hint", "information"],
+    ["error", "warning", "info", "hint", undefined],
   );
   TestValidator.predicate(
     "reference cap warning is retained",
@@ -185,8 +185,7 @@ export const test_coverage_edge_cases = async () => {
     server: process.execPath,
     serverArgs: [GraphPaths.fakeLspServer, "--minimal-diagnostics"],
   });
-  TestValidator.equals("minimal diagnostics omit source", minimalDiagnostics.diagnostics?.[0]?.source, undefined);
-  TestValidator.equals("minimal diagnostics omit code", minimalDiagnostics.diagnostics?.[0]?.code, undefined);
+  TestValidator.equals("minimal diagnostics fall back to an unknown code", minimalDiagnostics.diagnostics?.[0]?.code, "unknown");
 
   const nullReferences = await buildGraphDump({
     cwd: lspRoot,
@@ -756,25 +755,6 @@ export const test_coverage_edge_cases = async () => {
   });
   TestValidator.predicate("lookup scores file suffixes", (fileLookup.result as any).hits.length > 0);
 
-  const filteredLanguageLookup = await branchApp.inspect_code_graph({
-    question: "filtered language lookup",
-    draft: { reason: "language filter branch.", type: "lookup" },
-    review: "language filter branch.",
-    request: { type: "lookup", query: "duplicate", language: "go" },
-  });
-  TestValidator.equals("lookup applies language filter", (filteredLanguageLookup.result as any).hits, []);
-
-  const filteredKindLookup = await branchApp.inspect_code_graph({
-    question: "filtered kind lookup",
-    draft: { reason: "kind filter branch.", type: "lookup" },
-    review: "kind filter branch.",
-    request: { type: "lookup", query: "duplicate", kind: "class" },
-  });
-  TestValidator.predicate(
-    "lookup applies kind filter",
-    (filteredKindLookup.result as any).hits.every((hit: any) => hit.kind === "class"),
-  );
-
   const ignoredLookup = await branchApp.inspect_code_graph({
     question: "ignored lookup",
     draft: { reason: "ignored score branch.", type: "lookup" },
@@ -789,15 +769,19 @@ export const test_coverage_edge_cases = async () => {
     review: "backtick direct mention branch.",
     request: { type: "entrypoints", query: `inspect \`${exactId}\`` },
   });
-  TestValidator.equals("entrypoints include direct backtick mention", (directEntrypoint.result as any).mentions[0].id, exactId);
+  TestValidator.equals("entrypoints include direct backtick mention", (directEntrypoint.result as any).mentions[0].node.id, exactId);
 
   const defaultTour = await branchApp.inspect_code_graph({
     question: "default tour",
     draft: { reason: "default tour question branch.", type: "tour" },
     review: "default tour question branch.",
-    request: { type: "tour" },
+    request: { type: "tour", query: "default tour question branch." },
   });
-  TestValidator.equals("tour preserves absent user question", (defaultTour.result as any).question, undefined);
+  TestValidator.equals(
+    "tour preserves the caller's query",
+    (defaultTour.result as any).query,
+    "default tour question branch.",
+  );
 
   const { fileFromUri } = await importLib<{ fileFromUri: (uri: string) => string }>("utils/fileFromUri.js");
   TestValidator.equals("non-file URI returns as-is", fileFromUri("untouched"), "untouched");
@@ -866,12 +850,10 @@ export const test_coverage_edge_cases = async () => {
   TestValidator.equals("basename handles bare filenames", basename("file.ts"), "file.ts");
   TestValidator.equals("dirname handles bare filenames", dirname("file.ts"), ".");
 
-  const { publicEvidence, summaryOf } = await importLib<{
+  const { publicEvidence } = await importLib<{
     publicEvidence: (evidence: { file: string; startLine: number; startCol?: number; endLine?: number; endCol?: number }) => Record<string, unknown>;
-    summaryOf: (node: ISamchonGraphNode) => Record<string, any>;
   }>("operations/common.js");
   TestValidator.equals("public evidence preserves optional columns", publicEvidence(fullEvidence).endCol, 15);
-  TestValidator.equals("summary omits absent endLine", summaryOf(branchGraph.node(duplicateAId)!).sourceSpan.endLine, undefined);
 
   TestValidator.equals("languageOf maps headers to c", languageOf("include/value.h"), "c");
   TestValidator.equals("languageOf maps unknown extensions", languageOf("README.md"), "unknown");

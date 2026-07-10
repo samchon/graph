@@ -1,5 +1,3 @@
-import { ISamchonGraphEvidence } from "./ISamchonGraphEvidence";
-
 /**
  * A decorator as written on a declaration, carried on the decorated
  * {@link ISamchonGraphNode}'s `decorators`.
@@ -18,8 +16,16 @@ export interface ISamchonGraphDecorator {
   name: string;
 
   /** The literal call arguments, in source order. Empty for a bare decorator. */
-  arguments?: string[];
-
-  /** The decorator expression span, for display. */
-  evidence?: ISamchonGraphEvidence;
+  arguments: ISamchonGraphDecorator.IArgument[];
+}
+export namespace ISamchonGraphDecorator {
+  /**
+   * One argument of an {@link ISamchonGraphDecorator}. `literal` is set only when
+   * the argument is a string, number, or boolean literal the producer could
+   * resolve statically, so a consumer can use it without evaluating code.
+   */
+  export interface IArgument {
+    /** The statically-resolved literal value, when the argument is a literal. */
+    literal?: string | number | boolean;
+  }
 }

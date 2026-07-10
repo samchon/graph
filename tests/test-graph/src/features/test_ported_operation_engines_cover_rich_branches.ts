@@ -118,7 +118,7 @@ export const test_ported_operation_engines_cover_rich_branches = async () => {
 
   // runTour.broadTourDamping: a neutral query keeps error/config/serialization
   // symbols out of the leading answer surface (they are down-weighted).
-  const tour = (await call(app, { type: "tour", question: "how does the project connect" })).result;
+  const tour = (await call(app, { type: "tour", query: "how does the project connect" })).result;
   TestValidator.predicate("tour returns a surface", tour.entrypoints.length >= 1);
 
   // runOverview + pathPolicy.isPublicApiNoisePath: the internal/ symbol is

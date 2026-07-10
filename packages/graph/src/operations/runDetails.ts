@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import {
+  ISamchonGraphDecorator,
   ISamchonGraphDetails,
   ISamchonGraphEvidence,
   ISamchonGraphNode,
@@ -17,10 +18,13 @@ import {
   summaryOf,
 } from "./common";
 
+// Neighbor lists are a map, not a dump; keep them scannable.
 const DEFAULT_NEIGHBORS = 2;
 const MAX_NEIGHBORS = 3;
+// A container outline can be long; default to a scannable first page.
 const DEFAULT_MEMBERS = 6;
 const MAX_MEMBERS = 8;
+// Direct dependency groups are orientation slices, not full fan-out dumps.
 const DEFAULT_DEPENDENCIES = 2;
 const MAX_DEPENDENCIES = 4;
 // Object literal outlines are navigation aids, not source excerpts.
@@ -34,13 +38,6 @@ const CONTAINER_KINDS = new Set<string>([
   "enum",
   "file",
 ]);
-const EXECUTION_KINDS = new Set([
-  "calls",
-  "instantiates",
-  "accesses",
-  "renders",
-]);
-const TYPE_KINDS = new Set(["type_ref", "extends", "implements", "overrides"]);
 
 /**
  * Resolve each handle to its declared shape: sourceSpan anchors, signature,
@@ -64,11 +61,11 @@ export function runDetails(
     1,
     MAX_DEPENDENCIES,
   );
+  const wantNeighbors = props.neighbors === true;
   const includeExternal = props.includeExternal === true;
   const nodes: ISamchonGraphDetails.INode[] = [];
   const unknown: string[] = [];
-
-  for (const handle of props.handles.slice(0, 6)) {
+  for (const handle of props.handles) {
     const resolved = resolveHandle(graph, handle);
     if (resolved.node === undefined) {
       unknown.push(handle);
@@ -76,42 +73,54 @@ export function runDetails(
     }
     const node = resolved.node;
     const detail: ISamchonGraphDetails.INode = { ...summaryOf(node) };
-    const signature = signatureOf(graph.project, node);
-    if (signature !== undefined) detail.signature = signature;
-    if (node.decorators !== undefined && node.decorators.length > 0) {
-      detail.decorators = node.decorators;
+    if (node.evidence?.startLine !== undefined) detail.line = node.evidence.startLine;
+    const sig = signatureOf(graph.project, node);
+    if (sig !== undefined) detail.signature = sig;
+    const signatureLiterals = literalSummaries(sig);
+    const decorators = decoratorsOf(node);
+    if (decorators !== undefined) detail.decorators = decorators;
+    if (node.implementation !== undefined) {
+      detail.implementation = publicEvidence(node.implementation);
     }
-    if (node.implementation !== undefined) detail.implementation = publicEvidence(
-      node.implementation,
-    );
-
+    const span = node.implementation ?? node.evidence;
+    if (span !== undefined) {
+      detail.sourceSpan = {
+        file: span.file,
+        startLine: span.startLine,
+        ...(span.endLine !== undefined ? { endLine: span.endLine } : {}),
+      };
+    }
     const calls = referencesFromEdges(
       graph,
       graph.outgoing(node.id),
       "to",
       dependencyLimit,
       includeExternal,
-      EXECUTION_KINDS,
+      executionKinds,
     );
     if (calls.length > 0) detail.calls = calls;
-
     const types = referencesFromEdges(
       graph,
       graph.outgoing(node.id),
       "to",
       dependencyLimit,
       includeExternal,
-      TYPE_KINDS,
+      typeKinds,
     );
     if (types.length > 0) detail.types = types;
-
+    const implementedBy = referencesFromEdges(
+      graph,
+      graph.incoming(node.id),
+      "from",
+      dependencyLimit,
+      includeExternal,
+      implementationKinds,
+    );
+    if (implementedBy.length > 0) detail.implementedBy = implementedBy;
     if (CONTAINER_KINDS.has(node.kind)) {
-      const list = containerMembers(graph, node, memberLimit);
+      const list = members(graph, node, memberLimit);
       if (list.length > 0) detail.members = list;
     }
-    // A variable bound to an object literal has no `contains` members; parse its
-    // source span for the top-level property/method outline a consumer reaches
-    // for, without inlining the body.
     if (node.kind === "variable" && detail.sourceSpan !== undefined) {
       const list = objectLiteralMembers(
         graph.project,
@@ -120,8 +129,9 @@ export function runDetails(
       );
       if (list.length > 0) detail.members = list;
     }
-
-    if (props.neighbors === true) {
+    if (signatureLiterals.length > 0)
+      detail.literals = signatureLiterals.slice(0, 6);
+    if (wantNeighbors) {
       detail.dependsOn = referencesFromEdges(
         graph,
         graph.outgoing(node.id),
@@ -137,28 +147,24 @@ export function runDetails(
         includeExternal,
       );
     }
-
-    const diagnostics = graph.diagnosticsFor(node.file);
-    if (diagnostics.length > 0) detail.diagnostics = diagnostics.slice(0, 5);
     nodes.push(detail);
   }
-
   return {
     type: "details",
     nodes,
-    unknown,
     next: resultNext(
       "answer",
-      "Selected signatures, members, dependencies, diagnostics, and spans are enough for a shape or reading-anchor answer.",
+      "Selected signatures, members, dependencies, implementation candidates, and ranges are enough for a shape or reading-anchor answer.",
     ),
     guide: resultGuide(
-      "Use signatures, members, calls, types, diagnostics, and sourceSpan anchors as selected symbol facts.",
+      "Use signatures, members, calls, types, implementedBy, literals, and sourceSpan anchors as selected symbol facts.",
     ),
+    unknown,
   };
 }
 
 /** The members a container owns (via `contains`), each with its own signature. */
-function containerMembers(
+function members(
   graph: SamchonGraphMemory,
   node: ISamchonGraphNode,
   limit: number,
@@ -168,23 +174,21 @@ function containerMembers(
     if (edge.kind !== "contains") continue;
     const member = graph.node(edge.to);
     if (member === undefined) continue;
-    const signature = signatureOf(graph.project, member);
-    out.push({
+    const m: ISamchonGraphDetails.IMember = {
       name: member.qualifiedName ?? member.name,
       kind: member.kind,
-      ...(member.evidence?.startLine !== undefined ? { line: member.evidence.startLine } : {}),
-      ...(signature !== undefined ? { signature } : {}),
-    });
+    };
+    if (member.evidence?.startLine) m.line = member.evidence.startLine;
+    const sig = signatureOf(graph.project, member);
+    if (sig !== undefined) m.signature = sig;
+    const decorators = decoratorsOf(member);
+    if (decorators !== undefined) m.decorators = decorators;
+    out.push(m);
     if (out.length >= limit) break;
   }
   return out;
 }
 
-/**
- * The top-level members of an object literal, parsed from its source span by
- * bracket depth. A member is a property (`name:`) or method (`name(`) declared
- * directly inside the outermost `{ }`.
- */
 function objectLiteralMembers(
   project: string,
   span: Pick<ISamchonGraphEvidence, "file" | "startLine" | "endLine">,
@@ -200,12 +204,12 @@ function objectLiteralMembers(
   let depth = 0;
   let entered = false;
   for (let i = start; i <= end; i++) {
-    // `end` is clamped to lines.length-1, so every index is in range; the `?? ""`
-    // is a defensive fallback that cannot be reached.
+    // `end` is bounded by `lines.length - 1`, so `i` is always in range.
     /* c8 ignore next */
     const raw = lines[i] ?? "";
     const text = stripStrings(raw);
-    if (entered && depth === 1) {
+    const before = depth;
+    if (entered && before === 1) {
       const member = objectMemberOf(raw, i + 1);
       if (member !== undefined) {
         members.push(member);
@@ -224,9 +228,17 @@ function objectLiteralMembers(
   return members;
 }
 
-function objectMemberOf(line: string, lineNumber: number): ISamchonGraphDetails.IMember | undefined {
+function objectMemberOf(
+  line: string,
+  lineNumber: number,
+): ISamchonGraphDetails.IMember | undefined {
   const text = line.trim();
-  if (text === "" || text.startsWith("//") || text.startsWith("/*") || text.startsWith("*")) {
+  if (
+    text === "" ||
+    text.startsWith("//") ||
+    text.startsWith("/*") ||
+    text.startsWith("*")
+  ) {
     return undefined;
   }
   const property = /^(['"]?)([A-Za-z_$][\w$-]*)\1\s*\??\s*:/.exec(text);
@@ -238,9 +250,8 @@ function objectMemberOf(line: string, lineNumber: number): ISamchonGraphDetails.
       signature: signatureLine(text),
     };
   }
-  const method = /^(?:async\s+)?(?:get\s+|set\s+)?([A-Za-z_$][\w$-]*)\s*\(/.exec(
-    text,
-  );
+  const method =
+    /^(?:async\s+)?(?:get\s+|set\s+)?([A-Za-z_$][\w$-]*)\s*\(/.exec(text);
   if (method !== null) {
     return {
       name: method[1]!,
@@ -258,6 +269,48 @@ function signatureLine(text: string): string {
 
 function stripStrings(line: string): string {
   return line.replace(/\/\/.*$/, "").replace(/(['"`])(?:\\.|(?!\1).)*\1/g, "");
+}
+
+const executionKinds = new Set([
+  "calls",
+  "instantiates",
+  "accesses",
+  "renders",
+]);
+const typeKinds = new Set(["type_ref", "extends", "implements", "overrides"]);
+const implementationKinds = new Set(["implements", "overrides"]);
+
+function literalSummaries(text: string | undefined): string[] {
+  if (text === undefined) return [];
+  const out: string[] = [];
+  for (const match of text.matchAll(/(["'`])((?:\\.|(?!\1).){1,80})\1/g)) {
+    const value = cleanLiteral(match[2]);
+    if (value !== undefined && !out.includes(value)) out.push(value);
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
+function cleanLiteral(value: string | undefined): string | undefined {
+  const text = value?.replace(/\s+/g, " ").trim();
+  if (
+    text === undefined ||
+    text === "" ||
+    text.length > 40 ||
+    /^[{}()[\],.:;]+$/.test(text)
+  ) {
+    return undefined;
+  }
+  return text;
+}
+
+/** Decorator facts already captured on a node, omitted when absent. */
+function decoratorsOf(
+  node: ISamchonGraphNode,
+): ISamchonGraphDecorator[] | undefined {
+  return node.decorators !== undefined && node.decorators.length > 0
+    ? node.decorators
+    : undefined;
 }
 
 /** Read a file's lines once, or undefined when it cannot be read. */

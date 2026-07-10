@@ -1,8 +1,6 @@
 import { ISamchonGraphDecorator } from "./ISamchonGraphDecorator";
-import { ISamchonGraphDiagnostic } from "./ISamchonGraphDiagnostic";
 import { ISamchonGraphEvidence } from "./ISamchonGraphEvidence";
 import { ISamchonGraphNext } from "./ISamchonGraphNext";
-import { ISamchonGraphOverview } from "./ISamchonGraphOverview";
 
 /**
  * The source-free facts for a few selected handles.
@@ -18,16 +16,15 @@ export interface ISamchonGraphDetails {
   /** Selected node facts, in the same order as resolved handles when possible. */
   nodes: ISamchonGraphDetails.INode[];
 
-  /** Handles that resolved to no node, or that were ambiguous. */
-  unknown: string[];
-
   /** How to use this source-free result next. */
   next: ISamchonGraphNext;
 
   /** Human-readable compatibility note mirroring `next`. */
   guide: string;
-}
 
+  /** Handles that resolved to no node, or that were ambiguous. */
+  unknown: string[];
+}
 export namespace ISamchonGraphDetails {
   /** Which selected handles to inspect, and how much of each to return. */
   export interface IRequest {
@@ -82,9 +79,9 @@ export namespace ISamchonGraphDetails {
     dependencyLimit?: number;
 
     /**
-     * Include dependency-boundary references from bundled libraries. Leave
-     * false for source-architecture answers; enable only when external
-     * type/API boundaries are the question.
+     * Include dependency-boundary references from node_modules or bundled
+     * `.d.ts` libraries. Leave false for source-architecture answers; enable
+     * only when external type/API boundaries are the question.
      *
      * @default false
      */
@@ -92,7 +89,22 @@ export namespace ISamchonGraphDetails {
   }
 
   /** One inspected node: its declared shape and graph coordinates. */
-  export interface INode extends ISamchonGraphOverview.INode {
+  export interface INode {
+    /** Stable node id for subsequent `details` or `trace` calls. */
+    id: string;
+
+    /** Qualified symbol name when available, otherwise the simple name. */
+    name: string;
+
+    /** Declaration kind (`class`, `method`, `function`, ...). */
+    kind: string;
+
+    /** Project-relative path of the file that declares this node. */
+    file: string;
+
+    /** 1-based declaration line, when known. */
+    line?: number;
+
     /** The declaration signature: its first line(s) up to the body. */
     signature?: string;
 
@@ -102,26 +114,32 @@ export namespace ISamchonGraphDetails {
     /** Assigned implementation span, when source comes from one. */
     implementation?: ISamchonGraphEvidence;
 
-    /**
-     * For a container or object-literal variable: the owned symbol or top-level
-     * property outline a consumer reaches for, without bodies.
-     */
-    members?: IMember[];
-
     /** Direct execution dependencies in source order, with edge evidence. */
     calls?: IReference[];
 
     /** Direct type dependencies in source order, with edge evidence. */
     types?: IReference[];
 
+    /** Concrete nodes that implement or override this interface/base member. */
+    implementedBy?: IReference[];
+
+    /** String literal values from the signature. */
+    literals?: string[];
+
+    /**
+     * For a container or object-literal variable: the owned symbol or top-level
+     * property outline a consumer reaches for, without bodies.
+     */
+    members?: IMember[];
+
+    /** Declaration or implementation citation range, when known. */
+    sourceSpan?: Pick<ISamchonGraphEvidence, "file" | "startLine" | "endLine">;
+
     /** Symbols this node uses (outgoing dependency edges). */
     dependsOn?: IReference[];
 
     /** Symbols that use this node (incoming dependency edges). */
     dependedOnBy?: IReference[];
-
-    /** Diagnostics reported on this node's declaration, when any. */
-    diagnostics?: ISamchonGraphDiagnostic[];
   }
 
   /** One member of a container node, with its signature but not its body. */
@@ -137,10 +155,28 @@ export namespace ISamchonGraphDetails {
 
     /** The member's declaration signature. */
     signature?: string;
+
+    /** Decorators written on this member, when any. */
+    decorators?: ISamchonGraphDecorator[];
   }
 
   /** A dependency neighbor of an inspected node and the edge that links them. */
-  export interface IReference extends ISamchonGraphOverview.INode {
+  export interface IReference {
+    /** Stable id of the neighboring node. */
+    id: string;
+
+    /** Neighbor symbol name, qualified when available. */
+    name: string;
+
+    /** Neighbor declaration kind. */
+    kind: string;
+
+    /** Project-relative declaration file for the neighbor. */
+    file: string;
+
+    /** 1-based declaration line, when known. */
+    line?: number;
+
     /** The edge kind connecting the two (`calls`, `type_ref`, ...). */
     relation: string;
 
@@ -149,5 +185,13 @@ export namespace ISamchonGraphDetails {
      * repository evidence for the edge, not a file-read instruction.
      */
     evidence?: ISamchonGraphEvidence;
+
+    /**
+     * Stable access-path aliases derived from edge evidence. For example, an
+     * edge to `Owner.member` through `obj.slot.member` may expose
+     * `Owner.slot.member` so answers can preserve both the resolved symbol and
+     * the source access path.
+     */
+    aliases?: string[];
   }
 }

@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "@samchon/graph-experiment",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Real language-server experiments for @samchon/graph.",
   "type": "module",
   "scripts": {

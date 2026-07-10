@@ -39,4 +39,12 @@ export interface IBuildGraphOptions {
    * and never reach it.
    */
   lspWarmupTimeoutMs?: number;
+  /**
+   * Keep each language's LSP connection open after the build instead of
+   * closing it. The caller becomes responsible for the returned sessions:
+   * refresh them via `refreshLanguageSession` and close them when done, or
+   * they leak. Only the resident MCP server path sets this; the one-shot
+   * `dump` CLI command never does.
+   */
+  keepAlive?: boolean;
 }

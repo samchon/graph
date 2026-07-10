@@ -105,8 +105,13 @@ export const test_ported_operation_engines_cover_scoring_branches = async () => 
   const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, nodes, edges)));
 
   // Tour over a rendering query drives the full seed scorer across all files.
-  const tour = (await call(app, { type: "tour", question: "how does render mount update the view tree" })).result;
+  const tour = (await call(app, { type: "tour", query: "how does render mount update the view tree" })).result;
   TestValidator.predicate("scoring tour returns entrypoints", tour.entrypoints.length >= 1);
+
+  // A query made only of words too short to become query terms → the seed
+  // scorer's queryAlignmentFactor sees zero query words (its neutral branch).
+  const noTerms = (await call(app, { type: "tour", query: "a an is by to" })).result;
+  TestValidator.predicate("a term-less query still returns entrypoints", noTerms.entrypoints.length >= 1);
 
   // Lookup with backtick handle, "X method" pattern, dotted term, and the
   // functions/classes/interfaces/types/variables kind words.
@@ -117,6 +122,7 @@ export const test_ported_operation_engines_cover_scoring_branches = async () => 
   await scenario_details_edges();
   await scenario_trace_hop_cap();
   await scenario_impact_ranks_and_refs();
+  await scenario_evidence_less_flow_and_test_nodes();
 };
 
 // Exercises impactEndpointRank tiers (exported / external / ignored / test) and
@@ -174,7 +180,7 @@ const scenario_impact_ranks_and_refs = async () => {
   // hub (with neighbors) and hubHelper (without) both match the query, so the
   // tour's nearby spread sees details with and without dependency refs, and its
   // refs surface targets with and without a source span.
-  const tour = (await call(app, { type: "tour", question: "zephyr hub" })).result;
+  const tour = (await call(app, { type: "tour", query: "zephyr hub" })).result;
   TestValidator.predicate("tour surfaces the hub", tour.entrypoints.length >= 1);
 
   // A minimal graph where both detail seeds are guaranteed: alpha has a
@@ -188,7 +194,7 @@ const scenario_impact_ranks_and_refs = async () => {
   ];
   const medges = [edge("src/m.ts#alpha:function", "src/m.ts#leaf:variable", "accesses", "src/m.ts")];
   const miniApp = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(mini, mnodes, medges)));
-  const miniTour = (await call(miniApp, { type: "tour", question: "alpha beta" })).result;
+  const miniTour = (await call(miniApp, { type: "tour", query: "alpha beta" })).result;
   TestValidator.predicate("mini tour surfaces both seeds", miniTour.entrypoints.length >= 1);
 };
 
@@ -204,7 +210,7 @@ const scenario_seed_fallbacks = async () => {
     node("src/types.ts#Point:interface", "interface", "Point", "src/types.ts", 1, 1),
   ];
   const appI = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, interfaces, [])));
-  const fallback = (await call(appI, { type: "tour", question: "describe the shape and point interfaces" })).result;
+  const fallback = (await call(appI, { type: "tour", query: "describe the shape and point interfaces" })).result;
   TestValidator.predicate("tour falls back to ranked seeds", fallback.entrypoints.length >= 0);
 
   // Only enum/module seeds → flowSeedIdsOf finds no executable and uses all seeds.
@@ -213,7 +219,7 @@ const scenario_seed_fallbacks = async () => {
     node("src/m.ts#Registry:module", "module", "Registry", "src/m.ts", 1, 1),
   ];
   const appE = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, enums, [edge("src/m.ts#Registry:module", "src/e.ts#Mode:enum", "references", "src/m.ts")])));
-  const enumTour = (await call(appE, { type: "tour", question: "the Mode enum and Registry module" })).result;
+  const enumTour = (await call(appE, { type: "tour", query: "the Mode enum and Registry module" })).result;
   TestValidator.predicate("non-executable seeds still produce a tour", enumTour.entrypoints.length >= 1);
 
   // Entrypoints: a backtick handle that resolves plus one that is not a valid
@@ -285,4 +291,55 @@ const scenario_trace_hop_cap = async () => {
   const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, nodes, edges)));
   const trace = (await call(app, { type: "trace", from: "s", direction: "forward", maxNodes: 7 })).result;
   TestValidator.predicate("dense forward trace truncates", trace.truncated === true);
+};
+
+// Exercises the tour's node-conversion helpers with evidence-less nodes that
+// reach them through paths `isTourSeed` does not gate: a flow-reached callee
+// (traceNodeOf) and a test-file caller found via testAnchorsOf (graphNodeOf).
+// Also exercises the tour's `includeTests: false` branch.
+const scenario_evidence_less_flow_and_test_nodes = async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-ghost-"));
+  const seed = node("src/g.ts#seedFn:function", "function", "seedFn", "src/g.ts", 1, 1, { exported: false });
+  // Reached through the seed's forward trace, not itself a scored seed, so it
+  // is never required to carry evidence → traceNodeOf's sourceSpan/line-absent
+  // branch runs when it is packaged into the flow.
+  const reachedGhost = (() => {
+    const n = node("src/g.ts#reachedGhost:function", "function", "reachedGhost", "src/g.ts", 2, 2, { exported: false });
+    delete (n as { evidence?: unknown }).evidence;
+    return n;
+  })();
+  // A test-file caller of the seed, found via testAnchorsOf's incoming-edge
+  // scan (not `isTourSeed`-filtered either) → graphNodeOf's absent branch.
+  const testerGhost = (() => {
+    const n = node("tests/g.test.ts#testerGhost:function", "function", "testerGhost", "tests/g.test.ts", 1, 1, { exported: false });
+    delete (n as { evidence?: unknown }).evidence;
+    return n;
+  })();
+  // A seed with real evidence (so it qualifies as a seed) pointing at a file
+  // that does not exist on disk, and no inline signature: signatureOf can
+  // neither use the field nor read the file, so its detail node's signature
+  // stays absent → detailNodeOf's signature-absent branch runs.
+  const noSigSeed = node("src/nosig.ts#noSigSeed:function", "function", "noSigSeed", "src/nosig.ts", 1, 1, {
+    exported: false,
+    signature: undefined,
+  });
+  const nodes = [seed, reachedGhost, testerGhost, noSigSeed];
+  const edges = [
+    edge("src/g.ts#seedFn:function", "src/g.ts#reachedGhost:function", "calls", "src/g.ts"),
+    edge("tests/g.test.ts#testerGhost:function", "src/g.ts#seedFn:function", "tests", "tests/g.test.ts"),
+  ];
+  const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, nodes, edges)));
+  const tour = (await call(app, { type: "tour", query: "seedFn reachedGhost testerGhost noSigSeed" })).result;
+  TestValidator.predicate("the evidence-having seed is still an entrypoint", tour.entrypoints.some((n) => n.name === "seedFn"));
+  TestValidator.predicate(
+    "a seed with no readable signature still becomes an entrypoint",
+    tour.entrypoints.some((n) => n.name === "noSigSeed" && n.signature === undefined),
+  );
+  TestValidator.predicate(
+    "the evidence-less callee is still reached by the flow",
+    tour.primaryFlow.some((flow) => flow.reached.some((n) => n.name === "reachedGhost")),
+  );
+
+  const noTests = (await call(app, { type: "tour", query: "seedFn", includeTests: false })).result;
+  TestValidator.equals("includeTests=false yields no test anchors", noTests.tests.length, 0);
 };

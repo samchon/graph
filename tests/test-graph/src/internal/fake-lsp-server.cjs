@@ -24,7 +24,9 @@ const options = {
   symbolInformation: false,
   unknownResponse: false,
   unknownParent: false,
+  changeSymbolsOnRefresh: false,
 };
+const symbolCallCountByUri = new Map();
 let diagnosticSeverities = [2];
 let hangMethod;
 if (process.env.SAMCHON_GRAPH_FAKE_LSP_ARGS_FILE) {
@@ -85,6 +87,8 @@ for (const arg of process.argv.slice(2)) {
     options.unknownResponse = true;
   } else if (arg === "--unknown-parent") {
     options.unknownParent = true;
+  } else if (arg === "--change-symbols-on-refresh") {
+    options.changeSymbolsOnRefresh = true;
   } else if (arg.startsWith("--hang-method=")) {
     hangMethod = arg.slice("--hang-method=".length);
   } else if (arg.startsWith("--slow-first-references=")) {
@@ -259,6 +263,27 @@ function handle(message) {
               },
             },
           ],
+        },
+      ]);
+    }
+    if (options.changeSymbolsOnRefresh) {
+      // Models a server whose second `documentSymbol` answer reflects an edit
+      // made between builds: the resident source's refresh must call this
+      // again (not reuse the first build's symbols) after a file changes.
+      const count = (symbolCallCountByUri.get(uri) ?? 0) + 1;
+      symbolCallCountByUri.set(uri, count);
+      const name = count === 1 ? "FirstHelper" : "SecondHelper";
+      return respond(message.id, [
+        {
+          name,
+          detail: `function ${name}(): void`,
+          kind: 12,
+          range: { start: { line: 6, character: 0 }, end: { line: 8, character: 1 } },
+          selectionRange: {
+            start: { line: 6, character: 16 },
+            end: { line: 6, character: 16 + name.length },
+          },
+          children: [],
         },
       ]);
     }

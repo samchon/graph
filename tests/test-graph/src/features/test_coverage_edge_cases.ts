@@ -795,9 +795,13 @@ export const test_coverage_edge_cases = async () => {
     question: "default tour",
     draft: { reason: "default tour question branch.", type: "tour" },
     review: "default tour question branch.",
-    request: { type: "tour" },
+    request: { type: "tour", query: "default tour question branch." },
   });
-  TestValidator.equals("tour preserves absent user question", (defaultTour.result as any).question, undefined);
+  TestValidator.equals(
+    "tour preserves the caller's query",
+    (defaultTour.result as any).query,
+    "default tour question branch.",
+  );
 
   const { fileFromUri } = await importLib<{ fileFromUri: (uri: string) => string }>("utils/fileFromUri.js");
   TestValidator.equals("non-file URI returns as-is", fileFromUri("untouched"), "untouched");

@@ -1,33 +1,25 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import {
-  DocumentSymbolResult,
-  IDiagnostic,
-  IDocumentSymbol,
-  ILocation,
-  isDocumentSymbol,
-  ISymbolInformation,
-  LspClient,
-} from "../lsp";
-import { isTestPath } from "../operations/isTestPath";
+import { IDiagnostic, LspClient } from "../lsp";
 import {
   ISamchonGraphDiagnostic,
-  ISamchonGraphDump,
   ISamchonGraphEdge,
   ISamchonGraphNode,
 } from "../structures";
-import { GraphLanguage, GraphNodeKind } from "../typings";
+import { GraphLanguage } from "../typings";
 import { projectRelative, readText, walkSourceFiles } from "../utils/fs";
 import { fileFromUri, fileUri, isSubPath } from "../utils/path";
-import { decoratorsAbove } from "./decoratorsAbove";
+import { appendAll } from "./appendAll";
+import { dedupeEdges } from "./dedupeEdges";
+import { dedupeNodes } from "./dedupeNodes";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IIndexerResult } from "./IIndexerResult";
+import { ILspSession } from "./ILspSession";
+import { languageIdOf } from "./languageIdOf";
 import { allExtensions, languageOf, specOf } from "./languages";
-import { overrideEdges } from "./overrideEdges";
-import { resolveType } from "./resolveType";
+import { scanSession } from "./scanSession";
 import { buildStaticGraph } from "./staticIndexer";
-import { supertypesOf } from "./supertypesOf";
 
 export async function buildLspGraph(
   options: IBuildGraphOptions = {},
@@ -39,6 +31,7 @@ export async function buildLspGraph(
   const diagnostics: ISamchonGraphDiagnostic[] = [];
   const warnings: string[] = [];
   const staticFallbackLanguages: GraphLanguage[] = [];
+  const sessions = new Map<GraphLanguage, ILspSession>();
   let lspNodeCount = 0;
 
   for (const language of languages) {
@@ -72,7 +65,7 @@ export async function buildLspGraph(
       ? { command: "cmd.exe", args: ["/d", "/s", "/c", resolved, ...args] }
       : { command, args: [...args] };
     try {
-      const result = await collectLanguageGraph(
+      const { result, session } = await collectLanguageGraph(
         root,
         language,
         spawnable.command,
@@ -85,12 +78,14 @@ export async function buildLspGraph(
           `${language}: LSP returned no symbols; using static fallback.`,
         );
         staticFallbackLanguages.push(language);
+        if (options.keepAlive) await session.client.close();
       } else {
         appendAll(nodes, result.nodes);
         appendAll(edges, result.edges);
         appendAll(diagnostics, result.diagnostics);
         appendAll(warnings, result.warnings);
         lspNodeCount += result.nodes.length;
+        if (options.keepAlive) sessions.set(language, session);
       }
     } catch (error) {
       warnings.push(
@@ -115,6 +110,7 @@ export async function buildLspGraph(
           warnings: [...fallback.warnings!, ...warnings],
         },
         warnings,
+        ...(options.keepAlive ? { sessions } : {}),
       };
     }
     appendAll(nodes, fallback.nodes);
@@ -131,6 +127,7 @@ export async function buildLspGraph(
         warnings: [...fallback.warnings!, ...warnings],
       },
       warnings,
+      ...(options.keepAlive ? { sessions } : {}),
     };
   }
 
@@ -148,6 +145,7 @@ export async function buildLspGraph(
       warnings,
     },
     warnings,
+    ...(options.keepAlive ? { sessions } : {}),
   };
 }
 
@@ -164,6 +162,12 @@ function discoverLanguages(
   ];
 }
 
+// Opens a fresh LSP connection and hands back BOTH the extracted graph slice
+// and the live session (opened files, diagnostics buffer). The caller decides
+// whether to close the client (a one-shot `dump`) or keep it (a resident
+// server, so `refreshLanguageSession` can reuse it later without paying
+// `initialize` again — the dominant cost for servers like kotlin-language-server
+// that resolve a whole Gradle project before answering it).
 async function collectLanguageGraph(
   root: string,
   language: GraphLanguage,
@@ -172,11 +176,42 @@ async function collectLanguageGraph(
   files: readonly string[],
   options: IBuildGraphOptions,
 ): Promise<{
-  nodes: ISamchonGraphNode[];
-  edges: ISamchonGraphEdge[];
-  diagnostics: ISamchonGraphDiagnostic[];
-  warnings: string[];
+  result: {
+    nodes: ISamchonGraphNode[];
+    edges: ISamchonGraphEdge[];
+    diagnostics: ISamchonGraphDiagnostic[];
+    warnings: string[];
+  };
+  session: ILspSession;
 }> {
+  const session = await openLanguageSession(root, language, command, args, files, options);
+  let result: {
+    nodes: ISamchonGraphNode[];
+    edges: ISamchonGraphEdge[];
+    diagnostics: ISamchonGraphDiagnostic[];
+    warnings: string[];
+  };
+  try {
+    result = await scanSession(session, options);
+  } catch (error) {
+    // A session that failed mid-scan is not safely reusable; close it
+    // regardless of keepAlive so a later refresh starts a fresh one instead
+    // of leaking this process.
+    await session.client.close();
+    throw error;
+  }
+  if (!options.keepAlive) await session.client.close();
+  return { result, session };
+}
+
+async function openLanguageSession(
+  root: string,
+  language: GraphLanguage,
+  command: string,
+  args: readonly string[],
+  files: readonly string[],
+  options: IBuildGraphOptions,
+): Promise<ILspSession> {
   const client = new LspClient(command, args, options.lspTimeoutMs ?? 10_000);
   const diagnostics: ISamchonGraphDiagnostic[] = [];
   let lastProgressAt = 0;
@@ -210,24 +245,14 @@ async function collectLanguageGraph(
     });
     client.notify("initialized", {});
 
-    const nodes: ISamchonGraphNode[] = [];
-    const byFile = new Map<string, ISamchonGraphNode[]>();
-    const opened: Array<{ abs: string; rel: string; text: string }> = [];
-    for (const abs of files) {
-      const text = readText(abs);
-      /* c8 ignore next */
-      if (text === undefined) continue;
-      const rel = projectRelative(root, abs);
-      opened.push({ abs, rel, text });
-      client.notify("textDocument/didOpen", {
-        textDocument: {
-          uri: fileUri(abs),
-          languageId: languageIdOf(language),
-          version: 1,
-          text,
-        },
-      });
-    }
+    const session: ILspSession = {
+      client,
+      root,
+      language,
+      opened: new Map(),
+      diagnostics,
+    };
+    await openFiles(session, files);
 
     // Wait for the server's initial indexing BEFORE asking for symbols. Servers
     // that load a project asynchronously differ in how they answer early
@@ -239,278 +264,35 @@ async function collectLanguageGraph(
       options.lspReadyQuietMs ?? 1_500,
       options.lspReadyTimeoutMs ?? 30_000,
     );
-
-    for (const openedFile of opened) {
-      const symbols = await client.request<DocumentSymbolResult>(
-        "textDocument/documentSymbol",
-        { textDocument: { uri: fileUri(openedFile.abs) } },
-      );
-      const converted = convertSymbols(language, openedFile.rel, symbols);
-      byFile.set(openedFile.rel, converted);
-      appendAll(nodes, converted);
-    }
-
-    const linesByFile = new Map<string, string[]>();
-    for (const openedFile of opened) {
-      linesByFile.set(openedFile.rel, openedFile.text.split(/\r?\n/));
-    }
-
-    const edges: ISamchonGraphEdge[] = [];
-    const referenceLimit = options.lspReferenceLimit ?? 250;
-    // When the reference budget is smaller than the symbol count, spend it on
-    // product code first: test files (spec callbacks and the like) otherwise
-    // crowd out the API surface an agent actually asks about.
-    const referenceTargets = [...nodes]
-      .sort((a, b) => Number(isTestPath(a.file)) - Number(isTestPath(b.file)))
-      .slice(0, referenceLimit);
-    // Language servers build their cross-file reference index lazily — often on
-    // the FIRST `textDocument/references` call, not during the initial
-    // `$/progress` indexing wait above. So warm the index with one patient
-    // request before firing the batch: once it exists, every later request is
-    // served from the server's cache in milliseconds. Firing the whole batch
-    // cold instead makes every request race the same one-time build and time
-    // out (ruby-lsp on a fresh project is the pathological case). Results stay
-    // indexed by target order to keep edge output deterministic.
-    const referenceParams = (target: ISamchonGraphNode): unknown => {
-      const evidence = target.evidence!;
-      return {
-        textDocument: { uri: fileUri(path.join(root, target.file)) },
-        position: {
-          line: evidence.startLine - 1,
-          character: Math.max(0, evidence.startCol! - 1),
-        },
-        context: { includeDeclaration: false },
-      };
-    };
-    const referenceResults: (ILocation[] | null)[] = new Array(
-      referenceTargets.length,
-    ).fill(null);
-    // Only after the warmup request actually returns is the server proven able
-    // to answer references; a timeout even under the patient budget means it
-    // cannot, so we keep the structural graph and skip the rest rather than
-    // grinding the full batch.
-    let referencesUnavailable = false;
-    if (referenceTargets.length > 0) {
-      const warm = await safeReferences(
-        client,
-        referenceParams(referenceTargets[0]!),
-        options.lspWarmupTimeoutMs ?? 180_000,
-      );
-      if (warm === "timeout") referencesUnavailable = true;
-      else referenceResults[0] = warm;
-    }
-    if (!referencesUnavailable && referenceTargets.length > 1) {
-      const rest = await mapWithConcurrency(
-        referenceTargets.slice(1),
-        options.lspConcurrency ?? 16,
-        async (target) => {
-          const refs = await safeReferences(client, referenceParams(target));
-          return refs === "timeout" ? null : refs;
-        },
-      );
-      for (let index = 0; index < rest.length; index++) {
-        referenceResults[index + 1] = rest[index]!;
-      }
-    }
-    for (let index = 0; index < referenceTargets.length; index++) {
-      const target = referenceTargets[index]!;
-      const refs = referenceResults[index];
-      for (const ref of refs ?? []) {
-        const refFile = fileFromUri(ref.uri);
-        if (!isSubPath(root, refFile)) continue;
-        const rel = projectRelative(root, refFile);
-        const owners = byFile.get(rel);
-        if (owners === undefined) continue;
-        const owner = ownerAt(owners, ref.range.start.line + 1);
-        if (owner === undefined || owner.id === target.id) continue;
-        const refLine = linesByFile.get(rel)?.[ref.range.start.line];
-        edges.push({
-          from: owner.id,
-          to: target.id,
-          kind: referenceKind(target.kind, refLine, ref.range.end.character),
-          evidence: {
-            file: rel,
-            startLine: ref.range.start.line + 1,
-            startCol: ref.range.start.character + 1,
-            endLine: ref.range.end.line + 1,
-            endCol: ref.range.end.character + 1,
-          },
-        });
-      }
-    }
-
-    // Make the document-symbol hierarchy explicit: every nested symbol is
-    // contained by its owner. The owner is the node whose path is this node's
-    // qualified name without its last segment.
-    const nodeByPath = new Map<string, ISamchonGraphNode>();
-    for (const node of nodes) {
-      nodeByPath.set(`${node.file}\0${node.qualifiedName ?? node.name}`, node);
-    }
-    for (const node of nodes) {
-      if (node.qualifiedName === undefined) continue;
-      const parent = nodeByPath.get(
-        `${node.file}\0${node.qualifiedName.slice(0, node.qualifiedName.lastIndexOf("."))}`,
-      );
-      if (parent === undefined) continue;
-      edges.push({
-        from: parent.id,
-        to: node.id,
-        kind: "contains",
-        evidence: node.evidence,
-      });
-    }
-
-    // Inheritance: language servers do not report supertypes uniformly, so parse the
-    // declaration line the same way the static indexer does and resolve the
-    // supertypes against the symbols the server did report.
-    const byName = new Map<string, ISamchonGraphNode[]>();
-    for (const node of nodes) {
-      const list = byName.get(node.name);
-      if (list === undefined) byName.set(node.name, [node]);
-      else list.push(node);
-    }
-    for (const node of nodes) {
-      if (node.kind !== "class" && node.kind !== "interface") continue;
-      const line = linesByFile.get(node.file)![node.evidence!.startLine - 1]!.trim();
-      const seen = new Set<string>();
-      for (const supertype of supertypesOf(line)) {
-        const target = resolveType(supertype.name, node, byName);
-        if (target === undefined) continue;
-        const key = `${supertype.relation}\0${target.id}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        edges.push({
-          from: node.id,
-          to: target.id,
-          kind: supertype.relation,
-          evidence: node.evidence,
-        });
-      }
-    }
-    // Decorators sit on the lines directly above a declaration; link the
-    // decorated symbol to the decorator it names.
-    for (const node of nodes) {
-      const fileLines = linesByFile.get(node.file)!;
-      for (const name of decoratorsAbove(
-        fileLines,
-        node.evidence!.startLine - 1,
-      )) {
-        const target = resolveType(name, node, byName);
-        if (target === undefined) continue;
-        edges.push({
-          from: node.id,
-          to: target.id,
-          kind: "decorates",
-          evidence: node.evidence,
-        });
-      }
-    }
-    appendAll(edges, overrideEdges(nodes, edges));
-
-    return {
-      nodes,
-      edges,
-      diagnostics,
-      warnings: [
-        ...(nodes.length > referenceLimit
-          ? [`${language}: reference collection capped at ${referenceLimit} symbols.`]
-          : []),
-        ...(referencesUnavailable
-          ? [`${language}: server did not answer references within the warmup budget; kept structural edges only.`]
-          : []),
-      ],
-    };
-  } finally {
+    return session;
+  } catch (error) {
+    // A server that never answers `initialize` (or fails before the session
+    // is usable) still holds a live child process; nothing else references
+    // this client yet, so this is the only place that can close it before
+    // the failure propagates to the static fallback.
     await client.close();
+    throw error;
   }
 }
 
-// Classify a reference the same way the static indexer does, but with the
-// language server's exact position: an identifier immediately followed by `(`
-// is an invocation (a class becomes an instantiation, anything else a call);
-// otherwise the target's kind decides between a type reference, a member
-// access, and a generic reference.
-function referenceKind(
-  targetKind: GraphNodeKind,
-  refLine: string | undefined,
-  endCol: number,
-): ISamchonGraphEdge["kind"] {
-  const after = refLine === undefined ? "" : refLine.slice(endCol).trimStart();
-  if (after.startsWith("(")) {
-    return targetKind === "class" || targetKind === "constructor"
-      ? "instantiates"
-      : "calls";
+// Opens every file for a freshly-initialized session (its `opened` map always
+// starts empty; a later refresh reconciles instead of calling this again).
+async function openFiles(session: ILspSession, files: readonly string[]): Promise<void> {
+  for (const abs of files) {
+    const text = readText(abs);
+    /* c8 ignore next */
+    if (text === undefined) continue;
+    const rel = projectRelative(session.root, abs);
+    session.opened.set(rel, { abs, text });
+    session.client.notify("textDocument/didOpen", {
+      textDocument: {
+        uri: fileUri(abs),
+        languageId: languageIdOf(session.language),
+        version: 1,
+        text,
+      },
+    });
   }
-  switch (targetKind) {
-    case "class":
-    case "interface":
-    case "type":
-    case "enum":
-      return "type_ref";
-    case "property":
-    case "field":
-    case "variable":
-      return "accesses";
-    default:
-      return "references";
-  }
-}
-
-// Language servers such as rust-analyzer answer requests made during indexing
-// with a `ContentModified` error; letting that reject would drop the whole
-// language to the static fallback. Retry those fast rejections a few times,
-// then treat this target as having no references rather than failing the
-// language. A TIMEOUT is different: it already burned the full request timeout,
-// so retrying triples the damage — report it so the caller can stop asking.
-async function safeReferences(
-  client: LspClient,
-  params: unknown,
-  timeoutMs?: number,
-): Promise<ILocation[] | null | "timeout"> {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      return await client.request<ILocation[] | null>(
-        "textDocument/references",
-        params,
-        timeoutMs,
-      );
-    } catch (error) {
-      if ((error as Error).message.startsWith(
-        "LSP request timed out",
-      )) return "timeout";
-      await new Promise((resolve) => {
-        setTimeout(resolve, 100);
-      });
-    }
-  }
-  return null;
-}
-
-// Array spread (`push(...items)`) passes every element as a call argument and
-// blows the call stack on the item counts a real language server can produce —
-// the Dart analysis server emitted enough diagnostics on the flutter tree to
-// crash the whole build. Append by loop, which has no such limit.
-function appendAll<T>(target: T[], items: readonly T[]): void {
-  for (const item of items) target.push(item);
-}
-
-async function mapWithConcurrency<T, R>(
-  items: readonly T[],
-  limit: number,
-  worker: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  const run = async (): Promise<void> => {
-    for (;;) {
-      const index = cursor++;
-      if (index >= items.length) return;
-      results[index] = await worker(items[index]!);
-    }
-  };
-  const lanes = Math.max(1, Math.min(limit, items.length));
-  await Promise.all(Array.from({ length: lanes }, run));
-  return results;
 }
 
 async function waitForIndexing(
@@ -537,129 +319,6 @@ async function waitForIndexing(
       setTimeout(resolve, 50);
     });
   }
-}
-
-function convertSymbols(
-  language: GraphLanguage,
-  file: string,
-  symbols: DocumentSymbolResult,
-): ISamchonGraphNode[] {
-  const out: ISamchonGraphNode[] = [];
-  const visitDocument = (symbol: IDocumentSymbol, owners: string[]): void => {
-    const kind = kindOf(symbol.kind);
-    if (kind !== undefined) {
-      const qualifiedName = [...owners, symbol.name].join(".");
-      out.push({
-        id: `${file}#${qualifiedName}:${kind}`,
-        kind,
-        language,
-        name: symbol.name,
-        ...(owners.length > 0 ? { qualifiedName } : {}),
-        file,
-        external: false,
-        exported: true,
-        signature: symbol.detail,
-        evidence: {
-          file,
-          startLine: symbol.selectionRange.start.line + 1,
-          startCol: symbol.selectionRange.start.character + 1,
-          endLine: symbol.range.end.line + 1,
-          endCol: symbol.range.end.character + 1,
-        },
-      });
-    }
-    for (const child of symbol.children ?? []) {
-      visitDocument(
-        child,
-        kind === undefined ? owners : [...owners, symbol.name],
-      );
-    }
-  };
-  for (const symbol of symbols ?? []) {
-    if (isDocumentSymbol(symbol)) visitDocument(symbol, []);
-    else out.push(convertSymbolInformation(language, file, symbol));
-  }
-  return out;
-}
-
-function convertSymbolInformation(
-  language: GraphLanguage,
-  file: string,
-  symbol: ISymbolInformation,
-): ISamchonGraphNode {
-  const kind = kindOf(symbol.kind) ?? "external_symbol";
-  const owners =
-    symbol.containerName === undefined || symbol.containerName === ""
-      ? []
-      : [symbol.containerName];
-  const qualifiedName = [...owners, symbol.name].join(".");
-  return {
-    id: `${file}#${qualifiedName}:${kind}`,
-    kind,
-    language,
-    name: symbol.name,
-    ...(owners.length > 0 ? { qualifiedName } : {}),
-    file,
-    external: false,
-    exported: true,
-    evidence: {
-      file,
-      startLine: symbol.location.range.start.line + 1,
-      startCol: symbol.location.range.start.character + 1,
-      endLine: symbol.location.range.end.line + 1,
-      endCol: symbol.location.range.end.character + 1,
-    },
-  };
-}
-
-function kindOf(symbolKind: number): GraphNodeKind | undefined {
-  switch (symbolKind) {
-    case 2:
-      return "module";
-    case 3:
-      return "namespace";
-    case 5:
-      return "class";
-    case 6:
-      return "method";
-    case 7:
-      return "property";
-    case 8:
-      return "field";
-    case 9:
-      return "constructor";
-    case 10:
-      return "enum";
-    case 11:
-      return "interface";
-    case 12:
-      return "function";
-    case 13:
-    case 14:
-      return "variable";
-    case 23:
-      return "type";
-    default:
-      return undefined;
-  }
-}
-
-function ownerAt(nodes: readonly ISamchonGraphNode[], line: number): ISamchonGraphNode | undefined {
-  return nodes
-    .filter(
-      (node) =>
-        node.evidence !== undefined &&
-        node.evidence.startLine <= line &&
-        node.evidence.endLine! >= line,
-    )
-    .sort(
-      (a, b) => {
-        const start = b.evidence!.startLine - a.evidence!.startLine;
-        if (start !== 0) return start;
-        /* c8 ignore next */
-        return a.evidence!.endLine! - b.evidence!.endLine!;
-      },
-    )[0];
 }
 
 function convertDiagnostic(file: string, diagnostic: IDiagnostic): ISamchonGraphDiagnostic {
@@ -692,12 +351,6 @@ function severityOf(value: number | undefined): ISamchonGraphDiagnostic["severit
     default:
       return "information";
   }
-}
-
-function languageIdOf(language: GraphLanguage): string {
-  if (language === "csharp") return "csharp";
-  if (language === "cpp") return "cpp";
-  return language;
 }
 
 function isTtscserverCommand(command: string): boolean {
@@ -733,19 +386,4 @@ function resolveCommand(command: string): string | undefined {
     .filter((line) => line !== "");
   const executable = lines.filter((line) => /\.(exe|cmd|bat)$/i.test(line));
   return [...executable, ...lines][0];
-}
-
-function dedupeNodes(nodes: ISamchonGraphNode[]): ISamchonGraphNode[] {
-  const map = new Map<string, ISamchonGraphNode>();
-  for (const node of nodes) map.set(node.id, node);
-  return [...map.values()];
-}
-
-function dedupeEdges(edges: ISamchonGraphEdge[]): ISamchonGraphEdge[] {
-  const map = new Map<string, ISamchonGraphEdge>();
-  for (const edge of edges) map.set(
-    `${edge.kind}\0${edge.from}\0${edge.to}`,
-    edge,
-  );
-  return [...map.values()];
 }

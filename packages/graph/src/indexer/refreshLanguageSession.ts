@@ -1,0 +1,67 @@
+import path from "node:path";
+import { ISamchonGraphDiagnostic, ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
+import { projectRelative, readText } from "../utils/fs";
+import { fileUri } from "../utils/path";
+import { IBuildGraphOptions } from "./IBuildGraphOptions";
+import { ILspSession } from "./ILspSession";
+import { languageIdOf } from "./languageIdOf";
+import { scanSession } from "./scanSession";
+
+// Re-scans an already-initialized session: reconciles file state against
+// disk, then reruns the exact same symbol/reference/edge collection a fresh
+// build would. Skips `initialize` entirely, which is the expensive step for
+// servers that resolve a whole project (kotlin-language-server's Gradle sync,
+// jdtls's workspace import) rather than the reference collection itself.
+export async function refreshLanguageSession(
+  session: ILspSession,
+  files: readonly string[],
+  options: IBuildGraphOptions,
+): Promise<{
+  nodes: ISamchonGraphNode[];
+  edges: ISamchonGraphEdge[];
+  diagnostics: ISamchonGraphDiagnostic[];
+  warnings: string[];
+}> {
+  session.diagnostics.length = 0;
+  await reconcileFiles(session, files);
+  return scanSession(session, options);
+}
+
+// Reconciles the session's open files against what is on disk right now:
+// changed files get a full-document `didChange`, new files get `didOpen`,
+// files that disappeared get `didClose`. Called on refresh only — the initial
+// build already opens everything via `openLanguageSession`.
+async function reconcileFiles(session: ILspSession, files: readonly string[]): Promise<void> {
+  const onDisk = new Set(files.map((abs) => projectRelative(session.root, abs)));
+  for (const rel of [...session.opened.keys()]) {
+    if (onDisk.has(rel)) continue;
+    session.client.notify("textDocument/didClose", {
+      textDocument: { uri: fileUri(path.join(session.root, rel)) },
+    });
+    session.opened.delete(rel);
+  }
+  for (const abs of files) {
+    const text = readText(abs);
+    /* c8 ignore next */
+    if (text === undefined) continue;
+    const rel = projectRelative(session.root, abs);
+    const existing = session.opened.get(rel);
+    if (existing === undefined) {
+      session.opened.set(rel, { abs, text });
+      session.client.notify("textDocument/didOpen", {
+        textDocument: {
+          uri: fileUri(abs),
+          languageId: languageIdOf(session.language),
+          version: 1,
+          text,
+        },
+      });
+    } else if (existing.text !== text) {
+      existing.text = text;
+      session.client.notify("textDocument/didChange", {
+        textDocument: { uri: fileUri(abs), version: Date.now() },
+        contentChanges: [{ text }],
+      });
+    }
+  }
+}

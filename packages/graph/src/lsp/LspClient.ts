@@ -13,6 +13,7 @@ export class LspClient {
   private readonly events = new EventEmitter();
   private buffer = Buffer.alloc(0);
   private nextId = 1;
+  private exited = false;
 
   public constructor(
     command: string,
@@ -29,6 +30,7 @@ export class LspClient {
     });
     this.process.on("error", (error) => this.rejectAll(error));
     this.process.on("exit", (code, signal) => {
+      this.exited = true;
       this.rejectAll(
         new Error(
           `Language server exited (${code ?? "null"}, ${signal ?? "null"}).`,
@@ -71,18 +73,24 @@ export class LspClient {
   }
 
   public async close(): Promise<void> {
-    try {
-      await this.request("shutdown", null);
-    } catch {
-      // Some servers exit before answering shutdown.
+    // A process that already exited (crashed, or exited in response to a
+    // request it was never meant to answer, e.g. a bad `initialize`) cannot
+    // answer `shutdown`; sending it anyway would just wait out the full
+    // request timeout for nothing.
+    if (!this.exited) {
+      try {
+        await this.request("shutdown", null);
+      } catch {
+        // Some servers exit before answering shutdown.
+      }
+      /* c8 ignore start */
+      try {
+        this.notify("exit", null);
+      } catch {
+        // Ignore close errors.
+      }
+      /* c8 ignore stop */
     }
-    /* c8 ignore start */
-    try {
-      this.notify("exit", null);
-    } catch {
-      // Ignore close errors.
-    }
-    /* c8 ignore stop */
     if (!this.process.killed) this.process.kill();
   }
 

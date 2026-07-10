@@ -11,7 +11,7 @@ export const test_application_exercises_every_request_branch = async () => {
     { type: "trace", from: "Root.Service.run", direction: "forward", focus: "execution" },
     { type: "details", handles: ["Root.Service.run"], neighbors: true },
     { type: "overview", aspect: "all" },
-    { type: "tour", question: "Root.Service.run tour" },
+    { type: "tour", query: "Root.Service.run tour" },
     { type: "escape", reason: "outside graph", nextStep: "answer without graph" },
   ] as const;
 

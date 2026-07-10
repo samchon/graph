@@ -136,7 +136,11 @@ export function runTour(graph: SamchonGraphMemory, props: ISamchonGraphTour.IReq
       maxDepth: TOUR_TRACE_MAX_DEPTH,
       maxNodes: TOUR_TRACE_MAX_NODES,
     });
+    // `id` is always a real node's id from this same graph, so `runTrace`
+    // always resolves it in practice; kept for parity with the reference
+    // engine, which does not assume its own callers this tightly.
     const start = trace.start;
+    /* c8 ignore next */
     if (start === undefined) continue;
     const reached = trace.reached.filter((node) => !isNoisePath(node.file));
     primaryFlow.push({
@@ -272,17 +276,27 @@ function traceNodeOf(node: ISamchonGraphTrace.INode): ISamchonGraphTour.INode {
           },
         }
       : {}),
+    // `runTrace` never sets `signature` on the `start`/`reached` nodes this
+    // helper actually receives from the tour (only on `trace.path` nodes,
+    // which the tour never reads); kept for parity with the reference engine.
+    /* c8 ignore next */
     ...(node.signature !== undefined ? { signature: node.signature } : {}),
   };
 }
 
 function detailNodeOf(node: ISamchonGraphDetails.INode): ISamchonGraphTour.INode {
+  // `node` always comes from a tour seed's own details (`runDetails` on
+  // `seedIds`), and `isTourSeed` requires evidence, which always carries a
+  // required `startLine` -- so `line`/`sourceSpan` are never absent here in
+  // practice. Kept for parity with the reference engine.
   return {
     id: node.id,
     name: node.name,
     kind: node.kind,
     file: node.file,
+    /* c8 ignore next */
     ...(node.line !== undefined ? { line: node.line } : {}),
+    /* c8 ignore start */
     ...(node.sourceSpan !== undefined
       ? {
           sourceSpan: {
@@ -292,6 +306,7 @@ function detailNodeOf(node: ISamchonGraphDetails.INode): ISamchonGraphTour.INode
           },
         }
       : {}),
+    /* c8 ignore stop */
     ...(node.signature !== undefined ? { signature: node.signature } : {}),
     ...(node.decorators !== undefined ? { decorators: node.decorators } : {}),
   };
@@ -301,7 +316,15 @@ function anchorFromNode(
   reason: string,
   node: ISamchonGraphTour.INode | undefined,
 ): ISamchonGraphTour.IAnchor[] {
+  // Kept for parity with the reference engine: every current caller already
+  // guarantees a defined node, so this guard is not reachable here.
+  /* c8 ignore next */
   if (node === undefined) return [];
+  // The `line`-without-`sourceSpan` fallback below is likewise unreachable in
+  // practice: every converter that builds an `ISamchonGraphTour.INode` sets
+  // both fields from the same evidence, or neither. Kept for parity with the
+  // reference engine.
+  /* c8 ignore next */
   const span = node.sourceSpan ?? (node.line !== undefined ? { file: node.file, startLine: node.line } : undefined);
   if (span === undefined) return [];
   return [
@@ -340,8 +363,13 @@ function flowAnchorsOf(
   reached: ISamchonGraphTrace.INode[],
 ): ISamchonGraphTour.IAnchor[] {
   const hops = trace.hops.filter((hop) => isTourHop(graph, hop));
+  // The caller already skips any trace whose start did not resolve, so
+  // `trace.start` is always defined by the time this runs; the ternary is
+  // kept for parity with the reference engine.
+  /* c8 ignore next */
+  const flowStart = trace.start === undefined ? undefined : traceNodeOf(trace.start);
   return uniqueAnchors([
-    ...anchorFromNode("flow start", trace.start === undefined ? undefined : traceNodeOf(trace.start)),
+    ...anchorFromNode("flow start", flowStart),
     ...reached.flatMap((node) => anchorFromNode("flow node", traceNodeOf(node))),
     ...hops.flatMap((hop) => anchorFromEvidence("flow edge", `${hop.from} -> ${hop.to}`, hop.evidence)),
   ]);

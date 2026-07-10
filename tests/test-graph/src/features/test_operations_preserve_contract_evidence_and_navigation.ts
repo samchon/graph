@@ -94,9 +94,9 @@ export const test_operations_preserve_contract_evidence_and_navigation = async (
   const tour = (
     await ContractGraph.call(app, {
       type: "tour",
-      question: "Root.Service.run helper",
+      query: "Root.Service.run helper",
       limit: 4,
     })
   ).result;
-  TestValidator.predicate("tour returns anchors", tour.answerAnchors.length > 0 && tour.nearbyPaths.length > 0);
+  TestValidator.predicate("tour returns anchors", tour.answerAnchors.length > 0 && tour.nearby.length > 0);
 };

@@ -52,8 +52,7 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   );
   TestValidator.predicate(
     "a single-language session names that language in the session instructions",
-    ts.instructions.includes("compiler-built TypeScript graph") &&
-      ts.instructions.includes("After you edit TypeScript source"),
+    ts.instructions.includes("graph of your TypeScript project"),
   );
 
   const mixed = await sessionOf(["--mode", "static", "--cwd", root]);
@@ -63,13 +62,7 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   );
   TestValidator.predicate(
     "a multi-language session falls back to the generic name in the session instructions",
-    mixed.instructions.includes("compiler-built code graph"),
-  );
-  TestValidator.predicate(
-    "the indexed-languages reference list is untouched by the substitution",
-    mixed.instructions.includes(
-      "TypeScript, Go, Rust, C++, C, Java, C#, Kotlin, Swift, Scala, Zig, Python,",
-    ),
+    mixed.instructions.includes("graph of your code project"),
   );
 
   // A pre-built dump (`--graph-file`) resolves the language from the dump

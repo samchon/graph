@@ -27,7 +27,6 @@ export function buildStaticGraph(options: IBuildGraphOptions = {}): ISamchonGrap
   const root = path.resolve(options.cwd ?? process.cwd());
   const files = walkSourceFiles(root, {
     extensions: allExtensions(options.languages),
-    maxFiles: options.maxFiles,
   });
   const nodes: ISamchonGraphNode[] = [];
   const edges: ISamchonGraphEdge[] = [];

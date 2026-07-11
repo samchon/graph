@@ -1,5 +1,3 @@
-import { ISamchonGraphNext } from "./ISamchonGraphNext";
-
 /** A compact, source-read-free project map for broad orientation only. */
 export interface ISamchonGraphOverview {
   /** Discriminator for source-free project overview. */
@@ -10,12 +8,6 @@ export interface ISamchonGraphOverview {
 
   /** Size of the graph. */
   counts: ISamchonGraphOverview.ICounts;
-
-  /** How to use this source-free result next. */
-  next: ISamchonGraphNext;
-
-  /** Human-readable compatibility note mirroring `next`. */
-  guide: string;
 
   /** Folder layering, largest first. */
   layers?: ISamchonGraphOverview.ILayer[];
@@ -33,13 +25,15 @@ export namespace ISamchonGraphOverview {
     type: "overview";
 
     /**
-     * The facet to project, or `all` for every facet. `layers` is the folder
-     * layering, `hotspots` the highest-dependency symbols, `publicApi` the
-     * exported API symbols ranked by how depended-on they are.
+     * Facet to project, or `all` for every facet:
      *
-     * Use this only for broad public API or layer orientation. For behavior,
-     * lifecycle, request-flow, rendering-flow, validation-flow, caller, or
-     * dependency questions, use `entrypoints` then `trace` instead.
+     * - `layers`: folder layering
+     * - `hotspots`: highest-dependency symbols
+     * - `publicApi`: exported API symbols ranked by how depended-on they are
+     *
+     * Broad public-API or layer orientation only. For behavior, lifecycle,
+     * request/render/validation flow, caller, or dependency questions, use
+     * `entrypoints` then `trace`.
      *
      * @default "all"
      */
@@ -94,9 +88,8 @@ export namespace ISamchonGraphOverview {
   }
 
   /**
-   * One symbol on the project's exported public API surface. The list is ranked
-   * by how depended-on the symbol is, with test, typings, and generated files
-   * excluded.
+   * One exported public-API symbol. The list is ranked by how depended-on the
+   * symbol is, excluding test, typings, and generated files.
    */
   export type IPublicApi = INode;
 }

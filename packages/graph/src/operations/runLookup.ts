@@ -8,8 +8,6 @@ import {
   bound,
   isStructural,
   isTestPath,
-  resultGuide,
-  resultNext,
   signatureOf,
   subwords,
 } from "./common";
@@ -42,13 +40,6 @@ export function runLookup(
     return {
       type: "lookup",
       hits: [],
-      next: resultNext(
-        "clarify",
-        "No symbol matched; ask for a concrete symbol or scope.",
-      ),
-      guide: resultGuide(
-        "No symbol matched; answer that the graph did not resolve this name or ask for a more concrete symbol.",
-      ),
     };
 
   const scored: ISamchonGraphLookup.IHit[] = [];
@@ -106,14 +97,6 @@ export function runLookup(
   return {
     type: "lookup",
     hits,
-    next: resultNext(
-      "inspect",
-      "Use one returned id for trace/details when the answer needs flow or shape.",
-      "details",
-    ),
-    guide: resultGuide(
-      "Use ranked hits and signatures as symbol evidence. If the target is clear, answer or make one focused trace/details call; do not search files to verify the match.",
-    ),
   };
 }
 

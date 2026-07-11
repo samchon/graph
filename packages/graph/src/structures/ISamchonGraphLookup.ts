@@ -1,5 +1,4 @@
 import { ISamchonGraphDecorator } from "./ISamchonGraphDecorator";
-import { ISamchonGraphNext } from "./ISamchonGraphNext";
 
 /** Targeted symbol lookup when a concrete name or handle is being resolved. */
 export interface ISamchonGraphLookup {
@@ -8,12 +7,6 @@ export interface ISamchonGraphLookup {
 
   /** Ranked symbol matches for the query. */
   hits: ISamchonGraphLookup.IHit[];
-
-  /** How to use this source-free result next. */
-  next: ISamchonGraphNext;
-
-  /** Human-readable compatibility note mirroring `next`. */
-  guide: string;
 }
 export namespace ISamchonGraphLookup {
   /** Find a concrete class, method, function, property, type, or dotted handle. */
@@ -22,19 +15,16 @@ export namespace ISamchonGraphLookup {
     type: "lookup";
 
     /**
-     * What to find, in natural language and code vocabulary mixed freely: a
-     * symbol name, a dotted member (`Service.create`), or a short phrase
-     * (`request handler`). Exact names are not required, but this is not a
-     * second broad entrypoints call. Use it when a named handle is missing or
-     * ambiguous.
+     * What to find: a symbol name, a dotted member (`Service.create`), or a
+     * short phrase (`request handler`). Exact names are not required, but this
+     * is not a second broad entrypoints call; use it for a missing or ambiguous
+     * named handle.
      */
     query: string;
 
     /**
-     * Maximum hits to return.
-     *
-     * Prefer the default. Large hit lists usually mean the query is too broad;
-     * refine the name instead of raising this.
+     * Maximum hits to return. A large hit list usually means the query is too
+     * broad; refine the name instead of raising this.
      *
      * @default 5
      */
@@ -42,8 +32,8 @@ export namespace ISamchonGraphLookup {
 
     /**
      * Include dependency-boundary declarations from node_modules or bundled
-     * `.d.ts` libraries. Leave false for project-source answers; enable only
-     * when external type/API boundaries are the question.
+     * `.d.ts` libraries. Enable only when external type/API boundaries are the
+     * question.
      *
      * @default false
      */
@@ -67,10 +57,7 @@ export namespace ISamchonGraphLookup {
     /** 1-based declaration line, when known. */
     line?: number;
 
-    /**
-     * The hit's declaration signature, so you can often answer without
-     * requesting details.
-     */
+    /** Declaration signature, often enough to answer without a `details` call. */
     signature?: string;
 
     /** Decorators written on this declaration, when any. */

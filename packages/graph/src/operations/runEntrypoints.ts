@@ -10,8 +10,6 @@ import {
   isStructural,
   publicEvidence,
   resolveHandle,
-  resultGuide,
-  resultNext,
   signatureOf,
 } from "./common";
 import { runLookup } from "./runLookup";
@@ -93,14 +91,6 @@ export function runEntrypoints(
     hits,
     mentions,
     neighborhood,
-    next: resultNext(
-      "inspect",
-      "Use one returned handle for trace/details when the answer needs flow or selected shape.",
-      "trace",
-    ),
-    guide: resultGuide(
-      "Use hits, mentions, and neighborhood as the code index. If they identify the relevant files and symbols, answer or make one focused trace/details call; do not search the repository to verify them.",
-    ),
     ...(truncated ? { truncated: true } : {}),
   };
 }

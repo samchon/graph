@@ -9,7 +9,6 @@ export function discoverLanguages(
 ): GraphLanguage[] {
   const files = walkSourceFiles(root, {
     extensions: allExtensions(options.languages),
-    maxFiles: options.maxFiles,
   });
   return [
     ...new Set(files.map(languageOf).filter((language) => language !== "unknown")),

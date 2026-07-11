@@ -7,7 +7,6 @@ import {
   ISymbolInformation,
   LspClient,
 } from "../lsp";
-import { isTestPath } from "../operations/isTestPath";
 import { ISamchonGraphDiagnostic, ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
 import { GraphLanguage, GraphNodeKind } from "../typings";
 import { projectRelative } from "../utils/fs";
@@ -58,13 +57,10 @@ export async function scanSession(
   }
 
   const edges: ISamchonGraphEdge[] = [];
-  const referenceLimit = options.lspReferenceLimit ?? 250;
-  // When the reference budget is smaller than the symbol count, spend it on
-  // product code first: test files (spec callbacks and the like) otherwise
-  // crowd out the API surface an agent actually asks about.
-  const referenceTargets = [...nodes]
-    .sort((a, b) => Number(isTestPath(a.file)) - Number(isTestPath(b.file)))
-    .slice(0, referenceLimit);
+  // Every symbol gets its references resolved — there is no budget. Capping
+  // reference collection truncates real cross-file edges and corrupts the
+  // compiler-complete graph, so the whole symbol set is the target set.
+  const referenceTargets = nodes;
   // Language servers build their cross-file reference index lazily — often on
   // the FIRST `textDocument/references` call, not during the initial
   // `$/progress` indexing wait above. So warm the index with one patient
@@ -87,28 +83,21 @@ export async function scanSession(
   const referenceResults: (ILocation[] | null)[] = new Array(
     referenceTargets.length,
   ).fill(null);
-  // Only after the warmup request actually returns is the server proven able
-  // to answer references; a timeout even under the patient budget means it
-  // cannot, so we keep the structural graph and skip the rest rather than
-  // grinding the full batch.
-  let referencesUnavailable = false;
+  // Warm the server's lazy cross-file index with one patient request before the
+  // batch: the first `textDocument/references` often makes the server build its
+  // reference index, after which later requests are cache-fast. There is no
+  // timeout anywhere — we wait as long as the server needs.
   if (referenceTargets.length > 0) {
-    const warm = await safeReferences(
+    referenceResults[0] = await safeReferences(
       client,
       referenceParams(referenceTargets[0]!),
-      options.lspWarmupTimeoutMs ?? 180_000,
     );
-    if (warm === "timeout") referencesUnavailable = true;
-    else referenceResults[0] = warm;
   }
-  if (!referencesUnavailable && referenceTargets.length > 1) {
+  if (referenceTargets.length > 1) {
     const rest = await mapWithConcurrency(
       referenceTargets.slice(1),
       options.lspConcurrency ?? 16,
-      async (target) => {
-        const refs = await safeReferences(client, referenceParams(target));
-        return refs === "timeout" ? null : refs;
-      },
+      async (target) => safeReferences(client, referenceParams(target)),
     );
     for (let index = 0; index < rest.length; index++) {
       referenceResults[index + 1] = rest[index]!;
@@ -274,14 +263,7 @@ export async function scanSession(
     nodes,
     edges,
     diagnostics: [...session.diagnostics],
-    warnings: [
-      ...(nodes.length > referenceLimit
-        ? [`${language}: reference collection capped at ${referenceLimit} symbols.`]
-        : []),
-      ...(referencesUnavailable
-        ? [`${language}: server did not answer references within the warmup budget; kept structural edges only.`]
-        : []),
-    ],
+    warnings: [],
   };
 }
 
@@ -484,19 +466,14 @@ function afterGenericArgs(text: string): string {
 async function safeReferences(
   client: LspClient,
   params: unknown,
-  timeoutMs?: number,
-): Promise<ILocation[] | null | "timeout"> {
+): Promise<ILocation[] | null> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await client.request<ILocation[] | null>(
         "textDocument/references",
         params,
-        timeoutMs,
       );
-    } catch (error) {
-      if ((error as Error).message.startsWith(
-        "LSP request timed out",
-      )) return "timeout";
+    } catch {
       await new Promise((resolve) => {
         setTimeout(resolve, 100);
       });

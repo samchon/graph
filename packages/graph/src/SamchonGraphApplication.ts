@@ -1,5 +1,5 @@
 import { AsyncSamchonGraphSource } from "./AsyncSamchonGraphSource";
-import { RESULT_DIRECTIVE, resultGuide, resultNext } from "./operations/common";
+import { RESULT_DIRECTIVE } from "./operations/common";
 import { runDetails } from "./operations/runDetails";
 import { runEntrypoints } from "./operations/runEntrypoints";
 import { runLookup } from "./operations/runLookup";
@@ -52,13 +52,6 @@ export class SamchonGraphApplication implements ISamchonGraphApplication {
       skipped: true,
       reason,
       ...(nextStep !== undefined ? { nextStep } : {}),
-      next: resultNext(
-        "outside",
-        nextStep ?? "Graph evidence is exhausted or not the next evidence source.",
-      ),
-      guide: resultGuide(
-        "Finish from existing graph evidence, state the graph gap, or ask for clarification.",
-      ),
     };
   }
 

@@ -4,7 +4,6 @@ import { EventEmitter } from "node:events";
 interface IRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
-  timer: NodeJS.Timeout;
 }
 
 export class LspClient {
@@ -15,11 +14,7 @@ export class LspClient {
   private nextId = 1;
   private exited = false;
 
-  public constructor(
-    command: string,
-    args: readonly string[],
-    private readonly timeoutMs: number,
-  ) {
+  public constructor(command: string, args: readonly string[]) {
     this.process = spawn(command, [...args], {
       stdio: "pipe",
       windowsHide: true,
@@ -39,22 +34,18 @@ export class LspClient {
     });
   }
 
-  public async request<T>(
-    method: string,
-    params: unknown,
-    timeoutMs?: number,
-  ): Promise<T> {
+  public async request<T>(method: string, params: unknown): Promise<T> {
+    // No per-request timeout: a legitimate but slow computation (jdtls importing
+    // a Maven/Gradle project, kotlin-language-server's JVM cold start, a large
+    // rust-analyzer/clangd index) can take many minutes, and cutting it short
+    // truncates the graph. A server that crashes or exits rejects every pending
+    // request through the `exit` handler, so a dead server is still surfaced.
     const id = this.nextId++;
     const payload = { jsonrpc: "2.0", id, method, params };
     const promise = new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`LSP request timed out: ${method}`));
-      }, timeoutMs ?? this.timeoutMs);
       this.pending.set(id, {
         resolve: (value) => resolve(value as T),
         reject,
-        timer,
       });
     });
     this.write(payload);
@@ -157,7 +148,6 @@ export class LspClient {
       const pending = this.pending.get(message.id);
       if (pending === undefined) return;
       this.pending.delete(message.id);
-      clearTimeout(pending.timer);
       if (message.error !== undefined) {
         pending.reject(
           new Error(message.error.message ?? "LSP request failed."),
@@ -176,7 +166,6 @@ export class LspClient {
   private rejectAll(error: Error): void {
     for (const [id, request] of this.pending) {
       this.pending.delete(id);
-      clearTimeout(request.timer);
       request.reject(error);
     }
   }

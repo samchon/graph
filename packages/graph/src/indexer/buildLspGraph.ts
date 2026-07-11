@@ -47,7 +47,6 @@ export async function buildLspGraph(
   for (const language of languages) {
     const files = walkSourceFiles(root, {
       extensions: allExtensions([language]),
-      maxFiles: options.maxFiles,
     });
     if (files.length === 0) continue;
     const spec = specOf(language);
@@ -217,13 +216,12 @@ async function openLanguageSession(
   files: readonly string[],
   options: IBuildGraphOptions,
 ): Promise<ILspSession> {
-  // A per-request deadline is still necessary — a crashed-without-exiting or
-  // deadlocked server would otherwise hang the whole build forever — but 10s
-  // was too tight even for legitimate slow starts (jdtls importing a Maven/
-  // Gradle project, kotlin-language-server's JVM cold start, clangd parsing
-  // with a real compile database instead of guessed flags), which kept
-  // forcing per-repo overrides. 60s covers all of those without needing one.
-  const client = new LspClient(command, args, options.lspTimeoutMs ?? 60_000);
+  // No per-request deadline: legitimate slow starts (jdtls importing a Maven/
+  // Gradle project, kotlin-language-server's JVM cold start taking many
+  // minutes, clangd parsing a real compile database) must be waited out, not
+  // cut into a truncated static fallback. A dead server still rejects through
+  // the client's `exit` handler.
+  const client = new LspClient(command, args);
   const diagnostics: ISamchonGraphDiagnostic[] = [];
   let lastProgressAt = 0;
   client.onNotification("$/progress", () => {
@@ -271,16 +269,11 @@ async function openLanguageSession(
     // csharp-ls answers documentSymbol with an empty list until its solution is
     // loaded — collecting symbols first would silently index nothing.
     //
-    // The wait exits early once progress goes quiet for `lspReadyQuietMs`, so
-    // this ceiling only costs time on servers that are still actively
-    // indexing when it's hit — a large rust-analyzer/clangd/jdtls workspace
-    // can still be mid-index at 30s, which silently starves reference
-    // collection (see `lspReadyTimeoutMs`'s doc comment) rather than erroring.
-    await waitForIndexing(
-      () => lastProgressAt,
-      options.lspReadyQuietMs ?? 1_500,
-      options.lspReadyTimeoutMs ?? 180_000,
-    );
+    // The wait ends once progress goes quiet for `lspReadyQuietMs`. There is no
+    // overall ceiling: a large rust-analyzer/clangd/jdtls workspace may index
+    // for many minutes, and cutting the wait short would silently starve
+    // reference collection and truncate the graph.
+    await waitForIndexing(() => lastProgressAt, options.lspReadyQuietMs ?? 1_500);
     return session;
   } catch (error) {
     // A server that never answers `initialize` (or fails before the session
@@ -315,22 +308,20 @@ async function openFiles(session: ILspSession, files: readonly string[]): Promis
 async function waitForIndexing(
   lastProgressAt: () => number,
   quietMs: number,
-  timeoutMs: number,
 ): Promise<void> {
-  const start = Date.now();
   // Give a server that reports `$/progress` a brief window to begin before we
   // conclude it never will; without this a fast documentSymbol phase could race
   // ahead of the first indexing notification.
   await new Promise((resolve) => {
-    setTimeout(resolve, Math.min(300, timeoutMs));
+    setTimeout(resolve, 300);
   });
   // A server that never emits progress (lastProgressAt stays 0) is treated as
   // ready immediately; one that does is awaited until it stays quiet for
-  // `quietMs` or the overall `timeoutMs` cap elapses.
+  // `quietMs`. There is no overall ceiling — a server that keeps reporting
+  // progress is still actively indexing and must be waited out.
   while (
     lastProgressAt() !== 0 &&
-    Date.now() - lastProgressAt() < quietMs &&
-    Date.now() - start < timeoutMs
+    Date.now() - lastProgressAt() < quietMs
   ) {
     await new Promise((resolve) => {
       setTimeout(resolve, 50);

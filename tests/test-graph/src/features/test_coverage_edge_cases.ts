@@ -30,15 +30,8 @@ export const test_coverage_edge_cases = async () => {
       "--server-arg=one",
       "--server-arg",
       "two",
-      "--max-files=2",
-      "--lsp-timeout-ms",
-      "3",
-      "--lsp-reference-limit=5",
       "--lsp-concurrency",
       "2",
-      "--lsp-warmup-timeout-ms=1000",
-      "--lsp-ready-timeout-ms",
-      "1000",
       "--lsp-ready-quiet-ms=100",
       "--graph-file=ignored-for-dump.json",
     ],
@@ -58,14 +51,7 @@ export const test_coverage_edge_cases = async () => {
       "typescript",
       "--server",
       "fake-server",
-      "--max-files",
-      "1",
-      "--lsp-reference-limit",
-      "5",
       "--lsp-concurrency=2",
-      "--lsp-warmup-timeout-ms",
-      "1000",
-      "--lsp-ready-timeout-ms=1000",
       "--lsp-ready-quiet-ms",
       "100",
       "--graph-file",
@@ -78,8 +64,8 @@ export const test_coverage_edge_cases = async () => {
   for (const args of [
     ["dump", "--language", "brainfuck"],
     ["dump", "--mode=invalid"],
-    ["dump", "--max-files=0"],
-    ["dump", "--lsp-timeout-ms=nan"],
+    ["dump", "--lsp-concurrency=0"],
+    ["dump", "--lsp-ready-quiet-ms=nan"],
     ["dump", "--server-arg"],
     ["dump", "--unknown"],
   ]) {
@@ -164,7 +150,6 @@ export const test_coverage_edge_cases = async () => {
       "--symbol-information",
       "--diagnostic-severities=1,2,3,4,0",
     ],
-    lspReferenceLimit: 0,
   });
   TestValidator.predicate(
     "LSP survives a malformed JSON frame",
@@ -178,10 +163,6 @@ export const test_coverage_edge_cases = async () => {
     "all LSP diagnostic severities are normalized",
     symbolInformation.diagnostics?.map((diagnostic) => diagnostic.severity),
     ["error", "warning", "info", "hint", undefined],
-  );
-  TestValidator.predicate(
-    "reference cap warning is retained",
-    symbolInformation.warnings?.some((warning) => warning.includes("reference collection capped")) === true,
   );
 
   const minimalDiagnostics = await buildGraphDump({

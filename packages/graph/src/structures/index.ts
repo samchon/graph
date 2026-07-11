@@ -7,7 +7,6 @@ export * from "./ISamchonGraphEntrypoints";
 export * from "./ISamchonGraphEscape";
 export * from "./ISamchonGraphEvidence";
 export * from "./ISamchonGraphLookup";
-export * from "./ISamchonGraphNext";
 export * from "./ISamchonGraphNode";
 export * from "./ISamchonGraphOverview";
 export * from "./ISamchonGraphTour";

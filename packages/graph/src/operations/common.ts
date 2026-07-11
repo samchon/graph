@@ -10,6 +10,7 @@ export * from "./isTypeEdge";
 export * from "./publicEvidence";
 export * from "./referencesFromEdges";
 export * from "./resolveHandle";
+export * from "./resultDirective";
 export * from "./resultGuide";
 export * from "./resultNext";
 export * from "./signatureOf";

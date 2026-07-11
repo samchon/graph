@@ -120,28 +120,46 @@ export async function scanSession(
       if (owners === undefined) continue;
       const owner = ownerAt(owners, ref.range.start.line + 1);
       if (owner === undefined || owner.id === target.id) continue;
-      const refLine = linesByFile.get(rel)?.[ref.range.start.line];
-      const accessText = accessExpressionAt(refLine, ref.range.end.character);
-      edges.push({
-        from: owner.id,
-        to: target.id,
-        kind: referenceKind(
-          target.kind,
-          refLine,
-          ref.range.start.character,
-          ref.range.end.character,
-        ),
-        evidence: {
-          file: rel,
-          startLine: ref.range.start.line + 1,
-          startCol: ref.range.start.character + 1,
-          endLine: ref.range.end.line + 1,
-          endCol: ref.range.end.character + 1,
-          // Not part of the public evidence contract; an internal hint
-          // `accessAliasesFor` reads via `edgeEvidenceTextOf`.
-          ...(accessText !== undefined ? { text: accessText } : {}),
-        },
-      });
+      const startLineText = linesByFile.get(rel)?.[ref.range.start.line];
+      const endLineText =
+        ref.range.end.line === ref.range.start.line
+          ? startLineText
+          : linesByFile.get(rel)?.[ref.range.end.line];
+      const accessText = accessExpressionAt(endLineText, ref.range.end.character);
+      const kind = referenceKind(
+        target.kind,
+        startLineText,
+        endLineText,
+        ref.range.start.character,
+        ref.range.end.character,
+      );
+      const evidence = {
+        file: rel,
+        startLine: ref.range.start.line + 1,
+        startCol: ref.range.start.character + 1,
+        endLine: ref.range.end.line + 1,
+        endCol: ref.range.end.character + 1,
+        // Not part of the public evidence contract; an internal hint
+        // `accessAliasesFor` reads via `edgeEvidenceTextOf`.
+        ...(accessText !== undefined ? { text: accessText } : {}),
+      };
+      edges.push({ from: owner.id, to: target.id, kind, evidence });
+      // A non-method class/interface member (a property or an arrow-function-
+      // valued field) attributes its body's references to both itself AND the
+      // enclosing class/interface, not one or the other -- confirmed against
+      // @ttsc/graph's own fact-builder (forEachMember walks a property
+      // member's subtree once for the member, once for its container). A
+      // method is attributed solely to itself.
+      if (owner.kind === "property" || owner.kind === "field" || owner.kind === "variable") {
+        const container = containerAt(owners, ref.range.start.line + 1);
+        if (
+          container !== undefined &&
+          container.id !== owner.id &&
+          container.id !== target.id
+        ) {
+          edges.push({ from: container.id, to: target.id, kind, evidence });
+        }
+      }
     }
   }
 
@@ -251,15 +269,22 @@ function accessExpressionAt(
 // invocation (a class becomes an instantiation, anything else a call);
 // otherwise the target's kind decides between a type reference, a member
 // access, and a generic reference.
+//
+// `startLine`/`endLine` are deliberately separate: some language servers
+// report a multi-line property-access reference (e.g. a receiver on one line
+// and `.member(` on the next) with `start` and `end` on different lines, so
+// reading the end column against the start line's text would slice into the
+// wrong line entirely and silently miss the invocation.
 function referenceKind(
   targetKind: GraphNodeKind,
-  refLine: string | undefined,
+  startLine: string | undefined,
+  endLine: string | undefined,
   startCol: number,
   endCol: number,
 ): ISamchonGraphEdge["kind"] {
-  if (isJsxElementUse(refLine, startCol)) return "renders";
+  if (isJsxElementUse(startLine, startCol)) return "renders";
   const after = afterGenericArgs(
-    refLine === undefined ? "" : refLine.slice(endCol).trimStart(),
+    endLine === undefined ? "" : endLine.slice(endCol).trimStart(),
   );
   if (after.startsWith("(")) {
     return targetKind === "class" || targetKind === "constructor"
@@ -482,4 +507,23 @@ function ownerAt(nodes: readonly ISamchonGraphNode[], line: number): ISamchonGra
         return a.evidence!.endLine! - b.evidence!.endLine!;
       },
     )[0];
+}
+
+// The innermost enclosing class/interface at `line`, regardless of whether a
+// narrower non-container owner (a method, a property) also covers it. Used
+// to find a property/field owner's *own* container, since ttsc attributes a
+// non-method member's references to both.
+function containerAt(
+  nodes: readonly ISamchonGraphNode[],
+  line: number,
+): ISamchonGraphNode | undefined {
+  return nodes
+    .filter(
+      (node) =>
+        (node.kind === "class" || node.kind === "interface") &&
+        node.evidence !== undefined &&
+        node.evidence.startLine <= line &&
+        node.evidence.endLine! >= line,
+    )
+    .sort((a, b) => b.evidence!.startLine - a.evidence!.startLine)[0];
 }

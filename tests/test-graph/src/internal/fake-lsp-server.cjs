@@ -15,6 +15,7 @@ const options = {
   referenceError: false,
   nullSymbols: false,
   classify: false,
+  dualOwner: false,
   inheritance: false,
   omitChildren: false,
   progress: false,
@@ -69,6 +70,8 @@ for (const arg of process.argv.slice(2)) {
     options.nullSymbols = true;
   } else if (arg === "--classify") {
     options.classify = true;
+  } else if (arg === "--dual-owner") {
+    options.dualOwner = true;
   } else if (arg === "--inheritance") {
     options.inheritance = true;
   } else if (arg === "--omit-children") {
@@ -230,6 +233,43 @@ function handle(message) {
             leaf("prop", 7, 11),
             leaf("count", 8, 12),
           ],
+        },
+      ]);
+    }
+    if (options.dualOwner) {
+      return respond(message.id, [
+        {
+          name: "Owner",
+          detail: "",
+          kind: 5,
+          range: { start: { line: 0, character: 0 }, end: { line: 8, character: 1 } },
+          selectionRange: { start: { line: 0, character: 6 }, end: { line: 0, character: 11 } },
+          children: [
+            {
+              name: "helper",
+              detail: "",
+              kind: 7,
+              range: { start: { line: 1, character: 2 }, end: { line: 3, character: 4 } },
+              selectionRange: { start: { line: 1, character: 2 }, end: { line: 1, character: 8 } },
+              children: [],
+            },
+            {
+              name: "method",
+              detail: "",
+              kind: 6,
+              range: { start: { line: 4, character: 2 }, end: { line: 7, character: 3 } },
+              selectionRange: { start: { line: 4, character: 2 }, end: { line: 4, character: 8 } },
+              children: [],
+            },
+          ],
+        },
+        {
+          name: "target",
+          detail: "",
+          kind: 12,
+          range: { start: { line: 9, character: 0 }, end: { line: 9, character: 20 } },
+          selectionRange: { start: { line: 9, character: 9 }, end: { line: 9, character: 15 } },
+          children: [],
         },
       ]);
     }
@@ -405,6 +445,17 @@ function handle(message) {
         at(16, 0, 4),
         at(17, 0, 4),
         at(500),
+      ]);
+    }
+    if (options.dualOwner) {
+      const uri = message.params.textDocument.uri;
+      // `target()` is called once inside `helper` (a property/arrow-field
+      // member, line 2) and once inside `method`, where it is split across
+      // two lines (`target` on line 5, `();` on line 6) — the `(` check must
+      // read line 6's text, not line 5's.
+      return respond(message.id, [
+        { uri, range: { start: { line: 2, character: 4 }, end: { line: 2, character: 10 } } },
+        { uri, range: { start: { line: 5, character: 4 }, end: { line: 6, character: 6 } } },
       ]);
     }
     const line = message.params.position.line;

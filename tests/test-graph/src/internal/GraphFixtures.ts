@@ -114,6 +114,31 @@ const createLspFixture = () => {
   return root;
 };
 
+const createDualOwnerFixture = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-dual-owner-"));
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  // `method`'s call is deliberately split across two lines (`target` / `();`)
+  // so the same fixture also covers a reference whose reported range spans
+  // two lines — the `(` check must read the end line's text, not the start
+  // line's.
+  fs.writeFileSync(
+    path.join(root, "src", "dual.ts"),
+    [
+      "class Owner {",
+      "  helper = () => {",
+      "    target();",
+      "  };",
+      "  method() {",
+      "    target",
+      "      ();",
+      "  }",
+      "}",
+      "function target() {}",
+    ].join("\n"),
+  );
+  return root;
+};
+
 const createClassifyFixture = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-classify-"));
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
@@ -487,6 +512,7 @@ export const GraphFixtures = {
   createClassifyFixture,
   createCmakeFixture,
   createContractFixture,
+  createDualOwnerFixture,
   createInheritanceFixture,
   createLspInheritanceFixture,
   createLspFixture,

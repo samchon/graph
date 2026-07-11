@@ -123,27 +123,40 @@ export async function scanSession(
       const rel = projectRelative(root, refFile);
       const owners = byFile.get(rel);
       if (owners === undefined) continue;
-      const owner = ownerAt(owners, ref.range.start.line + 1);
+      const fileLines = linesByFile.get(rel);
+      // The language server reports a reference range whose start is the AST
+      // node's full-start (leading whitespace and comments included), not the
+      // token's real start, so advance past that trivia — the same correction
+      // @ttsc/graph's own dump applies (dump.go firstCodeOffset) before it uses
+      // a node position. Without it the classifier reads the character before
+      // the identifier (a space, `.`, `<`, ...) and the evidence points one
+      // column early.
+      const start = firstCodeAt(
+        fileLines,
+        ref.range.start.line,
+        ref.range.start.character,
+      );
+      const owner = ownerAt(owners, start.line + 1);
       if (owner === undefined || owner.id === target.id) continue;
-      const startLineText = linesByFile.get(rel)?.[ref.range.start.line];
+      const startLineText = fileLines?.[start.line];
       const endLineText =
-        ref.range.end.line === ref.range.start.line
+        ref.range.end.line === start.line
           ? startLineText
-          : linesByFile.get(rel)?.[ref.range.end.line];
+          : fileLines?.[ref.range.end.line];
       const accessText = accessExpressionAt(endLineText, ref.range.end.character);
       const kind = referenceKind(
         target.kind,
         startLineText,
         endLineText,
-        ref.range.start.character,
+        start.character,
         ref.range.end.character,
-        ref.range.end.line !== ref.range.start.line,
+        ref.range.end.line !== start.line,
         accessText,
       );
       const evidence = {
         file: rel,
-        startLine: ref.range.start.line + 1,
-        startCol: ref.range.start.character + 1,
+        startLine: start.line + 1,
+        startCol: start.character + 1,
         endLine: ref.range.end.line + 1,
         endCol: ref.range.end.character + 1,
         // Not part of the public evidence contract; an internal hint
@@ -253,6 +266,54 @@ export async function scanSession(
   };
 }
 
+// Advance a (line, character) position past leading trivia — whitespace, `//`
+// line comments, and `/* */` block comments — to the first code character at
+// or after it, crossing line boundaries. Ports @ttsc/graph's dump.go
+// firstCodeOffset: the language server reports a reference's start as the AST
+// node full-start (trivia included), so this recovers the token's real start.
+function firstCodeAt(
+  lines: readonly string[] | undefined,
+  line: number,
+  character: number,
+): { line: number; character: number } {
+  // Every caller passes the file's own cached lines, so this is defensive.
+  /* c8 ignore next */
+  if (lines === undefined) return { line, character };
+  let l = line;
+  let c = character;
+  let inBlock = false;
+  while (l < lines.length) {
+    const text = lines[l]!;
+    while (c < text.length) {
+      if (inBlock) {
+        if (text[c] === "*" && text[c + 1] === "/") {
+          inBlock = false;
+          c += 2;
+        } else c++;
+        continue;
+      }
+      const ch = text[c]!;
+      if (ch === " " || ch === "\t" || ch === "\r") {
+        c++;
+      } else if (ch === "/" && text[c + 1] === "/") {
+        c = text.length; // rest of line is a comment
+      } else if (ch === "/" && text[c + 1] === "*") {
+        inBlock = true;
+        c += 2;
+      } else {
+        return { line: l, character: c };
+      }
+    }
+    // Ran off the end of the line (or a `//` comment consumed it); the trivia
+    // continues on the next line.
+    /* c8 ignore next */
+    if (l + 1 >= lines.length) break;
+    l++;
+    c = 0;
+  }
+  return { line, character };
+}
+
 // The dotted access expression ending exactly at a reference's end column
 // (e.g. `this._internals.foo` for a reference to `foo`), when the reference
 // sits at the end of one. This is the source-text hint `accessAliasesFor`
@@ -291,6 +352,20 @@ function referenceKind(
   multiline: boolean,
   accessText: string | undefined,
 ): ISamchonGraphEdge["kind"] {
+  // The text before the reference (its start already advanced past leading
+  // trivia to the real token), trimmed of the whitespace that separates the
+  // keyword from the name.
+  const before = (
+    startLine === undefined ? "" : startLine.slice(0, startCol)
+  ).replace(/\s+$/, "");
+  // A `new X` expression instantiates X even when a generic argument list
+  // (`new Map<K, V>(...)`) pushes the `(` onto a later line the end-line check
+  // below can't see; the `new` keyword right before the name is the reliable
+  // signal @ttsc/graph reads from its AST NewExpression.
+  if (/\bnew$/.test(before)) return "instantiates";
+  // A `typeof X` type query depends on X's type — @ttsc/graph records it as a
+  // type reference, not the value access X's own kind would otherwise imply.
+  if (/\btypeof$/.test(before)) return "type_ref";
   // A JSX tag name never spans lines, so only consider it on a single-line
   // reference: a multi-line reference's start column can land on an unrelated
   // trailing `<` (a comparison / generic on the receiver line) and be misread

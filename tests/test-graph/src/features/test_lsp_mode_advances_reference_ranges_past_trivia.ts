@@ -1,0 +1,54 @@
+import { TestValidator } from "@nestia/e2e";
+import { buildGraphDump } from "@samchon/graph";
+
+import { GraphFixtures } from "../internal/GraphFixtures";
+import { GraphPaths } from "../internal/GraphPaths";
+
+export const test_lsp_mode_advances_reference_ranges_past_trivia = async () => {
+  const root = GraphFixtures.createTriviaFixture();
+  const dump = await buildGraphDump({
+    cwd: root,
+    mode: "lsp",
+    languages: ["typescript"],
+    server: process.execPath,
+    serverArgs: [GraphPaths.fakeLspServer, "--trivia"],
+  });
+
+  const edge = (toContains: string) =>
+    dump.edges.find((e) => e.to.includes(toContains) && !e.from.endsWith(`#${toContains}`));
+
+  // `new Store` — the keyword directly before the name (once trivia is
+  // skipped) marks an instantiation even though the `(` follows the generic-
+  // free call on the same line.
+  TestValidator.equals(
+    "new-expression instantiates",
+    edge("Store:class")?.kind,
+    "instantiates",
+  );
+  // The typeof-query reference to Store is a type reference, not an access.
+  TestValidator.predicate(
+    "typeof query is a type reference",
+    dump.edges.some((e) => e.to.includes("Store:class") && e.kind === "type_ref"),
+  );
+
+  // A reference whose range starts inside a `/* */` block comment resolves to
+  // the token after it: the edge is a call and its evidence points at the
+  // token's own line/column, not the comment's.
+  const block = edge("blockFn");
+  TestValidator.equals("block-comment reference is a call", block?.kind, "calls");
+  TestValidator.equals(
+    "block-comment reference evidence lands on the token line",
+    block?.evidence?.startLine,
+    4,
+  );
+
+  // A reference whose range starts on a `//` line-comment line advances across
+  // the comment and the following newline to the token on the next line.
+  const lineRef = edge("lineFn");
+  TestValidator.equals("line-comment reference is a call", lineRef?.kind, "calls");
+  TestValidator.equals(
+    "line-comment reference evidence lands on the wrapped token line",
+    lineRef?.evidence?.startLine,
+    7,
+  );
+};

@@ -143,6 +143,36 @@ const createDualOwnerFixture = () => {
   return root;
 };
 
+const createTriviaFixture = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-trivia-"));
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  // The fake server reports each reference's range starting on the token's
+  // leading trivia (a full-start does this), so the indexer must advance to
+  // the real token before reading it. This file lays out one reference per
+  // trivia shape at fixed lines the fake server points at:
+  //   line 1: `new Store`   — instantiates (keyword directly before the name)
+  //   line 2: `typeof Store` — type_ref
+  //   line 3: `blockFn`      — reference range starts inside a block comment
+  //   line 5→6: `lineFn`     — range starts on a `//` line, wraps to the token
+  fs.writeFileSync(
+    path.join(root, "src", "trivia.ts"),
+    [
+      "class Owner {",
+      "  makeNew = new Store();",
+      "  useType: typeof Store = this.makeNew;",
+      "  viaBlock = /* pre */ blockFn();",
+      "  viaLine =",
+      "    // pick",
+      "    lineFn();",
+      "}",
+      "class Store {}",
+      "function blockFn() { return 1; }",
+      "function lineFn() { return 2; }",
+    ].join("\n"),
+  );
+  return root;
+};
+
 const createClassifyFixture = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-classify-"));
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
@@ -517,6 +547,7 @@ export const GraphFixtures = {
   createCmakeFixture,
   createContractFixture,
   createDualOwnerFixture,
+  createTriviaFixture,
   createInheritanceFixture,
   createLspInheritanceFixture,
   createLspFixture,

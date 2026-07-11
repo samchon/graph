@@ -154,6 +154,8 @@ const createTriviaFixture = () => {
   //   line 2: `typeof Store` — type_ref
   //   line 3: `blockFn`      — reference range starts inside a block comment
   //   line 5→6: `lineFn`     — range starts on a `//` line, wraps to the token
+  //   line 7: `<NS.Panel />` — a namespaced JSX tag (render + dotted access)
+  //   line 8: `optFn?.()`    — an optional call
   fs.writeFileSync(
     path.join(root, "src", "trivia.ts"),
     [
@@ -164,10 +166,14 @@ const createTriviaFixture = () => {
       "  viaLine =",
       "    // pick",
       "    lineFn();",
+      "  jsx = <NS.Panel />;",
+      "  opt = optFn?.();",
       "}",
       "class Store {}",
       "function blockFn() { return 1; }",
       "function lineFn() { return 2; }",
+      "const NS = { Panel: () => null };",
+      "function optFn() { return 3; }",
     ].join("\n"),
   );
   return root;

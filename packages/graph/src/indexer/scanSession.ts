@@ -163,22 +163,32 @@ export async function scanSession(
         // `accessAliasesFor` reads via `edgeEvidenceTextOf`.
         ...(accessText !== undefined ? { text: accessText } : {}),
       };
-      edges.push({ from: owner.id, to: target.id, kind, evidence });
-      // A non-method class/interface member (a property or an arrow-function-
-      // valued field) attributes its body's references to both itself AND the
-      // enclosing class/interface, not one or the other -- confirmed against
-      // @ttsc/graph's own fact-builder (forEachMember walks a property
-      // member's subtree once for the member, once for its container). A
-      // method is attributed solely to itself.
-      if (owner.kind === "property" || owner.kind === "field" || owner.kind === "variable") {
-        const container = containerAt(owners, ref.range.start.line + 1);
-        if (
-          container !== undefined &&
-          container.id !== owner.id &&
-          container.id !== target.id
-        ) {
-          edges.push({ from: container.id, to: target.id, kind, evidence });
+      const emit = (kindToEmit: ISamchonGraphEdge["kind"]): void => {
+        edges.push({ from: owner.id, to: target.id, kind: kindToEmit, evidence });
+        // A non-method class/interface member (a property or an arrow-
+        // function-valued field) attributes its body's references to both
+        // itself AND the enclosing class/interface, not one or the other --
+        // confirmed against @ttsc/graph's own fact-builder (forEachMember
+        // walks a property member's subtree once for the member, once for its
+        // container). A method is attributed solely to itself.
+        if (owner.kind === "property" || owner.kind === "field" || owner.kind === "variable") {
+          const container = containerAt(owners, start.line + 1);
+          if (
+            container !== undefined &&
+            container.id !== owner.id &&
+            container.id !== target.id
+          ) {
+            edges.push({ from: container.id, to: target.id, kind: kindToEmit, evidence });
+          }
         }
+      };
+      emit(kind);
+      // A namespaced JSX tag (`<A.B.C />`) is both a render and a member-
+      // access chain reaching the component, so @ttsc/graph's AST walk emits
+      // a render AND an access edge to the same target; mirror the extra
+      // access when the render's tag name is dotted.
+      if (kind === "renders" && accessText !== undefined && accessText.includes(".")) {
+        emit("accesses");
       }
     }
   }
@@ -371,9 +381,13 @@ function referenceKind(
   // trailing `<` (a comparison / generic on the receiver line) and be misread
   // as a tag.
   if (!multiline && isJsxElementUse(startLine, startCol)) return "renders";
-  const after = afterGenericArgs(
+  let after = afterGenericArgs(
     endLine === undefined ? "" : endLine.slice(endCol).trimStart(),
   );
+  // An optional call `fn?.()` invokes fn; the `?.` sits between the name and
+  // the argument list. (A `?.member` without a following `(` is an access,
+  // handled below, so only strip the `?.` when it leads into a call.)
+  if (after.startsWith("?.")) after = after.slice(2).trimStart();
   if (after.startsWith("(")) {
     return targetKind === "class" || targetKind === "constructor"
       ? "instantiates"

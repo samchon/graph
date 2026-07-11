@@ -290,18 +290,22 @@ function handle(message) {
           name: "Owner",
           detail: "",
           kind: 5,
-          range: { start: { line: 0, character: 0 }, end: { line: 7, character: 1 } },
+          range: { start: { line: 0, character: 0 }, end: { line: 9, character: 1 } },
           selectionRange: { start: { line: 0, character: 6 }, end: { line: 0, character: 11 } },
           children: [
             leaf("makeNew", 7, 1, 1, 2),
             leaf("useType", 7, 2, 2, 2),
             leaf("viaBlock", 7, 3, 3, 2),
             leaf("viaLine", 7, 4, 6, 2),
+            leaf("jsx", 7, 7, 7, 2),
+            leaf("opt", 7, 8, 8, 2),
           ],
         },
-        { name: "Store", detail: "", kind: 5, range: { start: { line: 8, character: 0 }, end: { line: 8, character: 14 } }, selectionRange: { start: { line: 8, character: 6 }, end: { line: 8, character: 11 } }, children: [] },
-        { name: "blockFn", detail: "", kind: 12, range: { start: { line: 9, character: 0 }, end: { line: 9, character: 32 } }, selectionRange: { start: { line: 9, character: 9 }, end: { line: 9, character: 16 } }, children: [] },
-        { name: "lineFn", detail: "", kind: 12, range: { start: { line: 10, character: 0 }, end: { line: 10, character: 31 } }, selectionRange: { start: { line: 10, character: 9 }, end: { line: 10, character: 15 } }, children: [] },
+        { name: "Store", detail: "", kind: 5, range: { start: { line: 10, character: 0 }, end: { line: 10, character: 14 } }, selectionRange: { start: { line: 10, character: 6 }, end: { line: 10, character: 11 } }, children: [] },
+        { name: "blockFn", detail: "", kind: 12, range: { start: { line: 11, character: 0 }, end: { line: 11, character: 32 } }, selectionRange: { start: { line: 11, character: 9 }, end: { line: 11, character: 16 } }, children: [] },
+        { name: "lineFn", detail: "", kind: 12, range: { start: { line: 12, character: 0 }, end: { line: 12, character: 31 } }, selectionRange: { start: { line: 12, character: 9 }, end: { line: 12, character: 15 } }, children: [] },
+        { name: "Panel", detail: "", kind: 12, range: { start: { line: 13, character: 13 }, end: { line: 13, character: 30 } }, selectionRange: { start: { line: 13, character: 13 }, end: { line: 13, character: 18 } }, children: [] },
+        { name: "optFn", detail: "", kind: 12, range: { start: { line: 14, character: 0 }, end: { line: 14, character: 30 } }, selectionRange: { start: { line: 14, character: 9 }, end: { line: 14, character: 14 } }, children: [] },
       ]);
     }
     if (options.nullSymbols) return respond(message.id, null);
@@ -500,17 +504,21 @@ function handle(message) {
       // and 2 (`typeof Store`); blockFn on line 3 with a block comment before
       // it; lineFn on line 6 with the range starting on line 5's `//` comment.
       switch (message.params.position.line) {
-        case 8: // Store — ranges start on the space before the name so the
+        case 10: // Store — ranges start on the space before the name so the
           // `new` / `typeof` keyword lands at the end of `before` after the
           // trivia advance, exercising the keyword-prefix classification.
           return respond(message.id, [
             { uri, range: { start: { line: 1, character: 15 }, end: { line: 1, character: 21 } } },
             { uri, range: { start: { line: 2, character: 17 }, end: { line: 2, character: 23 } } },
           ]);
-        case 9: // blockFn — range starts inside `/* pre */`
+        case 11: // blockFn — range starts inside `/* pre */`
           return respond(message.id, [{ uri, range: { start: { line: 3, character: 13 }, end: { line: 3, character: 30 } } }]);
-        case 10: // lineFn — range starts on the `// pick` line, wraps to line 6
+        case 12: // lineFn — range starts on the `// pick` line, wraps to line 6
           return respond(message.id, [{ uri, range: { start: { line: 5, character: 4 }, end: { line: 6, character: 10 } } }]);
+        case 13: // Panel — a namespaced JSX tag `<NS.Panel />` (render + access)
+          return respond(message.id, [{ uri, range: { start: { line: 7, character: 9 }, end: { line: 7, character: 17 } } }]);
+        case 14: // optFn — an optional call `optFn?.()`
+          return respond(message.id, [{ uri, range: { start: { line: 8, character: 8 }, end: { line: 8, character: 13 } } }]);
         default:
           return respond(message.id, []);
       }

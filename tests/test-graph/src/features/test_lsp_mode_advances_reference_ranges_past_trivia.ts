@@ -51,4 +51,17 @@ export const test_lsp_mode_advances_reference_ranges_past_trivia = async () => {
     lineRef?.evidence?.startLine,
     7,
   );
+
+  // A namespaced JSX tag `<NS.Panel />` renders the component AND, because the
+  // tag name is a member-access chain, accesses the same target.
+  const panelKinds = new Set(
+    dump.edges.filter((e) => e.to.includes("Panel")).map((e) => e.kind),
+  );
+  TestValidator.predicate(
+    "a namespaced JSX tag emits both a render and an access",
+    panelKinds.has("renders") && panelKinds.has("accesses"),
+  );
+
+  // An optional call `optFn?.()` invokes the target through optional chaining.
+  TestValidator.equals("optional call is a call", edge("optFn")?.kind, "calls");
 };

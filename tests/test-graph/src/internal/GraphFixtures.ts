@@ -106,9 +106,13 @@ const createLspFixture = () => {
       "  }",
       "}",
       "const warning = true;",
-      "export function helper(): void {",
+      "function helper(): void {",
       "  return;",
       "}",
+      // Exercise the two module-export forms an inline `export` modifier scan
+      // cannot see: a separate list (with an `as` alias) and a default export.
+      "export { helper as publicHelper };",
+      "export default LspService;",
     ].join("\n"),
   );
   return root;

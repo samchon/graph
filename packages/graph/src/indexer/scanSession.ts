@@ -42,7 +42,12 @@ export async function scanSession(
       "textDocument/documentSymbol",
       { textDocument: { uri: fileUri(openedFile.abs) } },
     );
-    const converted = convertSymbols(language, openedFile.rel, symbols);
+    const converted = convertSymbols(
+      language,
+      openedFile.rel,
+      symbols,
+      openedFile.text,
+    );
     byFile.set(openedFile.rel, converted);
     appendAll(nodes, converted);
   }
@@ -391,8 +396,19 @@ function convertSymbols(
   language: GraphLanguage,
   file: string,
   symbols: DocumentSymbolResult,
+  text: string,
 ): ISamchonGraphNode[] {
   const out: ISamchonGraphNode[] = [];
+  // ttsc marks a node exported only when its symbol is in the source file's
+  // module export table (exports.go/markExports): a class member is never a
+  // module export, and a top-level declaration is exported only when the file
+  // actually exports it. For a language we have not yet audited against ttsc,
+  // keep the prior behavior (every symbol exported) rather than guessing.
+  const exportedNames = exportedTopLevelNames(language, text);
+  const isExported = (name: string, topLevel: boolean): boolean => {
+    if (exportedNames === undefined) return true;
+    return topLevel && exportedNames.has(name);
+  };
   const visitDocument = (symbol: IDocumentSymbol, owners: string[]): void => {
     const kind = kindOf(symbol.kind);
     if (kind !== undefined) {
@@ -405,7 +421,9 @@ function convertSymbols(
         ...(owners.length > 0 ? { qualifiedName } : {}),
         file,
         external: false,
-        exported: true,
+        ...(isExported(symbol.name, owners.length === 0)
+          ? { exported: true }
+          : {}),
         evidence: {
           file,
           startLine: symbol.selectionRange.start.line + 1,
@@ -429,6 +447,41 @@ function convertSymbols(
   return out;
 }
 
+// The top-level names a TypeScript/JavaScript source file exports, or
+// undefined for a language whose export surface we have not modeled (there,
+// every symbol keeps the prior exported=true default). Covers the three
+// module-export forms an editor's document symbols alone cannot see: an inline
+// `export` modifier, a separate `export { a, b as c }` list, and an
+// `export default Name`. A cross-file re-export (`export { X } from "./x"`) is
+// not resolved here — that would need the whole-program view ttsc's checker
+// has — so only names a re-export's own file also declares are caught.
+function exportedTopLevelNames(
+  language: GraphLanguage,
+  text: string,
+): Set<string> | undefined {
+  if (language !== "typescript") return undefined;
+  const names = new Set<string>();
+  const inline =
+    /^\s*export\s+(?:default\s+)?(?:async\s+)?(?:abstract\s+)?(?:declare\s+)?(?:const|let|var|function\*?|class|interface|type|enum|namespace|module)\s+([A-Za-z_$][\w$]*)/gm;
+  for (let m = inline.exec(text); m !== null; m = inline.exec(text)) {
+    names.add(m[1]!);
+  }
+  const list = /export\s+(?:type\s+)?\{([^}]*)\}/g;
+  for (let m = list.exec(text); m !== null; m = list.exec(text)) {
+    for (const entry of m[1]!.split(",")) {
+      const local = entry.trim().split(/\s+as\s+/)[0]?.trim();
+      if (local !== undefined && /^[A-Za-z_$][\w$]*$/.test(local)) {
+        names.add(local);
+      }
+    }
+  }
+  const def = /export\s+default\s+([A-Za-z_$][\w$]*)\s*;?\s*$/gm;
+  for (let m = def.exec(text); m !== null; m = def.exec(text)) {
+    names.add(m[1]!);
+  }
+  return names;
+}
+
 function convertSymbolInformation(
   language: GraphLanguage,
   file: string,
@@ -448,7 +501,10 @@ function convertSymbolInformation(
     ...(owners.length > 0 ? { qualifiedName } : {}),
     file,
     external: false,
-    exported: true,
+    // The flat SymbolInformation fallback carries no source text to resolve a
+    // real export surface; a contained symbol is still never a module export,
+    // so only a top-level one keeps the exported default.
+    ...(owners.length === 0 ? { exported: true } : {}),
     evidence: {
       file,
       startLine: symbol.location.range.start.line + 1,

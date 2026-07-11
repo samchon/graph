@@ -69,11 +69,16 @@ export class LspClient {
     // answer `shutdown`; sending it anyway would just wait out the full
     // request timeout for nothing.
     if (!this.exited) {
-      try {
-        await this.request("shutdown", null);
-      } catch {
-        // Some servers exit before answering shutdown.
-      }
+      // Teardown is the one bounded place: indexing requests wait forever, but a
+      // `shutdown` that never comes back must not leak the child process. Wait
+      // briefly for a graceful shutdown, then fall through to the kill below.
+      await Promise.race([
+        this.request("shutdown", null).catch(() => {}),
+        new Promise((resolve) => {
+          const timer = setTimeout(resolve, 1000);
+          timer.unref?.();
+        }),
+      ]);
       /* c8 ignore start */
       try {
         this.notify("exit", null);

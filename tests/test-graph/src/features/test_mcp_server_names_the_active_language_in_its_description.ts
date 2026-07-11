@@ -52,7 +52,7 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   );
   TestValidator.predicate(
     "a single-language session names that language in the session instructions",
-    ts.instructions.includes("graph of your TypeScript project"),
+    ts.instructions.includes("graph of your TypeScript"),
   );
 
   const mixed = await sessionOf(["--mode", "static", "--cwd", root]);
@@ -62,7 +62,7 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   );
   TestValidator.predicate(
     "a multi-language session falls back to the generic name in the session instructions",
-    mixed.instructions.includes("graph of your code project"),
+    mixed.instructions.includes("graph of your code"),
   );
 
   // A pre-built dump (`--graph-file`) resolves the language from the dump
@@ -90,4 +90,37 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
     "an implicit cwd still resolves the active language",
     implicitCwd.description.includes("Inspect the TypeScript compiler graph"),
   );
+
+  // Exercise startServer's `once` memoizer on the `--graph-file` source: call the
+  // tool twice so both the first (uncached) and second (cached) source reads run.
+  const callClient = new Client({ name: "samchon-graph-call", version: "1.0.0" });
+  const callTransport = new StdioClientTransport({
+    command: process.execPath,
+    args: [GraphPaths.graphBin, "--graph-file", graphFile],
+    stderr: "pipe",
+  });
+  await callClient.connect(callTransport);
+  try {
+    for (let index = 0; index < 2; index++) {
+      const result = await callClient.callTool(
+        {
+          name: "inspect_code_graph",
+          arguments: {
+            question: "broad orientation",
+            draft: { reason: "overview is the smallest broad step", type: "overview" },
+            review: "overview is sufficient",
+            request: { type: "overview" },
+          },
+        },
+        undefined,
+        { timeout: 120_000 },
+      );
+      TestValidator.predicate(
+        "a graph-file session answers from the memoized graph",
+        (result.content?.length ?? 0) > 0,
+      );
+    }
+  } finally {
+    await callClient.close();
+  }
 };

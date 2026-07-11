@@ -137,6 +137,8 @@ export async function scanSession(
         endLineText,
         ref.range.start.character,
         ref.range.end.character,
+        ref.range.end.line !== ref.range.start.line,
+        accessText,
       );
       const evidence = {
         file: rel,
@@ -286,8 +288,14 @@ function referenceKind(
   endLine: string | undefined,
   startCol: number,
   endCol: number,
+  multiline: boolean,
+  accessText: string | undefined,
 ): ISamchonGraphEdge["kind"] {
-  if (isJsxElementUse(startLine, startCol)) return "renders";
+  // A JSX tag name never spans lines, so only consider it on a single-line
+  // reference: a multi-line reference's start column can land on an unrelated
+  // trailing `<` (a comparison / generic on the receiver line) and be misread
+  // as a tag.
+  if (!multiline && isJsxElementUse(startLine, startCol)) return "renders";
   const after = afterGenericArgs(
     endLine === undefined ? "" : endLine.slice(endCol).trimStart(),
   );
@@ -307,7 +315,14 @@ function referenceKind(
     case "variable":
       return "accesses";
     default:
-      return "references";
+      // A bare non-call reference resolves by the target's kind above; a
+      // callable (method/function/constructor) reached through a member
+      // access (`obj.method` without a following `(`, so `accessText` carries
+      // the receiver `.member` chain) is a property read, the same
+      // value-access @ttsc/graph records, not a generic reference.
+      return accessText !== undefined && accessText.includes(".")
+        ? "accesses"
+        : "references";
   }
 }
 

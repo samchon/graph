@@ -118,8 +118,13 @@ const createClassifyFixture = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-classify-"));
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   // The fake server points references at line 1 (an invocation — `(` right
-  // after column 4), line 2 (a bare member access), and a line beyond the file
-  // (no text) so the reference classifier exercises every branch.
+  // after column 4), line 2 (a bare member access), line 13 (a JSX opening
+  // tag), line 14 (a JSX closing tag), line 15 (a generic type argument —
+  // `<` immediately preceded by an identifier char, so it must NOT classify
+  // as JSX), and a line beyond the file (no text) so the reference classifier
+  // exercises every branch. Lines 3-12 already belong to the leaf() document
+  // symbols below, so the new lines start past all of them to avoid stealing
+  // ownership of a reference from the outer `Owner` class.
   fs.writeFileSync(
     path.join(root, "src", "classify.ts"),
     [
@@ -132,6 +137,13 @@ const createClassifyFixture = () => {
       "  filler3;",
       "  filler4;",
       "  filler5;",
+      "  filler6;",
+      "  filler7;",
+      "  filler8;",
+      "  filler9;",
+      "<aabb />;",
+      "</aabb>;",
+      "Array<aabb>;",
       "}",
     ].join("\n"),
   );

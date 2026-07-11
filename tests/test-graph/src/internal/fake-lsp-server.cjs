@@ -381,16 +381,26 @@ function handle(message) {
     }
     if (options.classify) {
       const uri = message.params.textDocument.uri;
-      const at = (line) => ({
+      const at = (line, startChar = 0, endChar = 4) => ({
         uri,
         range: {
-          start: { line, character: 0 },
-          end: { line, character: 4 },
+          start: { line, character: startChar },
+          end: { line, character: endChar },
         },
       });
-      // line 1: invocation (`(` after col 4), line 2: bare access, line 500:
-      // beyond the file so the classifier sees no source text.
-      return respond(message.id, [at(1), at(2), at(500)]);
+      // line 1: invocation (`(` after col 4), line 2: bare access, line 13: a
+      // JSX opening tag (`<aabb`), line 14: a JSX closing tag (`</aabb`),
+      // line 15: a generic type argument (`Array<aabb>` — must NOT classify
+      // as JSX), line 500: beyond the file so the classifier sees no source
+      // text.
+      return respond(message.id, [
+        at(1),
+        at(2),
+        at(13, 1, 5),
+        at(14, 2, 6),
+        at(15, 6, 10),
+        at(500),
+      ]);
     }
     const line = message.params.position.line;
     if (line === 6) {

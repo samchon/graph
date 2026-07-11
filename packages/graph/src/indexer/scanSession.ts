@@ -125,7 +125,12 @@ export async function scanSession(
       edges.push({
         from: owner.id,
         to: target.id,
-        kind: referenceKind(target.kind, refLine, ref.range.end.character),
+        kind: referenceKind(
+          target.kind,
+          refLine,
+          ref.range.start.character,
+          ref.range.end.character,
+        ),
         evidence: {
           file: rel,
           startLine: ref.range.start.line + 1,
@@ -240,15 +245,18 @@ function accessExpressionAt(
 }
 
 // Classify a reference the same way the static indexer does, but with the
-// language server's exact position: an identifier immediately followed by `(`
-// is an invocation (a class becomes an instantiation, anything else a call);
-// otherwise the target's kind decides between a type reference, a member
-// access, and a generic reference.
+// language server's exact position: a JSX element use (`<Component ...`) is a
+// render; an identifier immediately followed by `(` is an invocation (a class
+// becomes an instantiation, anything else a call); otherwise the target's
+// kind decides between a type reference, a member access, and a generic
+// reference.
 function referenceKind(
   targetKind: GraphNodeKind,
   refLine: string | undefined,
+  startCol: number,
   endCol: number,
 ): ISamchonGraphEdge["kind"] {
+  if (isJsxElementUse(refLine, startCol)) return "renders";
   const after = refLine === undefined ? "" : refLine.slice(endCol).trimStart();
   if (after.startsWith("(")) {
     return targetKind === "class" || targetKind === "constructor"
@@ -268,6 +276,21 @@ function referenceKind(
     default:
       return "references";
   }
+}
+
+// A JSX element name immediately follows `<` (opening) or `</` (closing), and
+// that `<` is not itself part of a generic/comparison expression (`Array<`,
+// `x < y`), which puts an identifier character directly before it.
+function isJsxElementUse(
+  refLine: string | undefined,
+  startCol: number,
+): boolean {
+  if (refLine === undefined) return false;
+  const before = refLine.slice(0, startCol);
+  const match = /<\/?$/.exec(before);
+  if (match === null) return false;
+  const beforeAngle = before[match.index - 1];
+  return beforeAngle === undefined || !/[A-Za-z0-9_$]/.test(beforeAngle);
 }
 
 // Language servers such as rust-analyzer answer requests made during indexing

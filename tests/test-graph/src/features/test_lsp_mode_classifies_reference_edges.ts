@@ -31,6 +31,16 @@ export const test_lsp_mode_classifies_reference_edges = async () => {
   TestValidator.predicate("bare reference to a value is an access", has("accesses"));
   TestValidator.predicate("bare reference to a callable stays a generic reference", has("references"));
 
+  // A JSX opening or closing tag renders; a generic type argument (`<`
+  // immediately preceded by an identifier char) must not be mistaken for one.
+  TestValidator.predicate("a JSX opening tag renders", has("renders"));
+  TestValidator.predicate(
+    "a generic type argument does not render",
+    dump.edges
+      .filter((edge) => edge.evidence?.startLine === 16)
+      .every((edge) => edge.kind !== "renders"),
+  );
+
   TestValidator.predicate(
     "every classified edge points at an Owner member",
     dump.edges.every((edge) => edge.from.includes("Owner") && edge.to.includes("Owner.")),

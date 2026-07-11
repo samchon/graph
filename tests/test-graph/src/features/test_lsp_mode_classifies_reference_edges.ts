@@ -41,6 +41,23 @@ export const test_lsp_mode_classifies_reference_edges = async () => {
       .every((edge) => edge.kind !== "renders"),
   );
 
+  // An invocation through a generic argument list (`aabb<T>()`) still counts:
+  // the `(` after the closing `>` is found by skipping the balanced `<...>`.
+  TestValidator.predicate(
+    "a generic-argument invocation still instantiates or calls",
+    dump.edges
+      .filter((edge) => edge.evidence?.startLine === 17)
+      .some((edge) => edge.kind === "instantiates" || edge.kind === "calls"),
+  );
+  // An unclosed generic argument list gives up rather than misreading
+  // whatever follows it as an invocation.
+  TestValidator.predicate(
+    "an unclosed generic argument list does not invoke",
+    dump.edges
+      .filter((edge) => edge.evidence?.startLine === 18)
+      .every((edge) => edge.kind !== "instantiates" && edge.kind !== "calls"),
+  );
+
   TestValidator.predicate(
     "every classified edge points at an Owner member",
     dump.edges.every((edge) => edge.from.includes("Owner") && edge.to.includes("Owner.")),

@@ -391,14 +391,19 @@ function handle(message) {
       // line 1: invocation (`(` after col 4), line 2: bare access, line 13: a
       // JSX opening tag (`<aabb`), line 14: a JSX closing tag (`</aabb`),
       // line 15: a generic type argument (`Array<aabb>` — must NOT classify
-      // as JSX), line 500: beyond the file so the classifier sees no source
-      // text.
+      // as JSX), line 16: an invocation through a generic argument list
+      // (`aabb<T>()`), line 17: an unclosed generic argument list
+      // (`aabb<Unclosed;` — the skip gives up and returns the text
+      // unchanged), line 500: beyond the file so the classifier sees no
+      // source text.
       return respond(message.id, [
         at(1),
         at(2),
         at(13, 1, 5),
         at(14, 2, 6),
         at(15, 6, 10),
+        at(16, 0, 4),
+        at(17, 0, 4),
         at(500),
       ]);
     }

@@ -246,10 +246,11 @@ function accessExpressionAt(
 
 // Classify a reference the same way the static indexer does, but with the
 // language server's exact position: a JSX element use (`<Component ...`) is a
-// render; an identifier immediately followed by `(` is an invocation (a class
-// becomes an instantiation, anything else a call); otherwise the target's
-// kind decides between a type reference, a member access, and a generic
-// reference.
+// render; an identifier immediately followed by `(` — skipping over a generic
+// argument list, so `new Map<K, V>()` and `myFunc<T>()` still count — is an
+// invocation (a class becomes an instantiation, anything else a call);
+// otherwise the target's kind decides between a type reference, a member
+// access, and a generic reference.
 function referenceKind(
   targetKind: GraphNodeKind,
   refLine: string | undefined,
@@ -257,7 +258,9 @@ function referenceKind(
   endCol: number,
 ): ISamchonGraphEdge["kind"] {
   if (isJsxElementUse(refLine, startCol)) return "renders";
-  const after = refLine === undefined ? "" : refLine.slice(endCol).trimStart();
+  const after = afterGenericArgs(
+    refLine === undefined ? "" : refLine.slice(endCol).trimStart(),
+  );
   if (after.startsWith("(")) {
     return targetKind === "class" || targetKind === "constructor"
       ? "instantiates"
@@ -291,6 +294,23 @@ function isJsxElementUse(
   if (match === null) return false;
   const beforeAngle = before[match.index - 1];
   return beforeAngle === undefined || !/[A-Za-z0-9_$]/.test(beforeAngle);
+}
+
+// Skip a leading balanced `<...>` generic argument list (`<K, V>` in
+// `new Map<K, V>()`), so the invocation check right after can still see the
+// `(`. Unmatched (no closing `>` on this line) returns the text unchanged, so
+// the caller's `startsWith("(")` check simply fails as it did before.
+function afterGenericArgs(text: string): string {
+  if (!text.startsWith("<")) return text;
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "<") depth++;
+    else if (text[i] === ">") {
+      depth--;
+      if (depth === 0) return text.slice(i + 1).trimStart();
+    }
+  }
+  return text;
 }
 
 // Language servers such as rust-analyzer answer requests made during indexing

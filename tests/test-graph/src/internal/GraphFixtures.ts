@@ -121,10 +121,13 @@ const createClassifyFixture = () => {
   // after column 4), line 2 (a bare member access), line 13 (a JSX opening
   // tag), line 14 (a JSX closing tag), line 15 (a generic type argument —
   // `<` immediately preceded by an identifier char, so it must NOT classify
-  // as JSX), and a line beyond the file (no text) so the reference classifier
-  // exercises every branch. Lines 3-12 already belong to the leaf() document
-  // symbols below, so the new lines start past all of them to avoid stealing
-  // ownership of a reference from the outer `Owner` class.
+  // as JSX), line 16 (an invocation through a generic argument list, e.g.
+  // `aabb<T>()`), line 17 (an unclosed generic argument list, so the
+  // generic-skip gives up and returns the text unchanged), and a line beyond
+  // the file (no text) so the reference classifier exercises every branch.
+  // Lines 3-12 already belong to the leaf() document symbols below, so the
+  // new lines start past all of them to avoid stealing ownership of a
+  // reference from the outer `Owner` class.
   fs.writeFileSync(
     path.join(root, "src", "classify.ts"),
     [
@@ -144,6 +147,8 @@ const createClassifyFixture = () => {
       "<aabb />;",
       "</aabb>;",
       "Array<aabb>;",
+      "aabb<T>();",
+      "aabb<Unclosed;",
       "}",
     ].join("\n"),
   );

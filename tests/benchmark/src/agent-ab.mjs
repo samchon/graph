@@ -63,8 +63,20 @@ const claudeStartupGraceMs = Number(args["claude-startup-grace-ms"] ?? 5000);
 const serena = args.serena === "1" || args.serena === "true";
 const serenaCommand = args["serena-command"] ?? "uvx";
 const cg = args.cg === "1" || args.cg === "true";
-if (cg && serena) throw new Error("--cg and --serena cannot be combined");
-const toolName = cg ? "codegraph" : serena ? "serena" : "samchon-graph";
+// `--ttsc` benchmarks @ttsc/graph's own MCP server (its resident native graph),
+// as a reference ceiling for the TypeScript-only original this port generalizes.
+const ttsc = args.ttsc === "1" || args.ttsc === "true";
+const ttscBin =
+  args["ttsc-bin"] ?? "D:/github/samchon/ttsc/packages/graph/lib/bin.js";
+if ([cg, serena, ttsc].filter(Boolean).length > 1)
+  throw new Error("--cg, --serena, and --ttsc cannot be combined");
+const toolName = cg
+  ? "codegraph"
+  : serena
+    ? "serena"
+    : ttsc
+      ? "ttsc-graph"
+      : "samchon-graph";
 
 const corpusRoot = args.corpus ?? path.join(os.tmpdir(), "samchon-graph-corpus");
 const repoDir = args["repo-dir"]
@@ -81,7 +93,7 @@ if (!armsRequested.baseline && !armsRequested.graph) {
 }
 
 // 1. A built launcher is required for the graph arm.
-if (armsRequested.graph && !serena && !cg && !fs.existsSync(graphLauncher)) {
+if (armsRequested.graph && !serena && !cg && !ttsc && !fs.existsSync(graphLauncher)) {
   throw new Error(
     `@samchon/graph launcher not built: ${graphLauncher}\n` +
       "Run `pnpm --filter @samchon/graph build` first.",
@@ -117,7 +129,7 @@ if (armsRequested.graph && cg) {
 // any credits are spent, instead of silently corrupting the comparison.
 const graphMaxFiles = args["max-files"] ?? spec.maxFiles;
 const graphFile = path.join(corpusRoot, `${repoKey}.graph.json`);
-if (armsRequested.graph && !serena && !cg) {
+if (armsRequested.graph && !serena && !cg && !ttsc) {
   const started = Date.now();
   const fd = fs.openSync(graphFile, "w");
   // Language servers pinned as devDependencies (ttscserver via `ttsc`, etc.)
@@ -183,12 +195,26 @@ if (withCfg) {
     ? { serena: serenaServerConfig(repoDir) }
     : cg
       ? { codegraph: codegraphServerConfig(repoDir) }
-      : {
-          "samchon-graph": {
-            command: process.execPath,
-            args: [graphLauncher, "--graph-file", graphFile],
-          },
-        };
+      : ttsc
+        ? {
+            "ttsc-graph": {
+              command: process.execPath,
+              args: [ttscBin, "--cwd", repoDir],
+              // @ttsc/graph resolves its native ttscgraph binary from the
+              // repo's own ttsc install; put its .bin on PATH the same way the
+              // samchon pre-build does.
+              env: {
+                ...process.env,
+                PATH: `${path.join(repoDir, "node_modules", ".bin")}${path.delimiter}${process.env.PATH ?? ""}`,
+              },
+            },
+          }
+        : {
+            "samchon-graph": {
+              command: process.execPath,
+              args: [graphLauncher, "--graph-file", graphFile],
+            },
+          };
   fs.writeFileSync(withCfg, JSON.stringify({ mcpServers: serverCfg }));
 }
 if (emptyCfg) fs.writeFileSync(emptyCfg, JSON.stringify({ mcpServers: {} }));

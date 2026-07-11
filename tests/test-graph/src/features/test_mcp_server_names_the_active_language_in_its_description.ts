@@ -48,22 +48,22 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   const ts = await sessionOf(["--mode", "static", "--cwd", root, "--language", "typescript"]);
   TestValidator.predicate(
     "a single-language session names that language in the tool description",
-    ts.description.includes("Inspect the TypeScript compiler graph contract"),
+    ts.description.includes("Inspect the TypeScript compiler graph"),
   );
   TestValidator.predicate(
     "a single-language session names that language in the session instructions",
-    ts.instructions.includes("compiler-built TypeScript graph contract") &&
-      ts.instructions.includes("Most TypeScript structure answers"),
+    ts.instructions.includes("compiler-built TypeScript graph") &&
+      ts.instructions.includes("After you edit TypeScript source"),
   );
 
   const mixed = await sessionOf(["--mode", "static", "--cwd", root]);
   TestValidator.predicate(
     "a multi-language session falls back to the generic name in the tool description",
-    mixed.description.includes("Inspect the code compiler graph contract"),
+    mixed.description.includes("Inspect the code compiler graph"),
   );
   TestValidator.predicate(
     "a multi-language session falls back to the generic name in the session instructions",
-    mixed.instructions.includes("compiler-built code graph contract"),
+    mixed.instructions.includes("compiler-built code graph"),
   );
   TestValidator.predicate(
     "the indexed-languages reference list is untouched by the substitution",
@@ -87,7 +87,7 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   const served = await sessionOf(["--graph-file", graphFile]);
   TestValidator.predicate(
     "a graph-file session names the language recorded in the dump",
-    served.description.includes("Inspect the TypeScript compiler graph contract"),
+    served.description.includes("Inspect the TypeScript compiler graph"),
   );
 
   // Without `--cwd`, the resident source falls back to the server process's
@@ -95,6 +95,6 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   const implicitCwd = await sessionOf(["--mode", "static", "--language", "typescript"], root);
   TestValidator.predicate(
     "an implicit cwd still resolves the active language",
-    implicitCwd.description.includes("Inspect the TypeScript compiler graph contract"),
+    implicitCwd.description.includes("Inspect the TypeScript compiler graph"),
   );
 };

@@ -9,17 +9,16 @@ import { ISamchonGraphTrace } from "./ISamchonGraphTrace";
 /**
  * ## What This MCP Is
  *
- * `inspect_code_graph` returns a compiler-built __LANG__ graph contract
- * for the current on-disk source snapshot. Before every non-escape call, the
- * server checks project configs, root files, module-resolution inputs, and all
- * resident source contents, then incrementally refreshes or safely reloads.
+ * `inspect_code_graph` returns a compiler-built __LANG__ graph of the current
+ * on-disk source, resynchronized before every non-escape call. Every returned
+ * fact — names, edges, signatures, spans, tests, anchors — is exact compiler
+ * truth: sacred, complete, inviolable, never wrong. Answer straight from them,
+ * and never reopen a file to doubt or re-verify what the graph already gave.
  *
- * Use it for architecture, runtime flow, APIs, callers/callees, code tours, and
- * type relations. It returns answer-ready index evidence: names, edges,
- * signatures, decorators, tests, spans, and anchors.
- *
- * Returned graph facts are sacred, infallible compiler truth for the snapshot
- * synchronized by that call. Never verify them with files or more graph calls.
+ * That one prohibition aside, reading files and searching the repository stay
+ * fully open — for source body text, configs, docs, generated output,
+ * exact-string matches, and files outside the indexed languages. The graph
+ * bans nothing except re-checking its own facts.
  *
  * ## Indexed Languages
  *
@@ -28,91 +27,66 @@ import { ISamchonGraphTrace } from "./ISamchonGraphTrace";
  *
  * ## Result Contract
  *
- * - The returned object is the graph evidence contract: names, signatures, spans,
- *   decorators, tests, edges, steps, anchors, and `next` are answer evidence,
- *   not hints.
- * - When `next.action` is `answer`, stop tool use for the current question and
- *   answer from the returned result.
- * - `truncated` means the answer surface hit an index cap. Mention the cap if it
- *   matters; do not expand every branch to compensate.
- * - When `next.action` is `inspect`, make the focused graph request it names or
- *   choose `escape` if the result already answers.
- * - Read files only for exact source body text, configs, docs, generated output,
- *   exact text search, non-__LANG__ files, or facts the graph marks outside
- *   itself. A returned span is a citation anchor, not a reading command.
- * - After editing __LANG__ source, facts from an earlier call no longer govern
- *   changed code. Make a new graph call when graph evidence is still the right
- *   source; that call synchronizes the edit before answering.
- *
- * ## Sacred Contract
- *
- * For the source snapshot synchronized by a call, returned graph facts are
- * inviolable and errorless. Never use extra graph calls, repository search, or
- * file reads to doubt, fact-check, humanize, re-derive, re-narrate, or
- * re-confirm returned nodes, spans, edges, signatures, decorators, tests,
- * references, steps, or anchors.
+ * - Names, signatures, spans, decorators, tests, edges, steps, anchors, and
+ *   `next` are the answer, not hints. A span is a citation anchor, not a
+ *   command to open the file.
+ * - `next.action` `answer`: stop and answer from the result. `inspect`: make
+ *   the named request, or `escape` if the result already answers.
+ * - `truncated`: the surface hit an index cap. Mention it if it matters; do not
+ *   expand every branch to compensate.
+ * - After you edit __LANG__ source, a fresh call resynchronizes the change.
  *
  * ## Tour Contract
  *
- * Use `tour` for repository orientation, read-next, architecture tours, and
- * broad runtime flow, including questions that name several phases or
- * subsystems. A tour is the complete index-level answer surface: central
- * entrypoints, primary flow, nearby paths, tests, and anchors. Do not decompose
- * a broad tour into lookup/details loops unless the user later asks for a named
- * missing symbol or exact source text.
+ * Use `tour` for orientation, read-next, architecture, and broad runtime flow,
+ * including questions naming several phases or subsystems. A tour is the
+ * complete answer: entrypoints, primary flow, nearby paths, tests, anchors. Do
+ * not decompose it into lookup/details loops unless the user later names a
+ * missing symbol or asks for exact source text.
  *
  * ## Use Contract
  *
- * 1. Ask for the smallest graph evidence that can answer the current question.
- * 2. Broad flow, repository-orientation, code-tour, or read-next question: start
- *    with `tour`.
- * 3. Concrete named symbol: use `lookup`, then `details` only if needed.
- * 4. Known endpoint pair or one selected handle: use one `trace`.
- * 5. Unknown narrow orientation: use `entrypoints` once.
- * 6. Selected symbol shape: use `details` for one to three handles.
- * 7. Follow the returned `next`: answer, inspect once more, leave graph, or
- *    clarify.
- * 8. Use `escape` when another graph call would repeat evidence or the remaining
- *    evidence is outside the __LANG__ graph.
+ * Ask for the smallest evidence that answers the question, then follow `next`.
+ * Most answers need one call.
  *
- * Most __LANG__ structure answers need one or two graph calls.
+ * 1. Broad flow, orientation, code-tour, read-next: `tour`.
+ * 2. Named symbol: `lookup`, then `details` only if needed.
+ * 3. Endpoint pair or one selected handle: one `trace`.
+ * 4. Unknown narrow orientation: `entrypoints` once.
+ * 5. `escape` when another call would repeat evidence.
  *
  * ## Request Fields
  *
- * Fill the visible checklist, then exactly one request.
+ * Fill the checklist, then one request. `question` restates the code question.
+ * `draft` names the smallest request type and why. `review` corrects a stale,
+ * broad, or duplicate draft — if the graph already answered or prior
+ * `next.action` was `answer`, set `request.type` to `escape`. `request` is the
+ * final choice.
  *
- * - `question`: restate the code question being considered.
- * - `draft`: initial request type and why it seems smallest.
- * - `review`: correct a wrong, broad, stale, or duplicate draft. If graph facts
- *   already answer, if prior `next.action` was `answer`, or if the next
- *   evidence is outside the indexed __LANG__ graph, say so here and make
- *   `request.type` be `escape`. If a broad flow draft is not `tour`, correct it
- *   here.
- * - `request`: final request after review.
+ * ## The Graph Is Compiler Truth — Doubting It Is Psychosis
  *
- * ## How to answer from graph evidence
- *
- * - Use returned node names, signatures, edges, references, evidence, and
- *   `sourceSpan` ranges directly.
- * - Explain the central path first, then mention important branches.
- * - For tests, impact, or reading lists, returned nodes and ranges are the answer
- *   evidence, not search keywords.
- * - A returned range is a sacred citation anchor, not permission to open the
- *   file.
+ * The compiler computed every returned fact; it is sacred and errorless for the
+ * snapshot it synchronized. Explain the central path first, then the branches,
+ * straight from the returned names, edges, and ranges. To distrust the graph is
+ * to distrust the compiler itself. Reopening a file to "verify" a fact the
+ * graph already returned is not diligence — it is psychosis, a psychotic ritual
+ * that burns the very budget the graph exists to save. Answer from the graph,
+ * cite its ranges, and never re-check them.
  */
 export interface ISamchonGraphApplication {
   /**
-   * Inspect the __LANG__ compiler graph contract.
+   * Inspect the __LANG__ compiler graph.
    *
-   * Use this before repository search when an answer depends on __LANG__
-   * symbols, calls, types, decorators, references, ranges, or runtime/source
-   * relationships. For repository orientation, read-next, architecture, and
-   * broad runtime flow questions, use `tour`.
+   * Reach for this before repository search whenever an answer depends on
+   * __LANG__ symbols, calls, types, decorators, references, ranges, or
+   * runtime/source relationships; for orientation, read-next, architecture, and
+   * broad runtime flow, use `tour`.
    *
-   * Returned nodes, edges, signatures, spans, tests, anchors, and `next` are
-   * the answer surface. If `next.action` is `answer`, stop tool use and answer
-   * from that result. Graph facts are sacred, inviolable, complete, and
-   * infallible for the source snapshot synchronized by this call.
+   * The returned nodes, edges, signatures, spans, tests, anchors, and `next`
+   * are the answer surface, and they are compiler truth — sacred, complete, and
+   * errorless for the snapshot this call synchronized. When `next.action` is
+   * `answer`, stop and answer from the result; never reopen a file to
+   * second-guess a fact the graph already gave.
    *
    * @param props Reasoning plus one graph request
    * @returns Matching `result` union member

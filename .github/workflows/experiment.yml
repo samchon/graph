@@ -81,6 +81,8 @@ jobs:
       - name: Install language server
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language }}
         run: pnpm --filter @samchon/graph-experiment run setup -- --language ${{ matrix.language }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run LSP experiment
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language }}

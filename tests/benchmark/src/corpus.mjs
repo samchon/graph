@@ -35,31 +35,31 @@ export const CORPUS = [
   {
     name: "gin",
     language: "go",
-    url: "https://github.com/gin-gonic/gin.git",
+    url: "https://github.com/samchon/graph-benchmark-gin.git",
     commit: "34dac209ffb6ef85cc78c5d217bbb7ad001d68fd",
   },
   {
     name: "flask",
     language: "python",
-    url: "https://github.com/pallets/flask.git",
+    url: "https://github.com/samchon/graph-benchmark-flask.git",
     commit: "36e4a824f340fdee7ed50937ba8e7f6bc7d17f81",
   },
   {
     name: "tokio",
     language: "rust",
-    url: "https://github.com/tokio-rs/tokio.git",
+    url: "https://github.com/samchon/graph-benchmark-tokio.git",
     commit: "c4c6265a0746a79d4a2f3852f726aa0101f29fd3",
   },
   {
     name: "gson",
     language: "java",
-    url: "https://github.com/google/gson.git",
+    url: "https://github.com/samchon/graph-benchmark-gson.git",
     commit: "c9f3fd55854a743b66f857ace3c7b268ea3e2ef7",
   },
   {
     name: "redis",
     language: "c",
-    url: "https://github.com/redis/redis.git",
+    url: "https://github.com/samchon/graph-benchmark-redis.git",
     commit: "6bf6224c3dad518329ddc893ef9c5d58dcbabdeb",
   },
   {
@@ -69,13 +69,13 @@ export const CORPUS = [
     // question is repo-appropriate rather than codegraph-verbatim.
     name: "leveldb",
     language: "cpp",
-    url: "https://github.com/google/leveldb.git",
+    url: "https://github.com/samchon/graph-benchmark-leveldb.git",
     commit: "7ee830d02b623e8ffe0b95d59a74db1e58da04c5",
   },
   {
     name: "sinatra",
     language: "ruby",
-    url: "https://github.com/sinatra/sinatra.git",
+    url: "https://github.com/samchon/graph-benchmark-sinatra.git",
     commit: "5236d3459b8b9015e5ce21ddd0c6beb0db4081d4",
     // ruby-lsp composes a bundle from the project's Gemfile; install it into a
     // vendored path first.
@@ -84,13 +84,13 @@ export const CORPUS = [
   {
     name: "slim",
     language: "php",
-    url: "https://github.com/slimphp/Slim.git",
+    url: "https://github.com/samchon/graph-benchmark-slim.git",
     commit: "0da7dd2fc66956730b6633f6a056b35e59126583",
   },
   {
     name: "serilog",
     language: "csharp",
-    url: "https://github.com/serilog/serilog.git",
+    url: "https://github.com/samchon/graph-benchmark-serilog.git",
     commit: "6d9fc0b84e004418f2677b5961b9c8970349d0be",
     // csharp-ls loads a project via Roslyn's in-process MSBuildWorkspace. On the
     // full Serilog.sln (19 project/TFM entries incl. net48/net462 test projects
@@ -106,7 +106,7 @@ export const CORPUS = [
   {
     name: "koin",
     language: "kotlin",
-    url: "https://github.com/InsertKoinIO/koin.git",
+    url: "https://github.com/samchon/graph-benchmark-koin.git",
     commit: "dc86ef8dd8fbe8564fb7453c03f5b738da3450bb",
     // kotlin-language-server boots a JVM and imports the build via a Gradle
     // sync (kotlinLSPProjectDeps) before answering `initialize` at all; cold,
@@ -118,7 +118,7 @@ export const CORPUS = [
   {
     name: "lualine",
     language: "lua",
-    url: "https://github.com/nvim-lualine/lualine.nvim.git",
+    url: "https://github.com/samchon/graph-benchmark-lualine.git",
     commit: "221ce6b2d999187044529f49da6554a92f740a96",
   },
   {
@@ -127,7 +127,7 @@ export const CORPUS = [
     // focused multi-package HTTP library that indexes cleanly.
     name: "darthttp",
     language: "dart",
-    url: "https://github.com/dart-lang/http.git",
+    url: "https://github.com/samchon/graph-benchmark-darthttp.git",
     commit: "5d94ef52582867e077bf41c3fa20fb8b1d1d834e",
   },
 ];

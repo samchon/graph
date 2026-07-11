@@ -144,12 +144,21 @@ export async function scanSession(
           ? startLineText
           : fileLines?.[ref.range.end.line];
       const accessText = accessExpressionAt(endLineText, ref.range.end.character);
+      // The text following the reference, as one string: the rest of the end
+      // line plus a bounded run of following lines. A generic call whose
+      // argument list opens several lines below the name (`fn<\n  T\n>(...)`)
+      // needs the later `(` to classify as a call, and single-line uses only
+      // read the immediate characters.
+      const afterText = tailFrom(
+        fileLines,
+        ref.range.end.line,
+        ref.range.end.character,
+      );
       const kind = referenceKind(
         target.kind,
         startLineText,
-        endLineText,
+        afterText,
         start.character,
-        ref.range.end.character,
         ref.range.end.line !== start.line,
         accessText,
       );
@@ -324,6 +333,29 @@ function firstCodeAt(
   return { line, character };
 }
 
+// The source text following a reference: the rest of its end line, plus a
+// bounded run of the lines below when the classification may continue there —
+// the name sits at the end of its line, or a generic `<` opens on it. Those
+// are the only shapes whose invocation `(` can appear on a later line
+// (`fn<\n  T\n>(...)`); every other tail is settled by the end line alone.
+function tailFrom(
+  lines: readonly string[] | undefined,
+  endLine: number,
+  endCol: number,
+): string {
+  // Every caller passes the file's own cached lines, so this is defensive.
+  /* c8 ignore next */
+  if (lines === undefined) return "";
+  const here = lines[endLine]?.slice(endCol) ?? "";
+  const trimmed = here.trimStart();
+  if (trimmed !== "" && !trimmed.startsWith("<")) return here;
+  let text = here;
+  for (let k = endLine + 1; k <= endLine + 16 && k < lines.length; k++) {
+    text += `\n${lines[k]!}`;
+  }
+  return text;
+}
+
 // The dotted access expression ending exactly at a reference's end column
 // (e.g. `this._internals.foo` for a reference to `foo`), when the reference
 // sits at the end of one. This is the source-text hint `accessAliasesFor`
@@ -348,17 +380,15 @@ function accessExpressionAt(
 // otherwise the target's kind decides between a type reference, a member
 // access, and a generic reference.
 //
-// `startLine`/`endLine` are deliberately separate: some language servers
-// report a multi-line property-access reference (e.g. a receiver on one line
-// and `.member(` on the next) with `start` and `end` on different lines, so
-// reading the end column against the start line's text would slice into the
-// wrong line entirely and silently miss the invocation.
+// `afterText` is the source that follows the reference — the rest of its end
+// line plus a bounded run of the lines below it — so a generic argument list
+// (`fn<...>`) that only closes several lines down still reveals the `(` that
+// makes the reference a call.
 function referenceKind(
   targetKind: GraphNodeKind,
   startLine: string | undefined,
-  endLine: string | undefined,
+  afterText: string,
   startCol: number,
-  endCol: number,
   multiline: boolean,
   accessText: string | undefined,
 ): ISamchonGraphEdge["kind"] {
@@ -381,9 +411,7 @@ function referenceKind(
   // trailing `<` (a comparison / generic on the receiver line) and be misread
   // as a tag.
   if (!multiline && isJsxElementUse(startLine, startCol)) return "renders";
-  let after = afterGenericArgs(
-    endLine === undefined ? "" : endLine.slice(endCol).trimStart(),
-  );
+  let after = afterGenericArgs(afterText.trimStart());
   // An optional call `fn?.()` invokes fn; the `?.` sits between the name and
   // the argument list. (A `?.member` without a following `(` is an access,
   // handled below, so only strip the `?.` when it leads into a call.)

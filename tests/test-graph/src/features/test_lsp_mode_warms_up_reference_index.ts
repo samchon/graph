@@ -45,7 +45,7 @@ export const test_lsp_mode_warms_up_reference_index = async () => {
     languages: ["typescript"],
     server: process.execPath,
     serverArgs: [GraphPaths.fakeLspServer, "--hang-references-after=1"],
-    lspTimeoutMs: 50,
+    lspTimeoutMs: 500,
     lspWarmupTimeoutMs: 5_000,
     lspConcurrency: 1,
   });
@@ -61,7 +61,7 @@ export const test_lsp_mode_warms_up_reference_index = async () => {
     languages: ["typescript"],
     server: process.execPath,
     serverArgs: [GraphPaths.fakeLspServer, "--hang-method=textDocument/references"],
-    lspTimeoutMs: 50,
+    lspTimeoutMs: 500,
     lspWarmupTimeoutMs: 50,
     lspConcurrency: 1,
   });

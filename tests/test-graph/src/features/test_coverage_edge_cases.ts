@@ -802,6 +802,7 @@ export const test_coverage_edge_cases = async () => {
   }>("utils/walkSourceFiles.js");
   TestValidator.equals("missing walk root returns no files", walkSourceFiles(path.join(orderRoot, "missing"), { extensions: new Set([".ts"]) }), []);
   TestValidator.equals("zero maxFiles exits traversal immediately", walkSourceFiles(orderRoot, { extensions: new Set([".ts"]), maxFiles: 0 }), []);
+  TestValidator.equals("walk stops after reaching maxFiles", walkSourceFiles(orderRoot, { extensions: new Set([".ts", ".go"]), maxFiles: 1 }).length, 1);
   TestValidator.equals("walk finds matching source files", walkSourceFiles(orderRoot, { extensions: new Set([".ts", ".go"]) }).length >= 1, true);
 
   const signatureFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "samchon-signature-")), "sample.ts");

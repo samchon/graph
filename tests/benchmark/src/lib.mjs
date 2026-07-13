@@ -129,23 +129,48 @@ export function ensureInstalled(repoDir, { noInstall = false } = {}) {
   run(plan.command, plan.args, { cwd: repoDir, shell: true, stdio: "inherit" });
 }
 
+// Per-corpus setup the generic `ensureInstalled` can't express: a shell command
+// run once in the checkout before indexing. ruby-lsp needs the Gemfile bundle
+// installed; csharp-ls (Roslyn's in-process MSBuildWorkspace) silently returns
+// zero symbols for serilog's full 19-project solution — its test/perf/AOT
+// projects break the load — so its `prepare` trims Serilog.sln to the product
+// project, which csharp-ls loads cleanly. A no-op when the entry has no
+// `prepare`.
+export function runPrepare(spec, repoDir) {
+  if (!spec.prepare) return;
+  console.log(`Preparing ${spec.name}: ${spec.prepare}`);
+  run(spec.prepare, [], { cwd: repoDir, shell: true, stdio: "inherit" });
+}
+
 // The graph-arm gate: build a bounded dump of the pinned checkout and demand a
 // real language-server graph. Without this, a host missing the language server
 // would silently measure the static fallback and corrupt the comparison.
-export function preflightGraph(spec, repoDir, { maxFiles = 25 } = {}) {
-  const out = run(process.execPath, [
-    graphLauncher,
-    "dump",
-    "--cwd",
-    repoDir,
-    "--language",
-    spec.language,
-    "--mode",
-    "lsp",
-    "--max-files",
-    String(maxFiles),
-    ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
-  ]);
+export function preflightGraph(spec, repoDir) {
+  // Some language servers ship inside the checkout itself (e.g. excalidraw's
+  // ttscserver under node_modules/.bin) rather than machine-global or under
+  // .work/tools. Prepend the repo-local bin so the preflight resolves them the
+  // same way the measured run (agent-ab.mjs) does; otherwise TypeScript would
+  // be mis-flagged NO-GO for a missing server that is actually present.
+  //
+  // No `--max-files` / timeout bounds: the graph is never capped, so the
+  // preflight indexes the full tree exactly as the measured run does.
+  const localBin = path.join(repoDir, "node_modules", ".bin");
+  const out = run(
+    process.execPath,
+    [
+      graphLauncher,
+      "dump",
+      "--cwd",
+      repoDir,
+      "--language",
+      spec.language,
+      "--mode",
+      "lsp",
+    ],
+    fs.existsSync(localBin)
+      ? { env: { ...process.env, PATH: `${localBin}${path.delimiter}${process.env.PATH ?? ""}` } }
+      : {},
+  );
   const dump = JSON.parse(out);
   return {
     indexer: dump.indexer,

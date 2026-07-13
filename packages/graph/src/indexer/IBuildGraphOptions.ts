@@ -7,36 +7,42 @@ export interface IBuildGraphOptions {
   server?: string;
   serverArgs?: string[];
   initializationOptions?: unknown;
+  /**
+   * Maximum number of source files to index. Undefined indexes every file.
+   */
   maxFiles?: number;
+  /**
+   * Maximum number of symbols whose references are collected. Undefined
+   * collects references for every symbol.
+   */
   lspReferenceLimit?: number;
+  /**
+   * Per-request LSP deadline in milliseconds. Undefined waits without a
+   * deadline; experiment callers may opt into a finite budget.
+   */
   lspTimeoutMs?: number;
   /**
    * How many `textDocument/references` requests to keep in flight at once.
    * Reference collection dominates indexing time on large repositories, and the
    * requests are independent, so they are issued concurrently up to this bound.
+   * This is a concurrency lane count, not a cap on how many symbols are
+   * resolved; every symbol is collected unless `lspReferenceLimit` is set.
    */
   lspConcurrency?: number;
   /**
-   * Maximum time to wait for a language server to finish its initial indexing
-   * (reported through `$/progress`) before collecting references. Servers such
-   * as rust-analyzer, clangd, and jdtls answer reference requests with nothing
-   * until indexing completes, so skipping this wait yields zero edges.
+   * Maximum time to wait for initial indexing progress to settle. Undefined
+   * keeps waiting while the server reports progress.
    */
   lspReadyTimeoutMs?: number;
   /**
    * How long the server must stay silent on `$/progress` before its initial
-   * indexing is treated as settled. Also bounds the wait for servers that never
-   * report progress at all.
+   * indexing is treated as settled. This is a quiet-detection threshold;
+   * `lspReadyTimeoutMs` supplies an optional overall ceiling.
    */
   lspReadyQuietMs?: number;
   /**
-   * How long to wait for the FIRST `textDocument/references` request, which may
-   * trigger the server to build its cross-file reference index lazily. Once that
-   * one warmup request returns, later references are cache-fast and use the
-   * normal `lspTimeoutMs`. A timeout here means the server cannot answer
-   * references at all, so only structural edges are kept. Defaults to a patient
-   * budget (slow servers like ruby-lsp need it); fast servers answer instantly
-   * and never reach it.
+   * Deadline for the first reference request that warms a server's lazy index.
+   * Undefined waits without a deadline.
    */
   lspWarmupTimeoutMs?: number;
   /**

@@ -23,6 +23,27 @@ export const test_lsp_mode_collects_symbols_references_and_diagnostics = async (
       dump.nodes.some((node) => node.qualifiedName === "LspService.run") &&
       dump.nodes.some((node) => node.name === "helper"),
   );
+  // ttsc marks a node exported only when it is in the file's module export
+  // table: a class member never is, a top-level declaration is only when the
+  // file actually exports it (an inline modifier, a separate `export { }`
+  // list, or a default export).
+  const exportedOf = (predicate: (node: (typeof dump.nodes)[number]) => boolean) =>
+    dump.nodes.find(predicate)?.exported;
+  TestValidator.equals(
+    "a default-exported top-level class is exported",
+    exportedOf((node) => node.name === "LspService"),
+    true,
+  );
+  TestValidator.equals(
+    "a list-exported top-level function is exported",
+    exportedOf((node) => node.name === "helper"),
+    true,
+  );
+  TestValidator.equals(
+    "a class member is never a module export",
+    exportedOf((node) => node.qualifiedName === "LspService.run"),
+    undefined,
+  );
   TestValidator.predicate(
     "LSP references become graph edges classified by the call site",
     dump.edges.some(
@@ -66,8 +87,6 @@ export const test_lsp_mode_collects_symbols_references_and_diagnostics = async (
     progressDump.edges.some((edge) => edge.kind === "calls"),
   );
 
-  // The overall readiness cap releases the wait even while progress keeps
-  // arriving, and reference collection still runs.
   const cappedDump = await buildGraphDump({
     cwd: root,
     mode: "lsp",

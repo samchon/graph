@@ -48,28 +48,21 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   const ts = await sessionOf(["--mode", "static", "--cwd", root, "--language", "typescript"]);
   TestValidator.predicate(
     "a single-language session names that language in the tool description",
-    ts.description.includes("Inspect the TypeScript compiler graph contract"),
+    ts.description.includes("Inspect the TypeScript compiler graph"),
   );
   TestValidator.predicate(
     "a single-language session names that language in the session instructions",
-    ts.instructions.includes("compiler-built TypeScript graph contract") &&
-      ts.instructions.includes("Most TypeScript structure answers"),
+    ts.instructions.includes("graph of your TypeScript"),
   );
 
   const mixed = await sessionOf(["--mode", "static", "--cwd", root]);
   TestValidator.predicate(
     "a multi-language session falls back to the generic name in the tool description",
-    mixed.description.includes("Inspect the code compiler graph contract"),
+    mixed.description.includes("Inspect the code compiler graph"),
   );
   TestValidator.predicate(
     "a multi-language session falls back to the generic name in the session instructions",
-    mixed.instructions.includes("compiler-built code graph contract"),
-  );
-  TestValidator.predicate(
-    "the indexed-languages reference list is untouched by the substitution",
-    mixed.instructions.includes(
-      "TypeScript, Go, Rust, C++, C, Java, C#, Kotlin, Swift, Scala, Zig, Python,",
-    ),
+    mixed.instructions.includes("graph of your code"),
   );
 
   // A pre-built dump (`--graph-file`) resolves the language from the dump
@@ -87,7 +80,7 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   const served = await sessionOf(["--graph-file", graphFile]);
   TestValidator.predicate(
     "a graph-file session names the language recorded in the dump",
-    served.description.includes("Inspect the TypeScript compiler graph contract"),
+    served.description.includes("Inspect the TypeScript compiler graph"),
   );
 
   // Without `--cwd`, the resident source falls back to the server process's
@@ -95,6 +88,39 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   const implicitCwd = await sessionOf(["--mode", "static", "--language", "typescript"], root);
   TestValidator.predicate(
     "an implicit cwd still resolves the active language",
-    implicitCwd.description.includes("Inspect the TypeScript compiler graph contract"),
+    implicitCwd.description.includes("Inspect the TypeScript compiler graph"),
   );
+
+  // Exercise startServer's `once` memoizer on the `--graph-file` source: call the
+  // tool twice so both the first (uncached) and second (cached) source reads run.
+  const callClient = new Client({ name: "samchon-graph-call", version: "1.0.0" });
+  const callTransport = new StdioClientTransport({
+    command: process.execPath,
+    args: [GraphPaths.graphBin, "--graph-file", graphFile],
+    stderr: "pipe",
+  });
+  await callClient.connect(callTransport);
+  try {
+    for (let index = 0; index < 2; index++) {
+      const result = await callClient.callTool(
+        {
+          name: "inspect_code_graph",
+          arguments: {
+            question: "broad orientation",
+            draft: { reason: "overview is the smallest broad step", type: "overview" },
+            review: "overview is sufficient",
+            request: { type: "overview" },
+          },
+        },
+        undefined,
+        { timeout: 120_000 },
+      );
+      TestValidator.predicate(
+        "a graph-file session answers from the memoized graph",
+        (result.content?.length ?? 0) > 0,
+      );
+    }
+  } finally {
+    await callClient.close();
+  }
 };

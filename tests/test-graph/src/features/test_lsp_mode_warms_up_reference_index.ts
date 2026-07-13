@@ -20,18 +20,16 @@ const warmupFixture = (): string => {
 
 export const test_lsp_mode_warms_up_reference_index = async () => {
   // A server that builds its reference index lazily: the FIRST references call
-  // is slow (past the per-request timeout) but every later call is instant. The
-  // old "fire the whole batch cold, give up after 3 timeouts" logic would have
-  // collected nothing. The warmup request must wait the first call out under
-  // the patient budget, after which the batch resolves and reference edges land.
+  // is slow past the normal request deadline, but the patient warmup budget
+  // lets it finish before the faster batch begins.
   const dump = await buildGraphDump({
     cwd: warmupFixture(),
     mode: "lsp",
     languages: ["typescript"],
     server: process.execPath,
     serverArgs: [GraphPaths.fakeLspServer, "--slow-first-references=1500"],
-    lspTimeoutMs: 500, // the batch's normal budget — far below the first-call delay
-    lspWarmupTimeoutMs: 10_000, // patient enough to outlast the lazy first build
+    lspTimeoutMs: 500,
+    lspWarmupTimeoutMs: 10_000,
     lspConcurrency: 4,
   });
 
@@ -40,21 +38,14 @@ export const test_lsp_mode_warms_up_reference_index = async () => {
     "reference edges were collected after warmup",
     dump.edges.some((edge) => edge.kind === "calls" || edge.kind === "references"),
   );
-  TestValidator.predicate(
-    "no warmup-failure warning when references succeed",
-    (dump.warnings ?? []).every((warning) => !warning.includes("warmup budget")),
-  );
 
-  // A warm server that still times out on later targets: the warmup call
-  // succeeds, so references stay "available", but the batch requests hang and
-  // are individually skipped (null) rather than failing the language.
   const partial = await buildGraphDump({
     cwd: warmupFixture(),
     mode: "lsp",
     languages: ["typescript"],
     server: process.execPath,
     serverArgs: [GraphPaths.fakeLspServer, "--hang-references-after=1"],
-    lspTimeoutMs: 500,
+    lspTimeoutMs: 50,
     lspWarmupTimeoutMs: 5_000,
     lspConcurrency: 1,
   });
@@ -63,8 +54,24 @@ export const test_lsp_mode_warms_up_reference_index = async () => {
     "structure survives a partial reference timeout",
     partial.edges.some((edge) => edge.kind === "contains"),
   );
+
+  const unavailable = await buildGraphDump({
+    cwd: warmupFixture(),
+    mode: "lsp",
+    languages: ["typescript"],
+    server: process.execPath,
+    serverArgs: [GraphPaths.fakeLspServer, "--hang-method=textDocument/references"],
+    lspTimeoutMs: 50,
+    lspWarmupTimeoutMs: 50,
+    lspConcurrency: 1,
+  });
+  TestValidator.equals("warmup timeout keeps the LSP graph", unavailable.indexer, "lsp");
   TestValidator.predicate(
-    "a warm-then-timeout server is not marked unavailable",
-    (partial.warnings ?? []).every((warning) => !warning.includes("warmup budget")),
+    "warmup timeout keeps structural edges",
+    unavailable.edges.some((edge) => edge.kind === "contains"),
+  );
+  TestValidator.predicate(
+    "warmup timeout reports the skipped reference batch",
+    unavailable.warnings?.some((warning) => warning.includes("warmup budget")) === true,
   );
 };

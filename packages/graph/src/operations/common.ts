@@ -1,7 +1,5 @@
-export * from "./accessAliasesFor";
 export * from "./bound";
 export * from "./compareEdges";
-export * from "./edgeEvidenceTextOf";
 export * from "./edgeRank";
 export * from "./isExecution";
 export * from "./isStructural";
@@ -10,8 +8,7 @@ export * from "./isTypeEdge";
 export * from "./publicEvidence";
 export * from "./referencesFromEdges";
 export * from "./resolveHandle";
-export * from "./resultGuide";
-export * from "./resultNext";
+export * from "./RESULT_DIRECTIVE";
 export * from "./signatureOf";
 export * from "./subwords";
 export * from "./summaryOf";

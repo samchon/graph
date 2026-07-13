@@ -106,9 +106,74 @@ const createLspFixture = () => {
       "  }",
       "}",
       "const warning = true;",
-      "export function helper(): void {",
+      "function helper(): void {",
       "  return;",
       "}",
+      // Exercise the two module-export forms an inline `export` modifier scan
+      // cannot see: a separate list (with an `as` alias) and a default export.
+      "export { helper as publicHelper };",
+      "export default LspService;",
+    ].join("\n"),
+  );
+  return root;
+};
+
+const createDualOwnerFixture = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-dual-owner-"));
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  // `method`'s call is deliberately split across two lines (`target` / `();`)
+  // so the same fixture also covers a reference whose reported range spans
+  // two lines — the `(` check must read the end line's text, not the start
+  // line's.
+  fs.writeFileSync(
+    path.join(root, "src", "dual.ts"),
+    [
+      "class Owner {",
+      "  helper = () => {",
+      "    target();",
+      "  };",
+      "  method() {",
+      "    target",
+      "      ();",
+      "  }",
+      "}",
+      "function target() {}",
+    ].join("\n"),
+  );
+  return root;
+};
+
+const createTriviaFixture = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-trivia-"));
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  // The fake server reports each reference's range starting on the token's
+  // leading trivia (a full-start does this), so the indexer must advance to
+  // the real token before reading it. This file lays out one reference per
+  // trivia shape at fixed lines the fake server points at:
+  //   line 1: `new Store`   — instantiates (keyword directly before the name)
+  //   line 2: `typeof Store` — type_ref
+  //   line 3: `blockFn`      — reference range starts inside a block comment
+  //   line 5→6: `lineFn`     — range starts on a `//` line, wraps to the token
+  //   line 7: `<NS.Panel />` — a namespaced JSX tag (render + dotted access)
+  //   line 8: `optFn?.()`    — an optional call
+  fs.writeFileSync(
+    path.join(root, "src", "trivia.ts"),
+    [
+      "class Owner {",
+      "  makeNew = new Store();",
+      "  useType: typeof Store = this.makeNew;",
+      "  viaBlock = /* pre */ blockFn();",
+      "  viaLine =",
+      "    // pick",
+      "    lineFn();",
+      "  jsx = <NS.Panel />;",
+      "  opt = optFn?.();",
+      "}",
+      "class Store {}",
+      "function blockFn() { return 1; }",
+      "function lineFn() { return 2; }",
+      "const NS = { Panel: () => null };",
+      "function optFn() { return 3; }",
     ].join("\n"),
   );
   return root;
@@ -118,8 +183,16 @@ const createClassifyFixture = () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-classify-"));
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   // The fake server points references at line 1 (an invocation — `(` right
-  // after column 4), line 2 (a bare member access), and a line beyond the file
-  // (no text) so the reference classifier exercises every branch.
+  // after column 4), line 2 (a bare member access), line 13 (a JSX opening
+  // tag), line 14 (a JSX closing tag), line 15 (a generic type argument —
+  // `<` immediately preceded by an identifier char, so it must NOT classify
+  // as JSX), line 16 (an invocation through a generic argument list, e.g.
+  // `aabb<T>()`), line 17 (an unclosed generic argument list, so the
+  // generic-skip gives up and returns the text unchanged), and a line beyond
+  // the file (no text) so the reference classifier exercises every branch.
+  // Lines 3-12 already belong to the leaf() document symbols below, so the
+  // new lines start past all of them to avoid stealing ownership of a
+  // reference from the outer `Owner` class.
   fs.writeFileSync(
     path.join(root, "src", "classify.ts"),
     [
@@ -132,6 +205,15 @@ const createClassifyFixture = () => {
       "  filler3;",
       "  filler4;",
       "  filler5;",
+      "  filler6;",
+      "  filler7;",
+      "  filler8;",
+      "  filler9;",
+      "<aabb />;",
+      "</aabb>;",
+      "Array<aabb>;",
+      "aabb<T>();",
+      "aabb<Unclosed;",
       "}",
     ].join("\n"),
   );
@@ -470,6 +552,8 @@ export const GraphFixtures = {
   createClassifyFixture,
   createCmakeFixture,
   createContractFixture,
+  createDualOwnerFixture,
+  createTriviaFixture,
   createInheritanceFixture,
   createLspInheritanceFixture,
   createLspFixture,

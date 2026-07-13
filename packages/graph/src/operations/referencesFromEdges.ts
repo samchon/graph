@@ -1,8 +1,6 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import { ISamchonGraphDetails, ISamchonGraphEdge } from "../structures";
-import { accessAliasesFor } from "./accessAliasesFor";
 import { compareEdges } from "./compareEdges";
-import { edgeEvidenceTextOf } from "./edgeEvidenceTextOf";
 import { isStructural } from "./isStructural";
 import { publicEvidence } from "./publicEvidence";
 import { summaryOf } from "./summaryOf";
@@ -34,8 +32,6 @@ export function referencesFromEdges(
     if (edge.evidence !== undefined) ref.evidence = publicEvidence(
       edge.evidence,
     );
-    const aliases = accessAliasesFor(node, edgeEvidenceTextOf(edge));
-    if (aliases !== undefined) ref.aliases = aliases;
     out.push(ref);
     if (out.length >= limit) break;
   }

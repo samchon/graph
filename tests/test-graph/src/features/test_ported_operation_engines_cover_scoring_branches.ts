@@ -126,7 +126,6 @@ export const test_ported_operation_engines_cover_scoring_branches = async () => 
   await scenario_bundled_neighbor_rank();
   await scenario_normal_trace_ranks_test_path_endpoint();
   await scenario_tour_unresolved_mention_and_edgeless_seed();
-  await scenario_access_aliases();
 };
 
 // Exercises impactEndpointRank tiers (exported / external / ignored / test) and
@@ -430,86 +429,4 @@ const scenario_tour_unresolved_mention_and_edgeless_seed = async () => {
   const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, [lonely], [])));
   const tour = (await call(app, { type: "tour", query: "lonely `NoSuchSymbol`" })).result;
   TestValidator.predicate("the edgeless seed still becomes an entrypoint", tour.entrypoints.some((n) => n.name === "lonely"));
-};
-
-// Exercises accessAliasesFor's alias-derivation branches (Internals-suffix
-// owner display, underscore-prefixed owner display, and every rejection
-// guard) through both referencesFromEdges (runDetails) and hopOf (runTrace).
-const scenario_access_aliases = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-alias-"));
-  const withText = (file: string, startLine: number, endLine: number, text: string) => ({
-    ...evidence(file, startLine, endLine),
-    text,
-  });
-  const caller = node("src/a.ts#caller:function", "function", "caller", "src/a.ts", 1, 1, { exported: false });
-  // Owner "OrderInternals" ends with "Internals" → ownerDisplayAliases strips
-  // it to "Order", giving a second alias alongside the owner-as-written one.
-  const internalsTarget = node("src/a.ts#OrderInternals.total:property", "property", "total", "src/a.ts", 2, 2, {
-    exported: false,
-    qualifiedName: "OrderInternals.total",
-  });
-  // Owner "_plain" has no Internals/Internal suffix but a leading underscore
-  // → ownerDisplayAliases strips it to "plain".
-  const underscoreTarget = node("src/a.ts#_plain.member:property", "property", "member", "src/a.ts", 3, 3, {
-    exported: false,
-    qualifiedName: "_plain.member",
-  });
-  // Evidence text too short (one segment) → segments.length < 2 guard.
-  const shortTextTarget = node("src/a.ts#Owner.short:property", "property", "short", "src/a.ts", 4, 4, {
-    exported: false,
-    qualifiedName: "Owner.short",
-  });
-  // Evidence text's trailing segment does not name this target → mismatch guard.
-  const mismatchTarget = node("src/a.ts#Owner.mismatch:property", "property", "mismatch", "src/a.ts", 5, 5, {
-    exported: false,
-    qualifiedName: "Owner.mismatch",
-  });
-  // No dot in qualifiedName (a top-level symbol) → dot < 0 guard.
-  const topLevelTarget = node("src/a.ts#topLevel:function", "function", "topLevel", "src/a.ts", 6, 6, {
-    exported: false,
-    qualifiedName: "topLevel",
-  });
-  // Evidence text is exactly "owner.name" and the owner has no display
-  // alias, so the only candidate alias equals qualifiedName and gets
-  // filtered → the empty-aliases (undefined) result branch.
-  const noAliasTarget = node("src/a.ts#Owner.noAlias:property", "property", "noAlias", "src/a.ts", 7, 7, {
-    exported: false,
-    qualifiedName: "Owner.noAlias",
-  });
-  const nodes = [caller, internalsTarget, underscoreTarget, shortTextTarget, mismatchTarget, topLevelTarget, noAliasTarget];
-  const edges = [
-    // These four share the "accesses" kind, landing in `calls` (capped at
-    // MAX_DEPENDENCIES=4, so all four need an explicit dependencyLimit).
-    { from: caller.id, to: internalsTarget.id, kind: "accesses", evidence: withText("src/a.ts", 1, 1, "this._internals.total") },
-    { from: caller.id, to: underscoreTarget.id, kind: "accesses", evidence: withText("src/a.ts", 1, 1, "obj._plain.member") },
-    { from: caller.id, to: shortTextTarget.id, kind: "accesses", evidence: withText("src/a.ts", 1, 1, "short") },
-    { from: caller.id, to: mismatchTarget.id, kind: "accesses", evidence: withText("src/a.ts", 1, 1, "obj.somethingElse") },
-    // These two use "type_ref" instead, landing in the separate `types`
-    // bucket so both fit under its own MAX_DEPENDENCIES=4 cap too.
-    { from: caller.id, to: topLevelTarget.id, kind: "type_ref", evidence: withText("src/a.ts", 1, 1, "obj.topLevel") },
-    { from: caller.id, to: noAliasTarget.id, kind: "type_ref", evidence: withText("src/a.ts", 1, 1, "Owner.noAlias") },
-  ];
-  const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, nodes, edges)));
-
-  const details = (await call(app, { type: "details", handles: ["caller"], dependencyLimit: 4 })).result;
-  const callerDetail = details.nodes.find((n) => n.name === "caller");
-  const calls = [...(callerDetail?.calls ?? []), ...(callerDetail?.types ?? [])];
-  const internalsRef = calls.find((r) => r.name === "OrderInternals.total");
-  TestValidator.predicate(
-    "an Internals-suffixed owner yields a stripped-owner alias",
-    internalsRef?.aliases?.includes("Order._internals.total") === true,
-  );
-  const underscoreRef = calls.find((r) => r.name === "_plain.member");
-  TestValidator.predicate(
-    "an underscore-prefixed owner yields a stripped-owner alias",
-    underscoreRef?.aliases?.includes("plain._plain.member") === true,
-  );
-  TestValidator.equals("a too-short evidence text yields no aliases", calls.find((r) => r.name === "Owner.short")?.aliases, undefined);
-  TestValidator.equals("a mismatched trailing segment yields no aliases", calls.find((r) => r.name === "Owner.mismatch")?.aliases, undefined);
-  TestValidator.equals("a top-level target yields no aliases", calls.find((r) => r.name === "topLevel")?.aliases, undefined);
-  TestValidator.equals("an alias identical to the qualified name yields no aliases", calls.find((r) => r.name === "Owner.noAlias")?.aliases, undefined);
-
-  const trace = (await call(app, { type: "trace", from: "caller", direction: "forward" })).result;
-  const hop = trace.hops.find((h) => h.to.includes("OrderInternals.total"));
-  TestValidator.predicate("runTrace hops also carry access aliases", hop?.aliases?.includes("Order._internals.total") === true);
 };

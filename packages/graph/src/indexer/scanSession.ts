@@ -42,7 +42,12 @@ export async function scanSession(
       "textDocument/documentSymbol",
       { textDocument: { uri: fileUri(openedFile.abs) } },
     );
-    const converted = convertSymbols(language, openedFile.rel, symbols);
+    const converted = convertSymbols(
+      language,
+      openedFile.rel,
+      symbols,
+      openedFile.text,
+    );
     byFile.set(openedFile.rel, converted);
     appendAll(nodes, converted);
   }
@@ -53,13 +58,14 @@ export async function scanSession(
   }
 
   const edges: ISamchonGraphEdge[] = [];
-  const referenceLimit = options.lspReferenceLimit ?? 250;
-  // When the reference budget is smaller than the symbol count, spend it on
-  // product code first: test files (spec callbacks and the like) otherwise
-  // crowd out the API surface an agent actually asks about.
-  const referenceTargets = [...nodes]
-    .sort((a, b) => Number(isTestPath(a.file)) - Number(isTestPath(b.file)))
-    .slice(0, referenceLimit);
+  const referenceLimit = options.lspReferenceLimit;
+  // Undefined keeps the compiler-complete default. A caller that explicitly
+  // sets a budget gets the historical product-code-first ordering.
+  const referenceTargets = referenceLimit === undefined
+    ? nodes
+    : [...nodes]
+        .sort((a, b) => Number(isTestPath(a.file)) - Number(isTestPath(b.file)))
+        .slice(0, referenceLimit);
   // Language servers build their cross-file reference index lazily — often on
   // the FIRST `textDocument/references` call, not during the initial
   // `$/progress` indexing wait above. So warm the index with one patient
@@ -82,16 +88,15 @@ export async function scanSession(
   const referenceResults: (ILocation[] | null)[] = new Array(
     referenceTargets.length,
   ).fill(null);
-  // Only after the warmup request actually returns is the server proven able
-  // to answer references; a timeout even under the patient budget means it
-  // cannot, so we keep the structural graph and skip the rest rather than
-  // grinding the full batch.
+  // Warm the server's lazy cross-file index with one patient request before the
+  // batch: the first `textDocument/references` often makes the server build its
+  // reference index, after which later requests are cache-fast.
   let referencesUnavailable = false;
   if (referenceTargets.length > 0) {
     const warm = await safeReferences(
       client,
       referenceParams(referenceTargets[0]!),
-      options.lspWarmupTimeoutMs ?? 180_000,
+      options.lspWarmupTimeoutMs,
     );
     if (warm === "timeout") referencesUnavailable = true;
     else referenceResults[0] = warm;
@@ -118,25 +123,82 @@ export async function scanSession(
       const rel = projectRelative(root, refFile);
       const owners = byFile.get(rel);
       if (owners === undefined) continue;
-      const owner = ownerAt(owners, ref.range.start.line + 1);
+      const fileLines = linesByFile.get(rel);
+      // The language server reports a reference range whose start is the AST
+      // node's full-start (leading whitespace and comments included), not the
+      // token's real start, so advance past that trivia — the same correction
+      // @ttsc/graph's own dump applies (dump.go firstCodeOffset) before it uses
+      // a node position. Without it the classifier reads the character before
+      // the identifier (a space, `.`, `<`, ...) and the evidence points one
+      // column early.
+      const start = firstCodeAt(
+        fileLines,
+        ref.range.start.line,
+        ref.range.start.character,
+      );
+      const owner = ownerAt(owners, start.line + 1);
       if (owner === undefined || owner.id === target.id) continue;
-      const refLine = linesByFile.get(rel)?.[ref.range.start.line];
-      const accessText = accessExpressionAt(refLine, ref.range.end.character);
-      edges.push({
-        from: owner.id,
-        to: target.id,
-        kind: referenceKind(target.kind, refLine, ref.range.end.character),
-        evidence: {
-          file: rel,
-          startLine: ref.range.start.line + 1,
-          startCol: ref.range.start.character + 1,
-          endLine: ref.range.end.line + 1,
-          endCol: ref.range.end.character + 1,
-          // Not part of the public evidence contract; an internal hint
-          // `accessAliasesFor` reads via `edgeEvidenceTextOf`.
-          ...(accessText !== undefined ? { text: accessText } : {}),
-        },
-      });
+      const startLineText = fileLines?.[start.line];
+      const endLineText =
+        ref.range.end.line === start.line
+          ? startLineText
+          : fileLines?.[ref.range.end.line];
+      const accessText = accessExpressionAt(endLineText, ref.range.end.character);
+      // The text following the reference, as one string: the rest of the end
+      // line plus a bounded run of following lines. A generic call whose
+      // argument list opens several lines below the name (`fn<\n  T\n>(...)`)
+      // needs the later `(` to classify as a call, and single-line uses only
+      // read the immediate characters.
+      const afterText = tailFrom(
+        fileLines,
+        ref.range.end.line,
+        ref.range.end.character,
+      );
+      const kind = referenceKind(
+        target.kind,
+        startLineText,
+        afterText,
+        start.character,
+        ref.range.end.line !== start.line,
+        accessText,
+      );
+      const evidence = {
+        file: rel,
+        startLine: start.line + 1,
+        startCol: start.character + 1,
+        endLine: ref.range.end.line + 1,
+        endCol: ref.range.end.character + 1,
+        // Not part of the public evidence contract; an internal hint
+        // `accessAliasesFor` reads via `edgeEvidenceTextOf`.
+        ...(accessText !== undefined ? { text: accessText } : {}),
+      };
+      const emit = (kindToEmit: ISamchonGraphEdge["kind"]): void => {
+        edges.push({ from: owner.id, to: target.id, kind: kindToEmit, evidence });
+        // A non-method class/interface member (a property or an arrow-
+        // function-valued field) attributes its body's references to both
+        // itself AND the enclosing class/interface, not one or the other --
+        // confirmed against @ttsc/graph's own fact-builder (forEachMember
+        // walks a property member's subtree once for the member, once for its
+        // container). A method is attributed solely to itself.
+        if (owner.kind === "property" || owner.kind === "field" || owner.kind === "variable") {
+          const container = containerAt(owners, start.line + 1);
+          if (
+            container !== undefined &&
+            container.id !== owner.id &&
+            container.id !== target.id
+          ) {
+            edges.push({ from: container.id, to: target.id, kind: kindToEmit, evidence });
+          }
+        }
+      };
+      emit(kind);
+      // A namespaced JSX tag (`<A.B.C />`) is both a render and a member-
+      // access chain reaching the component, so @ttsc/graph's AST walk emits
+      // a render AND an access edge to the same target; mirror the extra
+      // access when the render's tag name is dotted.
+      if (kind === "renders" && accessText !== undefined && accessText.includes(".")) {
+        emit("accesses");
+      }
     }
   }
 
@@ -213,7 +275,7 @@ export async function scanSession(
     edges,
     diagnostics: [...session.diagnostics],
     warnings: [
-      ...(nodes.length > referenceLimit
+      ...(referenceLimit !== undefined && nodes.length > referenceLimit
         ? [`${language}: reference collection capped at ${referenceLimit} symbols.`]
         : []),
       ...(referencesUnavailable
@@ -221,6 +283,77 @@ export async function scanSession(
         : []),
     ],
   };
+}
+
+// Advance a (line, character) position past leading trivia — whitespace, `//`
+// line comments, and `/* */` block comments — to the first code character at
+// or after it, crossing line boundaries. Ports @ttsc/graph's dump.go
+// firstCodeOffset: the language server reports a reference's start as the AST
+// node full-start (trivia included), so this recovers the token's real start.
+function firstCodeAt(
+  lines: readonly string[] | undefined,
+  line: number,
+  character: number,
+): { line: number; character: number } {
+  // Every caller passes the file's own cached lines, so this is defensive.
+  /* c8 ignore next */
+  if (lines === undefined) return { line, character };
+  let l = line;
+  let c = character;
+  let inBlock = false;
+  while (l < lines.length) {
+    const text = lines[l]!;
+    while (c < text.length) {
+      if (inBlock) {
+        if (text[c] === "*" && text[c + 1] === "/") {
+          inBlock = false;
+          c += 2;
+        } else c++;
+        continue;
+      }
+      const ch = text[c]!;
+      if (ch === " " || ch === "\t" || ch === "\r") {
+        c++;
+      } else if (ch === "/" && text[c + 1] === "/") {
+        c = text.length; // rest of line is a comment
+      } else if (ch === "/" && text[c + 1] === "*") {
+        inBlock = true;
+        c += 2;
+      } else {
+        return { line: l, character: c };
+      }
+    }
+    // Ran off the end of the line (or a `//` comment consumed it); the trivia
+    // continues on the next line.
+    /* c8 ignore next */
+    if (l + 1 >= lines.length) break;
+    l++;
+    c = 0;
+  }
+  return { line, character };
+}
+
+// The source text following a reference: the rest of its end line, plus a
+// bounded run of the lines below when the classification may continue there —
+// the name sits at the end of its line, or a generic `<` opens on it. Those
+// are the only shapes whose invocation `(` can appear on a later line
+// (`fn<\n  T\n>(...)`); every other tail is settled by the end line alone.
+function tailFrom(
+  lines: readonly string[] | undefined,
+  endLine: number,
+  endCol: number,
+): string {
+  // Every caller passes the file's own cached lines, so this is defensive.
+  /* c8 ignore next */
+  if (lines === undefined) return "";
+  const here = lines[endLine]?.slice(endCol) ?? "";
+  const trimmed = here.trimStart();
+  if (trimmed !== "" && !trimmed.startsWith("<")) return here;
+  let text = here;
+  for (let k = endLine + 1; k <= endLine + 16 && k < lines.length; k++) {
+    text += `\n${lines[k]!}`;
+  }
+  return text;
 }
 
 // The dotted access expression ending exactly at a reference's end column
@@ -240,16 +373,49 @@ function accessExpressionAt(
 }
 
 // Classify a reference the same way the static indexer does, but with the
-// language server's exact position: an identifier immediately followed by `(`
-// is an invocation (a class becomes an instantiation, anything else a call);
+// language server's exact position: a JSX element use (`<Component ...`) is a
+// render; an identifier immediately followed by `(` — skipping over a generic
+// argument list, so `new Map<K, V>()` and `myFunc<T>()` still count — is an
+// invocation (a class becomes an instantiation, anything else a call);
 // otherwise the target's kind decides between a type reference, a member
 // access, and a generic reference.
+//
+// `afterText` is the source that follows the reference — the rest of its end
+// line plus a bounded run of the lines below it — so a generic argument list
+// (`fn<...>`) that only closes several lines down still reveals the `(` that
+// makes the reference a call.
 function referenceKind(
   targetKind: GraphNodeKind,
-  refLine: string | undefined,
-  endCol: number,
+  startLine: string | undefined,
+  afterText: string,
+  startCol: number,
+  multiline: boolean,
+  accessText: string | undefined,
 ): ISamchonGraphEdge["kind"] {
-  const after = refLine === undefined ? "" : refLine.slice(endCol).trimStart();
+  // The text before the reference (its start already advanced past leading
+  // trivia to the real token), trimmed of the whitespace that separates the
+  // keyword from the name.
+  const before = (
+    startLine === undefined ? "" : startLine.slice(0, startCol)
+  ).replace(/\s+$/, "");
+  // A `new X` expression instantiates X even when a generic argument list
+  // (`new Map<K, V>(...)`) pushes the `(` onto a later line the end-line check
+  // below can't see; the `new` keyword right before the name is the reliable
+  // signal @ttsc/graph reads from its AST NewExpression.
+  if (/\bnew$/.test(before)) return "instantiates";
+  // A `typeof X` type query depends on X's type — @ttsc/graph records it as a
+  // type reference, not the value access X's own kind would otherwise imply.
+  if (/\btypeof$/.test(before)) return "type_ref";
+  // A JSX tag name never spans lines, so only consider it on a single-line
+  // reference: a multi-line reference's start column can land on an unrelated
+  // trailing `<` (a comparison / generic on the receiver line) and be misread
+  // as a tag.
+  if (!multiline && isJsxElementUse(startLine, startCol)) return "renders";
+  let after = afterGenericArgs(afterText.trimStart());
+  // An optional call `fn?.()` invokes fn; the `?.` sits between the name and
+  // the argument list. (A `?.member` without a following `(` is an access,
+  // handled below, so only strip the `?.` when it leads into a call.)
+  if (after.startsWith("?.")) after = after.slice(2).trimStart();
   if (after.startsWith("(")) {
     return targetKind === "class" || targetKind === "constructor"
       ? "instantiates"
@@ -266,8 +432,47 @@ function referenceKind(
     case "variable":
       return "accesses";
     default:
-      return "references";
+      // A bare non-call reference resolves by the target's kind above; a
+      // callable (method/function/constructor) reached through a member
+      // access (`obj.method` without a following `(`, so `accessText` carries
+      // the receiver `.member` chain) is a property read, the same
+      // value-access @ttsc/graph records, not a generic reference.
+      return accessText !== undefined && accessText.includes(".")
+        ? "accesses"
+        : "references";
   }
+}
+
+// A JSX element name immediately follows `<` (opening) or `</` (closing), and
+// that `<` is not itself part of a generic/comparison expression (`Array<`,
+// `x < y`), which puts an identifier character directly before it.
+function isJsxElementUse(
+  refLine: string | undefined,
+  startCol: number,
+): boolean {
+  if (refLine === undefined) return false;
+  const before = refLine.slice(0, startCol);
+  const match = /<\/?$/.exec(before);
+  if (match === null) return false;
+  const beforeAngle = before[match.index - 1];
+  return beforeAngle === undefined || !/[A-Za-z0-9_$]/.test(beforeAngle);
+}
+
+// Skip a leading balanced `<...>` generic argument list (`<K, V>` in
+// `new Map<K, V>()`), so the invocation check right after can still see the
+// `(`. Unmatched (no closing `>` on this line) returns the text unchanged, so
+// the caller's `startsWith("(")` check simply fails as it did before.
+function afterGenericArgs(text: string): string {
+  if (!text.startsWith("<")) return text;
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "<") depth++;
+    else if (text[i] === ">") {
+      depth--;
+      if (depth === 0) return text.slice(i + 1).trimStart();
+    }
+  }
+  return text;
 }
 
 // Language servers such as rust-analyzer answer requests made during indexing
@@ -289,9 +494,9 @@ async function safeReferences(
         timeoutMs,
       );
     } catch (error) {
-      if ((error as Error).message.startsWith(
-        "LSP request timed out",
-      )) return "timeout";
+      if ((error as Error).message.startsWith("LSP request timed out")) {
+        return "timeout";
+      }
       await new Promise((resolve) => {
         setTimeout(resolve, 100);
       });
@@ -323,8 +528,19 @@ function convertSymbols(
   language: GraphLanguage,
   file: string,
   symbols: DocumentSymbolResult,
+  text: string,
 ): ISamchonGraphNode[] {
   const out: ISamchonGraphNode[] = [];
+  // ttsc marks a node exported only when its symbol is in the source file's
+  // module export table (exports.go/markExports): a class member is never a
+  // module export, and a top-level declaration is exported only when the file
+  // actually exports it. For a language we have not yet audited against ttsc,
+  // keep the prior behavior (every symbol exported) rather than guessing.
+  const exportedNames = exportedTopLevelNames(language, text);
+  const isExported = (name: string, topLevel: boolean): boolean => {
+    if (exportedNames === undefined) return true;
+    return topLevel && exportedNames.has(name);
+  };
   const visitDocument = (symbol: IDocumentSymbol, owners: string[]): void => {
     const kind = kindOf(symbol.kind);
     if (kind !== undefined) {
@@ -337,7 +553,9 @@ function convertSymbols(
         ...(owners.length > 0 ? { qualifiedName } : {}),
         file,
         external: false,
-        exported: true,
+        ...(isExported(symbol.name, owners.length === 0)
+          ? { exported: true }
+          : {}),
         evidence: {
           file,
           startLine: symbol.selectionRange.start.line + 1,
@@ -361,6 +579,41 @@ function convertSymbols(
   return out;
 }
 
+// The top-level names a TypeScript/JavaScript source file exports, or
+// undefined for a language whose export surface we have not modeled (there,
+// every symbol keeps the prior exported=true default). Covers the three
+// module-export forms an editor's document symbols alone cannot see: an inline
+// `export` modifier, a separate `export { a, b as c }` list, and an
+// `export default Name`. A cross-file re-export (`export { X } from "./x"`) is
+// not resolved here — that would need the whole-program view ttsc's checker
+// has — so only names a re-export's own file also declares are caught.
+function exportedTopLevelNames(
+  language: GraphLanguage,
+  text: string,
+): Set<string> | undefined {
+  if (language !== "typescript") return undefined;
+  const names = new Set<string>();
+  const inline =
+    /^\s*export\s+(?:default\s+)?(?:async\s+)?(?:abstract\s+)?(?:declare\s+)?(?:const|let|var|function\*?|class|interface|type|enum|namespace|module)\s+([A-Za-z_$][\w$]*)/gm;
+  for (let m = inline.exec(text); m !== null; m = inline.exec(text)) {
+    names.add(m[1]!);
+  }
+  const list = /export\s+(?:type\s+)?\{([^}]*)\}/g;
+  for (let m = list.exec(text); m !== null; m = list.exec(text)) {
+    for (const entry of m[1]!.split(",")) {
+      const local = entry.trim().split(/\s+as\s+/)[0]?.trim();
+      if (local !== undefined && /^[A-Za-z_$][\w$]*$/.test(local)) {
+        names.add(local);
+      }
+    }
+  }
+  const def = /export\s+default\s+([A-Za-z_$][\w$]*)\s*;?\s*$/gm;
+  for (let m = def.exec(text); m !== null; m = def.exec(text)) {
+    names.add(m[1]!);
+  }
+  return names;
+}
+
 function convertSymbolInformation(
   language: GraphLanguage,
   file: string,
@@ -380,7 +633,10 @@ function convertSymbolInformation(
     ...(owners.length > 0 ? { qualifiedName } : {}),
     file,
     external: false,
-    exported: true,
+    // The flat SymbolInformation fallback carries no source text to resolve a
+    // real export surface; a contained symbol is still never a module export,
+    // so only a top-level one keeps the exported default.
+    ...(owners.length === 0 ? { exported: true } : {}),
     evidence: {
       file,
       startLine: symbol.location.range.start.line + 1,
@@ -439,4 +695,23 @@ function ownerAt(nodes: readonly ISamchonGraphNode[], line: number): ISamchonGra
         return a.evidence!.endLine! - b.evidence!.endLine!;
       },
     )[0];
+}
+
+// The innermost enclosing class/interface at `line`, regardless of whether a
+// narrower non-container owner (a method, a property) also covers it. Used
+// to find a property/field owner's *own* container, since ttsc attributes a
+// non-method member's references to both.
+function containerAt(
+  nodes: readonly ISamchonGraphNode[],
+  line: number,
+): ISamchonGraphNode | undefined {
+  return nodes
+    .filter(
+      (node) =>
+        (node.kind === "class" || node.kind === "interface") &&
+        node.evidence !== undefined &&
+        node.evidence.startLine <= line &&
+        node.evidence.endLine! >= line,
+    )
+    .sort((a, b) => b.evidence!.startLine - a.evidence!.startLine)[0];
 }

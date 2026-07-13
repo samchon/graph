@@ -15,6 +15,8 @@ const options = {
   referenceError: false,
   nullSymbols: false,
   classify: false,
+  dualOwner: false,
+  trivia: false,
   inheritance: false,
   omitChildren: false,
   progress: false,
@@ -69,6 +71,10 @@ for (const arg of process.argv.slice(2)) {
     options.nullSymbols = true;
   } else if (arg === "--classify") {
     options.classify = true;
+  } else if (arg === "--dual-owner") {
+    options.dualOwner = true;
+  } else if (arg === "--trivia") {
+    options.trivia = true;
   } else if (arg === "--inheritance") {
     options.inheritance = true;
   } else if (arg === "--omit-children") {
@@ -233,6 +239,75 @@ function handle(message) {
         },
       ]);
     }
+    if (options.dualOwner) {
+      return respond(message.id, [
+        {
+          name: "Owner",
+          detail: "",
+          kind: 5,
+          range: { start: { line: 0, character: 0 }, end: { line: 8, character: 1 } },
+          selectionRange: { start: { line: 0, character: 6 }, end: { line: 0, character: 11 } },
+          children: [
+            {
+              name: "helper",
+              detail: "",
+              kind: 7,
+              range: { start: { line: 1, character: 2 }, end: { line: 3, character: 4 } },
+              selectionRange: { start: { line: 1, character: 2 }, end: { line: 1, character: 8 } },
+              children: [],
+            },
+            {
+              name: "method",
+              detail: "",
+              kind: 6,
+              range: { start: { line: 4, character: 2 }, end: { line: 7, character: 3 } },
+              selectionRange: { start: { line: 4, character: 2 }, end: { line: 4, character: 8 } },
+              children: [],
+            },
+          ],
+        },
+        {
+          name: "target",
+          detail: "",
+          kind: 12,
+          range: { start: { line: 9, character: 0 }, end: { line: 9, character: 20 } },
+          selectionRange: { start: { line: 9, character: 9 }, end: { line: 9, character: 15 } },
+          children: [],
+        },
+      ]);
+    }
+    if (options.trivia) {
+      const leaf = (name, kind, line, endLine, startChar) => ({
+        name,
+        detail: "",
+        kind,
+        range: { start: { line, character: 2 }, end: { line: endLine ?? line, character: 40 } },
+        selectionRange: { start: { line, character: startChar }, end: { line, character: startChar + name.length } },
+        children: [],
+      });
+      return respond(message.id, [
+        {
+          name: "Owner",
+          detail: "",
+          kind: 5,
+          range: { start: { line: 0, character: 0 }, end: { line: 9, character: 1 } },
+          selectionRange: { start: { line: 0, character: 6 }, end: { line: 0, character: 11 } },
+          children: [
+            leaf("makeNew", 7, 1, 1, 2),
+            leaf("useType", 7, 2, 2, 2),
+            leaf("viaBlock", 7, 3, 3, 2),
+            leaf("viaLine", 7, 4, 6, 2),
+            leaf("jsx", 7, 7, 7, 2),
+            leaf("opt", 7, 8, 8, 2),
+          ],
+        },
+        { name: "Store", detail: "", kind: 5, range: { start: { line: 10, character: 0 }, end: { line: 10, character: 14 } }, selectionRange: { start: { line: 10, character: 6 }, end: { line: 10, character: 11 } }, children: [] },
+        { name: "blockFn", detail: "", kind: 12, range: { start: { line: 11, character: 0 }, end: { line: 11, character: 32 } }, selectionRange: { start: { line: 11, character: 9 }, end: { line: 11, character: 16 } }, children: [] },
+        { name: "lineFn", detail: "", kind: 12, range: { start: { line: 12, character: 0 }, end: { line: 12, character: 31 } }, selectionRange: { start: { line: 12, character: 9 }, end: { line: 12, character: 15 } }, children: [] },
+        { name: "Panel", detail: "", kind: 12, range: { start: { line: 13, character: 13 }, end: { line: 13, character: 30 } }, selectionRange: { start: { line: 13, character: 13 }, end: { line: 13, character: 18 } }, children: [] },
+        { name: "optFn", detail: "", kind: 12, range: { start: { line: 14, character: 0 }, end: { line: 14, character: 30 } }, selectionRange: { start: { line: 14, character: 9 }, end: { line: 14, character: 14 } }, children: [] },
+      ]);
+    }
     if (options.nullSymbols) return respond(message.id, null);
     if (options.unknownParent) {
       return respond(message.id, [
@@ -381,16 +456,72 @@ function handle(message) {
     }
     if (options.classify) {
       const uri = message.params.textDocument.uri;
-      const at = (line) => ({
+      const at = (line, startChar = 0, endChar = 4) => ({
         uri,
         range: {
-          start: { line, character: 0 },
-          end: { line, character: 4 },
+          start: { line, character: startChar },
+          end: { line, character: endChar },
         },
       });
-      // line 1: invocation (`(` after col 4), line 2: bare access, line 500:
-      // beyond the file so the classifier sees no source text.
-      return respond(message.id, [at(1), at(2), at(500)]);
+      // line 1: invocation (`(` after col 4), line 2: bare access, line 3: a
+      // dotted member access spanning `aabb.member` (so a callable target
+      // reached this way classifies as an access, not a generic reference),
+      // line 13: a JSX opening tag (`<aabb`), line 14: a JSX closing tag
+      // (`</aabb`), line 15: a generic type argument (`Array<aabb>` — must NOT
+      // classify as JSX), line 16: an invocation through a generic argument
+      // list (`aabb<T>()`), line 17: an unclosed generic argument list
+      // (`aabb<Unclosed;` — the skip gives up and returns the text
+      // unchanged), line 500: beyond the file so the classifier sees no
+      // source text.
+      return respond(message.id, [
+        at(1),
+        at(2),
+        at(2, 0, 11),
+        at(13, 1, 5),
+        at(14, 2, 6),
+        at(15, 6, 10),
+        at(16, 0, 4),
+        at(17, 0, 4),
+        at(500),
+      ]);
+    }
+    if (options.dualOwner) {
+      const uri = message.params.textDocument.uri;
+      // `target()` is called once inside `helper` (a property/arrow-field
+      // member, line 2) and once inside `method`, where it is split across
+      // two lines (`target` on line 5, `();` on line 6) — the `(` check must
+      // read line 6's text, not line 5's.
+      return respond(message.id, [
+        { uri, range: { start: { line: 2, character: 4 }, end: { line: 2, character: 10 } } },
+        { uri, range: { start: { line: 5, character: 4 }, end: { line: 6, character: 6 } } },
+      ]);
+    }
+    if (options.trivia) {
+      const uri = message.params.textDocument.uri;
+      const at = (line) => ({ uri, range: { start: { line, character: 2 }, end: { line, character: 40 } } });
+      // Each reference range starts on the token's leading trivia; the indexer
+      // must advance to the real token. Store is used on lines 1 (`new Store`)
+      // and 2 (`typeof Store`); blockFn on line 3 with a block comment before
+      // it; lineFn on line 6 with the range starting on line 5's `//` comment.
+      switch (message.params.position.line) {
+        case 10: // Store — ranges start on the space before the name so the
+          // `new` / `typeof` keyword lands at the end of `before` after the
+          // trivia advance, exercising the keyword-prefix classification.
+          return respond(message.id, [
+            { uri, range: { start: { line: 1, character: 15 }, end: { line: 1, character: 21 } } },
+            { uri, range: { start: { line: 2, character: 17 }, end: { line: 2, character: 23 } } },
+          ]);
+        case 11: // blockFn — range starts inside `/* pre */`
+          return respond(message.id, [{ uri, range: { start: { line: 3, character: 13 }, end: { line: 3, character: 30 } } }]);
+        case 12: // lineFn — range starts on the `// pick` line, wraps to line 6
+          return respond(message.id, [{ uri, range: { start: { line: 5, character: 4 }, end: { line: 6, character: 10 } } }]);
+        case 13: // Panel — a namespaced JSX tag `<NS.Panel />` (render + access)
+          return respond(message.id, [{ uri, range: { start: { line: 7, character: 9 }, end: { line: 7, character: 17 } } }]);
+        case 14: // optFn — an optional call `optFn?.()`
+          return respond(message.id, [{ uri, range: { start: { line: 8, character: 8 }, end: { line: 8, character: 13 } } }]);
+        default:
+          return respond(message.id, []);
+      }
     }
     const line = message.params.position.line;
     if (line === 6) {

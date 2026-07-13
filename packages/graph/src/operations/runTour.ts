@@ -8,7 +8,7 @@ import {
   ISamchonGraphTour,
   ISamchonGraphTrace,
 } from "../structures";
-import { bound, isTestPath, resultGuide, resultNext, signatureOf } from "./common";
+import { bound, isTestPath, signatureOf } from "./common";
 import { isSupportPath } from "./isSupportPath";
 import { runDetails } from "./runDetails";
 import { runEntrypoints } from "./runEntrypoints";
@@ -199,14 +199,6 @@ export function runTour(
     nearby: nearby.slice(0, MAX_NEARBY),
     tests: tests.slice(0, MAX_TESTS),
     answerAnchors,
-    diagnostics: graph.diagnostics.slice(0, 12),
-    next: resultNext(
-      "answer",
-      "This tour is the complete index-level answer surface: central entrypoints, primary flow, nearby paths, tests, and answer anchors.",
-    ),
-    guide: resultGuide(
-      "Use this tour as the answer-ready index. Do not split it into extra lookup/details/trace calls unless the user asks for a named missing symbol or exact source text.",
-    ),
     ...(entry.truncated ||
     primaryFlow.some((flow) => flow.truncated === true) ||
     nearby.length > MAX_NEARBY ||

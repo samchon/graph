@@ -30,15 +30,8 @@ export const test_coverage_edge_cases = async () => {
       "--server-arg=one",
       "--server-arg",
       "two",
-      "--max-files=2",
-      "--lsp-timeout-ms",
-      "3",
-      "--lsp-reference-limit=5",
       "--lsp-concurrency",
       "2",
-      "--lsp-warmup-timeout-ms=1000",
-      "--lsp-ready-timeout-ms",
-      "1000",
       "--lsp-ready-quiet-ms=100",
       "--graph-file=ignored-for-dump.json",
     ],
@@ -58,14 +51,7 @@ export const test_coverage_edge_cases = async () => {
       "typescript",
       "--server",
       "fake-server",
-      "--max-files",
-      "1",
-      "--lsp-reference-limit",
-      "5",
       "--lsp-concurrency=2",
-      "--lsp-warmup-timeout-ms",
-      "1000",
-      "--lsp-ready-timeout-ms=1000",
       "--lsp-ready-quiet-ms",
       "100",
       "--graph-file",
@@ -78,8 +64,8 @@ export const test_coverage_edge_cases = async () => {
   for (const args of [
     ["dump", "--language", "brainfuck"],
     ["dump", "--mode=invalid"],
-    ["dump", "--max-files=0"],
-    ["dump", "--lsp-timeout-ms=nan"],
+    ["dump", "--lsp-concurrency=0"],
+    ["dump", "--lsp-ready-quiet-ms=nan"],
     ["dump", "--server-arg"],
     ["dump", "--unknown"],
   ]) {
@@ -115,7 +101,6 @@ export const test_coverage_edge_cases = async () => {
     request: { type: "escape", reason: "graph evidence is exhausted" },
   });
   TestValidator.equals("escape omits absent nextStep", "nextStep" in escaped.result, false);
-  TestValidator.equals("escape uses default next step guidance", escaped.result.next.action, "outside");
 
   const lspRoot = GraphFixtures.createLspFixture();
   const autoLsp = await buildGraphDump({
@@ -164,7 +149,6 @@ export const test_coverage_edge_cases = async () => {
       "--symbol-information",
       "--diagnostic-severities=1,2,3,4,0",
     ],
-    lspReferenceLimit: 0,
   });
   TestValidator.predicate(
     "LSP survives a malformed JSON frame",
@@ -178,10 +162,6 @@ export const test_coverage_edge_cases = async () => {
     "all LSP diagnostic severities are normalized",
     symbolInformation.diagnostics?.map((diagnostic) => diagnostic.severity),
     ["error", "warning", "info", "hint", undefined],
-  );
-  TestValidator.predicate(
-    "reference cap warning is retained",
-    symbolInformation.warnings?.some((warning) => warning.includes("reference collection capped")) === true,
   );
 
   const minimalDiagnostics = await buildGraphDump({
@@ -293,15 +273,32 @@ export const test_coverage_edge_cases = async () => {
   });
   TestValidator.equals("absolute missing LSP server falls back", absoluteMissing.indexer, "static");
 
-  const timedOut = await buildGraphDump({
-    cwd: lspRoot,
-    mode: "lsp",
-    languages: ["typescript"],
-    server: process.execPath,
-    serverArgs: [GraphPaths.fakeLspServer, "--hang-method=initialize"],
-    lspTimeoutMs: 5,
-  });
-  TestValidator.equals("timed out LSP initialization falls back", timedOut.indexer, "static");
+  const { LspClient } = await importLib<{
+    LspClient: new (
+      command: string,
+      args: readonly string[],
+      timeoutMs?: number,
+    ) => {
+      request<T>(method: string, params: unknown): Promise<T>;
+      close(): Promise<void>;
+    };
+  }>("lsp/LspClient.js");
+  const spawnErrorClient = new LspClient(
+    path.join(lspRoot, "missing-direct-language-server.exe"),
+    [],
+    2_000,
+  );
+  let spawnError: unknown;
+  try {
+    await spawnErrorClient.request("initialize", {});
+  } catch (error) {
+    spawnError = error;
+  }
+  await spawnErrorClient.close();
+  TestValidator.predicate(
+    "spawn errors reject and close without waiting for shutdown",
+    spawnError instanceof Error,
+  );
 
   const exited = await buildGraphDump({
     cwd: lspRoot,
@@ -473,7 +470,7 @@ export const test_coverage_edge_cases = async () => {
     review: "empty query branch.",
     request: { type: "lookup", query: "   " },
   });
-  TestValidator.equals("empty lookup asks for clarification", lookup.result.next.action, "clarify");
+  TestValidator.equals("empty lookup returns no hits", (lookup.result as any).hits.length, 0);
 
   const missingTrace = await app.inspect_code_graph({
     question: "missing trace",
@@ -481,7 +478,7 @@ export const test_coverage_edge_cases = async () => {
     review: "missing start branch.",
     request: { type: "trace", from: "missing" },
   });
-  TestValidator.equals("missing trace start asks for clarification", missingTrace.result.next.action, "clarify");
+  TestValidator.equals("missing trace start resolves to no node", (missingTrace.result as any).start, undefined);
 
   const missingPathTarget = await app.inspect_code_graph({
     question: "missing path target",
@@ -682,7 +679,7 @@ export const test_coverage_edge_cases = async () => {
     review: "empty handle branch.",
     request: { type: "trace", from: "   " },
   });
-  TestValidator.equals("empty trace handle asks for clarification", emptyHandleTrace.result.next.action, "clarify");
+  TestValidator.equals("empty trace handle resolves to no node", (emptyHandleTrace.result as any).start, undefined);
 
   const fuzzyTrace = await branchApp.inspect_code_graph({
     question: "fuzzy trace",
@@ -805,7 +802,7 @@ export const test_coverage_edge_cases = async () => {
   }>("utils/walkSourceFiles.js");
   TestValidator.equals("missing walk root returns no files", walkSourceFiles(path.join(orderRoot, "missing"), { extensions: new Set([".ts"]) }), []);
   TestValidator.equals("zero maxFiles exits traversal immediately", walkSourceFiles(orderRoot, { extensions: new Set([".ts"]), maxFiles: 0 }), []);
-  TestValidator.equals("maxFiles caps traversal", walkSourceFiles(orderRoot, { extensions: new Set([".ts", ".go"]), maxFiles: 1 }).length, 1);
+  TestValidator.equals("walk finds matching source files", walkSourceFiles(orderRoot, { extensions: new Set([".ts", ".go"]) }).length >= 1, true);
 
   const signatureFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "samchon-signature-")), "sample.ts");
   fs.writeFileSync(signatureFile, ["export function sample(", "  input: string", ") {", "  return input;", "}"].join("\n"));

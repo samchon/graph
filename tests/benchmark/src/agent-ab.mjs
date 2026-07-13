@@ -36,6 +36,7 @@ import {
   graphLauncher,
   parseArgs as parseArgsShared,
   resolvePrompt,
+  runPrepare,
 } from "./lib.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -63,8 +64,35 @@ const claudeStartupGraceMs = Number(args["claude-startup-grace-ms"] ?? 5000);
 const serena = args.serena === "1" || args.serena === "true";
 const serenaCommand = args["serena-command"] ?? "uvx";
 const cg = args.cg === "1" || args.cg === "true";
-if (cg && serena) throw new Error("--cg and --serena cannot be combined");
-const toolName = cg ? "codegraph" : serena ? "serena" : "samchon-graph";
+// `--ttsc` benchmarks @ttsc/graph's own MCP server (its resident native graph),
+// as a reference ceiling for the TypeScript-only original this port generalizes.
+const ttsc = args.ttsc === "1" || args.ttsc === "true";
+const ttscBin =
+  args["ttsc-bin"] ?? "D:/github/samchon/ttsc/packages/graph/lib/bin.js";
+// `--cbm` benchmarks DeusData/codebase-memory-mcp, a tree-sitter + hybrid-LSP
+// knowledge-graph MCP server, as an external comparator. Its binary lives under
+// .work/tools (see the release download in the setup step below).
+const cbm = args.cbm === "1" || args.cbm === "true";
+const cbmBin =
+  args["cbm-bin"] ??
+  path.join(
+    benchmarkDir,
+    ".work",
+    "tools",
+    "codebase-memory-mcp",
+    process.platform === "win32" ? "codebase-memory-mcp.exe" : "codebase-memory-mcp",
+  );
+if ([cg, serena, ttsc, cbm].filter(Boolean).length > 1)
+  throw new Error("--cg, --serena, --ttsc, and --cbm cannot be combined");
+const toolName = cg
+  ? "codegraph"
+  : serena
+    ? "serena"
+    : ttsc
+      ? "ttsc-graph"
+      : cbm
+        ? "codebase-memory-mcp"
+        : "samchon-graph";
 
 const corpusRoot = args.corpus ?? path.join(os.tmpdir(), "samchon-graph-corpus");
 const repoDir = args["repo-dir"]
@@ -81,7 +109,7 @@ if (!armsRequested.baseline && !armsRequested.graph) {
 }
 
 // 1. A built launcher is required for the graph arm.
-if (armsRequested.graph && !serena && !cg && !fs.existsSync(graphLauncher)) {
+if (armsRequested.graph && !serena && !cg && !ttsc && !cbm && !fs.existsSync(graphLauncher)) {
   throw new Error(
     `@samchon/graph launcher not built: ${graphLauncher}\n` +
       "Run `pnpm --filter @samchon/graph build` first.",
@@ -97,6 +125,7 @@ if (!args["repo-dir"]) {
   clonePinned(spec, corpusRoot);
 }
 ensureInstalled(repoDir, { noInstall: args["no-install"] === "1" });
+runPrepare(spec, repoDir);
 
 // 2b. codegraph setup cost, mirroring the codex harness: `codegraph init` runs
 // once, outside the measured cell, and its wall time is recorded as toolSetupMs.
@@ -109,15 +138,31 @@ if (armsRequested.graph && cg) {
   console.log(`codegraph indexed in ${(toolSetupMs / 1000).toFixed(0)}s`);
 }
 
+// 2b'. codebase-memory-mcp setup: index the checkout once, outside the measured
+// cell, so the resident MCP server can answer from its persisted graph. Mirrors
+// codegraph's init-then-serve split; wall time is the tool setup cost.
+if (armsRequested.graph && cbm) {
+  if (!fs.existsSync(cbmBin)) {
+    throw new Error(
+      `codebase-memory-mcp binary not found: ${cbmBin}\n` +
+        "Download the release binary into .work/tools/codebase-memory-mcp/ first.",
+    );
+  }
+  const started = Date.now();
+  console.log(`codebase-memory-mcp index_repository ${repoDir} ...`);
+  runOrThrow(cbmBin, ["cli", "index_repository", "--repo-path", repoDir], repoDir);
+  toolSetupMs = Date.now() - started;
+  console.log(`codebase-memory-mcp indexed in ${(toolSetupMs / 1000).toFixed(0)}s`);
+}
+
 // 2c. @samchon/graph setup: pre-build the full-density dump ONCE, outside the
 // measured cell, and serve it via --graph-file — the same treatment codex's
 // harness gives it (agent-ab-codex.mjs), so both harnesses measure the same
 // graph richness. This is also the preflight gate: a host missing the
 // language server produces indexer:"static" here and the run aborts before
 // any credits are spent, instead of silently corrupting the comparison.
-const graphMaxFiles = args["max-files"] ?? spec.maxFiles;
 const graphFile = path.join(corpusRoot, `${repoKey}.graph.json`);
-if (armsRequested.graph && !serena && !cg) {
+if (armsRequested.graph && !serena && !cg && !ttsc && !cbm) {
   const started = Date.now();
   const fd = fs.openSync(graphFile, "w");
   // Language servers pinned as devDependencies (ttscserver via `ttsc`, etc.)
@@ -135,13 +180,6 @@ if (armsRequested.graph && !serena && !cg) {
       repoDir,
       "--mode",
       "lsp",
-      "--max-files",
-      String(graphMaxFiles),
-      "--lsp-reference-limit",
-      String(args["reference-limit"] ?? spec.lspReferenceLimit ?? 3000),
-      ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
-      ...(spec.lspWarmupTimeoutMs ? ["--lsp-warmup-timeout-ms", String(spec.lspWarmupTimeoutMs)] : []),
-      ...(spec.lspReadyTimeoutMs ? ["--lsp-ready-timeout-ms", String(spec.lspReadyTimeoutMs)] : []),
     ],
     {
       stdio: ["ignore", fd, "pipe"],
@@ -183,12 +221,28 @@ if (withCfg) {
     ? { serena: serenaServerConfig(repoDir) }
     : cg
       ? { codegraph: codegraphServerConfig(repoDir) }
-      : {
-          "samchon-graph": {
-            command: process.execPath,
-            args: [graphLauncher, "--graph-file", graphFile],
-          },
-        };
+      : cbm
+        ? { "codebase-memory-mcp": cbmServerConfig() }
+        : ttsc
+        ? {
+            "ttsc-graph": {
+              command: process.execPath,
+              args: [ttscBin, "--cwd", repoDir],
+              // @ttsc/graph resolves its native ttscgraph binary from the
+              // repo's own ttsc install; put its .bin on PATH the same way the
+              // samchon pre-build does.
+              env: {
+                ...process.env,
+                PATH: `${path.join(repoDir, "node_modules", ".bin")}${path.delimiter}${process.env.PATH ?? ""}`,
+              },
+            },
+          }
+        : {
+            "samchon-graph": {
+              command: process.execPath,
+              args: [graphLauncher, "--graph-file", graphFile],
+            },
+          };
   fs.writeFileSync(withCfg, JSON.stringify({ mcpServers: serverCfg }));
 }
 if (emptyCfg) fs.writeFileSync(emptyCfg, JSON.stringify({ mcpServers: {} }));
@@ -412,6 +466,13 @@ function codegraphServerConfig(targetRepoDir) {
   return { command, args: cgArgs, env: { CODEGRAPH_NO_DAEMON: "1" } };
 }
 
+function cbmServerConfig() {
+  // codebase-memory-mcp serves every indexed project from one persistent store;
+  // no per-repo flag is needed here because the checkout was indexed in the
+  // setup step above and the agent selects it via list_projects.
+  return { command: cbmBin, args: [] };
+}
+
 function serenaServerConfig(targetRepoDir) {
   return {
     command: serenaCommand,
@@ -466,7 +527,7 @@ function parseStream(text) {
         if (b.name === "Read") reads++;
         else if (b.name === "Grep" || b.name === "Glob") grep++;
         else if (b.name === "Bash" || b.name === "PowerShell" || b.name === "Shell") shell++;
-        else if (/graph|inspect_code|samchon|serena|find_symbol|references|symbols_overview/i.test(b.name)) graph++;
+        else if (/graph|inspect_code|samchon|serena|find_symbol|references|symbols_overview|codebase-memory|get_architecture|trace_path|get_code_snippet|search_code|list_projects/i.test(b.name)) graph++;
         else if (/web/i.test(b.name)) web++;
         else other++;
         void input;

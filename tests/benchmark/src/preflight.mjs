@@ -19,6 +19,7 @@ import {
   parseArgs,
   preflightGraph,
   resolvePrompt,
+  runPrepare,
 } from "./lib.mjs";
 
 const args = parseArgs(process.argv.slice(2));
@@ -65,6 +66,7 @@ for (const name of repos) {
   try {
     const repoDir = clonePinned(spec, corpusRoot);
     ensureInstalled(repoDir);
+    runPrepare(spec, repoDir);
     const flight = preflightGraph(spec, repoDir);
     row = { name, language: spec.language, ...flight };
   } catch (error) {

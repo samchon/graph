@@ -4,7 +4,6 @@ import {
   ISamchonGraphNode,
   ISamchonGraphTrace,
 } from "../structures";
-import { accessAliasesFor } from "./accessAliasesFor";
 import {
   bound,
   isExecution,
@@ -12,11 +11,8 @@ import {
   isTypeEdge,
   publicEvidence,
   resolveHandle,
-  resultGuide,
-  resultNext,
   signatureOf,
 } from "./common";
-import { edgeEvidenceTextOf } from "./edgeEvidenceTextOf";
 
 const DEFAULT_DEPTH = 2;
 const DEFAULT_MAX_NODES = 6;
@@ -69,13 +65,6 @@ export function runTrace(
       hops: [],
       reached: [],
       truncated: false,
-      next: resultNext(
-        "clarify",
-        "The start handle is ambiguous; choose one returned candidate.",
-      ),
-      guide: resultGuide(
-        "Disambiguate with the returned candidates, or ask the user for the intended symbol.",
-      ),
       candidates: start.candidates.map((node) => traceNode(graph, node)),
     };
   }
@@ -86,13 +75,6 @@ export function runTrace(
       hops: [],
       reached: [],
       truncated: false,
-      next: resultNext(
-        "clarify",
-        "The start handle did not resolve in the graph.",
-      ),
-      guide: resultGuide(
-        "The start symbol was not resolved; answer that the graph has no trace from this handle.",
-      ),
     };
   }
 
@@ -112,11 +94,6 @@ export function runTrace(
         hops: [],
         reached: [],
         truncated: false,
-        next: resultNext(
-          "clarify",
-          "The target handle is ambiguous; choose one candidate.",
-        ),
-        guide: resultGuide("Disambiguate the target with returned candidates."),
         candidates: target.candidates.map((node) => traceNode(graph, node)),
       };
     }
@@ -128,11 +105,6 @@ export function runTrace(
         hops: [],
         reached: [],
         truncated: false,
-        next: resultNext(
-          "clarify",
-          "The target handle did not resolve in the graph.",
-        ),
-        guide: resultGuide("Answer that the graph has no path to this target."),
       };
     }
     const found = findPath(
@@ -155,13 +127,6 @@ export function runTrace(
       reached: [],
       truncated: false,
       steps: steps(graph, found?.hops ?? []),
-      next: resultNext(
-        "answer",
-        "The path result is the structural flow answer; cite path nodes and evidence ranges.",
-      ),
-      guide: resultGuide(
-        "Use the returned path, hops, and evidence ranges as the flow answer.",
-      ),
     };
   }
 
@@ -226,13 +191,6 @@ export function runTrace(
     reached: [...reached.values()],
     truncated,
     steps: steps(graph, hops),
-    next: resultNext(
-      "answer",
-      "Steps, hops, reached nodes, and evidence ranges are the flow answer surface.",
-    ),
-    guide: resultGuide(
-      "Use steps, hops, reached nodes, and evidence ranges as the flow answer or reading-list anchor.",
-    ),
   };
 }
 
@@ -386,8 +344,6 @@ function hopOf(
     depth,
   };
   if (edge.evidence !== undefined) hop.evidence = publicEvidence(edge.evidence);
-  const aliases = accessAliasesFor(graph.node(edge.to), edgeEvidenceTextOf(edge));
-  if (aliases !== undefined) hop.aliases = aliases;
   return hop;
 }
 

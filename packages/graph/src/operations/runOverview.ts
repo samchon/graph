@@ -1,7 +1,7 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import { ISamchonGraphNode, ISamchonGraphOverview } from "../structures";
 import { dirname } from "../utils/path";
-import { isStructural, resultGuide, resultNext } from "./common";
+import { isStructural } from "./common";
 import { isPublicApiNoisePath } from "./isPublicApiNoisePath";
 import { isSupportPath } from "./isSupportPath";
 
@@ -36,13 +36,6 @@ export function runOverview(
       edges: graph.edges.length,
       byKind,
     },
-    next: resultNext(
-      "answer",
-      "Counts, layers, hotspots, and public API are sufficient for broad orientation.",
-    ),
-    guide: resultGuide(
-      "Use counts, layers, hotspots, and public API as a broad orientation map. Do not expand it into file reads unless the user needs exact source body text.",
-    ),
   };
   if (want("layers")) result.layers = layers(graph);
   if (want("hotspots")) result.hotspots = hotspots(graph);

@@ -217,13 +217,9 @@ async function openLanguageSession(
   files: readonly string[],
   options: IBuildGraphOptions,
 ): Promise<ILspSession> {
-  // A per-request deadline is still necessary — a crashed-without-exiting or
-  // deadlocked server would otherwise hang the whole build forever — but 10s
-  // was too tight even for legitimate slow starts (jdtls importing a Maven/
-  // Gradle project, kotlin-language-server's JVM cold start, clangd parsing
-  // with a real compile database instead of guessed flags), which kept
-  // forcing per-repo overrides. 60s covers all of those without needing one.
-  const client = new LspClient(command, args, options.lspTimeoutMs ?? 60_000);
+  // Normal callers remain unlimited. Bounded callers such as the real-server
+  // experiment can opt into a request deadline.
+  const client = new LspClient(command, args, options.lspTimeoutMs);
   const diagnostics: ISamchonGraphDiagnostic[] = [];
   let lastProgressAt = 0;
   client.onNotification("$/progress", () => {
@@ -271,15 +267,12 @@ async function openLanguageSession(
     // csharp-ls answers documentSymbol with an empty list until its solution is
     // loaded — collecting symbols first would silently index nothing.
     //
-    // The wait exits early once progress goes quiet for `lspReadyQuietMs`, so
-    // this ceiling only costs time on servers that are still actively
-    // indexing when it's hit — a large rust-analyzer/clangd/jdtls workspace
-    // can still be mid-index at 30s, which silently starves reference
-    // collection (see `lspReadyTimeoutMs`'s doc comment) rather than erroring.
+    // The wait ends once progress goes quiet for `lspReadyQuietMs`. Its overall
+    // ceiling is optional, so normal callers still wait as long as needed.
     await waitForIndexing(
       () => lastProgressAt,
       options.lspReadyQuietMs ?? 1_500,
-      options.lspReadyTimeoutMs ?? 180_000,
+      options.lspReadyTimeoutMs,
     );
     return session;
   } catch (error) {
@@ -315,22 +308,22 @@ async function openFiles(session: ILspSession, files: readonly string[]): Promis
 async function waitForIndexing(
   lastProgressAt: () => number,
   quietMs: number,
-  timeoutMs: number,
+  timeoutMs: number | undefined,
 ): Promise<void> {
   const start = Date.now();
   // Give a server that reports `$/progress` a brief window to begin before we
   // conclude it never will; without this a fast documentSymbol phase could race
   // ahead of the first indexing notification.
   await new Promise((resolve) => {
-    setTimeout(resolve, Math.min(300, timeoutMs));
+    setTimeout(resolve, Math.min(300, timeoutMs ?? 300));
   });
   // A server that never emits progress (lastProgressAt stays 0) is treated as
   // ready immediately; one that does is awaited until it stays quiet for
-  // `quietMs` or the overall `timeoutMs` cap elapses.
+  // `quietMs`. An undefined timeout preserves the unlimited default.
   while (
     lastProgressAt() !== 0 &&
     Date.now() - lastProgressAt() < quietMs &&
-    Date.now() - start < timeoutMs
+    (timeoutMs === undefined || Date.now() - start < timeoutMs)
   ) {
     await new Promise((resolve) => {
       setTimeout(resolve, 50);

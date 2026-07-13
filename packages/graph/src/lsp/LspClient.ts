@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 interface IRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
-  timer: NodeJS.Timeout;
+  timer: NodeJS.Timeout | undefined;
 }
 
 export class LspClient {
@@ -18,7 +18,7 @@ export class LspClient {
   public constructor(
     command: string,
     args: readonly string[],
-    private readonly timeoutMs: number,
+    private readonly timeoutMs?: number,
   ) {
     this.process = spawn(command, [...args], {
       stdio: "pipe",
@@ -28,7 +28,10 @@ export class LspClient {
     this.process.stderr.on("data", () => {
       // Language servers often log noisy progress to stderr.
     });
-    this.process.on("error", (error) => this.rejectAll(error));
+    this.process.on("error", (error) => {
+      this.exited = true;
+      this.rejectAll(error);
+    });
     this.process.on("exit", (code, signal) => {
       this.exited = true;
       this.rejectAll(
@@ -44,13 +47,19 @@ export class LspClient {
     params: unknown,
     timeoutMs?: number,
   ): Promise<T> {
+    // Requests are unlimited when neither the client nor this call specifies a
+    // deadline. Bounded callers can still prevent a non-answering server from
+    // holding an experiment forever.
     const id = this.nextId++;
     const payload = { jsonrpc: "2.0", id, method, params };
     const promise = new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`LSP request timed out: ${method}`));
-      }, timeoutMs ?? this.timeoutMs);
+      const effectiveTimeoutMs = timeoutMs ?? this.timeoutMs;
+      const timer = effectiveTimeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            this.pending.delete(id);
+            reject(new Error(`LSP request timed out: ${method}`));
+          }, effectiveTimeoutMs);
       this.pending.set(id, {
         resolve: (value) => resolve(value as T),
         reject,
@@ -78,11 +87,16 @@ export class LspClient {
     // answer `shutdown`; sending it anyway would just wait out the full
     // request timeout for nothing.
     if (!this.exited) {
-      try {
-        await this.request("shutdown", null);
-      } catch {
-        // Some servers exit before answering shutdown.
-      }
+      // Teardown is the one bounded place: indexing requests wait forever, but a
+      // `shutdown` that never comes back must not leak the child process. Wait
+      // briefly for a graceful shutdown, then fall through to the kill below.
+      await Promise.race([
+        this.request("shutdown", null).catch(() => {}),
+        new Promise((resolve) => {
+          const timer = setTimeout(resolve, 1000);
+          timer.unref?.();
+        }),
+      ]);
       /* c8 ignore start */
       try {
         this.notify("exit", null);
@@ -157,7 +171,7 @@ export class LspClient {
       const pending = this.pending.get(message.id);
       if (pending === undefined) return;
       this.pending.delete(message.id);
-      clearTimeout(pending.timer);
+      if (pending.timer !== undefined) clearTimeout(pending.timer);
       if (message.error !== undefined) {
         pending.reject(
           new Error(message.error.message ?? "LSP request failed."),
@@ -176,7 +190,7 @@ export class LspClient {
   private rejectAll(error: Error): void {
     for (const [id, request] of this.pending) {
       this.pending.delete(id);
-      clearTimeout(request.timer);
+      if (request.timer !== undefined) clearTimeout(request.timer);
       request.reject(error);
     }
   }

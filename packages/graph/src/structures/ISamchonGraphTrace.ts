@@ -1,5 +1,4 @@
 import { ISamchonGraphEvidence } from "./ISamchonGraphEvidence";
-import { ISamchonGraphNext } from "./ISamchonGraphNext";
 
 /** The compact dependency or caller flow returned from a selected start symbol. */
 export interface ISamchonGraphTrace {
@@ -18,27 +17,20 @@ export interface ISamchonGraphTrace {
   /** Unique nodes reached (excluding the start), each with its depth and roles. */
   reached: ISamchonGraphTrace.INode[];
 
-  /** True when the trace hit maxNodes or maxDepth and more flow exists. */
+  /** True when the trace hit its node or depth cap; the returned flow stands. */
   truncated: boolean;
 
   /** The resolved `to` target, when a path was requested. */
   target?: ISamchonGraphTrace.INode;
 
   /**
-   * When `to` was given: the ordered dependency path from `from` to `to`
-   * (`from` first, `to` last), or empty when `to` is not reachable from
-   * `from`.
+   * Ordered dependency path from `from` to `to` when `to` was given (`from`
+   * first, `to` last), empty when `to` is unreachable.
    */
   path?: ISamchonGraphTrace.INode[];
 
   /** Compact hop summaries preserving node names and edge evidence, capped. */
   steps?: string[];
-
-  /** How to use this source-free result next. */
-  next: ISamchonGraphNext;
-
-  /** Human-readable compatibility note mirroring `next`. */
-  guide: string;
 
   /** When `from` was an ambiguous name, the matches to disambiguate with. */
   candidates?: ISamchonGraphTrace.INode[];
@@ -50,58 +42,56 @@ export namespace ISamchonGraphTrace {
     type: "trace";
 
     /**
-     * Where to start: a node id from another tool, a simple symbol name, or a
-     * dotted member name such as `OrderService.create`. An ambiguous name
-     * returns its candidates instead of a trace.
+     * Where to start: a node id, a simple symbol name, or a dotted member
+     * (`OrderService.create`). An ambiguous name returns its candidates instead
+     * of a trace.
      */
     from: string;
 
     /**
-     * A target symbol: node id, simple symbol name, or dotted member name. When
-     * given, the tool returns the dependency path from `from` to this target,
-     * the one-call answer for "how does A reach B", instead of an open-ended
-     * trace. Prefer this path mode whenever both ends are known.
+     * Target symbol (node id, simple name, or dotted member). When given, the
+     * tool returns the dependency path from `from` to it, the one-call answer
+     * for "how does A reach B". Prefer this path mode whenever both ends are
+     * known.
      */
     to?: string;
 
     /**
-     * `forward` follows what the start uses (callees, instantiations, renders);
-     * `reverse` follows what uses the start (callers); `impact` is a reverse
-     * trace that prioritizes public API and test nodes a change would reach.
-     * Its test nodes are semantic usage edges, not a text-search inventory.
-     * Caller questions usually fit `reverse`.
+     * Trace direction:
+     *
+     * - `forward`: what the start uses (callees, instantiations, renders)
+     * - `reverse`: what uses the start (callers); the usual fit for caller
+     *   questions
+     * - `impact`: reverse trace prioritizing public API and test nodes a change
+     *   reaches; its test nodes are semantic usage edges, not a text search
      *
      * @default "forward"
      */
     direction?: "forward" | "reverse" | "impact";
 
     /**
-     * Which non-structural edge family to follow: `execution` follows runtime
-     * calls, instantiations, property access, and JSX renders; `types` follows
-     * type references and inheritance; `all` preserves the full graph. Flow
-     * questions should usually choose `execution` rather than `all`.
+     * Non-structural edge family to follow:
+     *
+     * - `execution`: runtime calls, instantiations, property access, JSX renders
+     * - `types`: type references and inheritance
+     * - `all`: the full graph
+     *
+     * Flow questions usually want `execution`, not `all`.
      *
      * @default "all"
      */
     focus?: "all" | "execution" | "types";
 
     /**
-     * How many hops deep to follow. Open forward/reverse traces are capped at
-     * 2; impact traces at 4; path mode at 12.
-     *
-     * Prefer the default for open traces. Raise only for path mode or when the
-     * previous trace named the missing next hop.
+     * Hops deep to follow (open forward/reverse cap at 2, impact at 4, path
+     * mode at 12). Raise it for path mode.
      *
      * @default 2
      */
     maxDepth?: number;
 
     /**
-     * Cap on reached nodes; the trace stops and marks itself truncated past it.
-     * Open forward/reverse traces are capped at 8 nodes, impact at 16 nodes.
-     *
-     * Prefer the default; use larger open traces only when a named missing edge
-     * requires it.
+     * Cap on reached nodes (open forward/reverse cap at 8, impact at 16).
      *
      * @default 6
      */
@@ -109,8 +99,7 @@ export namespace ISamchonGraphTrace {
 
     /**
      * Include dependency-boundary nodes from node_modules or bundled `.d.ts`
-     * libraries. Leave false for source-flow tours; enable only when the user
-     * asks about external type/API boundaries.
+     * libraries. Enable only for questions about external type/API boundaries.
      *
      * @default false
      */
@@ -131,18 +120,8 @@ export namespace ISamchonGraphTrace {
     /** Hops from the start (1 = direct). */
     depth: number;
 
-    /**
-     * Source span for the expression that produced this hop. It is repository
-     * evidence for the hop and can be cited without opening the file.
-     */
+    /** Source span that produced the hop: citable without opening the file. */
     evidence?: ISamchonGraphEvidence;
-
-    /**
-     * Stable access-path aliases derived from edge evidence. These preserve a
-     * resolved member's owner and the concrete property path used at the call
-     * site.
-     */
-    aliases?: string[];
   }
 
   /** A node on the trace: the start, a reached node, or a candidate. */

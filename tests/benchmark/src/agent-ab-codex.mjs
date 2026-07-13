@@ -41,6 +41,7 @@ import {
   parseArgs,
   preflightGraph,
   resolvePrompt,
+  runPrepare,
 } from "./lib.mjs";
 
 const args = parseArgs(process.argv.slice(2));
@@ -59,8 +60,20 @@ const question = prompt.text;
 
 const cg = args.cg === "1" || args.cg === "true";
 const serena = args.serena === "1" || args.serena === "true";
-if (cg && serena) throw new Error("--cg and --serena cannot be combined");
-const toolName = cg ? "codegraph" : serena ? "serena" : "samchon-graph";
+// `--cbm` benchmarks DeusData/codebase-memory-mcp as an external comparator.
+const cbm = args.cbm === "1" || args.cbm === "true";
+const cbmBin =
+  args["cbm-bin"] ??
+  path.join(
+    benchmarkDir,
+    ".work",
+    "tools",
+    "codebase-memory-mcp",
+    process.platform === "win32" ? "codebase-memory-mcp.exe" : "codebase-memory-mcp",
+  );
+if ([cg, serena, cbm].filter(Boolean).length > 1)
+  throw new Error("--cg, --serena, and --cbm cannot be combined");
+const toolName = cg ? "codegraph" : serena ? "serena" : cbm ? "codebase-memory-mcp" : "samchon-graph";
 const serenaCommand = args["serena-command"] ?? "uvx";
 const codexRunTimeoutMs = Number(args["codex-run-timeout-ms"] ?? 1_200_000);
 
@@ -79,11 +92,12 @@ fs.mkdirSync(corpusRoot, { recursive: true });
 const repoDir = args["repo-dir"] ? path.resolve(args["repo-dir"]) : clonePinned(spec, corpusRoot);
 const graphFile = path.join(corpusRoot, `${repoKey}.graph.json`);
 ensureInstalled(repoDir, { noInstall: args["no-install"] === "1" });
+runPrepare(spec, repoDir);
 
 // 2. Graph-arm prerequisites, verified BEFORE any credits are spent.
 let toolSetupMs;
 if (armsRequested.graph) {
-  if (!cg && !serena) {
+  if (!cg && !serena && !cbm) {
     if (!fs.existsSync(graphLauncher)) {
       throw new Error(`@samchon/graph launcher not built: ${graphLauncher}\nRun \`pnpm --filter @samchon/graph build\` first.`);
     }
@@ -102,17 +116,6 @@ if (armsRequested.graph) {
         repoDir,
         "--mode",
         "lsp",
-        "--max-files",
-        String(spec.maxFiles),
-        "--lsp-reference-limit",
-        String(args["reference-limit"] ?? 2000),
-        ...(spec.lspTimeoutMs ? ["--lsp-timeout-ms", String(spec.lspTimeoutMs)] : []),
-        ...(spec.lspWarmupTimeoutMs
-          ? ["--lsp-warmup-timeout-ms", String(spec.lspWarmupTimeoutMs)]
-          : []),
-        ...(spec.lspReadyTimeoutMs
-          ? ["--lsp-ready-timeout-ms", String(spec.lspReadyTimeoutMs)]
-          : []),
       ],
       { stdio: ["ignore", fd, "pipe"], encoding: "utf8", windowsHide: true },
     );
@@ -140,6 +143,19 @@ if (armsRequested.graph) {
     runOrThrow("codegraph", ["init", repoDir], repoDir);
     toolSetupMs = Date.now() - started;
     console.log(`codegraph indexed in ${(toolSetupMs / 1000).toFixed(0)}s`);
+  }
+  if (cbm) {
+    if (!fs.existsSync(cbmBin)) {
+      throw new Error(
+        `codebase-memory-mcp binary not found: ${cbmBin}\n` +
+          "Download the release binary into .work/tools/codebase-memory-mcp/ first.",
+      );
+    }
+    const started = Date.now();
+    console.log(`codebase-memory-mcp index_repository ${repoDir} ...`);
+    runOrThrow(cbmBin, ["cli", "index_repository", "--repo-path", repoDir], repoDir);
+    toolSetupMs = Date.now() - started;
+    console.log(`codebase-memory-mcp indexed in ${(toolSetupMs / 1000).toFixed(0)}s`);
   }
 }
 
@@ -294,6 +310,10 @@ function makeCodexHome(tag, withServer) {
         "WARNING",
       ];
       toml += `\n[mcp_servers.serena]\ncommand = '${serenaCommand}'\nargs = [${serenaArgs.map((a) => `'${a}'`).join(", ")}]\n`;
+    } else if (cbm) {
+      // codebase-memory-mcp serves the project indexed in the setup step above;
+      // the agent selects it via list_projects, so no per-repo flag is passed.
+      toml += `\n[mcp_servers.codebase_memory_mcp]\ncommand = '${cbmBin.replace(/\\/g, "/")}'\nargs = []\n`;
     } else {
       // Serve the pre-built dump: startup is instant and every call answers
       // from the full-density resident graph.

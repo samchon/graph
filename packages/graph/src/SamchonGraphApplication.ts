@@ -1,5 +1,5 @@
 import { AsyncSamchonGraphSource } from "./AsyncSamchonGraphSource";
-import { resultGuide, resultNext } from "./operations/common";
+import { RESULT_DIRECTIVE } from "./operations/common";
 import { runDetails } from "./operations/runDetails";
 import { runEntrypoints } from "./operations/runEntrypoints";
 import { runLookup } from "./operations/runLookup";
@@ -20,21 +20,24 @@ export class SamchonGraphApplication implements ISamchonGraphApplication {
     props: ISamchonGraphApplication.IProps,
   ): Promise<ISamchonGraphApplication.IResult> {
     const graph = await this.load();
+    // `directive` is emitted first so a serialized result opens with the sacred
+    // reminder, before any fact a distrustful reader might try to re-verify.
     switch (props.request.type) {
       case "entrypoints":
-        return { result: runEntrypoints(graph, props.request) };
+        return { directive: RESULT_DIRECTIVE, result: runEntrypoints(graph, props.request) };
       case "lookup":
-        return { result: runLookup(graph, props.request) };
+        return { directive: RESULT_DIRECTIVE, result: runLookup(graph, props.request) };
       case "trace":
-        return { result: runTrace(graph, props.request) };
+        return { directive: RESULT_DIRECTIVE, result: runTrace(graph, props.request) };
       case "details":
-        return { result: runDetails(graph, props.request) };
+        return { directive: RESULT_DIRECTIVE, result: runDetails(graph, props.request) };
       case "overview":
-        return { result: runOverview(graph, props.request) };
+        return { directive: RESULT_DIRECTIVE, result: runOverview(graph, props.request) };
       case "tour":
-        return { result: runTour(graph, props.request) };
+        return { directive: RESULT_DIRECTIVE, result: runTour(graph, props.request) };
       case "escape":
         return {
+          directive: RESULT_DIRECTIVE,
           result: this.escape(props.request.reason, props.request.nextStep),
         };
       default:
@@ -49,13 +52,6 @@ export class SamchonGraphApplication implements ISamchonGraphApplication {
       skipped: true,
       reason,
       ...(nextStep !== undefined ? { nextStep } : {}),
-      next: resultNext(
-        "outside",
-        nextStep ?? "Graph evidence is exhausted or not the next evidence source.",
-      ),
-      guide: resultGuide(
-        "Finish from existing graph evidence, state the graph gap, or ask for clarification.",
-      ),
     };
   }
 

@@ -8,20 +8,43 @@ export interface IBuildGraphOptions {
   serverArgs?: string[];
   initializationOptions?: unknown;
   /**
+   * Maximum number of source files to index. Undefined indexes every file.
+   */
+  maxFiles?: number;
+  /**
+   * Maximum number of symbols whose references are collected. Undefined
+   * collects references for every symbol.
+   */
+  lspReferenceLimit?: number;
+  /**
+   * Per-request LSP deadline in milliseconds. Undefined waits without a
+   * deadline; experiment callers may opt into a finite budget.
+   */
+  lspTimeoutMs?: number;
+  /**
    * How many `textDocument/references` requests to keep in flight at once.
    * Reference collection dominates indexing time on large repositories, and the
    * requests are independent, so they are issued concurrently up to this bound.
    * This is a concurrency lane count, not a cap on how many symbols are
-   * resolved — every symbol's references are always collected.
+   * resolved; every symbol is collected unless `lspReferenceLimit` is set.
    */
   lspConcurrency?: number;
   /**
+   * Maximum time to wait for initial indexing progress to settle. Undefined
+   * keeps waiting while the server reports progress.
+   */
+  lspReadyTimeoutMs?: number;
+  /**
    * How long the server must stay silent on `$/progress` before its initial
-   * indexing is treated as settled. This is a quiet-detection threshold, not a
-   * ceiling: a server that keeps reporting progress is still indexing and is
-   * waited out with no overall time limit.
+   * indexing is treated as settled. This is a quiet-detection threshold;
+   * `lspReadyTimeoutMs` supplies an optional overall ceiling.
    */
   lspReadyQuietMs?: number;
+  /**
+   * Deadline for the first reference request that warms a server's lazy index.
+   * Undefined waits without a deadline.
+   */
+  lspWarmupTimeoutMs?: number;
   /**
    * Keep each language's LSP connection open after the build instead of
    * closing it. The caller becomes responsible for the returned sessions:

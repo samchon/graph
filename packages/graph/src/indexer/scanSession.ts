@@ -7,6 +7,7 @@ import {
   ISymbolInformation,
   LspClient,
 } from "../lsp";
+import { isTestPath } from "../operations/isTestPath";
 import { ISamchonGraphDiagnostic, ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
 import { GraphLanguage, GraphNodeKind } from "../typings";
 import { projectRelative } from "../utils/fs";
@@ -57,10 +58,14 @@ export async function scanSession(
   }
 
   const edges: ISamchonGraphEdge[] = [];
-  // Every symbol gets its references resolved — there is no budget. Capping
-  // reference collection truncates real cross-file edges and corrupts the
-  // compiler-complete graph, so the whole symbol set is the target set.
-  const referenceTargets = nodes;
+  const referenceLimit = options.lspReferenceLimit;
+  // Undefined keeps the compiler-complete default. A caller that explicitly
+  // sets a budget gets the historical product-code-first ordering.
+  const referenceTargets = referenceLimit === undefined
+    ? nodes
+    : [...nodes]
+        .sort((a, b) => Number(isTestPath(a.file)) - Number(isTestPath(b.file)))
+        .slice(0, referenceLimit);
   // Language servers build their cross-file reference index lazily — often on
   // the FIRST `textDocument/references` call, not during the initial
   // `$/progress` indexing wait above. So warm the index with one patient
@@ -85,19 +90,25 @@ export async function scanSession(
   ).fill(null);
   // Warm the server's lazy cross-file index with one patient request before the
   // batch: the first `textDocument/references` often makes the server build its
-  // reference index, after which later requests are cache-fast. There is no
-  // timeout anywhere — we wait as long as the server needs.
+  // reference index, after which later requests are cache-fast.
+  let referencesUnavailable = false;
   if (referenceTargets.length > 0) {
-    referenceResults[0] = await safeReferences(
+    const warm = await safeReferences(
       client,
       referenceParams(referenceTargets[0]!),
+      options.lspWarmupTimeoutMs,
     );
+    if (warm === "timeout") referencesUnavailable = true;
+    else referenceResults[0] = warm;
   }
-  if (referenceTargets.length > 1) {
+  if (!referencesUnavailable && referenceTargets.length > 1) {
     const rest = await mapWithConcurrency(
       referenceTargets.slice(1),
       options.lspConcurrency ?? 16,
-      async (target) => safeReferences(client, referenceParams(target)),
+      async (target) => {
+        const refs = await safeReferences(client, referenceParams(target));
+        return refs === "timeout" ? null : refs;
+      },
     );
     for (let index = 0; index < rest.length; index++) {
       referenceResults[index + 1] = rest[index]!;
@@ -263,7 +274,14 @@ export async function scanSession(
     nodes,
     edges,
     diagnostics: [...session.diagnostics],
-    warnings: [],
+    warnings: [
+      ...(referenceLimit !== undefined && nodes.length > referenceLimit
+        ? [`${language}: reference collection capped at ${referenceLimit} symbols.`]
+        : []),
+      ...(referencesUnavailable
+        ? [`${language}: server did not answer references within the warmup budget; kept structural edges only.`]
+        : []),
+    ],
   };
 }
 
@@ -466,14 +484,19 @@ function afterGenericArgs(text: string): string {
 async function safeReferences(
   client: LspClient,
   params: unknown,
-): Promise<ILocation[] | null> {
+  timeoutMs?: number,
+): Promise<ILocation[] | null | "timeout"> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await client.request<ILocation[] | null>(
         "textDocument/references",
         params,
+        timeoutMs,
       );
-    } catch {
+    } catch (error) {
+      if ((error as Error).message.startsWith("LSP request timed out")) {
+        return "timeout";
+      }
       await new Promise((resolve) => {
         setTimeout(resolve, 100);
       });

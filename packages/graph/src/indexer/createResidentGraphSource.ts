@@ -52,6 +52,7 @@ export function createResidentGraphSource(
     for (const [language, session] of current.sessions) {
       const files = walkSourceFiles(root, {
         extensions: allExtensions([language]),
+        maxFiles: options.maxFiles,
       });
       const result = await refreshLanguageSession(session, files, options);
       nodes.push(...result.nodes);
@@ -117,6 +118,7 @@ function snapshotMtimes(
 ): Map<string, number> {
   const files = walkSourceFiles(root, {
     extensions: allExtensions(options.languages),
+    maxFiles: options.maxFiles,
   });
   const snapshot = new Map<string, number>();
   for (const abs of files) {

@@ -273,6 +273,33 @@ export const test_coverage_edge_cases = async () => {
   });
   TestValidator.equals("absolute missing LSP server falls back", absoluteMissing.indexer, "static");
 
+  const { LspClient } = await importLib<{
+    LspClient: new (
+      command: string,
+      args: readonly string[],
+      timeoutMs?: number,
+    ) => {
+      request<T>(method: string, params: unknown): Promise<T>;
+      close(): Promise<void>;
+    };
+  }>("lsp/LspClient.js");
+  const spawnErrorClient = new LspClient(
+    path.join(lspRoot, "missing-direct-language-server.exe"),
+    [],
+    2_000,
+  );
+  let spawnError: unknown;
+  try {
+    await spawnErrorClient.request("initialize", {});
+  } catch (error) {
+    spawnError = error;
+  }
+  await spawnErrorClient.close();
+  TestValidator.predicate(
+    "spawn errors reject and close without waiting for shutdown",
+    spawnError instanceof Error,
+  );
+
   const exited = await buildGraphDump({
     cwd: lspRoot,
     mode: "lsp",
@@ -771,9 +798,10 @@ export const test_coverage_edge_cases = async () => {
   TestValidator.equals("missing text file returns undefined", readText(path.join(orderRoot, "missing.ts")), undefined);
 
   const { walkSourceFiles } = await importLib<{
-    walkSourceFiles: (root: string, options: { extensions: Set<string> }) => string[];
+    walkSourceFiles: (root: string, options: { extensions: Set<string>; maxFiles?: number }) => string[];
   }>("utils/walkSourceFiles.js");
   TestValidator.equals("missing walk root returns no files", walkSourceFiles(path.join(orderRoot, "missing"), { extensions: new Set([".ts"]) }), []);
+  TestValidator.equals("zero maxFiles exits traversal immediately", walkSourceFiles(orderRoot, { extensions: new Set([".ts"]), maxFiles: 0 }), []);
   TestValidator.equals("walk finds matching source files", walkSourceFiles(orderRoot, { extensions: new Set([".ts", ".go"]) }).length >= 1, true);
 
   const signatureFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "samchon-signature-")), "sample.ts");

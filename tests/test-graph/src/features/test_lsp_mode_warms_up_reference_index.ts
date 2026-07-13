@@ -20,15 +20,16 @@ const warmupFixture = (): string => {
 
 export const test_lsp_mode_warms_up_reference_index = async () => {
   // A server that builds its reference index lazily: the FIRST references call
-  // is slow but every later call is instant. There is no per-request timeout,
-  // so the warmup request simply waits the first call out, after which the
-  // batch resolves and reference edges land.
+  // is slow past the normal request deadline, but the patient warmup budget
+  // lets it finish before the faster batch begins.
   const dump = await buildGraphDump({
     cwd: warmupFixture(),
     mode: "lsp",
     languages: ["typescript"],
     server: process.execPath,
     serverArgs: [GraphPaths.fakeLspServer, "--slow-first-references=1500"],
+    lspTimeoutMs: 500,
+    lspWarmupTimeoutMs: 10_000,
     lspConcurrency: 4,
   });
 
@@ -36,5 +37,41 @@ export const test_lsp_mode_warms_up_reference_index = async () => {
   TestValidator.predicate(
     "reference edges were collected after warmup",
     dump.edges.some((edge) => edge.kind === "calls" || edge.kind === "references"),
+  );
+
+  const partial = await buildGraphDump({
+    cwd: warmupFixture(),
+    mode: "lsp",
+    languages: ["typescript"],
+    server: process.execPath,
+    serverArgs: [GraphPaths.fakeLspServer, "--hang-references-after=1"],
+    lspTimeoutMs: 50,
+    lspWarmupTimeoutMs: 5_000,
+    lspConcurrency: 1,
+  });
+  TestValidator.equals("partial-timeout graph is still lsp", partial.indexer, "lsp");
+  TestValidator.predicate(
+    "structure survives a partial reference timeout",
+    partial.edges.some((edge) => edge.kind === "contains"),
+  );
+
+  const unavailable = await buildGraphDump({
+    cwd: warmupFixture(),
+    mode: "lsp",
+    languages: ["typescript"],
+    server: process.execPath,
+    serverArgs: [GraphPaths.fakeLspServer, "--hang-method=textDocument/references"],
+    lspTimeoutMs: 50,
+    lspWarmupTimeoutMs: 50,
+    lspConcurrency: 1,
+  });
+  TestValidator.equals("warmup timeout keeps the LSP graph", unavailable.indexer, "lsp");
+  TestValidator.predicate(
+    "warmup timeout keeps structural edges",
+    unavailable.edges.some((edge) => edge.kind === "contains"),
+  );
+  TestValidator.predicate(
+    "warmup timeout reports the skipped reference batch",
+    unavailable.warnings?.some((warning) => warning.includes("warmup budget")) === true,
   );
 };

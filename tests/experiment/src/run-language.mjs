@@ -19,7 +19,10 @@ const dump = await buildGraphDump({
   mode: "lsp",
   languages: [experiment.language],
   maxFiles: experiment.maxFiles,
-  ...(experiment.timeoutMs !== undefined ? { lspTimeoutMs: experiment.timeoutMs } : {}),
+  lspReferenceLimit: experiment.referenceLimit ?? 250,
+  lspTimeoutMs: experiment.timeoutMs ?? 60_000,
+  lspReadyTimeoutMs: experiment.readyTimeoutMs ?? 180_000,
+  lspWarmupTimeoutMs: experiment.warmupTimeoutMs ?? 180_000,
 });
 const elapsedMs = Math.round(performance.now() - started);
 const warnings = dump.warnings ?? [];

@@ -24,13 +24,19 @@ export function docOf(
   const lines =
     evidence === undefined ? undefined : fileLines(project, evidence.file);
   if (lines === undefined || evidence === undefined) return undefined;
+  // The line above the declaration. A span that points past the end of its file
+  // is a span the source has moved out from under, and there is nothing above a
+  // line the file does not have — so nothing is read, rather than the last line
+  // of the file being read as if it were.
   let index = evidence.startLine - 2;
-  while (index >= 0 && (lines[index] ?? "").trim() === "") index--;
-  if (index < 0 || !(lines[index] ?? "").trim().endsWith("*/"))
-    return undefined;
+  if (index >= lines.length) return undefined;
+  // From here `index` only ever decreases, and it starts inside the file, so
+  // every line it names is one the file has.
+  while (index >= 0 && lines[index]!.trim() === "") index--;
+  if (index < 0 || !lines[index]!.trim().endsWith("*/")) return undefined;
   const block: string[] = [];
   for (; index >= 0; index--) {
-    const line = (lines[index] ?? "").trim();
+    const line = lines[index]!.trim();
     block.unshift(line);
     if (line.startsWith("/**")) break;
     if (line.startsWith("/*")) return undefined;

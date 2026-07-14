@@ -8,9 +8,12 @@ import path from "node:path";
 const call = (
   app: SamchonGraphApplication,
   request: ISamchonGraphApplication.IProps["request"],
+  question?: string,
 ) =>
   app.inspect_code_graph({
-    question: `probe ${request.type}`,
+    // The tour ranks against the question, in the user's own words, so a test
+    // that means to steer a tour writes it here — not into the request.
+    question: question ?? `probe ${request.type}`,
     draft: { reason: `${request.type} scoring branch`, type: request.type },
     review: "Scoring fixture exercises the ported ranking branches.",
     request,
@@ -56,7 +59,6 @@ const edge = (from: string, to: string, kind: string, file = "src/index.ts") => 
 const dumpOf = (root: string, nodes: unknown[], edges: unknown[]) => ({
   project: root,
   languages: ["typescript"],
-  generatedAt: new Date(0).toISOString(),
   indexer: "static" as const,
   nodes,
   edges,
@@ -105,12 +107,12 @@ export const test_ported_operation_engines_cover_scoring_branches = async () => 
   const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, nodes, edges)));
 
   // Tour over a rendering query drives the full seed scorer across all files.
-  const tour = (await call(app, { type: "tour", query: "how does render mount update the view tree" })).result;
+  const tour = (await call(app, { type: "tour", reinterpretations: [] }, "how does render mount update the view tree")).result;
   TestValidator.predicate("scoring tour returns entrypoints", tour.entrypoints.length >= 1);
 
   // A query made only of words too short to become query terms → the seed
   // scorer's queryAlignmentFactor sees zero query words (its neutral branch).
-  const noTerms = (await call(app, { type: "tour", query: "a an is by to" })).result;
+  const noTerms = (await call(app, { type: "tour", reinterpretations: [] }, "a an is by to")).result;
   TestValidator.predicate("a term-less query still returns entrypoints", noTerms.entrypoints.length >= 1);
 
   // Lookup with backtick handle, "X method" pattern, dotted term, and the
@@ -183,7 +185,7 @@ const scenario_impact_ranks_and_refs = async () => {
   // hub (with neighbors) and hubHelper (without) both match the query, so the
   // tour's nearby spread sees details with and without dependency refs, and its
   // refs surface targets with and without a source span.
-  const tour = (await call(app, { type: "tour", query: "zephyr hub" })).result;
+  const tour = (await call(app, { type: "tour", reinterpretations: [] }, "zephyr hub")).result;
   TestValidator.predicate("tour surfaces the hub", tour.entrypoints.length >= 1);
 
   // A minimal graph where both detail seeds are guaranteed: alpha has a
@@ -197,7 +199,7 @@ const scenario_impact_ranks_and_refs = async () => {
   ];
   const medges = [edge("src/m.ts#alpha:function", "src/m.ts#leaf:variable", "accesses", "src/m.ts")];
   const miniApp = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(mini, mnodes, medges)));
-  const miniTour = (await call(miniApp, { type: "tour", query: "alpha beta" })).result;
+  const miniTour = (await call(miniApp, { type: "tour", reinterpretations: [] }, "alpha beta")).result;
   TestValidator.predicate("mini tour surfaces both seeds", miniTour.entrypoints.length >= 1);
 };
 
@@ -213,7 +215,7 @@ const scenario_seed_fallbacks = async () => {
     node("src/types.ts#Point:interface", "interface", "Point", "src/types.ts", 1, 1),
   ];
   const appI = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, interfaces, [])));
-  const fallback = (await call(appI, { type: "tour", query: "describe the shape and point interfaces" })).result;
+  const fallback = (await call(appI, { type: "tour", reinterpretations: [] }, "describe the shape and point interfaces")).result;
   TestValidator.predicate("tour falls back to ranked seeds", fallback.entrypoints.length >= 0);
 
   // Only enum/module seeds → flowSeedIdsOf finds no executable and uses all seeds.
@@ -222,7 +224,7 @@ const scenario_seed_fallbacks = async () => {
     node("src/m.ts#Registry:module", "module", "Registry", "src/m.ts", 1, 1),
   ];
   const appE = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, enums, [edge("src/m.ts#Registry:module", "src/e.ts#Mode:enum", "references", "src/m.ts")])));
-  const enumTour = (await call(appE, { type: "tour", query: "the Mode enum and Registry module" })).result;
+  const enumTour = (await call(appE, { type: "tour", reinterpretations: [] }, "the Mode enum and Registry module")).result;
   TestValidator.predicate("non-executable seeds still produce a tour", enumTour.entrypoints.length >= 1);
 
   // Entrypoints: a backtick handle that resolves plus one that is not a valid
@@ -349,7 +351,7 @@ const scenario_evidence_less_flow_and_test_nodes = async () => {
     edge("tests/g.test.ts#testerGhost:function", "src/g.ts#seedFn:function", "tests", "tests/g.test.ts"),
   ];
   const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, nodes, edges)));
-  const tour = (await call(app, { type: "tour", query: "seedFn reachedGhost testerGhost noSigSeed" })).result;
+  const tour = (await call(app, { type: "tour", reinterpretations: [] }, "seedFn reachedGhost testerGhost noSigSeed")).result;
   TestValidator.predicate("the evidence-having seed is still an entrypoint", tour.entrypoints.some((n) => n.name === "seedFn"));
   TestValidator.predicate(
     "a seed with no readable signature still becomes an entrypoint",
@@ -360,7 +362,7 @@ const scenario_evidence_less_flow_and_test_nodes = async () => {
     tour.primaryFlow.some((flow) => flow.reached.some((n) => n.name === "reachedGhost")),
   );
 
-  const noTests = (await call(app, { type: "tour", query: "seedFn", includeTests: false })).result;
+  const noTests = (await call(app, { type: "tour", reinterpretations: [], includeTests: false }, "seedFn")).result;
   TestValidator.equals("includeTests=false yields no test anchors", noTests.tests.length, 0);
 };
 
@@ -427,6 +429,6 @@ const scenario_tour_unresolved_mention_and_edgeless_seed = async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-lonely-"));
   const lonely = node("src/l.ts#lonely:function", "function", "lonely", "src/l.ts", 1, 1, { exported: false });
   const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, [lonely], [])));
-  const tour = (await call(app, { type: "tour", query: "lonely `NoSuchSymbol`" })).result;
+  const tour = (await call(app, { type: "tour", reinterpretations: [] }, "lonely `NoSuchSymbol`")).result;
   TestValidator.predicate("the edgeless seed still becomes an entrypoint", tour.entrypoints.some((n) => n.name === "lonely"));
 };

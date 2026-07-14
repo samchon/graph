@@ -306,6 +306,8 @@ function handle(message) {
         { name: "lineFn", detail: "", kind: 12, range: { start: { line: 12, character: 0 }, end: { line: 12, character: 31 } }, selectionRange: { start: { line: 12, character: 9 }, end: { line: 12, character: 15 } }, children: [] },
         { name: "Panel", detail: "", kind: 12, range: { start: { line: 13, character: 13 }, end: { line: 13, character: 30 } }, selectionRange: { start: { line: 13, character: 13 }, end: { line: 13, character: 18 } }, children: [] },
         { name: "optFn", detail: "", kind: 12, range: { start: { line: 14, character: 0 }, end: { line: 14, character: 30 } }, selectionRange: { start: { line: 14, character: 9 }, end: { line: 14, character: 14 } }, children: [] },
+        { name: "passedFn", detail: "", kind: 12, range: { start: { line: 15, character: 0 }, end: { line: 15, character: 33 } }, selectionRange: { start: { line: 15, character: 9 }, end: { line: 15, character: 17 } }, children: [] },
+        { name: "register", detail: "", kind: 12, range: { start: { line: 16, character: 0 }, end: { line: 16, character: 44 } }, selectionRange: { start: { line: 16, character: 9 }, end: { line: 16, character: 17 } }, children: [] },
       ]);
     }
     if (options.nullSymbols) return respond(message.id, null);
@@ -519,6 +521,10 @@ function handle(message) {
           return respond(message.id, [{ uri, range: { start: { line: 7, character: 9 }, end: { line: 7, character: 17 } } }]);
         case 14: // optFn — an optional call `optFn?.()`
           return respond(message.id, [{ uri, range: { start: { line: 8, character: 8 }, end: { line: 8, character: 13 } } }]);
+        case 15: // passedFn — handed to `register(...)` as a value, at module scope
+          return respond(message.id, [{ uri, range: { start: { line: 17, character: 9 }, end: { line: 17, character: 17 } } }]);
+        case 16: // register — called at the top level of the module
+          return respond(message.id, [{ uri, range: { start: { line: 17, character: 0 }, end: { line: 17, character: 8 } } }]);
         default:
           return respond(message.id, []);
       }

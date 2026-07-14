@@ -8,8 +8,9 @@ import { bound } from "./bound";
 import { decoratorsOf } from "./decoratorsOf";
 import { edgeEvidenceOf } from "./edgeEvidenceOf";
 import { isStructural } from "./isStructural";
-import { resolveGraphHandle } from "./resolveHandle";
-import { IRunnerOutput, resultNext } from "./resultNext";
+import { resolveGraphHandle } from "./resolveGraphHandle";
+import { IRunnerOutput } from "./IRunnerOutput";
+import { resultNext } from "./resultNext";
 import { runLookup } from "./runLookup";
 import { signatureOf } from "./signatureOf";
 
@@ -211,6 +212,10 @@ function edgeKindRank(kind: string): number {
       return 5;
     case "type_ref":
       return 6;
+    // Every non-structural kind the graph stores is named above, and the
+    // structural ones never reach here. `dispatches` is the only kind left, and
+    // a traversal synthesizes it — no index holds one to rank.
+    /* c8 ignore next 2 */
     default:
       return 10;
   }

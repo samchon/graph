@@ -141,11 +141,15 @@ export async function scanSession(
       // it belongs to the module — the file node every top-level declaration
       // already hangs off. Without it a module's own wiring (a router mounting
       // its handlers at load) is attributed to nobody, and the codebase reads
-      // back as disconnected islands. An import or a re-export is not the module
-      // running the symbol, so those lines are not module scope.
+      // back as disconnected islands.
+      //
+      // Two references are not module scope. An import or a re-export names a
+      // symbol in order to bring it in, which is not the module running it. And
+      // a position past the end of the file is not a statement at all — a server
+      // that reports one has told us nothing to attribute, so nothing is.
       const owner =
         ownerAt(owners, start.line + 1) ??
-        (isModuleImportLine(startLineText)
+        (startLineText === undefined || isModuleImportLine(startLineText)
           ? undefined
           : moduleOwnerOf(rel, target.language));
       if (owner === undefined || owner.id === target.id) continue;
@@ -491,8 +495,12 @@ function moduleOwnerOf(
 
 // An import or a re-export names a symbol in order to bring it in, which is not
 // the module running it.
+//
+// Every one of these keywords is followed by whitespace, never by `(`. That
+// distinction is the whole point: `use(handler)` is a module wiring itself up —
+// the case §2j exists for — and `use crate::order` is Rust bringing a name in.
 const MODULE_IMPORT_LINE =
-  /^(?:import\b|export\s+(?:\*|\{)|from\b|use\b|using\b|#include\b|package\b|require\b)/;
+  /^(?:import\b|export\s+(?:\*|\{)|from\s|use\s|using\s|#include\b|package\s|require\s)/;
 
 function isModuleImportLine(line: string | undefined): boolean {
   return line !== undefined && MODULE_IMPORT_LINE.test(line.trim());

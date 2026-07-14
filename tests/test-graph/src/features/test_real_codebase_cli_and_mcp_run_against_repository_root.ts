@@ -62,9 +62,15 @@ export const test_real_codebase_cli_and_mcp_run_against_repository_root = async 
       undefined,
       { timeout: 120_000 },
     );
-    const text = result.content?.find((item) => item.type === "text")?.text;
-    TestValidator.predicate("real codebase MCP returns text", typeof text === "string");
-    const parsed = JSON.parse(text);
+    // The result ships once, as structured content (§4j).
+    TestValidator.equals(
+      "the real-codebase payload does not cross a second time as text",
+      result.content,
+      [],
+    );
+    const parsed = result.structuredContent as {
+      result: { hits: { name: string; file: string }[] };
+    };
     TestValidator.predicate(
       "real codebase MCP lookup returns buildGraphDump",
       parsed.result.hits.some(

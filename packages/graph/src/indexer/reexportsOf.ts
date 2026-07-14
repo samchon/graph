@@ -1,18 +1,6 @@
 import { GraphLanguage } from "../typings";
 import { basename } from "../utils/path";
-
-/** One re-export statement: where it pulls from, and which names it forwards. */
-export interface IReexport {
-  /** The module specifier as written (`./order`, `.models`, `crate::order`). */
-  specifier: string;
-
-  /**
-   * The names forwarded, as they are spelled in the module they come from.
-   * Absent for a whole-module re-export (`export * from`), which forwards
-   * every name the target puts on the wire.
-   */
-  names?: string[];
-}
+import { IReexport } from "./IReexport";
 
 /**
  * The re-export statements a source file writes.
@@ -23,6 +11,7 @@ export interface IReexport {
  * links come from the export syntax itself, which is why this is per-language
  * and why a language with no re-export form simply has none — the symbol still
  * carries the edge from the file that declares it (see {@link exportEdges}).
+ * Degrade per language, not per tour.
  */
 export function reexportsOf(
   language: GraphLanguage,
@@ -53,7 +42,7 @@ function typescriptReexports(text: string): IReexport[] {
   const named =
     /(?:^|[\n;])\s*export\s+(?:type\s+)?\{([^}]*)\}\s*from\s+["']([^"']+)["']/g;
   for (let m = named.exec(text); m !== null; m = named.exec(text)) {
-    const names = namesOf(m[1]!, (entry) => entry.split(/\s+as\s+/)[0]);
+    const names = namesOf(m[1]!);
     if (names.length > 0) out.push({ specifier: m[2]!, names });
   }
   return out;
@@ -74,10 +63,7 @@ function pythonReexports(file: string, text: string): IReexport[] {
       out.push({ specifier: m[1]! });
       continue;
     }
-    const names = namesOf(
-      clause.replace(/^\(/, "").replace(/\)$/, ""),
-      (entry) => entry.split(/\s+as\s+/)[0],
-    );
+    const names = namesOf(clause.replace(/^\(/, "").replace(/\)$/, ""));
     if (names.length > 0) out.push({ specifier: m[1]!, names });
   }
   return out;
@@ -95,7 +81,7 @@ function rustReexports(text: string): IReexport[] {
     const clause = m[1]!.trim();
     const braced = /^(.*?)::\{([^}]*)\}$/.exec(clause);
     if (braced !== null) {
-      const names = namesOf(braced[2]!, (entry) => entry.split(/\s+as\s+/)[0]);
+      const names = namesOf(braced[2]!);
       if (names.length > 0) out.push({ specifier: braced[1]!, names });
       continue;
     }
@@ -109,16 +95,17 @@ function rustReexports(text: string): IReexport[] {
   return out;
 }
 
-/** Split a comma-separated clause into the identifiers it actually names. */
-function namesOf(
-  clause: string,
-  pick: (entry: string) => string | undefined,
-): string[] {
+/**
+ * The identifiers a comma-separated clause names, as the module they come from
+ * spells them: the local alias a re-export binds them to (`b as c`) is this
+ * file's name for the symbol, not the one the target declared.
+ */
+function namesOf(clause: string): string[] {
   const out: string[] = [];
   for (const raw of clause.split(",")) {
     const entry = raw.trim().replace(/^type\s+/, "");
     if (entry === "") continue;
-    const name = pick(entry)?.trim();
+    const name = entry.split(/\s+as\s+/)[0]?.trim();
     if (name !== undefined && /^[A-Za-z_$][\w$]*$/.test(name)) out.push(name);
   }
   return out;

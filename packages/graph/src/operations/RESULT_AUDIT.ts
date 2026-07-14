@@ -57,7 +57,3 @@ Answer from this result and stop. Do not decompose the question into further cal
 chase threads it did not surface. Re-call the graph only when \`next\` says inspect, or
 after you edit the source.
 `.trim();
-
-/** The escape branch carries no graph facts, so it claims none. */
-export const RESULT_AUDIT_ESCAPE: string =
-  "This escape carries no graph facts to audit.";

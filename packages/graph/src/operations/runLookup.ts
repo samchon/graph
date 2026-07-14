@@ -2,12 +2,13 @@ import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import { ISamchonGraphLookup, ISamchonGraphNode } from "../structures";
 import { bound } from "./bound";
 import { decoratorsOf } from "./decoratorsOf";
-import { exportFanIn } from "./exportSurface";
+import { exportFanIn } from "./exportFanIn";
 import { isExternalNode } from "./isExternalNode";
 import { isStructural } from "./isStructural";
 import { isSupportPath } from "./isSupportPath";
 import { isTestPath } from "./isTestPath";
-import { IRunnerOutput, resultNext } from "./resultNext";
+import { IRunnerOutput } from "./IRunnerOutput";
+import { resultNext } from "./resultNext";
 import { signatureOf } from "./signatureOf";
 import { subwords } from "./subwords";
 

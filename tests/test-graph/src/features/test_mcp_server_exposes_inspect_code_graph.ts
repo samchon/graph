@@ -40,9 +40,29 @@ const overview = async (args: string[]) => {
       undefined,
       { timeout: 120_000 },
     );
-    const text = result.content?.find((item) => item.type === "text")?.text;
-    TestValidator.predicate("MCP call returns text content", typeof text === "string");
-    return JSON.parse(text);
+    // The result crosses the wire once (§4j). A tool that declares an output
+    // schema must answer with `structuredContent`, and serializing the same JSON
+    // into a text block as well doubled a 30 KB tour into 60 KB — enough to blow
+    // a client's tool-result cap and spill the answer to a file the model then
+    // shelled out to read back.
+    TestValidator.equals(
+      "the payload does not cross a second time as text",
+      result.content,
+      [],
+    );
+    const payload = result.structuredContent as Record<string, unknown>;
+    TestValidator.predicate(
+      "the result arrives as structured content",
+      payload !== undefined,
+    );
+    // `audit` serializes first, so what was checked precedes any fact a reader
+    // might second-guess; `next` says where the result leaves the question.
+    TestValidator.equals(
+      "audit leads, then where it leaves the question, then the facts",
+      Object.keys(payload),
+      ["audit", "next", "result"],
+    );
+    return payload;
   } finally {
     await client.close();
   }

@@ -10,8 +10,9 @@ import { edgeEvidenceOf } from "./edgeEvidenceOf";
 import { isExecution } from "./isExecution";
 import { isExternalNode } from "./isExternalNode";
 import { isTestPath } from "./isTestPath";
-import { resolveGraphHandle } from "./resolveHandle";
-import { IRunnerOutput, resultNext } from "./resultNext";
+import { resolveGraphHandle } from "./resolveGraphHandle";
+import { IRunnerOutput } from "./IRunnerOutput";
+import { resultNext } from "./resultNext";
 import { signatureOf } from "./signatureOf";
 
 const DEFAULT_DEPTH = 3;
@@ -483,6 +484,10 @@ function orderedEdges(
           traceEndpointRank(graph, reverse ? b.from : b.to) ||
         evidenceRank(a) - evidenceRank(b),
     );
+  // An impact trace always walks incoming edges, so its ranked endpoint is
+  // always the edge's `from`; the `to` side is kept so the two comparators read
+  // the same way.
+  /* c8 ignore next 4 */
   return [...edges].sort(
     (a, b) =>
       impactEndpointRank(graph, reverse ? a.from : a.to) -
@@ -662,6 +667,8 @@ function edgeKindRank(kind: string): number {
       return 6;
     case "type_ref":
       return 7;
+    // Every kind the walk can reach is named above.
+    /* c8 ignore next 2 */
     default:
       return 10;
   }

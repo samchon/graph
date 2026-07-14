@@ -32,11 +32,21 @@ const GRAPH_EDGE_KINDS = [
   "extends",
   "implements",
   "overrides",
+  "dispatches",
   "decorates",
   "renders",
   "tests",
   "references",
 ];
+
+// `dispatches` is the one edge kind no index ever stores. It is the runtime
+// counterpart of `overrides`/`implements`: the language server resolves a call
+// to the declaration it names, and where that declaration has no body, the code
+// that runs is its implementation — so a traversal that follows what executes
+// synthesizes the hop in place of the dead end (§3a). It is pinned by
+// `test_trace_dispatches_to_the_implementation`, not by the stored-graph
+// contract below.
+const GRAPH_TRAVERSAL_EDGE_KINDS = ["dispatches"];
 
 const GRAPH_REQUEST_TYPES = [
   "entrypoints",
@@ -174,6 +184,13 @@ const createTriviaFixture = () => {
       "function lineFn() { return 2; }",
       "const NS = { Panel: () => null };",
       "function optFn() { return 3; }",
+      // §2j, in the language-server lane: line 17 is a top-level statement, so it
+      // belongs to the module, and `passedFn` sits in an argument list with no
+      // `(` of its own — a callable handed to a call, which the site that hands it
+      // over invokes.
+      "function passedFn() { return 4; }",
+      "function register(fn: unknown) { return fn; }",
+      "register(passedFn);",
     ].join("\n"),
   );
   return root;
@@ -406,11 +423,15 @@ const createContractFixture = () => {
   const dump = {
     project: root,
     languages: ["typescript"],
-    generatedAt: new Date(0).toISOString(),
     indexer: "static",
     nodes,
     edges: [
       edge(file, "external:typescript:ExternalApi", "imports", 1),
+      // `exports` is an indexer fact now, not a flag the loader re-derives: the
+      // module's own export syntax, followed through the project's barrels, is
+      // what says how many modules put a symbol on the wire.
+      edge(file, id("Root.Service:class"), "exports", 4),
+      edge(file, id("helper:function"), "exports", 9),
       edge(run, id("helper:function"), "calls", 6),
       edge(run, id("Root.Service.value:property"), "accesses", 6),
       edge(run, id("Root.Service:class"), "instantiates", 6),
@@ -548,6 +569,7 @@ const languageFixtures = [
 export const GraphFixtures = {
   GRAPH_EDGE_KINDS,
   GRAPH_NODE_KINDS,
+  GRAPH_TRAVERSAL_EDGE_KINDS,
   GRAPH_REQUEST_TYPES,
   createClassifyFixture,
   createCmakeFixture,

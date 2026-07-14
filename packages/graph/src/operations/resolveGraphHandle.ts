@@ -1,12 +1,8 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import { ISamchonGraphNode } from "../structures";
-import { exportFanIn } from "./exportSurface";
+import { exportFanIn } from "./exportFanIn";
+import { IResolvedGraphHandle } from "./IResolvedGraphHandle";
 import { isSupportPath } from "./isSupportPath";
-
-export interface IResolvedGraphHandle {
-  node?: ISamchonGraphNode;
-  candidates?: ISamchonGraphNode[];
-}
 
 /**
  * Resolve a tool handle as an id, an exact symbol name, a dotted suffix, or a

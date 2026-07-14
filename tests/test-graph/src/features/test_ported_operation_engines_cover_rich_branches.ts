@@ -8,9 +8,12 @@ import path from "node:path";
 const call = (
   app: SamchonGraphApplication,
   request: ISamchonGraphApplication.IProps["request"],
+  question?: string,
 ) =>
   app.inspect_code_graph({
-    question: `probe ${request.type}`,
+    // The tour ranks against the question, in the user's own words, so a test
+    // that means to steer a tour writes it here — not into the request.
+    question: question ?? `probe ${request.type}`,
     draft: { reason: `${request.type} branch coverage`, type: request.type },
     review: "Rich fixture exercises the ported engine branches.",
     request,
@@ -95,7 +98,7 @@ const createRichFixture = () => {
   const dump = {
     project: root,
     languages: ["typescript"],
-    generatedAt: new Date(0).toISOString(),
+
     indexer: "static" as const,
     nodes,
     edges,
@@ -118,7 +121,7 @@ export const test_ported_operation_engines_cover_rich_branches = async () => {
 
   // runTour.broadTourDamping: a neutral query keeps error/config/serialization
   // symbols out of the leading answer surface (they are down-weighted).
-  const tour = (await call(app, { type: "tour", query: "how does the project connect" })).result;
+  const tour = (await call(app, { type: "tour", reinterpretations: [] }, "how does the project connect")).result;
   TestValidator.predicate("tour returns a surface", tour.entrypoints.length >= 1);
 
   // runOverview + pathPolicy.isPublicApiNoisePath: the internal/ symbol is

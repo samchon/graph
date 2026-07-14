@@ -5,7 +5,7 @@ import { GraphLanguage } from "../typings";
 import { walkSourceFiles } from "../utils/fs";
 import { allExtensions } from "./allExtensions";
 import { buildLspGraph } from "./buildLspGraph";
-import { staticGraphParts } from "./buildStaticGraph";
+import { staticGraphParts } from "./staticGraphParts";
 import { dedupeEdges } from "./dedupeEdges";
 import { dedupeNodes } from "./dedupeNodes";
 import { finalizeGraph } from "./finalizeGraph";
@@ -13,7 +13,8 @@ import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { ILspSession } from "./ILspSession";
 import { IResidentGraphSource } from "./IResidentGraphSource";
 import { refreshLanguageSession } from "./refreshLanguageSession";
-import { wireEdges, wireNodes } from "./wireSpans";
+import { wireEdges } from "./wireEdges";
+import { wireNodes } from "./wireNodes";
 
 // Languages that fell back to static parsing (no LSP session to hold) are
 // simply re-parsed from scratch on every refresh; `buildStaticGraph` has no

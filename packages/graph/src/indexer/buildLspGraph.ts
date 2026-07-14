@@ -24,8 +24,10 @@ import { ILspSession } from "./ILspSession";
 import { languageIdOf } from "./languageIdOf";
 import { allExtensions, languageOf, specOf } from "./languages";
 import { scanSession } from "./scanSession";
-import { IStaticGraphParts, staticGraphParts } from "./staticIndexer";
-import { wireEdges, wireNodes } from "./wireSpans";
+import { IStaticGraphParts } from "./IStaticGraphParts";
+import { staticGraphParts } from "./staticGraphParts";
+import { wireEdges } from "./wireEdges";
+import { wireNodes } from "./wireNodes";
 
 export async function buildLspGraph(
   options: IBuildGraphOptions = {},

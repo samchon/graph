@@ -87,11 +87,15 @@ export const test_operations_preserve_contract_evidence_and_navigation = async (
   TestValidator.predicate("entrypoints returns ranked handles", entrypoints.hits.some((node) => node.name === "Root.Service.run"));
 
   const tour = (
-    await ContractGraph.call(app, {
-      type: "tour",
-      query: "Root.Service.run helper",
-      limit: 4,
-    })
+    await ContractGraph.call(
+      app,
+      {
+        type: "tour",
+        reinterpretations: ["Root.Service.run", "helper"],
+        limit: 4,
+      },
+      "Root.Service.run helper",
+    )
   ).result;
   TestValidator.predicate("tour returns anchors", tour.answerAnchors.length > 0 && tour.nearby.length > 0);
 };

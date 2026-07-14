@@ -4,7 +4,8 @@ import { dirname } from "../utils/path";
 import { isPublicApiNoisePath } from "./isPublicApiNoisePath";
 import { isStructural } from "./isStructural";
 import { isSupportPath } from "./isSupportPath";
-import { IRunnerOutput, resultNext } from "./resultNext";
+import { IRunnerOutput } from "./IRunnerOutput";
+import { resultNext } from "./resultNext";
 
 /**
  * Project a compact, source-read-free architecture map: counts by kind, folder

@@ -11,12 +11,13 @@ import {
 import { bound } from "./bound";
 import { decoratorsOf } from "./decoratorsOf";
 import { docOf } from "./docOf";
-import { exportFanIn } from "./exportSurface";
+import { exportFanIn } from "./exportFanIn";
 import { isStructural } from "./isStructural";
 import { isSupportPath } from "./isSupportPath";
 import { isTestPath } from "./isTestPath";
-import { resolveGraphHandle } from "./resolveHandle";
-import { IRunnerOutput, resultNext } from "./resultNext";
+import { resolveGraphHandle } from "./resolveGraphHandle";
+import { IRunnerOutput } from "./IRunnerOutput";
+import { resultNext } from "./resultNext";
 import { runDetails } from "./runDetails";
 import { runEntrypoints } from "./runEntrypoints";
 import { runTrace } from "./runTrace";
@@ -417,6 +418,11 @@ function flowStartOf(node: ISamchonGraphTrace.INode): ISamchonGraphTour.INode {
     name: node.name,
     kind: node.kind,
     file: node.file,
+    // A flow start is a tour seed, and `isTourSeed` requires evidence — whose
+    // `startLine` is required in turn — so `line` and `sourceSpan` are always
+    // present here. Their absent sides are kept for parity with the shape every
+    // other converter has to handle.
+    /* c8 ignore next */
     ...(node.line !== undefined ? { line: node.line } : {}),
     ...(node.sourceSpan !== undefined
       ? {
@@ -428,7 +434,8 @@ function flowStartOf(node: ISamchonGraphTrace.INode): ISamchonGraphTour.INode {
               : {}),
           },
         }
-      : {}),
+      : /* c8 ignore next */
+        {}),
     // `runTrace` only sets `signature` on `path` nodes, which the tour never
     // reads; its `start` never carries one.
     /* c8 ignore next */
@@ -621,6 +628,9 @@ function computeCentrality(graph: SamchonGraphMemory): Map<string, number> {
   const raw = new Map<string, number>();
   for (const candidate of candidates) {
     const load = Math.max(
+      // Every candidate's reach was computed in the loop above, so the fallback
+      // never fires; it is here so the map lookup cannot widen the type.
+      /* c8 ignore next */
       (reaches.get(candidate.id) ?? 0) / reachMax,
       candidate.fanIn / fanInMax,
     );
@@ -1080,6 +1090,10 @@ function nearbyAnchorsOf(
     // of the tour already said.
     const anchors: ISamchonGraphTour.IAnchor[] = [];
     const named = new Set<string>([node.name]);
+    // The tour always asks `details` for neighbors, so `dependedOnBy` and
+    // `dependsOn` are always assigned (possibly to an empty array); `calls`,
+    // `implementedBy` and `types` are assigned only when they are non-empty.
+    /* c8 ignore next 6 */
     for (const ref of [
       ...(node.dependedOnBy ?? []),
       ...(node.calls ?? []),
@@ -1143,6 +1157,9 @@ function testAnchorsOf(
       const node = graph.node(edge.from);
       if (node === undefined || !isTestPath(node.file)) continue;
       near.push({
+        // Every id here is a tour seed's or a flow-reached node's, so the
+        // subject always resolves in this same graph.
+        /* c8 ignore next */
         proximity: sharedPathDepth(subject?.file ?? "", node.file),
         anchors: [
           ...anchorFromNode("test coverage", graphNodeOf(graph, node)),

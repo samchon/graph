@@ -48,21 +48,34 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   const ts = await sessionOf(["--mode", "static", "--cwd", root, "--language", "typescript"]);
   TestValidator.predicate(
     "a single-language session names that language in the tool description",
-    ts.description.includes("Inspect the TypeScript compiler graph"),
+    ts.description.includes("Answer a TypeScript question"),
   );
   TestValidator.predicate(
     "a single-language session names that language in the session instructions",
-    ts.instructions.includes("graph of your TypeScript"),
+    ts.instructions.includes("compiler-built TypeScript graph contract"),
+  );
+  // §4a: Codex weighs the first 512 characters of the server instructions, so
+  // they open with what the tool is and what it answers, before any contract
+  // language. §4c: typia caps the tool description at 1,024 characters and
+  // rejects the build past it, so the request menu is the only thing competing
+  // for that budget.
+  TestValidator.predicate(
+    "the instructions say what the tool is inside the first 512 characters",
+    ts.instructions.slice(0, 512).includes("inspect_code_graph"),
+  );
+  TestValidator.predicate(
+    "the tool description fits the schema budget",
+    ts.description.length <= 1_024,
   );
 
   const mixed = await sessionOf(["--mode", "static", "--cwd", root]);
   TestValidator.predicate(
     "a multi-language session falls back to the generic name in the tool description",
-    mixed.description.includes("Inspect the code compiler graph"),
+    mixed.description.includes("Answer a code question"),
   );
   TestValidator.predicate(
     "a multi-language session falls back to the generic name in the session instructions",
-    mixed.instructions.includes("graph of your code"),
+    mixed.instructions.includes("compiler-built code graph contract"),
   );
 
   // A pre-built dump (`--graph-file`) resolves the language from the dump
@@ -80,7 +93,7 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   const served = await sessionOf(["--graph-file", graphFile]);
   TestValidator.predicate(
     "a graph-file session names the language recorded in the dump",
-    served.description.includes("Inspect the TypeScript compiler graph"),
+    served.description.includes("Answer a TypeScript question"),
   );
 
   // Without `--cwd`, the resident source falls back to the server process's
@@ -88,7 +101,7 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   const implicitCwd = await sessionOf(["--mode", "static", "--language", "typescript"], root);
   TestValidator.predicate(
     "an implicit cwd still resolves the active language",
-    implicitCwd.description.includes("Inspect the TypeScript compiler graph"),
+    implicitCwd.description.includes("Answer a TypeScript question"),
   );
 
   // Exercise startServer's `once` memoizer on the `--graph-file` source: call the
@@ -115,9 +128,11 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
         undefined,
         { timeout: 120_000 },
       );
+      // The result ships once now (§4j): `structuredContent` and no text copy.
       TestValidator.predicate(
         "a graph-file session answers from the memoized graph",
-        (result.content?.length ?? 0) > 0,
+        (result.structuredContent as { result?: { type?: string } } | undefined)
+          ?.result?.type === "overview",
       );
     }
   } finally {

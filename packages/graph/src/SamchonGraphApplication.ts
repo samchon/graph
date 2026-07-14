@@ -1,5 +1,6 @@
 import { AsyncSamchonGraphSource } from "./AsyncSamchonGraphSource";
-import { RESULT_AUDIT, RESULT_AUDIT_ESCAPE } from "./operations/resultAudit";
+import { RESULT_AUDIT } from "./operations/RESULT_AUDIT";
+import { RESULT_AUDIT_ESCAPE } from "./operations/RESULT_AUDIT_ESCAPE";
 import { resultNext } from "./operations/resultNext";
 import { runDetails } from "./operations/runDetails";
 import { runEntrypoints } from "./operations/runEntrypoints";
@@ -42,17 +43,13 @@ export class SamchonGraphApplication implements ISamchonGraphApplication {
     // a developer on a cold checkout can leave without paying for an index
     // they said they did not need.
     if (props.request.type === "escape") {
-      const result = this.escape(props.request.reason);
-      if (props.request.nextStep !== undefined) {
-        result.nextStep = props.request.nextStep;
-      }
       return {
         audit: RESULT_AUDIT_ESCAPE,
         next: resultNext(
           "outside",
           "The caller chose to leave the graph, so this call carries no graph facts.",
         ),
-        result,
+        result: this.escape(props.request.reason, props.request.nextStep),
       };
     }
     const graph = await this.load();

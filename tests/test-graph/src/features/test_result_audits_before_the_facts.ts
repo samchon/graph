@@ -20,6 +20,15 @@ import { ContractGraph } from "../internal/ContractGraph";
  * evidence first, instruction second is the whole rule — but the stop-or-continue
  * decision belongs to `next`, so the audit never contradicts a partial result
  * that legitimately asks for one more request.
+ *
+ * And it says only what *this* index established. The reference this is ported
+ * from has one lane and it is a type-checking compiler, so its audit could swear
+ * the facts were "taken back to the type-checked program" with nothing "matched,
+ * ranked, guessed, or inferred". This graph has no compiler. Copying that
+ * sentence would have broken the one rule the whole payload rests on — the audit
+ * has to be *true* — and a model told a compiler resolved a fact, finding a
+ * parsed one, has been lied to inside the payload that swore it had nothing
+ * guessed in it. Which is the directive again, wearing the audit's clothes.
  */
 export const test_result_audits_before_the_facts = async () => {
   const app = ContractGraph.createApplication();
@@ -30,34 +39,52 @@ export const test_result_audits_before_the_facts = async () => {
     Object.keys(overview),
     ["audit", "next", "result"],
   );
-  TestValidator.equals(
-    "a result assembled from graph nodes audits clean",
-    overview.audit,
-    RESULT_AUDIT,
-  );
   TestValidator.equals("the overview is the whole answer", overview.next.action, "answer");
+
+  // The contract fixture is a static parse, and the audit says so. It does not
+  // claim a language server resolved anything, because none did.
+  TestValidator.equals(
+    "a result audits against the index that actually built it",
+    overview.audit,
+    RESULT_AUDIT("static"),
+  );
+  TestValidator.predicate(
+    "and a parsed index never claims a compiler resolved it",
+    !/compiler|type-checked|checker/i.test(RESULT_AUDIT("static")),
+  );
+  TestValidator.predicate(
+    "a language-server index says so, because there really was one",
+    RESULT_AUDIT("lsp").includes("the language server's own index of this project"),
+  );
+  TestValidator.predicate(
+    "and a hybrid index claims neither of the two for all of it",
+    RESULT_AUDIT("hybrid").includes("the languages one is installed for"),
+  );
 
   // The audit states its evidence before it instructs, and the instruction it
   // does give hands the stop rule to `next` rather than claiming it.
-  TestValidator.predicate(
-    "the audit says what was checked before it says what to do",
-    RESULT_AUDIT.indexOf("AUDITED BEFORE RETURNING") <
-      RESULT_AUDIT.indexOf("Trust every fact it gives"),
-  );
-  TestValidator.predicate(
-    "the audit defers the stop rule to next",
-    RESULT_AUDIT.includes("Re-call the graph only when `next` says inspect"),
-  );
-  // The line that was measured, put back, and measured again: it cost four cells
-  // out of four, and it is not coming back.
-  TestValidator.predicate(
-    "the audit never insults the reader for checking",
-    !/psychosis|arrogance|sacred/i.test(RESULT_AUDIT),
-  );
+  for (const lane of ["lsp", "static", "hybrid"] as const) {
+    const audit = RESULT_AUDIT(lane);
+    TestValidator.predicate(
+      `the ${lane} audit says what was checked before it says what to do`,
+      audit.indexOf("AUDITED BEFORE RETURNING") <
+        audit.indexOf("Trust every fact it gives"),
+    );
+    TestValidator.predicate(
+      `the ${lane} audit defers the stop rule to next`,
+      audit.includes("Re-call the graph only when `next` says inspect"),
+    );
+    // The line that was measured, put back, and measured again: it cost four
+    // cells out of four, and it is not coming back.
+    TestValidator.predicate(
+      `the ${lane} audit never insults the reader for checking`,
+      !/psychosis|arrogance|sacred/i.test(audit),
+    );
+  }
 
   // An escape runs no graph operation and returns no node, span, edge, or step.
-  // It has nothing to have audited, and a payload that swears it holds no matched
-  // or inferred fact must not itself be one.
+  // It has nothing to have audited, and a payload that swears it holds no ranked
+  // or guessed-at fact must not itself be one.
   const escape = await ContractGraph.call(app, {
     type: "escape",
     reason: "The next evidence is a function's body, which the graph does not carry.",

@@ -1,4 +1,4 @@
-/** What to do with a compiler-derived graph result. */
+/** What to do with an index-derived graph result. */
 export interface ISamchonGraphNext {
   /**
    * What to do with this result:

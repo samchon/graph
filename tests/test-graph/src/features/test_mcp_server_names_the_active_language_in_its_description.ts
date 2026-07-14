@@ -52,7 +52,7 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   );
   TestValidator.predicate(
     "a single-language session names that language in the session instructions",
-    ts.instructions.includes("compiler-built TypeScript graph contract"),
+    ts.instructions.includes("resolved TypeScript graph contract"),
   );
   // §4a: Codex weighs the first 512 characters of the server instructions, so
   // they open with what the tool is and what it answers, before any contract
@@ -75,7 +75,7 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
   );
   TestValidator.predicate(
     "a multi-language session falls back to the generic name in the session instructions",
-    mixed.instructions.includes("compiler-built code graph contract"),
+    mixed.instructions.includes("resolved code graph contract"),
   );
 
   // A pre-built dump (`--graph-file`) resolves the language from the dump

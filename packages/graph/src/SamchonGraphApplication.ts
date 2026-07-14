@@ -56,29 +56,29 @@ export class SamchonGraphApplication implements ISamchonGraphApplication {
     switch (props.request.type) {
       case "entrypoints": {
         const r = runEntrypoints(graph, props.request);
-        return { audit: RESULT_AUDIT, next: r.next, result: r.result };
+        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
       }
       case "lookup": {
         const r = runLookup(graph, props.request);
-        return { audit: RESULT_AUDIT, next: r.next, result: r.result };
+        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
       }
       case "trace": {
         const r = runTrace(graph, props.request);
-        return { audit: RESULT_AUDIT, next: r.next, result: r.result };
+        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
       }
       case "details": {
         const r = runDetails(graph, props.request);
-        return { audit: RESULT_AUDIT, next: r.next, result: r.result };
+        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
       }
       case "overview": {
         const r = runOverview(graph, props.request);
-        return { audit: RESULT_AUDIT, next: r.next, result: r.result };
+        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
       }
       case "tour": {
         // The tour ranks against the question, and the question is `props`
         // — the caller wrote it once, at the top, in the user's words.
         const r = runTour(graph, props.request, props.question);
-        return { audit: RESULT_AUDIT, next: r.next, result: r.result };
+        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
       }
       default:
         props.request satisfies never;

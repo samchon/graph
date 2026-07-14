@@ -24,6 +24,7 @@ export * from "./LANGUAGE_SPECS";
 export * from "./languageIdOf";
 export * from "./languageOf";
 export * from "./markClosures";
+export * from "./markIgnored";
 export * from "./overrideEdges";
 export * from "./reexportsOf";
 export * from "./refreshLanguageSession";

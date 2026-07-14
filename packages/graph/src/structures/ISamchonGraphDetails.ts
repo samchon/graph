@@ -21,7 +21,7 @@ export interface ISamchonGraphDetails {
    *
    * A name the graph knows twice is not a name the graph does not know: two
    * classes called `Workbench` are two facts, and answering "unknown" to a
-   * handle the checker resolved twice sends the caller to the files for what is
+   * handle the index resolved twice sends the caller to the files for what is
    * already here. Re-call `details` with the `id` of the one the question
    * means.
    */

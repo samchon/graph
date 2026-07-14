@@ -38,8 +38,8 @@ export interface ISamchonGraphDump {
   edges: ISamchonGraphDump.IEdge[];
 
   /**
-   * Fused compiler and plugin diagnostics, when diagnostics were collected.
-   * Absent when the dump was built without a diagnostics pass.
+   * What the language server said about the source while it indexed it. Absent
+   * when the dump was built without one — a static parse has nobody to ask.
    */
   diagnostics?: ISamchonGraphDiagnostic[];
 

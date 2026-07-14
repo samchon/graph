@@ -81,17 +81,39 @@ export const test_resident_graph_source_refreshes_after_file_edits = async () =>
     nodeNames(afterEdits).includes("SecondHelper"),
   );
 
-  // Edit an existing file's content without adding or removing any file: the
-  // file count stays identical, so staleness can only be detected by finding
-  // this one file's mtime changed against the last snapshot. A forced future
-  // mtime keeps this deterministic regardless of filesystem clock resolution.
+  // §1c: the audit that rides on every result swears the facts were resolved
+  // "for the snapshot this call synced to", and that sentence is only true if
+  // the server can actually tell that the snapshot moved. This is the edit that
+  // proves it: the same file, rewritten to the SAME BYTE LENGTH, with its mtime
+  // put back exactly where it was. Nothing about the file's metadata changed —
+  // not its count, not its size, not its timestamp. Only its contents did.
+  //
+  // A freshness check built on mtime (or on mtime plus size) misses this edit
+  // and serves a graph of code that no longer exists, under an audit that swears
+  // it is current. A content hash cannot.
   const bPath = path.join(root, "src", "b.ts");
-  fs.writeFileSync(bPath, "export function editedAgain(): void {}\n");
-  const future = new Date(Date.now() + 60_000);
-  fs.utimesSync(bPath, future, future);
+  const original = fs.readFileSync(bPath, "utf8");
+  // Pin the timestamp to a fixed instant on both sides of the edit, so the
+  // "nothing about the metadata moved" claim below is exact rather than a race
+  // against the filesystem's clock resolution.
+  const pinned = new Date(2020, 0, 1);
+  fs.utimesSync(bPath, pinned, pinned);
+  await source.load();
+  const before = fs.statSync(bPath);
+
+  const head = "export function edited2(): void {}\n";
+  fs.writeFileSync(bPath, `${head}${" ".repeat(original.length - head.length)}`);
+  fs.utimesSync(bPath, pinned, pinned);
+  const after = fs.statSync(bPath);
+  TestValidator.equals(
+    "the edit left the file's size and timestamp byte-identical",
+    [after.size, after.mtimeMs],
+    [before.size, before.mtimeMs],
+  );
+
   const afterContentOnlyEdit = await source.load();
   TestValidator.predicate(
-    "an in-place edit with no count change still forces a refresh",
+    "a same-tick, same-size edit still forces a refresh",
     nodeNames(afterContentOnlyEdit).includes("SecondHelper"),
   );
 

@@ -1,8 +1,8 @@
-import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { ISamchonGraphDump, ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
 import { GraphLanguage } from "../typings";
-import { walkSourceFiles } from "../utils/fs";
+import { readText, walkSourceFiles } from "../utils/fs";
 import { allExtensions } from "./allExtensions";
 import { buildLspGraph } from "./buildLspGraph";
 import { staticGraphParts } from "./staticGraphParts";
@@ -28,7 +28,7 @@ export function createResidentGraphSource(
         dump: ISamchonGraphDump;
         sessions: Map<GraphLanguage, ILspSession>;
         staticLanguages: GraphLanguage[];
-        mtimes: Map<string, number>;
+        hashes: Map<string, string>;
       }
     | undefined;
 
@@ -42,7 +42,7 @@ export function createResidentGraphSource(
       dump: result.dump,
       sessions,
       staticLanguages,
-      mtimes: snapshotMtimes(root, options),
+      hashes: snapshotSources(root, options),
     };
   }
 
@@ -91,7 +91,7 @@ export function createResidentGraphSource(
       diagnostics,
       warnings,
     };
-    current.mtimes = snapshotMtimes(root, options);
+    current.hashes = snapshotSources(root, options);
   }
 
   return {
@@ -100,7 +100,7 @@ export function createResidentGraphSource(
         await buildFresh();
         return state!.dump;
       }
-      if (isStale(state.mtimes, root, options)) await refreshStale(state);
+      if (isStale(state.hashes, root, options)) await refreshStale(state);
       return state.dump;
     },
     async close(): Promise<void> {
@@ -122,38 +122,50 @@ function staticLanguagesOf(
   ) as GraphLanguage[];
 }
 
-function snapshotMtimes(
+/**
+ * What every source file on disk contains right now, as a content hash per file.
+ *
+ * The audit that rides on every result says the facts were resolved "for the
+ * snapshot this call synced to", and that sentence is only true if the server
+ * can actually tell that the snapshot moved. A timestamp cannot: a same-tick
+ * edit — an editor writing a file twice inside one clock resolution, a script
+ * rewriting a file to the same length — leaves the mtime where it was, and the
+ * graph then answers a question about code that no longer exists while swearing
+ * it is current (§1c).
+ *
+ * So freshness is the file's content, hashed, and nothing else. It costs one
+ * read of each source file per call, which is what the walk already pays, and it
+ * cannot be wrong.
+ */
+function snapshotSources(
   root: string,
   options: IBuildGraphOptions,
-): Map<string, number> {
+): Map<string, string> {
   const files = walkSourceFiles(root, {
     extensions: allExtensions(options.languages),
     maxFiles: options.maxFiles,
   });
-  const snapshot = new Map<string, number>();
+  const snapshot = new Map<string, string>();
   for (const abs of files) {
-    // A file removed between the walk and the stat is simply absent from the
+    const text = readText(abs);
+    // A file removed between the walk and the read is simply absent from the
     // snapshot, which itself is a difference the next comparison will catch.
-    /* c8 ignore start */
-    try {
-      snapshot.set(abs, fs.statSync(abs).mtimeMs);
-    } catch {
-      // ignored -- see comment above
-    }
-    /* c8 ignore stop */
+    /* c8 ignore next */
+    if (text === undefined) continue;
+    snapshot.set(abs, createHash("sha256").update(text).digest("hex"));
   }
   return snapshot;
 }
 
 function isStale(
-  previous: Map<string, number>,
+  previous: Map<string, string>,
   root: string,
   options: IBuildGraphOptions,
 ): boolean {
-  const current = snapshotMtimes(root, options);
+  const current = snapshotSources(root, options);
   if (current.size !== previous.size) return true;
-  for (const [file, mtime] of current) {
-    if (previous.get(file) !== mtime) return true;
+  for (const [file, hash] of current) {
+    if (previous.get(file) !== hash) return true;
   }
   return false;
 }

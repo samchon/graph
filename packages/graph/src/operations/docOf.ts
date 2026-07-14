@@ -24,19 +24,18 @@ export function docOf(
   const lines =
     evidence === undefined ? undefined : fileLines(project, evidence.file);
   if (lines === undefined || evidence === undefined) return undefined;
-  // The line above the declaration. A span that points past the end of its file
-  // is a span the source has moved out from under, and there is nothing above a
-  // line the file does not have — so nothing is read, rather than the last line
-  // of the file being read as if it were.
+  // The lines above the declaration, walked up past the blanks. A span that
+  // points past the end of its file names lines the file does not have; those
+  // read as blank and the walk keeps climbing, so a stale span finds the doc of
+  // whatever declaration the file actually ends with — or, far more often,
+  // nothing, because the last line of a file is rarely `*/`.
+  const lineAt = (at: number): string => (lines[at] ?? "").trim();
   let index = evidence.startLine - 2;
-  if (index >= lines.length) return undefined;
-  // From here `index` only ever decreases, and it starts inside the file, so
-  // every line it names is one the file has.
-  while (index >= 0 && lines[index]!.trim() === "") index--;
-  if (index < 0 || !lines[index]!.trim().endsWith("*/")) return undefined;
+  while (index >= 0 && lineAt(index) === "") index--;
+  if (index < 0 || !lineAt(index).endsWith("*/")) return undefined;
   const block: string[] = [];
   for (; index >= 0; index--) {
-    const line = lines[index]!.trim();
+    const line = lineAt(index);
     block.unshift(line);
     if (line.startsWith("/**")) break;
     if (line.startsWith("/*")) return undefined;

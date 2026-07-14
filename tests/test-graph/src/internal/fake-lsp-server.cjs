@@ -475,17 +475,29 @@ function handle(message) {
       // (`aabb<Unclosed;` — the skip gives up and returns the text
       // unchanged), line 500: beyond the file so the classifier sees no
       // source text.
-      return respond(message.id, [
+      // A repeated `(from, to, kind)` triple keeps the FIRST source-order
+      // evidence, so a target that is invoked twice can only ever show its first
+      // call site. Two targets are therefore split out of the shared list:
+      //
+      // - `count` (line 12) is referenced ONLY by the generic-argument
+      //   invocation, so nothing collides with it and its classification is
+      //   observable at its own line.
+      // - `fn` (line 7) is referenced by BOTH invocations, so the surviving
+      //   evidence pins the first-wins contract.
+      const base = [
         at(1),
         at(2),
         at(2, 0, 11),
         at(13, 1, 5),
         at(14, 2, 6),
         at(15, 6, 10),
-        at(16, 0, 4),
         at(17, 0, 4),
         at(500),
-      ]);
+      ];
+      const target = message.params.position.line;
+      if (target === 12) return respond(message.id, [at(16, 0, 4)]);
+      if (target === 7) return respond(message.id, [...base, at(16, 0, 4)]);
+      return respond(message.id, base);
     }
     if (options.dualOwner) {
       const uri = message.params.textDocument.uri;

@@ -662,7 +662,10 @@ function computeCentrality(graph: SamchonGraphMemory): Map<string, number> {
  *
  * So the surface is scored by the surface, and the body is answered when it is
  * asked for. The specific-flow lane wants the closures and gets them; the
- * orientation lane wants the surface and gets that.
+ * orientation lane wants the surface and gets that. Judged by the answer rather
+ * than the token count, the gated tour is the better one: it reaches the
+ * broadcaster and the driver, where the ungated tour reached `limit` and
+ * `offset`.
  */
 function isTourSeed(
   graph: SamchonGraphMemory,

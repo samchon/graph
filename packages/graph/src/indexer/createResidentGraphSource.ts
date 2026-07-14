@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { ISamchonGraphDump, ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
+import {
+  ISamchonGraphDiagnostic,
+  ISamchonGraphDump,
+  ISamchonGraphEdge,
+  ISamchonGraphNode,
+} from "../structures";
 import { GraphLanguage } from "../typings";
 import { readText, walkSourceFiles } from "../utils/fs";
 import { allExtensions } from "./allExtensions";
@@ -49,12 +54,13 @@ export function createResidentGraphSource(
   async function refreshStale(current: NonNullable<typeof state>): Promise<void> {
     const nodes: ISamchonGraphNode[] = [];
     const edges: ISamchonGraphEdge[] = [];
-    // `diagnostics` is genuinely optional: an all-static build has no language
-    // server to report any, and its dump omits the field entirely. Asserting it
-    // here threw on the first edit of a project with no language server
-    // installed — the graph never re-synced, and the audit's "the snapshot this
-    // call synced to" became a lie backed by a crash.
-    const diagnostics = [...(current.dump.diagnostics ?? [])];
+    // Rebuilt from what the servers say now, exactly like the nodes and the
+    // edges. Carrying the previous dump's array forward made `diagnostics` a
+    // function of the session's edit history — a deleted file's findings survived
+    // forever, a re-analysed file's were duplicated on every refresh — inside a
+    // dump whose own contract is that it is a function of its source (§6a). The
+    // session holds them per file now, and a `didClose` drops the file's.
+    const diagnostics: ISamchonGraphDiagnostic[] = [];
     const warnings: string[] = [];
 
     for (const [language, session] of current.sessions) {

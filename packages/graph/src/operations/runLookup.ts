@@ -245,7 +245,12 @@ function exactCodeTerms(query: string): string[] {
 function requestedSymbolKinds(query: string): Set<string> {
   const kinds = new Set<string>();
   const lc = query.toLowerCase();
-  if (/\bmethods?\b/.test(lc)) kinds.add("method");
+  // A `constructor` is a method reported by a language server that spells it
+  // differently, so a question asking for methods is asking for it too.
+  if (/\bmethods?\b/.test(lc)) {
+    kinds.add("method");
+    kinds.add("constructor");
+  }
   if (/\bfunctions?\b/.test(lc)) {
     kinds.add("function");
     kinds.add("method");

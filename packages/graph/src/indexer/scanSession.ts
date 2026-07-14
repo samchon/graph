@@ -294,7 +294,16 @@ export async function scanSession(
   return {
     nodes,
     edges,
-    diagnostics: [...session.diagnostics],
+    // What the server currently says about the files that currently exist, in a
+    // stable order: two builds of one unedited checkout must agree (§6a), and a
+    // language server publishes its notifications in whatever order it pleases.
+    // By file, then by line; a sort is stable, so two findings on one line keep
+    // the order the server gave them for that document.
+    diagnostics: [...session.diagnostics.keys()]
+      .sort((a, b) => Number(a > b) - Number(a < b))
+      .flatMap((file) =>
+        [...session.diagnostics.get(file)!].sort((a, b) => a.line - b.line),
+      ),
     warnings: [
       ...(referenceLimit !== undefined && nodes.length > referenceLimit
         ? [`${language}: reference collection capped at ${referenceLimit} symbols.`]

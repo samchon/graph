@@ -15,5 +15,18 @@ export interface ILspSession {
   root: string;
   language: GraphLanguage;
   opened: Map<string, { abs: string; text: string }>;
-  diagnostics: ISamchonGraphDiagnostic[];
+
+  /**
+   * What the server currently says about each open document, keyed by
+   * project-relative path.
+   *
+   * A map, not a log. `textDocument/publishDiagnostics` is a *replacement* for
+   * the document it names — that is what the protocol says the notification
+   * means — so a session that appended every notification to one array kept a
+   * deleted file's errors forever and duplicated a re-analysed file's on every
+   * refresh. The dump would then be a function of the session's edit history
+   * rather than of the source on disk, which is exactly the property §6a says a
+   * graph must have before it can be cached, diffed, or trusted.
+   */
+  diagnostics: Map<string, ISamchonGraphDiagnostic[]>;
 }

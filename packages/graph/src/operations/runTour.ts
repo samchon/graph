@@ -64,15 +64,35 @@ const EXECUTION_KINDS = new Set<string>([
   "renders",
   "references",
 ]);
+// `field` and `constructor` are here for the same reason they are in the node
+// kinds at all: a language server reports them where a TypeScript checker
+// reports a property and a method, and they are the same declarations. A Java
+// class's constructor is the entry a request runs through; a Kotlin class's
+// field is a property with another name. Leaving them out of this set was not
+// parity with the reference — the reference has no such kinds to leave out — it
+// was a whole vocabulary of declarations that could never be toured.
 const TOUR_SEED_KINDS = new Set<string>([
   "class",
   "function",
   "method",
+  "constructor",
   "property",
+  "field",
   "variable",
   "module",
   "namespace",
   "enum",
+]);
+/** The member kinds that are a value, not a body: seeds only when they run something. */
+const DATA_MEMBER_KINDS = new Set<string>(["property", "field"]);
+/** The kinds a flow can start from: something with a body to walk into. */
+const EXECUTABLE_SEED_KINDS = new Set<string>([
+  "function",
+  "method",
+  "constructor",
+  "property",
+  "field",
+  "variable",
 ]);
 
 /**
@@ -674,7 +694,8 @@ function isTourSeed(
   return (
     node.closure !== true &&
     TOUR_SEED_KINDS.has(node.kind) &&
-    (node.kind !== "property" || executionDegree(graph, node.id).out > 0) &&
+    (!DATA_MEMBER_KINDS.has(node.kind) ||
+      executionDegree(graph, node.id).out > 0) &&
     !node.external &&
     !node.ignored &&
     node.evidence !== undefined &&
@@ -684,7 +705,7 @@ function isTourSeed(
 
 function flowSeedIdsOf(seeds: ISamchonGraphNode[]): string[] {
   const executable = seeds.filter((node) =>
-    ["function", "method", "property", "variable"].includes(node.kind),
+    EXECUTABLE_SEED_KINDS.has(node.kind),
   );
   const source = executable.length === 0 ? seeds : executable;
   return source.map((node) => node.id);

@@ -248,7 +248,7 @@ async function openLanguageSession(
   // Normal callers remain unlimited. Bounded callers such as the real-server
   // experiment can opt into a request deadline.
   const client = new LspClient(command, args, options.lspTimeoutMs);
-  const diagnostics: ISamchonGraphDiagnostic[] = [];
+  const diagnostics = new Map<string, ISamchonGraphDiagnostic[]>();
   let lastProgressAt = 0;
   client.onNotification("$/progress", () => {
     lastProgressAt = Date.now();
@@ -261,7 +261,15 @@ async function openLanguageSession(
     /* c8 ignore next */
     if (!isSubPath(root, file)) return;
     const rel = projectRelative(root, file);
-    appendAll(diagnostics, typed.diagnostics.map((diagnostic) => convertDiagnostic(rel, diagnostic)));
+    // A `publishDiagnostics` notification is a *replacement* for the document it
+    // names — that is what the protocol says it means — so it replaces. Appending
+    // instead kept a re-analysed file's findings twice and a deleted file's
+    // forever, and the dump became a function of the session's edit history
+    // rather than of the source on disk.
+    diagnostics.set(
+      rel,
+      typed.diagnostics.map((diagnostic) => convertDiagnostic(rel, diagnostic)),
+    );
   });
 
   try {

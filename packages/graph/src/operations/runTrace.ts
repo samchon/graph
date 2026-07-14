@@ -347,7 +347,14 @@ const MAX_JUNCTIONS = 4;
 /** How much a shared symbol looks like a seam rather than a shared utility. */
 function junctionRank(junction: ISamchonGraphTrace.IJunction): number {
   let rank = 0;
-  if (junction.kind === "variable" || junction.kind === "property") rank += 3;
+  // State, in every vocabulary the languages give it: a `field` is a `property`
+  // reported by a language server that spells it differently.
+  if (
+    junction.kind === "variable" ||
+    junction.kind === "property" ||
+    junction.kind === "field"
+  )
+    rank += 3;
   if (junction.fromStart.kind === "accesses") rank += 2;
   if (junction.fromTarget.kind === "accesses") rank += 2;
   return rank;
@@ -513,13 +520,18 @@ function traceEndpointRank(graph: SamchonGraphMemory, id: string): number {
   if (node === undefined) return 9;
   if (isTestPath(node.file)) return 6;
   switch (node.kind) {
+    // A `constructor` is a `method` reported by a language server that spells it
+    // differently, and a `field` is a `property`. They rank where their
+    // TypeScript-checker counterparts rank, not in the unknown-kind bucket.
     case "function":
     case "method":
+    case "constructor":
     case "class":
       return 0;
     case "variable":
       return 1;
     case "property":
+    case "field":
       return 2;
     case "interface":
     case "type":

@@ -121,5 +121,26 @@ export const test_resident_graph_source_refreshes_after_file_edits = async () =>
   const settled = await source.load();
   TestValidator.equals("settled dump languages", [...settled.languages].sort(), ["python", "typescript"]);
 
+  // §6a, on the one part of the dump a resident session is tempted to accumulate.
+  // A `publishDiagnostics` notification is a *replacement* for the document it
+  // names, so the session holds them per file: what the server says about a file
+  // it re-analysed replaces what it said before, and what it said about a file
+  // that is gone from disk goes with the file. Appending instead made
+  // `diagnostics` a function of the session's edit history — `src/e.ts` was
+  // deleted several loads ago, and its findings would still be here.
+  const diagnosed = [...new Set((settled.diagnostics ?? []).map((d) => d.file))];
+  TestValidator.equals(
+    "a deleted file's diagnostics go with the file",
+    diagnosed.filter((file) => file.endsWith("e.ts")),
+    [],
+  );
+  TestValidator.equals(
+    "and a re-analysed file's are replaced, not doubled",
+    (settled.diagnostics ?? []).length,
+    new Set(
+      (settled.diagnostics ?? []).map((d) => `${d.file}:${d.line}:${d.code}`),
+    ).size,
+  );
+
   await source.close();
 };

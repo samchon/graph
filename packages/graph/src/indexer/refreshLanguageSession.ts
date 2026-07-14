@@ -22,7 +22,11 @@ export async function refreshLanguageSession(
   diagnostics: ISamchonGraphDiagnostic[];
   warnings: string[];
 }> {
-  session.diagnostics.length = 0;
+  // The session's diagnostics are not cleared: `publishDiagnostics` replaces a
+  // document's findings, and a server republishes only what it re-analysed, so
+  // what it said about an untouched file still stands. What it said about a file
+  // that no longer exists does not, and `reconcileFiles` drops that with the
+  // `didClose` it sends.
   await reconcileFiles(session, files);
   return scanSession(session, options);
 }
@@ -39,6 +43,9 @@ async function reconcileFiles(session: ILspSession, files: readonly string[]): P
       textDocument: { uri: fileUri(path.join(session.root, rel)) },
     });
     session.opened.delete(rel);
+    // A file that is gone from disk has no findings, and the dump must not carry
+    // the ones it had.
+    session.diagnostics.delete(rel);
   }
   for (const abs of files) {
     const text = readText(abs);

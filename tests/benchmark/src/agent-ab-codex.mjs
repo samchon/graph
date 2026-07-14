@@ -43,6 +43,7 @@ import {
   resolvePrompt,
   runPrepare,
 } from "./lib.mjs";
+import { promptForArm } from "./prompt.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 const repoKey = args.repo ?? CORPUS[0].name;
@@ -206,7 +207,7 @@ const thunks = arms.flatMap((arm) =>
     let attempts = 0;
     for (let attempt = 0; attempt <= MAX_RUN_RETRIES; attempt++) {
       attempts = attempt + 1;
-      m = await runCodex(question, arm.home, arm.name, r + 1);
+      m = await runCodex(promptForArm(question, arm.name), arm.home, arm.name, r + 1);
       if (Number(m?.tokens ?? 0) > 0) break;
       if (attempt < MAX_RUN_RETRIES) {
         console.log(`  ${arm.name.padEnd(8)} run ${r + 1}: [FAILED]${m.error ? ` ${m.error}` : ""} retrying (${attempt + 1}/${MAX_RUN_RETRIES})`);

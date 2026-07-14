@@ -8,7 +8,12 @@ import {
   LspClient,
 } from "../lsp";
 import { isTestPath } from "../operations/isTestPath";
-import { ISamchonGraphDiagnostic, ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
+import {
+  ISamchonGraphDiagnostic,
+  ISamchonGraphEdge,
+  ISamchonGraphEvidence,
+  ISamchonGraphNode,
+} from "../structures";
 import { GraphLanguage, GraphNodeKind } from "../typings";
 import { projectRelative } from "../utils/fs";
 import { fileFromUri, fileUri, isSubPath } from "../utils/path";
@@ -176,15 +181,17 @@ export async function scanSession(
         ref.range.end.line !== start.line,
         accessText,
       );
-      const evidence = {
+      // Coordinates, and nothing else. `accessText` is the classifier's hint —
+      // `referenceKind` reads it, and the dotted-JSX check below reads it — and
+      // it stays a local: evidence is what a reader cites, and a source snippet
+      // on every edge is the redundant payload §6b exists to keep off the wire.
+      // The graph does not carry the text inside a span; it carries the span.
+      const evidence: ISamchonGraphEvidence = {
         file: rel,
         startLine: start.line + 1,
         startCol: start.character + 1,
         endLine: ref.range.end.line + 1,
         endCol: ref.range.end.character + 1,
-        // Not part of the public evidence contract; an internal hint
-        // `accessAliasesFor` reads via `edgeEvidenceTextOf`.
-        ...(accessText !== undefined ? { text: accessText } : {}),
       };
       const emit = (kindToEmit: ISamchonGraphEdge["kind"]): void => {
         edges.push({ from: owner.id, to: target.id, kind: kindToEmit, evidence });
@@ -371,10 +378,11 @@ function tailFrom(
 }
 
 // The dotted access expression ending exactly at a reference's end column
-// (e.g. `this._internals.foo` for a reference to `foo`), when the reference
-// sits at the end of one. This is the source-text hint `accessAliasesFor`
-// resolves into alternate access-path aliases; it is not part of the public
-// evidence contract.
+// (e.g. `this._internals.foo` for a reference to `foo`), when the reference sits
+// at the end of one. It is a classification hint and stays one: `referenceKind`
+// reads it to tell a member read (`obj.method`) from a bare reference, and the
+// dotted-JSX check reads it to know a namespaced tag is also an access. It never
+// reaches an edge — the graph carries the span, not the text inside it.
 function accessExpressionAt(
   line: string | undefined,
   endCol: number,

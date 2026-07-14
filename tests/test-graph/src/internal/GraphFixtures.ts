@@ -352,7 +352,6 @@ const createContractFixture = () => {
     startCol: 1,
     endLine: line,
     endCol: text.length + 1,
-    text,
   });
   const node = (id, kind, name, line, extra = {}) => ({
     id,

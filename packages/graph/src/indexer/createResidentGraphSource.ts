@@ -49,7 +49,12 @@ export function createResidentGraphSource(
   async function refreshStale(current: NonNullable<typeof state>): Promise<void> {
     const nodes: ISamchonGraphNode[] = [];
     const edges: ISamchonGraphEdge[] = [];
-    const diagnostics = [...current.dump.diagnostics!];
+    // `diagnostics` is genuinely optional: an all-static build has no language
+    // server to report any, and its dump omits the field entirely. Asserting it
+    // here threw on the first edit of a project with no language server
+    // installed — the graph never re-synced, and the audit's "the snapshot this
+    // call synced to" became a lie backed by a crash.
+    const diagnostics = [...(current.dump.diagnostics ?? [])];
     const warnings: string[] = [];
 
     for (const [language, session] of current.sessions) {

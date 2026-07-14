@@ -38,6 +38,7 @@ import {
   resolvePrompt,
   runPrepare,
 } from "./lib.mjs";
+import { promptForArm } from "./prompt.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 void here;
@@ -243,6 +244,14 @@ if (withCfg) {
               args: [graphLauncher, "--graph-file", graphFile],
             },
           };
+  // §5h, the other half: hold the session open until the server has answered the
+  // handshake. A server reported `pending` at session init is a server the model
+  // starts its turn without — measured on rxjs, that arm opened with two `find`
+  // commands and read one file six times (1,376,491 tokens) where the same build
+  // with the tool in hand made three graph calls and touched no file (519,946).
+  // Applied to every configured server, comparators included: §0's "never
+  // handicap a comparator", enforced on the host.
+  for (const server of Object.values(serverCfg)) server.alwaysLoad = true;
   fs.writeFileSync(withCfg, JSON.stringify({ mcpServers: serverCfg }));
 }
 if (emptyCfg) fs.writeFileSync(emptyCfg, JSON.stringify({ mcpServers: {} }));
@@ -282,7 +291,7 @@ const thunks = arms.flatMap((arm) =>
     let attempts = 0;
     for (let attempt = 0; attempt <= MAX_RUN_RETRIES; attempt++) {
       attempts = attempt + 1;
-      m = await runClaude(question, arm.cfg, arm.name, r + 1);
+      m = await runClaude(promptForArm(question, arm.name), arm.cfg, arm.name, r + 1);
       // A 529-overload reports subtype "success" with is_error and zero tokens,
       // so only a zero-token run is invalid and worth retrying.
       if (Number(m?.tokens ?? 0) > 0) break;
@@ -399,7 +408,19 @@ async function runClaude(prompt, cfg, armName, runNumber) {
   const claudeHome = prepareClaudeHome(path.join(traceDir, `${base}.home`));
   const result = await spawnAsync("claude", claudeArgs, {
     cwd: repoDir,
-    env: { ...process.env, HOME: claudeHome, USERPROFILE: claudeHome },
+    env: {
+      ...process.env,
+      HOME: claudeHome,
+      USERPROFILE: claudeHome,
+      // §5h: the client is part of the measurement. Recent Claude Code defers
+      // MCP tool schemas behind a `ToolSearch` step, so a model that has not
+      // searched yet holds a tool *name* and no schema — and answers from the
+      // shell. That is a property of the client, not of the tool under test, and
+      // it lands hardest on whichever server was slowest to connect. Pinned off
+      // for every arm, this one and every comparator alike, so what is measured
+      // is the tool rather than which server the host finished connecting first.
+      ENABLE_TOOL_SEARCH: "false",
+    },
     input: delayedInput ? streamJsonUserInput(prompt) : prompt,
     inputDelayMs: delayedInput ? claudeStartupGraceMs : 0,
     windowsHide: true,

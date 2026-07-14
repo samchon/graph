@@ -250,12 +250,28 @@ function directMentions(graph: SamchonGraphMemory, query: string): string[] {
   return [...handles];
 }
 
+/**
+ * An id-shaped token in the question, when it names a *declaration*.
+ *
+ * The kinds are enumerated, not matched with a wildcard. A `file`, a `module`, a
+ * `namespace`, a `package` or an `external_symbol` has an id too, and a wildcard
+ * admits them — which turns "look at `src/order.ts`" into a resolved mention,
+ * and a resolved mention into a tour seed. A mention is the symbol the *question
+ * named*, and a container is not one.
+ *
+ * `field` and `constructor` are here because they are declarations this graph
+ * holds and the reference's TypeScript-only checker does not; nothing else is.
+ */
 function normalizeNodeIdToken(raw: string): string | undefined {
   const value = raw
     .trim()
     .replace(/^[`"'([{]+/, "")
     .replace(/[`"',.;:)\]}]+$/, "");
-  return /^[^\s#]+#[^\s#]+:[a-z_]+$/.test(value) ? value : undefined;
+  return /^[^\s#]+#[^\s#]+:(class|interface|type|enum|function|method|variable|property|field|constructor)$/.test(
+    value,
+  )
+    ? value
+    : undefined;
 }
 
 function normalizeHandle(raw: string): string | undefined {

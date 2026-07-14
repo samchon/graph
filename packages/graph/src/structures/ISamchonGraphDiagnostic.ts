@@ -1,11 +1,13 @@
 /**
- * A compiler or plugin diagnostic, fused onto the graph so an edit-triage query
- * can name the owning symbol of an error.
+ * A diagnostic the language server published while it was indexing, carried on
+ * the dump beside the facts it was reported against.
  *
- * The language server's semantic pass contributes numeric-coded diagnostics;
- * `@samchon/lint` rules and transform plugins (typia, nestia, …) contribute
- * `plugin`/`lint` findings whose `code` is a string. `node` is set when the
- * finding's position was attributed to a graph node.
+ * It states what the server said, and nothing more. It used to also promise an
+ * `origin` lane and the `node` the finding was "fused onto" — two facts no
+ * producer ever set and no consumer ever read, in a package whose whole premise
+ * is that a returned fact was resolved rather than claimed. A schema that
+ * promises a fact the code does not honour is the same lie as a payload that
+ * does, and it is cheaper to delete than to defend.
  */
 export interface ISamchonGraphDiagnostic {
   /** Project-relative path of the file the diagnostic is reported in. */
@@ -17,7 +19,7 @@ export interface ISamchonGraphDiagnostic {
   /** 1-based column of the diagnostic, when known. */
   column?: number;
 
-  /** Numeric `tsc` code, or string rule id for a lint/plugin finding. */
+  /** The server's own code for the finding, or its source when it gave none. */
   code: number | string;
 
   /** The human-readable diagnostic message. */
@@ -25,10 +27,4 @@ export interface ISamchonGraphDiagnostic {
 
   /** Severity, when the producer distinguishes it. */
   severity?: "error" | "warning" | "info" | "hint";
-
-  /** Which lane produced the diagnostic. */
-  origin?: "tsc" | "plugin" | "lint";
-
-  /** Node id the diagnostic was fused onto, when resolved. */
-  node?: string;
 }

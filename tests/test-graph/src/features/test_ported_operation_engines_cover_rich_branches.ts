@@ -46,7 +46,6 @@ const createRichFixture = () => {
     startCol: 1,
     endLine,
     endCol: 1,
-    text: "",
   });
   const node = (
     id: string,

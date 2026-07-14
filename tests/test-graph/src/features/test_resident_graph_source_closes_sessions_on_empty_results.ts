@@ -31,6 +31,27 @@ export const test_resident_graph_source_closes_sessions_on_empty_results = async
   const dump = await source.load();
   TestValidator.equals("an all-empty lsp result falls back to static", dump.indexer, "static");
 
+  // An all-static build has no language server to publish a diagnostic, so its
+  // dump omits `diagnostics` entirely — the field is genuinely optional. The
+  // refresh path used to assert it, and threw on the first edit of any project
+  // with no language server installed: the graph never re-synced, and the audit's
+  // "the snapshot this call synced to" became a lie backed by a crash. It is the
+  // commonest configuration there is, and it is the one that was broken.
+  TestValidator.equals(
+    "an all-static dump carries no diagnostics field",
+    dump.diagnostics,
+    undefined,
+  );
+  fs.writeFileSync(
+    path.join(root, "src", "a.ts"),
+    "export function edited(): void {}\n",
+  );
+  const refreshed = await source.load();
+  TestValidator.predicate(
+    "and an edit to it refreshes the graph rather than throwing",
+    refreshed.nodes.some((node) => node.name === "edited"),
+  );
+
   // Closing must be a no-op here: the empty-result session was already
   // closed during the build, so nothing was kept alive to close again.
   await source.close();

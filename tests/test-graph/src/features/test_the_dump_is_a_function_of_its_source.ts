@@ -71,6 +71,19 @@ const scenario_a_span_does_not_carry_the_file_the_reader_already_holds = (
     [],
   );
 
+  // A span is coordinates. Nothing else may ride it — least of all the source
+  // text inside it, which is the one thing the graph exists not to carry, and
+  // which would be paid for on every edge in the document.
+  const COORDINATES = ["file", "startLine", "startCol", "endLine", "endCol"];
+  const extras = [
+    ...dump.nodes.flatMap((node) => [node.evidence, node.implementation]),
+    ...dump.edges.map((edge) => edge.evidence),
+  ]
+    .filter((span) => span !== undefined)
+    .flatMap((span) => Object.keys(span))
+    .filter((key) => !COORDINATES.includes(key));
+  TestValidator.equals("a span carries coordinates and nothing else", extras, []);
+
   // And the reader gets the whole evidence back, file included.
   const graph = SamchonGraphMemory.from(dump);
   const create = graph.node("src/order.ts#OrderService.create:method");

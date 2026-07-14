@@ -25,7 +25,6 @@ const evidence = (file: string, startLine: number, endLine: number) => ({
   startCol: 1,
   endLine,
   endCol: 1,
-  text: "",
 });
 
 const node = (
@@ -263,13 +262,13 @@ const scenario_details_edges = async () => {
     // variable whose evidence file is empty → fileLines file==="" guard
     (() => {
       const n = node("noFile#blank:variable", "variable", "blank", "", 1, 3);
-      n.evidence = { file: "", startLine: 1, startCol: 1, endLine: 3, endCol: 1, text: "" };
+      n.evidence = { file: "", startLine: 1, startCol: 1, endLine: 3, endCol: 1 };
       return n;
     })(),
     // variable with no endLine → objectLiteralMembers early return
     (() => {
       const n = node("src/n.ts#noEnd:variable", "variable", "noEnd", "src/n.ts", 1, 1);
-      n.evidence = { file: "src/n.ts", startLine: 1, startCol: 1, endLine: undefined as unknown as number, endCol: 1, text: "" };
+      n.evidence = { file: "src/n.ts", startLine: 1, startCol: 1, endLine: undefined as unknown as number, endCol: 1 };
       return n;
     })(),
     // oversized span → objectLiteralMembers size guard

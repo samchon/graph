@@ -5,13 +5,15 @@ import { GraphLanguage } from "../typings";
 import { walkSourceFiles } from "../utils/fs";
 import { allExtensions } from "./allExtensions";
 import { buildLspGraph } from "./buildLspGraph";
-import { buildStaticGraph } from "./buildStaticGraph";
+import { staticGraphParts } from "./buildStaticGraph";
 import { dedupeEdges } from "./dedupeEdges";
 import { dedupeNodes } from "./dedupeNodes";
+import { finalizeGraph } from "./finalizeGraph";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { ILspSession } from "./ILspSession";
 import { IResidentGraphSource } from "./IResidentGraphSource";
 import { refreshLanguageSession } from "./refreshLanguageSession";
+import { wireEdges, wireNodes } from "./wireSpans";
 
 // Languages that fell back to static parsing (no LSP session to hold) are
 // simply re-parsed from scratch on every refresh; `buildStaticGraph` has no
@@ -61,7 +63,7 @@ export function createResidentGraphSource(
       warnings.push(...result.warnings);
     }
     if (current.staticLanguages.length > 0) {
-      const fallback = buildStaticGraph({
+      const fallback = staticGraphParts({
         ...options,
         cwd: root,
         mode: "static",
@@ -69,15 +71,22 @@ export function createResidentGraphSource(
       });
       nodes.push(...fallback.nodes);
       edges.push(...fallback.edges);
-      // buildStaticGraph always populates warnings (possibly empty).
-      warnings.push(...fallback.warnings!);
+      warnings.push(...fallback.warnings);
     }
 
+    const finalized = finalizeGraph(
+      root,
+      walkSourceFiles(root, {
+        extensions: allExtensions(options.languages),
+        maxFiles: options.maxFiles,
+      }),
+      nodes,
+      edges,
+    );
     current.dump = {
       ...current.dump,
-      generatedAt: new Date().toISOString(),
-      nodes: dedupeNodes(nodes),
-      edges: dedupeEdges(edges),
+      nodes: wireNodes(dedupeNodes(finalized.nodes)),
+      edges: wireEdges(dedupeEdges(finalized.edges)),
       diagnostics,
       warnings,
     };

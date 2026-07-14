@@ -136,9 +136,19 @@ export async function scanSession(
         ref.range.start.line,
         ref.range.start.character,
       );
-      const owner = ownerAt(owners, start.line + 1);
-      if (owner === undefined || owner.id === target.id) continue;
       const startLineText = fileLines?.[start.line];
+      // §2j: a reference no declaration encloses is a top-level statement, and
+      // it belongs to the module — the file node every top-level declaration
+      // already hangs off. Without it a module's own wiring (a router mounting
+      // its handlers at load) is attributed to nobody, and the codebase reads
+      // back as disconnected islands. An import or a re-export is not the module
+      // running the symbol, so those lines are not module scope.
+      const owner =
+        ownerAt(owners, start.line + 1) ??
+        (isModuleImportLine(startLineText)
+          ? undefined
+          : moduleOwnerOf(rel, target.language));
+      if (owner === undefined || owner.id === target.id) continue;
       const endLineText =
         ref.range.end.line === start.line
           ? startLineText
@@ -421,6 +431,17 @@ function referenceKind(
       ? "instantiates"
       : "calls";
   }
+  // §2j: a callable passed as a value (`app.use(handler)`) is how an
+  // event-driven codebase wires itself, and no call edge crosses it — the name
+  // sits in an argument list with no `(` of its own, so it used to read as a
+  // bare reference and `trace` returned an empty path between two symbols that
+  // plainly reach each other. The passing site invokes the passed function.
+  if (
+    (targetKind === "function" || targetKind === "method") &&
+    isArgumentPosition(before, after)
+  ) {
+    return "calls";
+  }
   switch (targetKind) {
     case "class":
     case "interface":
@@ -441,6 +462,40 @@ function referenceKind(
         ? "accesses"
         : "references";
   }
+}
+
+// The name is bounded by an argument list on both sides — `(name,`, `, name)`,
+// `(name)` — which is what a value handed to a call looks like, and what a name
+// in a type position or an object literal never looks like.
+function isArgumentPosition(before: string, after: string): boolean {
+  const opens = before.endsWith("(") || before.endsWith(",");
+  const closes = after.startsWith(")") || after.startsWith(",");
+  return opens && closes;
+}
+
+// The module a top-level statement belongs to: the file container node every
+// top-level declaration already hangs off, named by the file's own path.
+function moduleOwnerOf(
+  file: string,
+  language: GraphLanguage,
+): ISamchonGraphNode {
+  return {
+    id: file,
+    kind: "file",
+    language,
+    name: file,
+    file,
+    external: false,
+  };
+}
+
+// An import or a re-export names a symbol in order to bring it in, which is not
+// the module running it.
+const MODULE_IMPORT_LINE =
+  /^(?:import\b|export\s+(?:\*|\{)|from\b|use\b|using\b|#include\b|package\b|require\b)/;
+
+function isModuleImportLine(line: string | undefined): boolean {
+  return line !== undefined && MODULE_IMPORT_LINE.test(line.trim());
 }
 
 // A JSX element name immediately follows `<` (opening) or `</` (closing), and

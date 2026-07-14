@@ -2,16 +2,21 @@ import { GraphLanguage } from "../typings/GraphLanguage";
 import { ISamchonGraphDiagnostic } from "./ISamchonGraphDiagnostic";
 import { ISamchonGraphEdge } from "./ISamchonGraphEdge";
 import { ISamchonGraphNode } from "./ISamchonGraphNode";
+import { ISamchonGraphSpan } from "./ISamchonGraphSpan";
 
 /**
- * The whole-graph export `samchongraph dump` writes and the MCP server loads — the
- * wire contract between the Go fact-builder and the code graph engine.
+ * The whole-graph export `samchon-graph dump` writes and the MCP server loads —
+ * the wire contract between the indexer and the code graph engine.
  *
  * It is the complete graph with none of the per-response caps the MCP tools
  * apply: every node and edge the build resolved. The server parses each changed
- * native snapshot (typia-validated) into an in-memory resident graph and reuses
- * that warm model while project inputs stay unchanged; the bundled 3D viewer
- * reduces the same dump.
+ * snapshot (typia-validated) into an in-memory resident graph and reuses that
+ * warm model while project inputs stay unchanged.
+ *
+ * It is a pure function of its source: two dumps of the same unedited checkout
+ * are byte-identical, so a graph can be cached, diffed, and trusted. Nothing
+ * here records when it was built — a timestamp would move under an unchanged
+ * source, which is exactly the property a cache and a diff depend on.
  *
  * Paths in `project` are absolute; `file` fields on nodes, edges, and
  * diagnostics are project-relative.
@@ -23,17 +28,14 @@ export interface ISamchonGraphDump {
   /** The source languages present in this dump. */
   languages: GraphLanguage[];
 
-  /** ISO timestamp of when the dump was generated. */
-  generatedAt: string;
-
   /** Which indexing strategy produced the graph. */
   indexer: "lsp" | "static" | "hybrid";
 
   /** Every node the build recorded. */
-  nodes: ISamchonGraphNode[];
+  nodes: ISamchonGraphDump.INode[];
 
   /** Every edge the build resolved. */
-  edges: ISamchonGraphEdge[];
+  edges: ISamchonGraphDump.IEdge[];
 
   /**
    * Fused compiler and plugin diagnostics, when diagnostics were collected.
@@ -43,4 +45,37 @@ export interface ISamchonGraphDump {
 
   /** Non-fatal problems encountered while building the graph. */
   warnings?: string[];
+}
+
+export namespace ISamchonGraphDump {
+  /**
+   * A node as the indexer sends it: the graph node, minus the file paths inside
+   * its spans, which the loader puts back from the node's own `file`.
+   *
+   * A node's declaration span is in the node's file, always — the path in the
+   * span was the same string a second time, once per node. It is the reader's
+   * to reconstruct, and {@link SamchonGraphMemory} does, so nothing downstream
+   * of the loader sees a span without its file.
+   */
+  export interface INode
+    extends Omit<ISamchonGraphNode, "evidence" | "implementation"> {
+    /** Declaration span; its file is this node's `file`. */
+    evidence?: ISamchonGraphSpan;
+
+    /**
+     * Implementation span. This one keeps its file when it has one: an
+     * implementation genuinely can live in another file from its declaration.
+     */
+    implementation?: ISamchonGraphSpan;
+  }
+
+  /**
+   * An edge as the indexer sends it. Its span is in the file its `from` id
+   * names — the id is `path#Qualified.Name:kind` — so the path rode the wire a
+   * second time on every edge, and edges outnumber nodes several times over.
+   */
+  export interface IEdge extends Omit<ISamchonGraphEdge, "evidence"> {
+    /** Expression span; its file is the one embedded in `from`. */
+    evidence?: ISamchonGraphSpan;
+  }
 }

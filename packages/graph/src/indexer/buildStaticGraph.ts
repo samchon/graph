@@ -8,11 +8,15 @@ import {
 import { GraphEdgeKind, GraphLanguage, GraphNodeKind } from "../typings";
 import { projectRelative, readLines, walkSourceFiles } from "../utils/fs";
 import { decoratorsAbove } from "./decoratorsAbove";
+import { finalizeGraph } from "./finalizeGraph";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { allExtensions, languageOf } from "./languages";
+import { dedupeEdges } from "./dedupeEdges";
+import { dedupeNodes } from "./dedupeNodes";
 import { overrideEdges } from "./overrideEdges";
 import { resolveType } from "./resolveType";
 import { supertypesOf } from "./supertypesOf";
+import { wireEdges, wireNodes } from "./wireSpans";
 
 interface IDeclaration {
   node: ISamchonGraphNode;
@@ -21,9 +25,52 @@ interface IDeclaration {
   ownerId?: string;
 }
 
+/** The static parse of a project, before the graph is finalized and wired. */
+export interface IStaticGraphParts {
+  root: string;
+  files: string[];
+  languages: GraphLanguage[];
+  nodes: ISamchonGraphNode[];
+  edges: ISamchonGraphEdge[];
+  warnings: string[];
+}
+
 const EXTERNAL_MODULE_LIMIT = 1_500;
 
-export function buildStaticGraph(options: IBuildGraphOptions = {}): ISamchonGraphDump {
+/**
+ * The static graph as a dump: parse, derive the facts §4k asks of an indexer
+ * with no type checker, then drop from every span the file the reader can
+ * reconstruct (§6b).
+ */
+export function buildStaticGraph(
+  options: IBuildGraphOptions = {},
+): ISamchonGraphDump {
+  const parts = staticGraphParts(options);
+  const finalized = finalizeGraph(
+    parts.root,
+    parts.files,
+    parts.nodes,
+    parts.edges,
+  );
+  return {
+    project: parts.root,
+    languages: parts.languages,
+    indexer: "static",
+    nodes: wireNodes(dedupeNodes(finalized.nodes)),
+    edges: wireEdges(dedupeEdges(finalized.edges)),
+    warnings: parts.warnings,
+  };
+}
+
+/**
+ * The static parse on its own, with spans intact and the §4k derivation not yet
+ * run: what a hybrid build merges into its language-server slice before
+ * finalizing the two together, so the export surface is followed once across the
+ * whole project rather than once per lane.
+ */
+export function staticGraphParts(
+  options: IBuildGraphOptions = {},
+): IStaticGraphParts {
   const root = path.resolve(options.cwd ?? process.cwd());
   const files = walkSourceFiles(root, {
     extensions: allExtensions(options.languages),
@@ -116,6 +163,13 @@ export function buildStaticGraph(options: IBuildGraphOptions = {}): ISamchonGrap
         });
       }
     }
+    // §2j: a call written at the top level of a module belongs to the module.
+    // Without it, everything a module wires up at load — a router mounting its
+    // handlers, a registry registering its providers — is attributed to nobody,
+    // and an event-driven codebase reads back as a set of disconnected islands.
+    for (const edge of moduleScopeEdges(rel, lines, declarations, byName)) {
+      edges.push(edge);
+    }
   }
 
   edges.push(...overrideEdges(nodes, edges));
@@ -125,15 +179,59 @@ export function buildStaticGraph(options: IBuildGraphOptions = {}): ISamchonGrap
   }
 
   return {
-    project: root,
+    root,
+    files,
     languages: [...new Set(files.map(languageOf))],
-    generatedAt: new Date().toISOString(),
-    indexer: "static",
-    nodes: dedupeNodes(nodes),
-    edges: dedupeEdges(edges),
+    nodes,
+    edges,
     warnings,
   };
 }
+
+// The identifiers a module names in its own top-level statements, attributed to
+// the module (file) node — the container every top-level declaration already
+// hangs off. Import and re-export lines are excluded: naming a symbol in order
+// to import it is not the module running it.
+function moduleScopeEdges(
+  file: string,
+  lines: readonly string[],
+  declarations: readonly IDeclaration[],
+  byName: Map<string, ISamchonGraphNode[]>,
+): ISamchonGraphEdge[] {
+  const covered = new Set<number>();
+  for (const declaration of declarations) {
+    if (declaration.ownerId !== undefined) continue;
+    for (let i = declaration.startIndex; i <= declaration.endIndex; i++) {
+      covered.add(i);
+    }
+  }
+  const out: ISamchonGraphEdge[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < lines.length; i++) {
+    if (covered.has(i)) continue;
+    const text = lines[i]!;
+    if (MODULE_IMPORT_LINE.test(text.trim())) continue;
+    const source: ISamchonGraphNode = {
+      id: file,
+      kind: "file",
+      language: "unknown",
+      name: file,
+      file,
+      external: false,
+      evidence: { file, startLine: i + 1, endLine: i + 1 },
+    };
+    for (const edge of dependencyEdges(source, text, byName)) {
+      const key = `${edge.kind}\0${edge.to}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(edge);
+    }
+  }
+  return out;
+}
+
+const MODULE_IMPORT_LINE =
+  /^(?:import\b|export\s+(?:\*|\{)|from\b|use\b|using\b|#include\b|package\b|require\b)/;
 
 function declarationsOf(
   file: string,
@@ -392,7 +490,9 @@ function dependencyEdges(
       ? target.kind === "class"
         ? "instantiates"
         : "calls"
-      : "type_ref";
+      : isHandOff(body, match.index, cursor, target)
+        ? "calls"
+        : "type_ref";
     const prev = best.get(target.id);
     if (prev === undefined || (prev.kind === "type_ref" && kind !== "type_ref")) {
       best.set(target.id, { target, kind });
@@ -408,6 +508,30 @@ function dependencyEdges(
     });
   }
   return out;
+}
+
+// §2j: a callable passed as a value — `app.use(handler)`, `queue.on("job", run)`
+// — is how an event-driven codebase wires itself, and the call graph cannot see
+// it: the name sits in an argument list with no `(` of its own, so it read as a
+// type reference and `trace` returned an empty path between two symbols that
+// plainly reach each other. The passing site invokes the passed function, so it
+// gets the edge that says so.
+//
+// The shape is the whole test: the name is bounded by an argument list on both
+// sides (`(name,` / `, name)` / `(name)`), and it resolves to something
+// callable. A name in a type position or an object literal never matches it.
+function isHandOff(
+  body: string,
+  start: number,
+  afterName: number,
+  target: ISamchonGraphNode,
+): boolean {
+  if (target.kind !== "function" && target.kind !== "method") return false;
+  let before = start - 1;
+  while (before >= 0 && (body[before] === " " || body[before] === "\t")) before--;
+  const opens = body[before] === "(" || body[before] === ",";
+  const closes = body[afterName] === ")" || body[afterName] === ",";
+  return opens && closes;
 }
 
 function inheritanceEdges(
@@ -452,21 +576,6 @@ function externalNode(
   };
   cache.set(key, node);
   return node;
-}
-
-function dedupeNodes(nodes: ISamchonGraphNode[]): ISamchonGraphNode[] {
-  const map = new Map<string, ISamchonGraphNode>();
-  for (const node of nodes) map.set(node.id, node);
-  return [...map.values()];
-}
-
-function dedupeEdges(edges: ISamchonGraphEdge[]): ISamchonGraphEdge[] {
-  const map = new Map<string, ISamchonGraphEdge>();
-  for (const edge of edges) map.set(
-    `${edge.kind}\0${edge.from}\0${edge.to}`,
-    edge,
-  );
-  return [...map.values()];
 }
 
 function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {

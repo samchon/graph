@@ -10,7 +10,7 @@ catalogs:
     ttsc: &ttsc ^0.18.4
     "@ttsc/lint": *ttsc
     "@ttsc/unplugin": *ttsc
-    typia: &typia ^13.0.2
+    typia: &typia ^13.1.0
     "@typia/interface": *typia
     "@typia/mcp": *typia
   bundler:

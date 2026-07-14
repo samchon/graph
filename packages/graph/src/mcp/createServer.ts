@@ -10,11 +10,30 @@ import { ISamchonGraphApplication } from "../structures";
 import { GraphLanguage } from "../typings";
 import { languageDisplayNameOf } from "./languageDisplayNameOf";
 
+/**
+ * Build the MCP server for a graph.
+ *
+ * `typia.llm.application` reflects {@link ISamchonGraphApplication} into the
+ * tool's input and output schemas and its argument validator, with no
+ * hand-written schema: the interface's JSDoc becomes the handshake
+ * instructions, the method's becomes the tool description, and every property's
+ * becomes the description of that field — including `audit`, whose JSDoc is how
+ * a caller learns what the server checked before it answered.
+ *
+ * The result ships once. Below `@typia/mcp` 13.1.0 a tool that declares an
+ * output schema answered with `structuredContent` *and* the same JSON
+ * serialized into a text block: the payload crossed the wire twice, a client
+ * counted both copies against its tool-result cap, and a 30 KB tour arrived as
+ * 60 KB, blew the cap, and was spilled to a file the model then shelled out to
+ * read back. From 13.1.0 the structured result is the only copy (§4j), and the
+ * text fallback is an opt-in this server does not take.
+ */
 export function createServer(
   graph: AsyncSamchonGraphSource,
   version: string,
   languages: readonly GraphLanguage[] = [],
 ): McpServer {
+  void version;
   const controller: ILlmController<ISamchonGraphApplication> = {
     protocol: "class",
     name: "samchon-graph",
@@ -24,7 +43,7 @@ export function createServer(
     ),
     execute: new SamchonGraphApplication(graph),
   };
-  return createMcpServer(controller, version);
+  return createMcpServer(controller);
 }
 
 // The description text embeds a `__LANG__` placeholder (see

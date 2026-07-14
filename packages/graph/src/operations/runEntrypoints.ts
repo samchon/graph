@@ -1,18 +1,17 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import {
-  ISamchonGraphDecorator,
   ISamchonGraphEdge,
   ISamchonGraphEntrypoints,
   ISamchonGraphNode,
 } from "../structures";
-import {
-  bound,
-  isStructural,
-  publicEvidence,
-  resolveHandle,
-  signatureOf,
-} from "./common";
+import { bound } from "./bound";
+import { decoratorsOf } from "./decoratorsOf";
+import { edgeEvidenceOf } from "./edgeEvidenceOf";
+import { isStructural } from "./isStructural";
+import { resolveGraphHandle } from "./resolveHandle";
+import { IRunnerOutput, resultNext } from "./resultNext";
 import { runLookup } from "./runLookup";
+import { signatureOf } from "./signatureOf";
 
 const DEFAULT_LIMIT = 4;
 const MAX_LIMIT = 8;
@@ -29,7 +28,7 @@ const MAX_SEEDS = 3;
 export function runEntrypoints(
   graph: SamchonGraphMemory,
   props: ISamchonGraphEntrypoints.IRequest,
-): ISamchonGraphEntrypoints {
+): IRunnerOutput<ISamchonGraphEntrypoints> {
   const query = props.query.trim();
   const limit = bound(props.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
   const neighborLimit = bound(
@@ -39,11 +38,15 @@ export function runEntrypoints(
     MAX_NEIGHBORS,
   );
 
-  const lookupResult = runLookup(graph, { type: "lookup", query, limit });
+  const lookupResult = runLookup(graph, {
+    type: "lookup",
+    query,
+    limit,
+  }).result;
   const hits = lookupResult.hits.map((hit) => ({ ...hit }));
 
   const mentions = directMentions(graph, query).map((handle) => {
-    const resolved = resolveHandle(graph, handle);
+    const resolved = resolveGraphHandle(graph, handle, 6);
     const mention: ISamchonGraphEntrypoints.IMention = { handle };
     if (resolved.node !== undefined)
       mention.node = nodeOf(graph, resolved.node);
@@ -71,12 +74,7 @@ export function runEntrypoints(
   const neighborhood: ISamchonGraphEntrypoints.INeighborhood[] = [];
   for (const seed of seeds.slice(0, MAX_SEEDS)) {
     const outgoing = refs(graph, graph.outgoing(seed.id), "to", neighborLimit);
-    const incoming = refs(
-      graph,
-      graph.incoming(seed.id),
-      "from",
-      neighborLimit,
-    );
+    const incoming = refs(graph, graph.incoming(seed.id), "from", neighborLimit);
     if (outgoing.truncated || incoming.truncated) truncated = true;
     neighborhood.push({
       ...nodeOf(graph, seed),
@@ -85,13 +83,26 @@ export function runEntrypoints(
     });
   }
 
+  const resolved =
+    hits.length > 0 || mentions.some((mention) => mention.node !== undefined);
   return {
-    type: "entrypoints",
-    query,
-    hits,
-    mentions,
-    neighborhood,
-    ...(truncated ? { truncated: true } : {}),
+    result: {
+      type: "entrypoints",
+      hits,
+      mentions,
+      neighborhood,
+      ...(truncated ? { truncated: true } : {}),
+    },
+    next: resolved
+      ? resultNext(
+          "inspect",
+          "These are first-pass handles: one trace or details on the handle the question targets completes the answer.",
+          "trace",
+        )
+      : resultNext(
+          "outside",
+          "No entry handle resolved for this query, so the graph holds nothing for it.",
+        ),
   };
 }
 
@@ -127,7 +138,8 @@ function refOf(
   };
   if (node.evidence?.startLine !== undefined)
     out.line = node.evidence.startLine;
-  if (edge.evidence !== undefined) out.evidence = publicEvidence(edge.evidence);
+  const evidence = edgeEvidenceOf(edge);
+  if (evidence !== undefined) out.evidence = evidence;
   return out;
 }
 
@@ -137,8 +149,10 @@ function refs(
   end: "to" | "from",
   limit: number,
 ): { items: ISamchonGraphEntrypoints.IReference[]; truncated: boolean } {
-  const ranked: Array<{ ref: ISamchonGraphEntrypoints.IReference; rank: number }> =
-    [];
+  const ranked: Array<{
+    ref: ISamchonGraphEntrypoints.IReference;
+    rank: number;
+  }> = [];
   const seen = new Set<string>();
   let available = 0;
   for (const edge of edges) {
@@ -185,6 +199,7 @@ function edgeKindRank(kind: string): number {
       return 1;
     case "accesses":
     case "renders":
+    case "references":
       return 2;
     case "tests":
       return 3;
@@ -242,14 +257,5 @@ function normalizeHandle(raw: string): string | undefined {
   const value = raw.trim();
   return /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(value)
     ? value
-    : undefined;
-}
-
-/** Decorator facts already captured on a node, omitted when absent. */
-function decoratorsOf(
-  node: ISamchonGraphNode,
-): ISamchonGraphDecorator[] | undefined {
-  return node.decorators !== undefined && node.decorators.length > 0
-    ? node.decorators
     : undefined;
 }

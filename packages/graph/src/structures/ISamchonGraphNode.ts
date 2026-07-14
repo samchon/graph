@@ -37,15 +37,14 @@ export interface ISamchonGraphNode {
   file: string;
 
   /**
-   * True when the declaration lives outside the workspace (a dependency). The
-   * graph keeps the leaf as a named endpoint but does not walk into its
-   * internals.
+   * True when the declaration is outside the workspace (a dependency): kept as
+   * a named endpoint, not walked into.
    */
   external: boolean;
 
   /**
    * True when `file` is git-ignored generated code (a Prisma client, a codegen
-   * output). Projections desurface these so generated nodes do not bury the
+   * output); projections desurface these so generated nodes do not bury the
    * authored graph.
    */
   ignored?: boolean;
@@ -53,13 +52,24 @@ export interface ISamchonGraphNode {
   /** True when the symbol is part of its module's export surface. */
   exported?: boolean;
 
+  /**
+   * True for a declaration made inside another declaration's body: a renderer's
+   * inner `patch`, a callback bound to a const inside a method.
+   *
+   * It is a name the runtime calls, so a trace, a lookup, or a details request
+   * answers with it. An orientation tour does not rank or walk it: a tour is
+   * asked what the project's surface is and how it runs, and a body's inner
+   * functions are neither — letting them into the seed ranking reshuffled which
+   * flows a tour told, and the model went back to the files.
+   */
+  closure?: boolean;
+
   /** Declaration modifiers, when the declaration pass recorded any. */
   modifiers?: SamchonGraphNodeModifier[];
 
   /**
-   * The decorators written on this declaration, in source order, when it has
-   * any: raw decorator facts (`@Controller`, `@Get`) a consumer can interpret
-   * without re-parsing source.
+   * Decorators written on this declaration, in source order: raw facts
+   * (`@Controller`, `@Get`) a consumer interprets without re-parsing source.
    */
   decorators?: ISamchonGraphDecorator[];
 

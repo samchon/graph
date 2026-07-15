@@ -271,8 +271,8 @@ export function runTour(
  * identifiers, and no lexical rule bridges the two: "request handling" is not
  * `handlePayment` and never will be. The server cannot know what the question
  * means, so it cannot know whether it answered it — and the audit riding in the
- * same payload says as much, promising a result with nothing "matched, ranked,
- * or inferred" in it.
+ * same payload says as much, promising a result with nothing "ranked,
+ * summarized, or guessed at on your behalf" in it.
  *
  * So the tour states what it returned, which is a fact, and leaves what to do
  * with it to the reader, which was never the server's to decide. A tour that

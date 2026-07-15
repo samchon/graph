@@ -37,8 +37,8 @@ const DISPATCH_KINDS = new Set<string>(["overrides", "implements"]);
 // stays a leaf and `details` answers `implementedBy` for a caller that wants the
 // list. The cut is the graph's existing definition of a hub (see
 // `isSharedUtility`): across the benchmark corpus it follows 84–100% of dispatch
-// sites per project and refuses only the genuinely polymorphic ones (a 36-way
-// schema interface, a 533-way disposable).
+// sites per project and refuses only the genuinely polymorphic ones (zod's
+// 36-way schema interface, VS Code's 533-way disposable).
 const DISPATCH_HUB = 12;
 
 /**
@@ -177,7 +177,7 @@ export function runTrace(
       // registration put in an array, and no call edge crosses that array. The
       // callers of the target are the way across, and the graph has them, so
       // say which call to make instead of handing back an empty result dressed
-      // as the answer. A tour spent eleven calls finding this out.
+      // as the answer. Excalidraw's tour spent eleven calls finding this out.
       next:
         hops.length > 0
           ? pathNext
@@ -299,8 +299,9 @@ function traceSteps(
  * A call graph cannot cross a callback: the registration hands a listener to an
  * emitter, and `emit()` runs whatever the registration put in an array. But the
  * registration and the emit both reference the emitter, and those are edges the
- * indexer resolved — a component's `componentDidMount` and its store's
- * `emitDurableIncrement` both touch `Store.onDurableIncrementEmitter`, which is
+ * indexer resolved — Excalidraw's `App.componentDidMount` and its
+ * `Store.emitDurableIncrement` both touch `Store.onDurableIncrementEmitter`,
+ * which is
  * the exact seam the path walk stops at.
  *
  * So when the path is empty, name what the two ends share. It is not a path and
@@ -588,8 +589,8 @@ function summary(
  * A call resolved to an abstract method or an interface member lands on a
  * declaration with no body. A forward walk stops there — and the code that
  * executes is one _incoming_ `overrides`/`implements` edge away, which no
- * forward traversal crosses. A framework's whole request pipeline can sit
- * behind one: a base `ContextCreator.createContext` calls the abstract
+ * forward traversal crosses. NestJS's whole request pipeline sits behind one:
+ * `ContextCreator.createContext` calls the abstract
  * `createConcreteContext`, and the guards, pipes and interceptors contexts are
  * its overrides, so the graph said a request reaches an abstract declaration
  * and stops, and the guard it runs was reachable from nothing but its own unit

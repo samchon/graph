@@ -129,8 +129,8 @@ export function runTour(
   // read "the tour didn't surface the request pipeline" and went to the files.
   // Walk the ranked seeds instead, keeping the ones whose trace actually moves,
   // until the tour has its flows.
-  // A flow the tour already told is not a second flow. A library's four public
-  // parse entries — parse, parseAsync, safeParse, safeParseAsync — run the same
+  // A flow the tour already told is not a second flow. zod's four public parse
+  // entries — parse, parseAsync, safeParse, safeParseAsync — run the same
   // chain into the same internals, and the tour spent all four of its slots
   // saying it four times: 18 KB of payload, three quarters of it a repeat, and
   // the rest of the library (schema construction, checks, error formatting)
@@ -179,11 +179,11 @@ export function runTour(
     // A step is prose — `App.render -[calls at App.tsx:2093]-> renderScene` — and
     // it carries the name and the citation but not the *handle*, and the handle
     // is what a second call needs. Holding back the nodes the steps had named
-    // took their ids away with them: Sonnet traced a mutation helper by name,
-    // got the several nodes that name, and re-traced it by id — two calls for
-    // one symbol, four times over in a single tour, which went from five graph
-    // calls to fifteen. What `reached` is for is not the story, which the steps
-    // tell; it is the handles to go on with.
+    // took their ids away with them: Sonnet traced `mutateElement` by name, got
+    // the several nodes that name, and re-traced it by id — two calls for one
+    // symbol, four times over in a single Excalidraw tour, which went from five
+    // graph calls to fifteen. What `reached` is for is not the story, which the
+    // steps tell; it is the handles to go on with.
     primaryFlow.push({
       start: flowStartOf(start),
       steps,
@@ -342,9 +342,9 @@ function tourSeedsOf(
   };
   // A symbol the question names is an entrypoint of the tour, and a name the
   // project declares more than once is not a name the project does not declare.
-  // A validator's question says `schema.parse`; the graph holds three `parse`s,
-  // so the mention came back as candidates rather than a node, and the tour
-  // dropped it and opened on `fromJSONSchema` — the model's first move was to go
+  // Zod's question says `schema.parse`; the graph holds three `parse`s, so the
+  // mention came back as candidates rather than a node, and the tour dropped it
+  // and opened on `fromJSONSchema` — the model's first move was to go
   // and trace `ZodType.parse` itself. The candidates arrive ranked by what the
   // package publishes, and a tour is a ranked product: take the reading the
   // ranking put first, which is the one a reader means.
@@ -519,6 +519,14 @@ function rankedTourSeeds(
  * multiplier and a cap that someone picked while watching a benchmark. Word
  * lists in numeric form. All of it was approximating one question the graph can
  * answer exactly: _if you use what this package publishes, what runs?_
+ *
+ * Personalized PageRank answers it. The walker starts on the export surface —
+ * the symbols the package puts on the wire, members included — and follows the
+ * execution edges, crossing from an abstract declaration to its implementations
+ * the way `runTrace` does. Public entries hold mass because the walk starts on
+ * them; the spine holds mass because every path runs through it. One damping
+ * constant, 0.85, from the literature — the same algorithm aider's repo map
+ * ranks symbols with.
  */
 function tourSeedScore(
   graph: SamchonGraphMemory,
@@ -918,10 +926,10 @@ function matchedTerms(words: string[], terms: string[]): Set<string> {
  * across the question instead of crowding onto its loudest word.
  *
  * It picks `count` of them, not all of them. Ordering every candidate cost
- * O(n²) — on a large repository, where tens of thousands of symbols score above
- * zero, one tour spent six minutes ranking seeds it then threw away, because the
- * caller keeps only the first few. Stopping at `count` makes the cover
- * O(count · n), and the picks it does make are the same ones.
+ * O(n²) — on VS Code, where tens of thousands of symbols score above zero, one
+ * tour spent six minutes ranking seeds it then threw away, because the caller
+ * keeps only the first few. Stopping at `count` makes the cover O(count · n),
+ * and the picks it does make are the same ones.
  */
 function diverseTourSeeds<
   T extends {
@@ -962,7 +970,8 @@ function diverseTourSeeds<
  *
  * `LinearElementEditor.handlePointerMove` and its `...InEditMode` sibling, and
  * `renderNewElementScene` beside its own throttled twin, took four of the five
- * seeds on one edit-pipeline tour. The mutation and history layers the question
+ * seeds on Excalidraw's edit-pipeline tour. The mutation and history layers the
+ * question
  * named took none, and Sonnet spent twenty-two graph calls finding them. A seed
  * that restates a chosen one is a slot spent on a fact the tour already has.
  */
@@ -1141,7 +1150,8 @@ function nearbyAnchorsOf(
   });
 
   // A stage at a time, not a symbol at a time. The list is capped, and taken
-  // symbol by symbol the first one's neighbourhood filled it: a renderer spent
+  // symbol by symbol the first one's neighbourhood filled it: Excalidraw's
+  // renderer spent
   // six of the ten slots on its own callees and types, and the mutation, the
   // history and the collaboration the question named got none.
   const anchors: ISamchonGraphTour.IAnchor[] = [];

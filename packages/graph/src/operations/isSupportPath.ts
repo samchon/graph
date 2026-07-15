@@ -4,7 +4,7 @@ export function isSupportPath(file: string): boolean {
     file === "" ||
     file.startsWith("bundled://") ||
     /(^|\/)(node_modules|vendor|site-packages)\//.test(file) ||
-    /(^|\/)(test|tests|__tests__|spec|specs|sample|samples|fixture|fixtures|__fixtures__|example|examples)\//.test(
+    /(^|\/)(test|tests|__tests__|spec|sample|samples|fixture|fixtures|__fixtures__|example|examples)\//.test(
       file,
     ) ||
     /\.(test|spec)\.[^/]+$/.test(file) ||

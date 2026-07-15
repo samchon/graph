@@ -17,8 +17,8 @@ import { isSupportPath } from "./isSupportPath";
  *   rather than sending the caller back through a lookup.
  * - `renderer.render` — the file's stem and the symbol it declares. It is not a
  *   qualified name, so a suffix match on `.render` finds nothing and the caller
- *   gets an empty result for a symbol the graph holds. A tour spent a trace call
- *   and four file reads on exactly this.
+ *   gets an empty result for a symbol the graph holds. Vue's tour spent a trace
+ *   call and four file reads on exactly this.
  * - A name the project declares more than once, which is not a name the project
  *   does not declare. The candidates come back ranked by what the package
  *   publishes, so the one a caller means is the one it reads first.
@@ -139,7 +139,7 @@ function fileStem(file: string): string {
  * Order candidates by how likely a caller means them: what the package
  * publishes first, then how much of the codebase leans on the node, with test
  * and fixture declarations last. An unranked list hands back whichever
- * declaration the graph happened to visit first — a `render` came back as a
+ * declaration the graph happened to visit first — Vue's `render` came back as a
  * template pre-processor's method — and a caller that trusts the order traces
  * the wrong one.
  */

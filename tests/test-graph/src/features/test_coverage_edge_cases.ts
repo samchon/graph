@@ -189,9 +189,17 @@ export const test_coverage_edge_cases = async () => {
     server: process.execPath,
     serverArgs: [GraphPaths.fakeLspServer, "--special-references"],
   });
+  // `contains` and `exports` are structural: the loader's ownership tree and the
+  // indexer's export surface exist whether or not a single reference resolved.
+  // What is left is the reference edges, and none of these four references is
+  // one the graph may attribute: one lands outside the project, one on the
+  // symbol itself, one past the end of its file, and one in a file the session
+  // never opened.
   TestValidator.equals(
-    "LSP skips outside, self, and ownerless references",
-    specialReferences.edges.filter((edge) => edge.kind !== "contains"),
+    "LSP skips outside, self, out-of-range, and unopened references",
+    specialReferences.edges.filter(
+      (edge) => edge.kind !== "contains" && edge.kind !== "exports",
+    ),
     [],
   );
 
@@ -496,7 +504,7 @@ export const test_coverage_edge_cases = async () => {
   });
   TestValidator.equals("trace reports truncation", truncatedTrace.result.truncated, true);
 
-  for (const aspect of ["layers", "hotspots", "publicApi", "diagnostics"] as const) {
+  for (const aspect of ["layers", "hotspots", "publicApi"] as const) {
     const overview = await app.inspect_code_graph({
       question: `overview ${aspect}`,
       draft: { reason: "single aspect branch.", type: "overview" },
@@ -571,7 +579,6 @@ export const test_coverage_edge_cases = async () => {
   const branchDump: ISamchonGraphDump = {
     project: branchRoot,
     languages: ["typescript"],
-    generatedAt: new Date(0).toISOString(),
     indexer: "static",
     nodes: [
       branchNode(exactId, "class", "Exact", "src/a.ts", {
@@ -637,7 +644,6 @@ export const test_coverage_edge_cases = async () => {
   };
   const branchGraph = SamchonGraphMemory.from(branchDump);
   TestValidator.equals("missing incoming edges default to empty", branchGraph.incoming("absent-node"), []);
-  TestValidator.equals("missing named nodes default to empty", branchGraph.named("absent"), []);
 
   const branchApp = new SamchonGraphApplication(branchGraph);
   const branchDetails = await branchApp.inspect_code_graph({
@@ -681,21 +687,48 @@ export const test_coverage_edge_cases = async () => {
   });
   TestValidator.equals("empty trace handle resolves to no node", (emptyHandleTrace.result as any).start, undefined);
 
-  const fuzzyTrace = await branchApp.inspect_code_graph({
-    question: "fuzzy trace",
-    draft: { reason: "single fuzzy branch.", type: "trace" },
-    review: "single fuzzy branch.",
+  // A model writes a handle the way the result it is remembering read: the file
+  // it came from, then the symbol it declared there. `a.duplicate` is not a
+  // qualified name, so a `.suffix` match finds nothing — the file stem is what
+  // disambiguates the name the project declares twice.
+  const fileQualifiedTrace = await branchApp.inspect_code_graph({
+    question: "file-qualified trace",
+    draft: { reason: "a file stem picks one of two same-named symbols.", type: "trace" },
+    review: "file-qualified branch.",
+    request: { type: "trace", from: "a.duplicate" },
+  });
+  TestValidator.equals(
+    "a file-qualified handle names exactly one node",
+    (fileQualifiedTrace.result as any).start.id,
+    duplicateAId,
+  );
+
+  // §3b: `schema.parse` is how a method call is written — on a value, not on the
+  // type that declares it. There is no `schema` in the graph, so every exact form
+  // misses; the last segment is the member it means.
+  const memberOnValueTrace = await branchApp.inspect_code_graph({
+    question: "member-on-a-value trace",
+    draft: { reason: "a call is written on a value, not on its declaring type.", type: "trace" },
+    review: "member-on-a-value branch.",
+    request: { type: "trace", from: "receiver.plain" },
+  });
+  TestValidator.equals(
+    "a member written on a value resolves to the member",
+    (memberOnValueTrace.result as any).start.id,
+    plainId,
+  );
+
+  // A bare file name is not a symbol handle, and answering with whichever symbol
+  // that file happens to declare would be the graph inventing a belief the caller
+  // did not have. It resolves to nothing, and `next` says to leave.
+  const fileNameTrace = await branchApp.inspect_code_graph({
+    question: "bare file name trace",
+    draft: { reason: "a file name names no symbol.", type: "trace" },
+    review: "bare file name branch.",
     request: { type: "trace", from: "impact.spec.ts" },
   });
-  TestValidator.equals("single fuzzy file suffix resolves", (fuzzyTrace.result as any).start.id, impactId);
-
-  const fuzzyAmbiguousTrace = await branchApp.inspect_code_graph({
-    question: "ambiguous fuzzy trace",
-    draft: { reason: "ambiguous fuzzy branch.", type: "trace" },
-    review: "ambiguous fuzzy branch.",
-    request: { type: "trace", from: "a.ts" },
-  });
-  TestValidator.predicate("ambiguous fuzzy suffix returns candidates", (fuzzyAmbiguousTrace.result as any).candidates.length > 1);
+  TestValidator.equals("a bare file name resolves to no node", (fileNameTrace.result as any).start, undefined);
+  TestValidator.equals("an unresolved start leaves the graph", fileNameTrace.next.action, "outside");
 
   const noPathTrace = await branchApp.inspect_code_graph({
     question: "no path trace",
@@ -774,16 +807,20 @@ export const test_coverage_edge_cases = async () => {
   });
   TestValidator.equals("entrypoints include direct backtick mention", (directEntrypoint.result as any).mentions[0].node.id, exactId);
 
+  // The tour asks for no question of its own: it ranks against the `question`
+  // the caller already wrote, in the user's words. Asking twice loses what it
+  // asks for — a model that has written the question once paraphrases it the
+  // second time, and the mention resolver reads the backticks the user typed.
   const defaultTour = await branchApp.inspect_code_graph({
-    question: "default tour",
+    question: "default tour question branch.",
     draft: { reason: "default tour question branch.", type: "tour" },
     review: "default tour question branch.",
-    request: { type: "tour", query: "default tour question branch." },
+    request: { type: "tour", reinterpretations: [] },
   });
   TestValidator.equals(
-    "tour preserves the caller's query",
-    (defaultTour.result as any).query,
-    "default tour question branch.",
+    "the tour echoes no query back at the caller that wrote it",
+    "query" in (defaultTour.result as object),
+    false,
   );
 
   const { fileFromUri } = await importLib<{ fileFromUri: (uri: string) => string }>("utils/fileFromUri.js");

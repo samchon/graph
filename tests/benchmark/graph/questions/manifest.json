@@ -1,0 +1,239 @@
+{
+  "schemaVersion": 1,
+  "prompts": [
+    {
+      "id": "excalidraw-dedicated-v1",
+      "repo": "excalidraw",
+      "family": "dedicated",
+      "file": "excalidraw.md",
+      "fixtureCommit": "98a2730b197873d43fddbe3fad6f0812df84b451",
+      "language": "typescript",
+      "questionSha256": "e4f3b02a5d3a1e86a9136d90a4b8bd9c73774733f9f1c021faee61b3ea6e83b5"
+    },
+    {
+      "id": "excalidraw-common-v1",
+      "repo": "excalidraw",
+      "family": "common",
+      "file": "common.md",
+      "fixtureCommit": "98a2730b197873d43fddbe3fad6f0812df84b451",
+      "language": "typescript",
+      "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517"
+    },
+    {
+      "id": "gin-dedicated-v1",
+      "repo": "gin",
+      "family": "dedicated",
+      "file": "gin.md",
+      "fixtureCommit": "34dac209ffb6ef85cc78c5d217bbb7ad001d68fd",
+      "language": "go",
+      "questionSha256": "ea28874c63f02a58bf5862775c042fc716a09a7803e817397344b0d09a430a98"
+    },
+    {
+      "id": "gin-common-v1",
+      "repo": "gin",
+      "family": "common",
+      "file": "common.md",
+      "fixtureCommit": "34dac209ffb6ef85cc78c5d217bbb7ad001d68fd",
+      "language": "go",
+      "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517"
+    },
+    {
+      "id": "flask-dedicated-v1",
+      "repo": "flask",
+      "family": "dedicated",
+      "file": "flask.md",
+      "fixtureCommit": "36e4a824f340fdee7ed50937ba8e7f6bc7d17f81",
+      "language": "python",
+      "questionSha256": "2d8b7adf6cdf24ad01e969707e2d05089259ca7894fc9705bda9f53280f8e581"
+    },
+    {
+      "id": "flask-common-v1",
+      "repo": "flask",
+      "family": "common",
+      "file": "common.md",
+      "fixtureCommit": "36e4a824f340fdee7ed50937ba8e7f6bc7d17f81",
+      "language": "python",
+      "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517"
+    },
+    {
+      "id": "tokio-dedicated-v1",
+      "repo": "tokio",
+      "family": "dedicated",
+      "file": "tokio.md",
+      "fixtureCommit": "c4c6265a0746a79d4a2f3852f726aa0101f29fd3",
+      "language": "rust",
+      "questionSha256": "477616f7f4b75b503f953427b71e79b26cf83e3a32f2c3386e0f19bce7c19c70"
+    },
+    {
+      "id": "tokio-common-v1",
+      "repo": "tokio",
+      "family": "common",
+      "file": "common.md",
+      "fixtureCommit": "c4c6265a0746a79d4a2f3852f726aa0101f29fd3",
+      "language": "rust",
+      "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517"
+    },
+    {
+      "id": "gson-dedicated-v1",
+      "repo": "gson",
+      "family": "dedicated",
+      "file": "gson.md",
+      "fixtureCommit": "c9f3fd55854a743b66f857ace3c7b268ea3e2ef7",
+      "language": "java",
+      "questionSha256": "808a7b9d8d684cdd2b01cc8391f94893b330d4495a70b0894f9b8a16dab3d2c5"
+    },
+    {
+      "id": "gson-common-v1",
+      "repo": "gson",
+      "family": "common",
+      "file": "common.md",
+      "fixtureCommit": "c9f3fd55854a743b66f857ace3c7b268ea3e2ef7",
+      "language": "java",
+      "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517"
+    },
+    {
+      "id": "redis-dedicated-v1",
+      "repo": "redis",
+      "family": "dedicated",
+      "file": "redis.md",
+      "fixtureCommit": "6bf6224c3dad518329ddc893ef9c5d58dcbabdeb",
+      "language": "c",
+      "questionSha256": "7d7224ec9b14aa58dec9e698196586ef6bd14b4f7eb10b154cec9a3025daaa3f"
+    },
+    {
+      "id": "redis-common-v1",
+      "repo": "redis",
+      "family": "common",
+      "file": "common.md",
+      "fixtureCommit": "6bf6224c3dad518329ddc893ef9c5d58dcbabdeb",
+      "language": "c",
+      "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517"
+    },
+    {
+      "id": "leveldb-dedicated-v1",
+      "repo": "leveldb",
+      "family": "dedicated",
+      "file": "leveldb.md",
+      "fixtureCommit": "7ee830d02b623e8ffe0b95d59a74db1e58da04c5",
+      "language": "cpp",
+      "questionSha256": "670f33ffb4dcfe5b0f6e704040d7a8555446c375c7ba5b7eaa464ee2eedad1cb"
+    },
+    {
+      "id": "leveldb-common-v1",
+      "repo": "leveldb",
+      "family": "common",
+      "file": "common.md",
+      "fixtureCommit": "7ee830d02b623e8ffe0b95d59a74db1e58da04c5",
+      "language": "cpp",
+      "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517"
+    },
+    {
+      "id": "sinatra-dedicated-v1",
+      "repo": "sinatra",
+      "family": "dedicated",
+      "file": "sinatra.md",
+      "fixtureCommit": "5236d3459b8b9015e5ce21ddd0c6beb0db4081d4",
+      "language": "ruby",
+      "questionSha256": "104c57cd376b264daac828a6f3e71d347947bbd4b3fa21267006dc71c2bba508"
+    },
+    {
+      "id": "sinatra-common-v1",
+      "repo": "sinatra",
+      "family": "common",
+      "file": "common.md",
+      "fixtureCommit": "5236d3459b8b9015e5ce21ddd0c6beb0db4081d4",
+      "language": "ruby",
+      "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517"
+    },
+    {
+      "id": "slim-dedicated-v1",
+      "repo": "slim",
+      "family": "dedicated",
+      "file": "slim.md",
+      "fixtureCommit": "0da7dd2fc66956730b6633f6a056b35e59126583",
+      "language": "php",
+      "questionSha256": "5b8775bb84f2629a2413bf4bb522281d344c7781020660b739814c751c5cc0f5"
+    },
+    {
+      "id": "slim-common-v1",
+      "repo": "slim",
+      "family": "common",
+      "file": "common.md",
+      "fixtureCommit": "0da7dd2fc66956730b6633f6a056b35e59126583",
+      "language": "php",
+      "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517"
+    },
+    {
+      "id": "serilog-dedicated-v1",
+      "repo": "serilog",
+      "family": "dedicated",
+      "file": "serilog.md",
+      "fixtureCommit": "6d9fc0b84e004418f2677b5961b9c8970349d0be",
+      "language": "csharp",
+      "questionSha256": "7d62480b359adb6589a227379c027498961053eec56c14eabfb8a9961a147b2c"
+    },
+    {
+      "id": "serilog-common-v1",
+      "repo": "serilog",
+      "family": "common",
+      "file": "common.md",
+      "fixtureCommit": "6d9fc0b84e004418f2677b5961b9c8970349d0be",
+      "language": "csharp",
+      "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517"
+    },
+    {
+      "id": "koin-dedicated-v1",
+      "repo": "koin",
+      "family": "dedicated",
+      "file": "koin.md",
+      "fixtureCommit": "dc86ef8dd8fbe8564fb7453c03f5b738da3450bb",
+      "language": "kotlin",
+      "questionSha256": "03f32f552a7d88639cf9fd27ff334e0532d0bd3a979f05a6ad5e432c636afeb7"
+    },
+    {
+      "id": "koin-common-v1",
+      "repo": "koin",
+      "family": "common",
+      "file": "common.md",
+      "fixtureCommit": "dc86ef8dd8fbe8564fb7453c03f5b738da3450bb",
+      "language": "kotlin",
+      "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517"
+    },
+    {
+      "id": "lualine-dedicated-v1",
+      "repo": "lualine",
+      "family": "dedicated",
+      "file": "lualine.md",
+      "fixtureCommit": "221ce6b2d999187044529f49da6554a92f740a96",
+      "language": "lua",
+      "questionSha256": "709c330ccc5210a69034a9fd99e8b4f2a5edbe722721b597197a5180116d0db3"
+    },
+    {
+      "id": "lualine-common-v1",
+      "repo": "lualine",
+      "family": "common",
+      "file": "common.md",
+      "fixtureCommit": "221ce6b2d999187044529f49da6554a92f740a96",
+      "language": "lua",
+      "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517"
+    },
+    {
+      "id": "darthttp-dedicated-v1",
+      "repo": "darthttp",
+      "family": "dedicated",
+      "file": "darthttp.md",
+      "fixtureCommit": "5d94ef52582867e077bf41c3fa20fb8b1d1d834e",
+      "language": "dart",
+      "questionSha256": "e756c0967ac1062f6788b2ba0a1986da59f6045bd0adac148ab60b75e3e97a49"
+    },
+    {
+      "id": "darthttp-common-v1",
+      "repo": "darthttp",
+      "family": "common",
+      "file": "common.md",
+      "fixtureCommit": "5d94ef52582867e077bf41c3fa20fb8b1d1d834e",
+      "language": "dart",
+      "questionSha256": "efe22b2b8f0d37d2e74fc2391ba689b5c455e16a1f261fd821f209bd7ad20517"
+    }
+  ]
+}

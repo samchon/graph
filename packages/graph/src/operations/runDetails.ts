@@ -1,20 +1,23 @@
-import fs from "node:fs";
-import path from "node:path";
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import {
-  ISamchonGraphDecorator,
   ISamchonGraphDetails,
+  ISamchonGraphEdge,
   ISamchonGraphEvidence,
   ISamchonGraphNode,
 } from "../structures";
-import {
-  bound,
-  publicEvidence,
-  referencesFromEdges,
-  resolveHandle,
-  signatureOf,
-  summaryOf,
-} from "./common";
+import { bound } from "./bound";
+import { decoratorsOf } from "./decoratorsOf";
+import { docOf } from "./docOf";
+import { edgeEvidenceOf } from "./edgeEvidenceOf";
+import { fileLines } from "./fileLines";
+import { isExternalNode } from "./isExternalNode";
+import { isStructural } from "./isStructural";
+import { isTestPath } from "./isTestPath";
+import { publicEvidence } from "./publicEvidence";
+import { resolveGraphHandle } from "./resolveGraphHandle";
+import { IRunnerOutput } from "./IRunnerOutput";
+import { resultNext } from "./resultNext";
+import { signatureOf } from "./signatureOf";
 
 // Neighbor lists are a map, not a dump; keep them scannable.
 const DEFAULT_NEIGHBORS = 2;
@@ -45,7 +48,7 @@ const CONTAINER_KINDS = new Set<string>([
 export function runDetails(
   graph: SamchonGraphMemory,
   props: ISamchonGraphDetails.IRequest,
-): ISamchonGraphDetails {
+): IRunnerOutput<ISamchonGraphDetails> {
   const neighborLimit = bound(
     props.neighborLimit,
     DEFAULT_NEIGHBORS,
@@ -63,56 +66,78 @@ export function runDetails(
   const includeExternal = props.includeExternal === true;
   const nodes: ISamchonGraphDetails.INode[] = [];
   const unknown: string[] = [];
+  const ambiguous: ISamchonGraphDetails.IAmbiguity[] = [];
   for (const handle of props.handles) {
-    const resolved = resolveHandle(graph, handle);
+    const resolved = resolveGraphHandle(graph, handle);
     if (resolved.node === undefined) {
+      // A handle the graph knows twice is not a handle the graph does not know.
+      // Hand back the nodes it named and let the caller pick one; calling it
+      // unknown sends the caller to the files for facts already in the index.
+      if (resolved.candidates !== undefined && resolved.candidates.length > 0) {
+        ambiguous.push({
+          handle,
+          candidates: resolved.candidates.map((node) => ({
+            id: node.id,
+            name: node.qualifiedName ?? node.name,
+            kind: node.kind,
+            file: node.file,
+            ...(node.evidence?.startLine !== undefined
+              ? { line: node.evidence.startLine }
+              : {}),
+          })),
+        });
+        continue;
+      }
       unknown.push(handle);
       continue;
     }
     const node = resolved.node;
-    const detail: ISamchonGraphDetails.INode = { ...summaryOf(node) };
-    if (node.evidence?.startLine !== undefined) detail.line = node.evidence.startLine;
+    const detail: ISamchonGraphDetails.INode = {
+      id: node.id,
+      name: node.qualifiedName ?? node.name,
+      kind: node.kind,
+      file: node.file,
+    };
+    if (node.evidence?.startLine) detail.line = node.evidence.startLine;
     const sig = signatureOf(graph.project, node);
     if (sig !== undefined) detail.signature = sig;
+    const doc = docOf(graph.project, node);
+    if (doc !== undefined) detail.doc = doc;
     const signatureLiterals = literalSummaries(sig);
     const decorators = decoratorsOf(node);
     if (decorators !== undefined) detail.decorators = decorators;
-    if (node.implementation !== undefined) {
-      detail.implementation = publicEvidence(node.implementation);
-    }
-    const span = node.implementation ?? node.evidence;
+    const implementation = evidenceCoordinatesOf(node.implementation);
+    if (implementation !== undefined) detail.implementation = implementation;
+    const span = implementation ?? evidenceCoordinatesOf(node.evidence);
     if (span !== undefined) {
       detail.sourceSpan = {
         file: span.file,
         startLine: span.startLine,
-        ...(span.endLine !== undefined ? { endLine: span.endLine } : {}),
+        endLine: span.endLine,
       };
     }
-    const calls = referencesFromEdges(
+    const calls = dependencyRefs(
       graph,
-      graph.outgoing(node.id),
-      "to",
+      node,
+      executionKinds,
       dependencyLimit,
       includeExternal,
-      executionKinds,
     );
     if (calls.length > 0) detail.calls = calls;
-    const types = referencesFromEdges(
+    const types = dependencyRefs(
       graph,
-      graph.outgoing(node.id),
-      "to",
+      node,
+      typeKinds,
       dependencyLimit,
       includeExternal,
-      typeKinds,
     );
     if (types.length > 0) detail.types = types;
-    const implementedBy = referencesFromEdges(
+    const implementedBy = incomingDependencyRefs(
       graph,
-      graph.incoming(node.id),
-      "from",
+      node,
+      implementationKinds,
       dependencyLimit,
       includeExternal,
-      implementationKinds,
     );
     if (implementedBy.length > 0) detail.implementedBy = implementedBy;
     if (CONTAINER_KINDS.has(node.kind)) {
@@ -130,14 +155,14 @@ export function runDetails(
     if (signatureLiterals.length > 0)
       detail.literals = signatureLiterals.slice(0, 6);
     if (wantNeighbors) {
-      detail.dependsOn = referencesFromEdges(
+      detail.dependsOn = refs(
         graph,
         graph.outgoing(node.id),
         "to",
         neighborLimit,
         includeExternal,
       );
-      detail.dependedOnBy = referencesFromEdges(
+      detail.dependedOnBy = refs(
         graph,
         graph.incoming(node.id),
         "from",
@@ -148,9 +173,28 @@ export function runDetails(
     nodes.push(detail);
   }
   return {
-    type: "details",
-    nodes,
-    unknown,
+    result: {
+      type: "details",
+      nodes,
+      unknown,
+      ...(ambiguous.length > 0 ? { ambiguous } : {}),
+    },
+    next:
+      nodes.length === 0 && ambiguous.length > 0
+        ? resultNext(
+            "inspect",
+            "Each handle names several nodes; re-call details with the id of the one the question means.",
+            "details",
+          )
+        : nodes.length === 0
+          ? resultNext(
+              "outside",
+              "No handle resolved to a node, so the graph holds nothing for them.",
+            )
+          : resultNext(
+              "answer",
+              "The signatures, members, dependencies, and sourceSpan anchors are what the graph holds on these symbols.",
+            ),
   };
 }
 
@@ -262,14 +306,136 @@ function stripStrings(line: string): string {
   return line.replace(/\/\/.*$/, "").replace(/(['"`])(?:\\.|(?!\1).)*\1/g, "");
 }
 
+/** Map dependency edges to references on their far endpoint, dropping structure. */
+function refs(
+  graph: SamchonGraphMemory,
+  edges: readonly ISamchonGraphEdge[],
+  end: "to" | "from",
+  limit: number,
+  includeExternal: boolean,
+): ISamchonGraphDetails.IReference[] {
+  const ranked: Array<{ ref: ISamchonGraphDetails.IReference; rank: number }> =
+    [];
+  for (const edge of edges) {
+    if (isStructural(edge.kind)) continue;
+    const other = graph.node(end === "to" ? edge.to : edge.from);
+    if (other === undefined) continue;
+    if (!includeExternal && isExternalNode(other)) continue;
+    const ref: ISamchonGraphDetails.IReference = {
+      id: other.id,
+      name: other.qualifiedName ?? other.name,
+      kind: other.kind,
+      file: other.file,
+      relation: edge.kind,
+    };
+    if (other.evidence?.startLine) ref.line = other.evidence.startLine;
+    const evidence = edgeEvidenceOf(edge);
+    if (evidence !== undefined) ref.evidence = evidence;
+    ranked.push({ ref, rank: refRank(ref, edge) });
+  }
+  ranked.sort((a, b) => a.rank - b.rank);
+  const out: ISamchonGraphDetails.IReference[] = [];
+  for (const item of ranked) {
+    out.push(item.ref);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 const executionKinds = new Set([
   "calls",
   "instantiates",
   "accesses",
   "renders",
+  "references",
 ]);
 const typeKinds = new Set(["type_ref", "extends", "implements", "overrides"]);
 const implementationKinds = new Set(["implements", "overrides"]);
+
+function dependencyRefs(
+  graph: SamchonGraphMemory,
+  node: ISamchonGraphNode,
+  kinds: ReadonlySet<string>,
+  limit: number,
+  includeExternal: boolean,
+): ISamchonGraphDetails.IReference[] {
+  const ranked: Array<{ ref: ISamchonGraphDetails.IReference; rank: number }> =
+    [];
+  for (const edge of graph.outgoing(node.id)) {
+    if (!kinds.has(edge.kind)) continue;
+    const other = graph.node(edge.to);
+    if (other === undefined || other.kind === "file") continue;
+    if (!includeExternal && isExternalNode(other)) continue;
+    const name = other.qualifiedName ?? other.name;
+    const ref: ISamchonGraphDetails.IReference = {
+      id: other.id,
+      name,
+      kind: other.kind,
+      file: other.file,
+      relation: edge.kind,
+    };
+    if (other.evidence?.startLine) ref.line = other.evidence.startLine;
+    const evidence = edgeEvidenceOf(edge);
+    if (evidence !== undefined) ref.evidence = evidence;
+    ranked.push({
+      ref,
+      rank: refRank(ref, edge),
+    });
+  }
+  ranked.sort((a, b) => a.rank - b.rank);
+  const out: ISamchonGraphDetails.IReference[] = [];
+  const seen = new Set<string>();
+  for (const item of ranked) {
+    const key = `${item.ref.relation}:${item.ref.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item.ref);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function incomingDependencyRefs(
+  graph: SamchonGraphMemory,
+  node: ISamchonGraphNode,
+  kinds: ReadonlySet<string>,
+  limit: number,
+  includeExternal: boolean,
+): ISamchonGraphDetails.IReference[] {
+  const ranked: Array<{ ref: ISamchonGraphDetails.IReference; rank: number }> =
+    [];
+  for (const edge of graph.incoming(node.id)) {
+    if (!kinds.has(edge.kind)) continue;
+    const other = graph.node(edge.from);
+    if (other === undefined || other.kind === "file") continue;
+    if (!includeExternal && isExternalNode(other)) continue;
+    const ref: ISamchonGraphDetails.IReference = {
+      id: other.id,
+      name: other.qualifiedName ?? other.name,
+      kind: other.kind,
+      file: other.file,
+      relation: edge.kind,
+    };
+    if (other.evidence?.startLine) ref.line = other.evidence.startLine;
+    const evidence = edgeEvidenceOf(edge);
+    if (evidence !== undefined) ref.evidence = evidence;
+    ranked.push({
+      ref,
+      rank: refRank(ref, edge),
+    });
+  }
+  ranked.sort((a, b) => a.rank - b.rank);
+  const out: ISamchonGraphDetails.IReference[] = [];
+  const seen = new Set<string>();
+  for (const item of ranked) {
+    const key = `${item.ref.relation}:${item.ref.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item.ref);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
 
 function literalSummaries(text: string | undefined): string[] {
   if (text === undefined) return [];
@@ -295,21 +461,67 @@ function cleanLiteral(value: string | undefined): string | undefined {
   return text;
 }
 
-/** Decorator facts already captured on a node, omitted when absent. */
-function decoratorsOf(
-  node: ISamchonGraphNode,
-): ISamchonGraphDecorator[] | undefined {
-  return node.decorators !== undefined && node.decorators.length > 0
-    ? node.decorators
-    : undefined;
+/**
+ * Which references a capped list keeps.
+ *
+ * Kind leads: what a symbol calls says more about it than what it names in a
+ * type position. Within a kind the source order decides, which is a stable
+ * tiebreak and nothing more — so a symbol with two hundred callers used to
+ * answer with whichever two happened to be written nearest the top of their
+ * file, and for Excalidraw's `mutateElement` those two were a sort test and a
+ * duplication test. A test is not who runs the code in production, and the tour
+ * already carries the tests it found in a section of their own, so a reference
+ * from a test file ranks below every reference from the code under test.
+ */
+function refRank(
+  ref: ISamchonGraphDetails.IReference,
+  edge: ISamchonGraphEdge,
+): number {
+  return (
+    (isTestPath(ref.file) ? 1 : 0) * 10_000_000 +
+    edgeKindRank(edge.kind) * 100_000 +
+    evidenceRank(edge) +
+    (ref.file.startsWith("bundled://") ? 20_000 : 0)
+  );
 }
 
-/** Read a file's lines once, or undefined when it cannot be read. */
-function fileLines(project: string, file: string): string[] | undefined {
-  if (file === "") return undefined;
-  try {
-    return fs.readFileSync(path.join(project, file), "utf8").split(/\r?\n/);
-  } catch {
-    return undefined;
+function evidenceRank(edge: ISamchonGraphEdge): number {
+  const line = edge.evidence?.startLine ?? 9_999;
+  const col = edge.evidence?.startCol ?? 999;
+  return line * 100 + col;
+}
+
+function edgeKindRank(kind: string): number {
+  switch (kind) {
+    case "calls":
+      return 0;
+    case "instantiates":
+      return 1;
+    case "accesses":
+    case "renders":
+    case "references":
+      return 2;
+    case "tests":
+      return 3;
+    case "overrides":
+    case "decorates":
+      return 4;
+    case "extends":
+    case "implements":
+      return 5;
+    case "type_ref":
+      return 6;
+    // Every non-structural kind the graph stores is named above, and the
+    // structural ones never reach here. `dispatches` is the only kind left, and
+    // a traversal synthesizes it — no index holds one to rank.
+    /* c8 ignore next 2 */
+    default:
+      return 10;
   }
+}
+
+function evidenceCoordinatesOf(
+  evidence: ISamchonGraphEvidence | undefined,
+): ISamchonGraphEvidence | undefined {
+  return evidence === undefined ? undefined : publicEvidence(evidence);
 }

@@ -5,9 +5,6 @@ export interface ISamchonGraphTour {
   /** Discriminator for code-tour indexing. */
   type: "tour";
 
-  /** Natural code question this tour was built for. */
-  query: string;
-
   /** Central entrypoints selected for the tour. */
   entrypoints: ISamchonGraphTour.INode[];
 
@@ -29,15 +26,41 @@ export interface ISamchonGraphTour {
 
 export namespace ISamchonGraphTour {
   /**
-   * The whole answer surface for a broad code tour: entrypoints, primary flow,
-   * nearby paths, tests, and answer anchors.
+   * A broad code tour: entrypoints, primary flow, nearby paths, and tests.
+   *
+   * It asks for no question of its own — it ranks against the `question` the
+   * caller has already written, in the user's words.
    */
   export interface IRequest {
     /** Discriminator for code-tour indexing. */
     type: "tour";
 
-    /** The user's natural code-tour question. */
-    query: string;
+    /**
+     * Symbol names, never a sentence: the machinery you expect the answer to be
+     * made of, spelled the way this codebase would spell it. A question about
+     * how a job reaches a worker is reinterpreted as `["JobQueue.push",
+     * "Scheduler.tick", "Worker.run", "drainQueue"]`.
+     *
+     * Write them from the question, before you have seen a line of the code. A
+     * codebase names many things alike, and the question's own words cannot
+     * tell them apart: a question about _tracking_ matches the debug hook named
+     * after tracking as readily as the function that does it, and one about a
+     * _request_ matches a message listener as readily as an HTTP router. The
+     * names say which you meant.
+     *
+     * Each is resolved like a handle — a symbol name, a `Class.member`. The
+     * ones the graph holds take half the tour's entrypoints, the rest stays
+     * with what the graph finds central, and a name it does not know, or knows
+     * several of, is dropped. So a wrong guess costs nothing, and a specific
+     * name is worth more than a general one: `drainQueue` resolves, `queue`
+     * does not.
+     *
+     * Send `[]` when the question names no machinery — "show me the central
+     * flow" in a repository you have never seen. There is nothing to
+     * reinterpret then: the tour ranks on structure, which is what that
+     * question asks for. Do not look names up first to fill this.
+     */
+    reinterpretations: string[];
 
     /**
      * Central entrypoints to seed the tour. Raise only when the question names
@@ -78,6 +101,13 @@ export namespace ISamchonGraphTour {
     /** Declaration head, when available. */
     signature?: string;
 
+    /**
+     * The first sentence of the doc comment above the declaration: what the
+     * project says this symbol is for. A name and an edge say what calls what;
+     * this says why, which is what a tour is asked for.
+     */
+    doc?: string;
+
     /** Decorators written on the declaration, when any. */
     decorators?: ISamchonGraphDecorator[];
   }
@@ -90,14 +120,38 @@ export namespace ISamchonGraphTour {
     /** Compact edge summaries in graph order. */
     steps: string[];
 
-    /** Nodes reached by this flow. */
-    reached: ISamchonGraphTour.INode[];
-
-    /** Edge and node anchors that explain the flow. */
-    anchors: ISamchonGraphTour.IAnchor[];
+    /**
+     * Every node this flow reached, with the handle to call the graph with
+     * next.
+     *
+     * A step is prose — it names both of its ends and the file and line the
+     * call sits on — and it carries no handle. So the nodes a step names are
+     * listed here too: `steps` is the story, `reached` is what to go on with.
+     */
+    reached: ISamchonGraphTour.IReached[];
 
     /** True when some low-signal flow steps were capped; the flow stands. */
     truncated?: boolean;
+  }
+
+  /**
+   * A node a flow reached, as its handle and its declaration line.
+   *
+   * A node id _is_ its coordinates — `path/to/file.ts#Owner.member:kind` — so a
+   * reached node carrying `file` and `kind` beside it bought the same fact
+   * three times. Across the benchmark corpus that repetition was 15% of every
+   * tour, and a tour is re-sent whole on every turn of the conversation it
+   * opened.
+   */
+  export interface IReached {
+    /** Stable node id for later graph calls: `file#Qualified.Name:kind`. */
+    id: string;
+
+    /** Qualified symbol name when available, otherwise the simple name. */
+    name: string;
+
+    /** 1-based declaration line, when known. */
+    line?: number;
   }
 
   /** A file/line citation chosen by the graph, not source body text. */

@@ -1,0 +1,169 @@
+import path from "node:path";
+
+// Cross-language benchmark corpus. The `dedicated` questions live in
+// questions/<name>.md, taken verbatim from codegraph's evaluation suite
+// (.claude/skills/agent-eval/corpus.json) and pinned by SHA-256 in
+// questions/manifest.json (regenerate with graph/generate-manifest.mjs). The
+// shared `common` onboarding question (questions/common.md) is asked against
+// every repo.
+//
+// Coverage standard is codegraph's own: every supported language that appears
+// in its suite is here, one repo each — 13 of the 17 registered languages.
+// scala, zig, and bash are deliberately absent: codegraph has no dedicated
+// utterance for them, and inventing one would break prompt provenance. swift
+// (Alamofire) is absent too: this host has no Swift toolchain, sourcekit-lsp
+// ships only with the multi-GB Swift-for-Windows install, and an Apple-centric
+// SwiftPM build is not guaranteed to index cleanly here.
+//
+// Each entry pins the exact `commit` measured (recorded 2026-07-08 from each
+// repo's HEAD) so runs stay reproducible while upstreams move. The graph is
+// never capped: no file limit, no reference limit, and no LSP timeout — a slow
+// but correct language-server index is always waited out in full rather than
+// truncated. `prepare` runs a one-off shell command in the checkout before
+// indexing when a server needs it.
+export const CORPUS = [
+  {
+    // A fork of excalidraw/excalidraw with `ttsc` (and its native TS7
+    // runtime, @typescript/typescript-win32-x64) pinned as devDependencies
+    // (github.com/samchon/ttsc-benchmark-excalidraw) so ttscserver resolves
+    // and runs from the repo's own node_modules instead of depending on a
+    // global install — otherwise a fresh clone falls back to the static
+    // indexer, or ttscserver crashes outright without the native binary.
+    name: "excalidraw",
+    language: "typescript",
+    url: "https://github.com/samchon/ttsc-benchmark-excalidraw.git",
+    commit: "98a2730b197873d43fddbe3fad6f0812df84b451",
+  },
+  {
+    name: "gin",
+    language: "go",
+    url: "https://github.com/samchon/graph-benchmark-gin.git",
+    commit: "34dac209ffb6ef85cc78c5d217bbb7ad001d68fd",
+  },
+  {
+    name: "flask",
+    language: "python",
+    url: "https://github.com/samchon/graph-benchmark-flask.git",
+    commit: "36e4a824f340fdee7ed50937ba8e7f6bc7d17f81",
+  },
+  {
+    name: "tokio",
+    language: "rust",
+    url: "https://github.com/samchon/graph-benchmark-tokio.git",
+    commit: "c4c6265a0746a79d4a2f3852f726aa0101f29fd3",
+  },
+  {
+    name: "gson",
+    language: "java",
+    url: "https://github.com/samchon/graph-benchmark-gson.git",
+    commit: "c9f3fd55854a743b66f857ace3c7b268ea3e2ef7",
+  },
+  {
+    name: "redis",
+    language: "c",
+    url: "https://github.com/samchon/graph-benchmark-redis.git",
+    commit: "6bf6224c3dad518329ddc893ef9c5d58dcbabdeb",
+  },
+  {
+    // codegraph's cpp pick (nlohmann/json) is a single-header library — it
+    // yields ~27 nodes / 0 edges, a degenerate graph target. Substitute
+    // leveldb, a real multi-file C++ project, and note the deviation: the
+    // question is repo-appropriate rather than codegraph-verbatim.
+    name: "leveldb",
+    language: "cpp",
+    url: "https://github.com/samchon/graph-benchmark-leveldb.git",
+    commit: "7ee830d02b623e8ffe0b95d59a74db1e58da04c5",
+  },
+  {
+    name: "sinatra",
+    language: "ruby",
+    url: "https://github.com/samchon/graph-benchmark-sinatra.git",
+    commit: "5236d3459b8b9015e5ce21ddd0c6beb0db4081d4",
+    // ruby-lsp composes a bundle from the project's Gemfile; install it into a
+    // vendored path first.
+    prepare: "bundle config set --local path vendor/bundle && bundle install",
+  },
+  {
+    name: "slim",
+    language: "php",
+    url: "https://github.com/samchon/graph-benchmark-slim.git",
+    commit: "0da7dd2fc66956730b6633f6a056b35e59126583",
+  },
+  {
+    name: "serilog",
+    language: "csharp",
+    url: "https://github.com/samchon/graph-benchmark-serilog.git",
+    commit: "6d9fc0b84e004418f2677b5961b9c8970349d0be",
+    // csharp-ls loads a project via Roslyn's in-process MSBuildWorkspace. On the
+    // full Serilog.sln (19 project/TFM entries incl. net48/net462 test projects
+    // and an AOT app) that load yields zero documentSymbols — csharp-ls returns
+    // an empty graph and the arm silently drops to the static fallback, even
+    // though raw Roslyn opens the same solution fine. Rebuild Serilog.sln with
+    // only the product project (src/Serilog): csharp-ls then indexes it cleanly
+    // instead of NO-GO. Requires a net10 csharp-ls (>= 0.14); 0.13 runs on
+    // .NET 8 and cannot even register MSBuild 10 for the net10-pinned projects.
+    prepare:
+      "dotnet new sln -n Serilog --format sln --force && dotnet sln Serilog.sln add src/Serilog/Serilog.csproj",
+  },
+  {
+    name: "koin",
+    language: "kotlin",
+    url: "https://github.com/samchon/graph-benchmark-koin.git",
+    commit: "dc86ef8dd8fbe8564fb7453c03f5b738da3450bb",
+    // kotlin-language-server boots a JVM and imports the build via a Gradle
+    // sync (kotlinLSPProjectDeps) before answering `initialize` at all; cold,
+    // this took over ten minutes on a clean Gradle cache. With no timeout, that
+    // cold start plus the Gradle sync is simply waited out. A warm Gradle cache
+    // makes repeat runs fast. (JAVA_HOME is pointed at the provisioned JDK 21 by
+    // lib.mjs.)
+  },
+  {
+    name: "lualine",
+    language: "lua",
+    url: "https://github.com/samchon/graph-benchmark-lualine.git",
+    commit: "221ce6b2d999187044529f49da6554a92f740a96",
+  },
+  {
+    // flutter's 6.5k-file monorepo made the Dart analysis server emit a
+    // pathological ~500MB reference graph; dart-lang/http is a real,
+    // focused multi-package HTTP library that indexes cleanly.
+    name: "darthttp",
+    language: "dart",
+    url: "https://github.com/samchon/graph-benchmark-darthttp.git",
+    commit: "5d94ef52582867e077bf41c3fa20fb8b1d1d834e",
+  },
+];
+
+export const findCorpus = (name) => {
+  const found = CORPUS.find((entry) => entry.name === name);
+  if (found === undefined) throw new Error(`Unknown benchmark repo: ${name}`);
+  return found;
+};
+
+/** Canonical fixture shape consumed by graph.mjs, run-suite, and index-time. */
+export const PROJECTS = Object.fromEntries(
+  CORPUS.map((entry) => [
+    entry.name,
+    {
+      ...entry,
+      repoName: entry.name,
+      sourceRepo: entry.url,
+      sourceBranch: entry.commit,
+      fixtureBranch: entry.commit,
+    },
+  ]),
+);
+
+export function resolveWorkDir(repoRoot) {
+  return (
+    process.env.SAMCHON_GRAPH_BENCH_WORK ??
+    path.resolve(repoRoot, "..", "graph-benchmark-work")
+  );
+}
+
+export function projectDir(workDir, spec) {
+  return path.join(
+    workDir,
+    `${spec.repoName ?? spec.name}@${spec.commit.slice(0, 12)}`,
+  );
+}

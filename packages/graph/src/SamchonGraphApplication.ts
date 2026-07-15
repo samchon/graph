@@ -1,5 +1,7 @@
 import { AsyncSamchonGraphSource } from "./AsyncSamchonGraphSource";
-import { RESULT_DIRECTIVE } from "./operations/common";
+import { RESULT_AUDIT } from "./operations/RESULT_AUDIT";
+import { RESULT_AUDIT_ESCAPE } from "./operations/RESULT_AUDIT_ESCAPE";
+import { resultNext } from "./operations/resultNext";
 import { runDetails } from "./operations/runDetails";
 import { runEntrypoints } from "./operations/runEntrypoints";
 import { runLookup } from "./operations/runLookup";
@@ -9,8 +11,26 @@ import { runTrace } from "./operations/runTrace";
 import { SamchonGraphMemory } from "./SamchonGraphMemory";
 import { ISamchonGraphApplication, ISamchonGraphEscape } from "./structures";
 
+/**
+ * The MCP tool surface as a plain class over the resident
+ * {@link SamchonGraphMemory}.
+ *
+ * Its public method is the MCP tool: `typia.llm.application` reflects
+ * {@link ISamchonGraphApplication} to generate the tool's JSON schema and
+ * argument validator from the signature and JSDoc, with no hand-written schema,
+ * and `@typia/mcp`'s `createMcpServer` registers it (see `./mcp/createServer`).
+ * The method delegates to the pure graph functions in `./operations`, which are
+ * unit-testable without a transport; this class only binds them to the graph.
+ *
+ * Every method answers from the current resident graph. The source may refresh
+ * that graph before the operation when project files changed. Output is kept
+ * compact and bounded so a model can read structure without a file read, which
+ * is the token win the redesign exists for.
+ */
 export class SamchonGraphApplication implements ISamchonGraphApplication {
-  private readonly graph: () => SamchonGraphMemory | Promise<SamchonGraphMemory>;
+  private readonly graph: () =>
+    | SamchonGraphMemory
+    | Promise<SamchonGraphMemory>;
 
   public constructor(source: AsyncSamchonGraphSource) {
     this.graph = typeof source === "function" ? source : () => source;
@@ -18,28 +38,48 @@ export class SamchonGraphApplication implements ISamchonGraphApplication {
 
   public async inspect_code_graph(
     props: ISamchonGraphApplication.IProps,
-  ): Promise<ISamchonGraphApplication.IResult> {
+  ): Promise<ISamchonGraphApplication.IOutput> {
+    // An escape performs no graph work at all, so it never loads the graph:
+    // a developer on a cold checkout can leave without paying for an index
+    // they said they did not need.
+    if (props.request.type === "escape") {
+      return {
+        audit: RESULT_AUDIT_ESCAPE,
+        next: resultNext(
+          "outside",
+          "The caller chose to leave the graph, so this call carries no graph facts.",
+        ),
+        result: this.escape(props.request.reason, props.request.nextStep),
+      };
+    }
     const graph = await this.load();
-    // `directive` is emitted first so a serialized result opens with the sacred
-    // reminder, before any fact a distrustful reader might try to re-verify.
     switch (props.request.type) {
-      case "entrypoints":
-        return { directive: RESULT_DIRECTIVE, result: runEntrypoints(graph, props.request) };
-      case "lookup":
-        return { directive: RESULT_DIRECTIVE, result: runLookup(graph, props.request) };
-      case "trace":
-        return { directive: RESULT_DIRECTIVE, result: runTrace(graph, props.request) };
-      case "details":
-        return { directive: RESULT_DIRECTIVE, result: runDetails(graph, props.request) };
-      case "overview":
-        return { directive: RESULT_DIRECTIVE, result: runOverview(graph, props.request) };
-      case "tour":
-        return { directive: RESULT_DIRECTIVE, result: runTour(graph, props.request) };
-      case "escape":
-        return {
-          directive: RESULT_DIRECTIVE,
-          result: this.escape(props.request.reason, props.request.nextStep),
-        };
+      case "entrypoints": {
+        const r = runEntrypoints(graph, props.request);
+        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
+      }
+      case "lookup": {
+        const r = runLookup(graph, props.request);
+        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
+      }
+      case "trace": {
+        const r = runTrace(graph, props.request);
+        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
+      }
+      case "details": {
+        const r = runDetails(graph, props.request);
+        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
+      }
+      case "overview": {
+        const r = runOverview(graph, props.request);
+        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
+      }
+      case "tour": {
+        // The tour ranks against the question, and the question is `props`
+        // — the caller wrote it once, at the top, in the user's words.
+        const r = runTour(graph, props.request, props.question);
+        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
+      }
       default:
         props.request satisfies never;
         throw new Error("Unknown graph request type");

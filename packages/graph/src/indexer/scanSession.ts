@@ -8,7 +8,12 @@ import {
   LspClient,
 } from "../lsp";
 import { isTestPath } from "../operations/isTestPath";
-import { ISamchonGraphDiagnostic, ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
+import {
+  ISamchonGraphDiagnostic,
+  ISamchonGraphEdge,
+  ISamchonGraphEvidence,
+  ISamchonGraphNode,
+} from "../structures";
 import { GraphLanguage, GraphNodeKind } from "../typings";
 import { projectRelative } from "../utils/fs";
 import { fileFromUri, fileUri, isSubPath } from "../utils/path";
@@ -136,9 +141,23 @@ export async function scanSession(
         ref.range.start.line,
         ref.range.start.character,
       );
-      const owner = ownerAt(owners, start.line + 1);
-      if (owner === undefined || owner.id === target.id) continue;
       const startLineText = fileLines?.[start.line];
+      // §2j: a reference no declaration encloses is a top-level statement, and
+      // it belongs to the module — the file node every top-level declaration
+      // already hangs off. Without it a module's own wiring (a router mounting
+      // its handlers at load) is attributed to nobody, and the codebase reads
+      // back as disconnected islands.
+      //
+      // Two references are not module scope. An import or a re-export names a
+      // symbol in order to bring it in, which is not the module running it. And
+      // a position past the end of the file is not a statement at all — a server
+      // that reports one has told us nothing to attribute, so nothing is.
+      const owner =
+        ownerAt(owners, start.line + 1) ??
+        (startLineText === undefined || isModuleImportLine(startLineText)
+          ? undefined
+          : moduleOwnerOf(rel, target.language));
+      if (owner === undefined || owner.id === target.id) continue;
       const endLineText =
         ref.range.end.line === start.line
           ? startLineText
@@ -162,15 +181,17 @@ export async function scanSession(
         ref.range.end.line !== start.line,
         accessText,
       );
-      const evidence = {
+      // Coordinates, and nothing else. `accessText` is the classifier's hint —
+      // `referenceKind` reads it, and the dotted-JSX check below reads it — and
+      // it stays a local: evidence is what a reader cites, and a source snippet
+      // on every edge is the redundant payload §6b exists to keep off the wire.
+      // The graph does not carry the text inside a span; it carries the span.
+      const evidence: ISamchonGraphEvidence = {
         file: rel,
         startLine: start.line + 1,
         startCol: start.character + 1,
         endLine: ref.range.end.line + 1,
         endCol: ref.range.end.character + 1,
-        // Not part of the public evidence contract; an internal hint
-        // `accessAliasesFor` reads via `edgeEvidenceTextOf`.
-        ...(accessText !== undefined ? { text: accessText } : {}),
       };
       const emit = (kindToEmit: ISamchonGraphEdge["kind"]): void => {
         edges.push({ from: owner.id, to: target.id, kind: kindToEmit, evidence });
@@ -273,7 +294,16 @@ export async function scanSession(
   return {
     nodes,
     edges,
-    diagnostics: [...session.diagnostics],
+    // What the server currently says about the files that currently exist, in a
+    // stable order: two builds of one unedited checkout must agree (§6a), and a
+    // language server publishes its notifications in whatever order it pleases.
+    // By file, then by line; a sort is stable, so two findings on one line keep
+    // the order the server gave them for that document.
+    diagnostics: [...session.diagnostics.keys()]
+      .sort((a, b) => Number(a > b) - Number(a < b))
+      .flatMap((file) =>
+        [...session.diagnostics.get(file)!].sort((a, b) => a.line - b.line),
+      ),
     warnings: [
       ...(referenceLimit !== undefined && nodes.length > referenceLimit
         ? [`${language}: reference collection capped at ${referenceLimit} symbols.`]
@@ -357,10 +387,11 @@ function tailFrom(
 }
 
 // The dotted access expression ending exactly at a reference's end column
-// (e.g. `this._internals.foo` for a reference to `foo`), when the reference
-// sits at the end of one. This is the source-text hint `accessAliasesFor`
-// resolves into alternate access-path aliases; it is not part of the public
-// evidence contract.
+// (e.g. `this._internals.foo` for a reference to `foo`), when the reference sits
+// at the end of one. It is a classification hint and stays one: `referenceKind`
+// reads it to tell a member read (`obj.method`) from a bare reference, and the
+// dotted-JSX check reads it to know a namespaced tag is also an access. It never
+// reaches an edge — the graph carries the span, not the text inside it.
 function accessExpressionAt(
   line: string | undefined,
   endCol: number,
@@ -421,6 +452,17 @@ function referenceKind(
       ? "instantiates"
       : "calls";
   }
+  // §2j: a callable passed as a value (`app.use(handler)`) is how an
+  // event-driven codebase wires itself, and no call edge crosses it — the name
+  // sits in an argument list with no `(` of its own, so it used to read as a
+  // bare reference and `trace` returned an empty path between two symbols that
+  // plainly reach each other. The passing site invokes the passed function.
+  if (
+    (targetKind === "function" || targetKind === "method") &&
+    isArgumentPosition(before, after)
+  ) {
+    return "calls";
+  }
   switch (targetKind) {
     case "class":
     case "interface":
@@ -441,6 +483,44 @@ function referenceKind(
         ? "accesses"
         : "references";
   }
+}
+
+// The name is bounded by an argument list on both sides — `(name,`, `, name)`,
+// `(name)` — which is what a value handed to a call looks like, and what a name
+// in a type position or an object literal never looks like.
+function isArgumentPosition(before: string, after: string): boolean {
+  const opens = before.endsWith("(") || before.endsWith(",");
+  const closes = after.startsWith(")") || after.startsWith(",");
+  return opens && closes;
+}
+
+// The module a top-level statement belongs to: the file container node every
+// top-level declaration already hangs off, named by the file's own path.
+function moduleOwnerOf(
+  file: string,
+  language: GraphLanguage,
+): ISamchonGraphNode {
+  return {
+    id: file,
+    kind: "file",
+    language,
+    name: file,
+    file,
+    external: false,
+  };
+}
+
+// An import or a re-export names a symbol in order to bring it in, which is not
+// the module running it.
+//
+// Every one of these keywords is followed by whitespace, never by `(`. That
+// distinction is the whole point: `use(handler)` is a module wiring itself up —
+// the case §2j exists for — and `use crate::order` is Rust bringing a name in.
+const MODULE_IMPORT_LINE =
+  /^(?:import\b|export\s+(?:\*|\{)|from\s|use\s|using\s|#include\b|package\s|require\s)/;
+
+function isModuleImportLine(line: string | undefined): boolean {
+  return line !== undefined && MODULE_IMPORT_LINE.test(line.trim());
 }
 
 // A JSX element name immediately follows `<` (opening) or `</` (closing), and

@@ -30,7 +30,7 @@ export const test_application_lookup_details_and_tour_use_resident_graph = async
     question: "How does order creation work?",
     draft: { reason: "Broad flow needs a tour.", type: "tour" },
     review: "Tour is appropriate.",
-    request: { type: "tour", query: "order creation" },
+    request: { type: "tour", reinterpretations: ["OrderService"] },
   });
   TestValidator.equals("tour result type", tour.result.type, "tour");
   TestValidator.predicate("tour has entrypoints", tour.result.entrypoints.length > 0);

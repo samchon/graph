@@ -1,9 +1,11 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import { ISamchonGraphNode, ISamchonGraphOverview } from "../structures";
 import { dirname } from "../utils/path";
-import { isStructural } from "./common";
 import { isPublicApiNoisePath } from "./isPublicApiNoisePath";
+import { isStructural } from "./isStructural";
 import { isSupportPath } from "./isSupportPath";
+import { IRunnerOutput } from "./IRunnerOutput";
+import { resultNext } from "./resultNext";
 
 /**
  * Project a compact, source-read-free architecture map: counts by kind, folder
@@ -15,7 +17,7 @@ import { isSupportPath } from "./isSupportPath";
 export function runOverview(
   graph: SamchonGraphMemory,
   props: ISamchonGraphOverview.IRequest,
-): ISamchonGraphOverview {
+): IRunnerOutput<ISamchonGraphOverview> {
   const aspect = props.aspect ?? "all";
   const want = (a: ISamchonGraphOverview.IRequest["aspect"]): boolean =>
     aspect === "all" || aspect === a;
@@ -40,7 +42,13 @@ export function runOverview(
   if (want("layers")) result.layers = layers(graph);
   if (want("hotspots")) result.hotspots = hotspots(graph);
   if (want("publicApi")) result.publicApi = publicApi(graph);
-  return result;
+  return {
+    result,
+    next: resultNext(
+      "answer",
+      "Counts, layers, hotspots, and public API are what the graph holds about the project's shape.",
+    ),
+  };
 }
 
 /** Folder-level layering: how source and its export surface spread by directory. */
@@ -128,10 +136,8 @@ function publicApi(
 ): ISamchonGraphOverview.IPublicApi[] {
   const degree = (id: string): number => {
     let n = 0;
-    for (const edge of graph.outgoing(id))
-      if (!isStructural(edge.kind)) n++;
-    for (const edge of graph.incoming(id))
-      if (!isStructural(edge.kind)) n++;
+    for (const edge of graph.outgoing(id)) if (!isStructural(edge.kind)) n++;
+    for (const edge of graph.incoming(id)) if (!isStructural(edge.kind)) n++;
     return n;
   };
   return graph

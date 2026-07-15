@@ -12,9 +12,23 @@ export const test_contract_fixture_covers_every_graph_node_and_edge_kind = () =>
     [...new Set(graph.nodes.map((node) => node.kind))].sort(),
     [...GraphFixtures.GRAPH_NODE_KINDS].sort(),
   );
+  // Every edge kind an index can store is in the fixture. `dispatches` is the
+  // one it cannot: a forward walk synthesizes it when a call lands on a
+  // declaration with no body, so it lives in a traversal and never in a graph.
   TestValidator.equals(
-    "all graph edge kinds are represented",
+    "all stored graph edge kinds are represented",
     [...new Set(graph.edges.map((edge) => edge.kind))].sort(),
-    [...GraphFixtures.GRAPH_EDGE_KINDS].sort(),
+    GraphFixtures.GRAPH_EDGE_KINDS.filter(
+      (kind) => !GraphFixtures.GRAPH_TRAVERSAL_EDGE_KINDS.includes(kind),
+    ).sort(),
+  );
+  TestValidator.equals(
+    "a traversal-only edge kind is never stored",
+    graph.edges
+      .filter((edge) =>
+        GraphFixtures.GRAPH_TRAVERSAL_EDGE_KINDS.includes(edge.kind),
+      )
+      .map((edge) => edge.kind),
+    [],
   );
 };

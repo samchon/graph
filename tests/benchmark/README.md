@@ -1,62 +1,78 @@
-# `@samchon/graph` Benchmark Harness
+# `@samchon/graph` benchmark system
 
-Two benchmarks, mirroring the two `@ttsc/graph` and codegraph publish: a **structural** one (build time, node/edge counts) and an **agent-cost A/B** (the "X% fewer tokens" comparison).
+This is the `@ttsc/graph` benchmark architecture, generalized only at the
+fixture boundary: thirteen language-server-backed repositories replace the
+TypeScript-only fixture set. Prompts, A/B isolation, trace accounting, validity
+gates, publication, cold-index timing, and SVG/PNG rendering follow the same
+system.
 
-## Agent-cost A/B
+## Layout
 
-A faithful port of codegraph's headline agent-cost benchmark (and of `@ttsc/graph`'s port of it), **generalized across languages**. For one question per repo an agent CLI runs headless once per arm — `baseline` (no MCP) vs a graph tool — and the report carries tokens summed per turn, tool calls, and wall time, median over N runs. Arms: **@samchon/graph** (default), **codegraph** (`--cg=1`), **serena** (`--serena=1`).
+- `graph.mjs`: one-shot orchestrator across repos, tools, models, and prompt
+  families; publishes each valid cell as it completes and resumes from reports.
+- `graph/agent-ab.mjs`, `graph/agent-ab-codex.mjs`: isolated Claude Code and
+  Codex A/B harnesses.
+- `graph/run-suite.mjs`: fixed-baseline measure/improve loop.
+- `graph/audit-codex-traces.mjs`: full trace and answer-behavior audit.
+- `graph/index-time.mjs`: quiet-host cold readiness benchmark.
+- `graph/publish.mjs`: lossless upsert into `results/graph.json`.
+- `build/graph-benchmark-svg.cjs`, `build/svg-to-png.cjs`: the reference chart
+  and 2x PNG generators ported from `ttsc`.
+- `graph/corpus.mjs`, `graph/questions/manifest.json`: exact fixture commits and
+  SHA-256-pinned dedicated/common utterances.
 
-Two harnesses share the same corpus, prompts, and gates:
-
-- **`src/agent-ab-codex.mjs`** — OpenAI `codex` CLI (default `gpt-5.4-mini`, reasoning `high`). Each arm gets a minimal temp `CODEX_HOME` (copied `auth.json` + generated `config.toml`) so nothing but the MCP server differs. `codex --json` has no cost field, so tokens/tools/time are the metrics.
-- **`src/agent-ab.mjs`** — Claude Code CLI (`--strict-mcp-config`, per-arm MCP config, `--max-budget-usd`), reporting cost as well.
-
-### Rigor gates
-
-- **Prompt provenance** — every prompt resolves through `questions/manifest.json` and the harness refuses to run when a question file no longer matches its pinned SHA-256; `promptId` + `questionSha256` are recorded on every sample. Regenerate after editing questions with `pnpm --filter @samchon/graph-benchmark manifest`.
-- **Pinned checkouts** — every corpus entry pins the exact `commit` measured; the clone fetches that commit, never a moving branch.
-- **Graph-arm preflight** — before spending, the harness builds a bounded dump of the checkout and **aborts if the language server is missing** (`indexer: "static"`); a silent static fallback would corrupt the comparison. Override only with `--allow-static=1`.
-- **codegraph setup cost** — the codegraph arm runs `codegraph init` first and records its wall time as `toolSetupMs`.
-- **Tool-neutral prompts** — no graph guidance is appended to the question; tool guidance lives only in each MCP server's own descriptions, so every arm poses the identical utterance.
-
-### Corpus
-
-14 repos, one per language, taken **verbatim** from codegraph's evaluation suite — repositories and dedicated questions alike (`src/corpus.mjs` + `questions/*.md`). JavaScript is intentionally excluded because `.js`/`.jsx`/`.mjs`/`.cjs` files cannot be distinguished reliably from TypeScript build output in arbitrary repositories; scala, zig, and bash are deliberately absent because codegraph has no dedicated utterance for them. The shared `common` onboarding question is asked against every repo.
-
-```bash
-pnpm --filter @samchon/graph-benchmark corpus      # list repos, commits, questions
-pnpm --filter @samchon/graph-benchmark preflight   # zero-spend go/no-go matrix
-```
-
-### Running (spends real credits — user-triggered only, never CI)
+## Zero-spend verification
 
 ```bash
-# One cell: repo x family x tool (baseline arm cached separately)
-pnpm --filter @samchon/graph-benchmark codex -- --repo=gin --prompt-family=dedicated --arm=baseline
-pnpm --filter @samchon/graph-benchmark codex -- --repo=gin --prompt-family=dedicated --arm=graph
-pnpm --filter @samchon/graph-benchmark codex -- --repo=gin --prompt-family=dedicated --arm=graph --cg=1
-pnpm --filter @samchon/graph-benchmark codex -- --repo=gin --prompt-family=dedicated --arm=graph --serena=1
-
-# The whole suite: baseline measured ONCE per repo x family, then each tool;
-# existing reports are skipped, so an interrupted suite resumes for free.
-pnpm --filter @samchon/graph-benchmark suite-codex -- --runs=1
+pnpm --filter @samchon/graph build
+pnpm --filter @samchon/graph-benchmark test
+pnpm --filter @samchon/graph-benchmark corpus
+pnpm --filter @samchon/graph-benchmark preflight
 ```
 
-Reports land in `results/codex-<repo>-<family>-<tool>.json` (committed as the measurement record); per-run stream traces in `results/*.traces/` (gitignored).
+`preflight` clones the pinned commits, installs required project dependencies,
+runs per-language preparation, and demands a non-static language-server graph.
+It never invokes an LLM.
 
-### Rendering
+## Paid agent benchmark
+
+Paid runs are manual only. A baseline is measured once and reused; graph arms
+are rerun while the product changes.
 
 ```bash
-pnpm --filter @samchon/graph-benchmark render
+# One-time baseline, n=5
+node tests/benchmark/graph/run-suite.mjs \
+  --arm=baseline --runs=5 --harness=codex --model=gpt-5.4-mini
+
+# Product iteration, n=1
+node tests/benchmark/graph/run-suite.mjs \
+  --arm=graph --runs=1 --harness=codex --model=gpt-5.4-mini
+
+# Full publication matrix: publish the shared baseline once, then every tool.
+node tests/benchmark/graph.mjs --all --arm=baseline --tools=baseline --prompt-families=all --models=gpt-5.4-mini --runs=1
+node tests/benchmark/graph.mjs --all --arm=graph --tools=all --prompt-families=all --models=gpt-5.4-mini --runs=1
+
+# A graph-only subset while iterating
+node tests/benchmark/graph.mjs --project=gin,flask --arm=graph --tools=samchon-graph --runs=1
 ```
 
-Reads every `results/codex-*.json` and writes `results/benchmark-<harness>-<model>-<family>.svg` (e.g. `benchmark-codex-gpt-5.4-mini-common.svg`): grouped bars per repo (baseline gray + a fixed, CVD-validated tool order) with direct value labels and % vs baseline. Each SVG embeds a `prefers-color-scheme` media query, so one file adapts to light and dark in a plain `<img>`.
+Every cell records the exact repo commit, language, prompt id/hash, harness,
+model version, effort, retries, raw per-run token/tool/time counters, answer,
+and trace location. Zero-token/capacity failures retry; a run that spent tokens
+is retained and judged by the trace audit rather than silently discarded.
 
-## Structural benchmark
-
-Clones representative repositories, builds graph dumps, and records timing and graph-size metrics.
+## Cold readiness and publication
 
 ```bash
-pnpm --filter @samchon/graph-benchmark list
-pnpm --filter @samchon/graph-benchmark start -- --fixture typeorm --mode static
+node tests/benchmark/graph/index-time.mjs --all --tools=all
+node tests/benchmark/graph/publish.mjs --from <suite-output-directory>
+node tests/benchmark/build/graph-benchmark-svg.cjs --png
 ```
+
+Cold readiness runs sequentially on a quiet host. `results/graph.json` keeps raw
+samples and the latest host/scale block; medians and savings are derived by the
+renderer. The renderer writes grouped, per-repository, and cold-time SVGs plus
+pixel-checked 2x PNG siblings under `results/svg` and `results/png`.
+
+See [`graph/README.md`](graph/README.md) for the reference runner's detailed
+flags and validity semantics.

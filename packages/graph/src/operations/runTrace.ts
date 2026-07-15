@@ -1,28 +1,45 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import {
   ISamchonGraphEdge,
+  ISamchonGraphEvidence,
   ISamchonGraphNode,
   ISamchonGraphTrace,
 } from "../structures";
-import {
-  bound,
-  isExecution,
-  isTestPath,
-  isTypeEdge,
-  publicEvidence,
-  resolveHandle,
-  signatureOf,
-} from "./common";
+import { bound } from "./bound";
+import { edgeEvidenceOf } from "./edgeEvidenceOf";
+import { isExecution } from "./isExecution";
+import { isExternalNode } from "./isExternalNode";
+import { isTestPath } from "./isTestPath";
+import { resolveGraphHandle } from "./resolveGraphHandle";
+import { IRunnerOutput } from "./IRunnerOutput";
+import { resultNext } from "./resultNext";
+import { signatureOf } from "./signatureOf";
 
-const DEFAULT_DEPTH = 2;
-const DEFAULT_MAX_NODES = 6;
-const MAX_OPEN_DEPTH = 2;
-const MAX_OPEN_NODES = 8;
+const DEFAULT_DEPTH = 3;
+const DEFAULT_MAX_NODES = 12;
+// An open trace used to stop at two hops and eight nodes, whatever depth the
+// caller asked for. A question that spans a runtime chain — a state change
+// through tracking, scheduling, rendering, then patching — is that chain hop by
+// hop, so the model re-issued a trace per hop and paid a round trip for each: a
+// single vue question spent twenty-six calls walking a flow the graph could have
+// walked once. The cap now follows the chain instead of cutting it.
+const MAX_OPEN_DEPTH = 8;
+const MAX_OPEN_NODES = 32;
 const MAX_IMPACT_DEPTH = 4;
 const MAX_IMPACT_NODES = 16;
 const MAX_HOPS_PER_NODE = 2;
-const MAX_STEPS = 6;
+const MAX_STEPS = 12;
 const MAX_PATH_DEPTH = 12;
+const DISPATCH_KINDS = new Set<string>(["overrides", "implements"]);
+// An interface the codebase implements everywhere — a disposable, a listener, a
+// lifecycle hook — is not a step in one flow, and naming its implementors is a
+// dump of the codebase rather than an answer. Past this many, the declaration
+// stays a leaf and `details` answers `implementedBy` for a caller that wants the
+// list. The cut is the graph's existing definition of a hub (see
+// `isSharedUtility`): across the benchmark corpus it follows 84–100% of dispatch
+// sites per project and refuses only the genuinely polymorphic ones (zod's
+// 36-way schema interface, VS Code's 533-way disposable).
+const DISPATCH_HUB = 12;
 
 /**
  * Breadth-first trace along the dependency graph. Structural
@@ -34,7 +51,7 @@ const MAX_PATH_DEPTH = 12;
 export function runTrace(
   graph: SamchonGraphMemory,
   props: ISamchonGraphTrace.IRequest,
-): ISamchonGraphTrace {
+): IRunnerOutput<ISamchonGraphTrace> {
   const direction = props.direction ?? "forward";
   const focus = props.focus ?? "all";
   const impact = direction === "impact";
@@ -57,54 +74,75 @@ export function runTrace(
   // forward/reverse the role is noise.
   const withRoles = direction === "impact";
 
-  const start = resolveHandle(graph, props.from);
+  const start = resolveGraphHandle(graph, props.from);
   if (start.candidates !== undefined) {
     return {
-      type: "trace",
-      direction,
-      hops: [],
-      reached: [],
-      truncated: false,
-      candidates: start.candidates.map((node) => traceNode(graph, node)),
+      result: {
+        type: "trace",
+        direction,
+        hops: [],
+        reached: [],
+        truncated: false,
+        candidates: start.candidates.map((node) => summary(graph, node)),
+      },
+      next: resultNext(
+        "clarify",
+        "The start handle is ambiguous: it matched several candidates, one of which names the trace.",
+      ),
     };
   }
   if (start.node === undefined) {
     return {
-      type: "trace",
-      direction,
-      hops: [],
-      reached: [],
-      truncated: false,
+      result: {
+        type: "trace",
+        direction,
+        hops: [],
+        reached: [],
+        truncated: false,
+      },
+      next: resultNext(
+        "outside",
+        "The start handle did not resolve in the graph, so it holds no trace from this handle.",
+      ),
     };
   }
 
   // Path mode: with `to`, return the dependency path from `from` to `to`, the
   // one-call answer for "how does A reach B", instead of an open-ended trace.
-  if (props.to !== undefined && props.to.trim() !== "") {
-    const target = resolveHandle(graph, props.to);
-    const startNode = traceNode(graph, start.node);
-    // Mirror the start handle: an ambiguous or unresolved target must ask to
-    // clarify, not report an empty path with next: "answer" (which reads as
-    // "no flow exists").
+  if (props.to !== undefined && props.to !== "") {
+    const base = {
+      type: "trace" as const,
+      direction: "path",
+      hops: [],
+      reached: [],
+      truncated: false,
+    };
+    const pathNext = resultNext(
+      "answer",
+      "The path result is the structural flow: its path nodes and evidence ranges are what the graph holds between the two ends.",
+    );
+    const target = resolveGraphHandle(graph, props.to);
     if (target.candidates !== undefined) {
       return {
-        type: "trace",
-        direction: "path",
-        start: startNode,
-        hops: [],
-        reached: [],
-        truncated: false,
-        candidates: target.candidates.map((node) => traceNode(graph, node)),
+        result: {
+          ...base,
+          start: summary(graph, start.node),
+          candidates: target.candidates.map((node) => summary(graph, node)),
+        },
+        next: resultNext(
+          "inspect",
+          "The target names several nodes; re-trace with the id of the one the question means.",
+          "trace",
+        ),
       };
     }
     if (target.node === undefined) {
       return {
-        type: "trace",
-        direction: "path",
-        start: startNode,
-        hops: [],
-        reached: [],
-        truncated: false,
+        result: { ...base, start: summary(graph, start.node) },
+        next: resultNext(
+          "outside",
+          "The target resolved to no node, so the graph holds no path to it.",
+        ),
       };
     }
     const found = findPath(
@@ -115,18 +153,44 @@ export function runTrace(
       focus,
       includeExternal,
     );
+    const path = found?.path ?? [];
+    const hops = found?.hops ?? [];
+    const junctions =
+      hops.length > 0
+        ? []
+        : junctionsBetween(graph, start.node.id, target.node.id, focus);
     return {
-      type: "trace",
-      direction: "path",
-      start: startNode,
-      target: traceNode(graph, target.node),
-      path: (found?.path ?? []).map((node, depth) =>
-        traceNode(graph, node, depth, true),
-      ),
-      hops: found?.hops ?? [],
-      reached: [],
-      truncated: false,
-      steps: steps(graph, found?.hops ?? []),
+      result: {
+        ...base,
+        start: summary(graph, start.node),
+        target: summary(graph, target.node),
+        hops,
+        path: path.map((node, i) => summary(graph, node, i, false, true)),
+        steps: traceSteps(graph, hops),
+        ...(junctions.length > 0 ? { junctions } : {}),
+      },
+      // An empty path is a fact, not an answer, and the old message called it
+      // one: "its path nodes and evidence ranges are what the graph holds
+      // between the two ends" — of a result that held nothing. The two ends do
+      // not call each other, which in an event-driven codebase is the common
+      // case: a pointer handler emits, an emitter's `emit()` runs listeners a
+      // registration put in an array, and no call edge crosses that array. The
+      // callers of the target are the way across, and the graph has them, so
+      // say which call to make instead of handing back an empty result dressed
+      // as the answer. Excalidraw's tour spent eleven calls finding this out.
+      next:
+        hops.length > 0
+          ? pathNext
+          : junctions.length > 0
+            ? resultNext(
+                "inspect",
+                "No call path runs between the two ends — a callback stands between them (an event emitter, a subscription, a lifecycle hook), and no call edge crosses one. `junctions` names the symbols both ends touch, which is the seam: trace the junction to see who registers on it and who fires it.",
+                "trace",
+              )
+            : resultNext(
+                "outside",
+                "No call path runs from the start to the target and they touch nothing in common, so the graph holds no connection between them.",
+              ),
     };
   }
 
@@ -147,16 +211,26 @@ export function runTrace(
       }
       const edges = orderedEdges(
         graph,
-        reverse ? graph.incoming(id) : graph.outgoing(id),
-        impact,
+        reverse
+          ? graph.incoming(id)
+          : [...graph.outgoing(id), ...dispatchEdges(graph, id, focus)],
+        direction,
         reverse,
-      ).filter((edge) => traversable(edge, focus));
+      );
       for (const edge of edges) {
+        if (!traversable(edge.kind, focus)) continue;
         const otherId = reverse ? edge.from : edge.to;
         const other = graph.node(otherId);
         if (other === undefined || other.kind === "file") continue;
-        if (!includeExternal && other.external) continue;
-        const hop = hopOf(graph, edge, depth + 1);
+        if (!includeExternal && isExternalNode(other)) continue;
+        const hop: ISamchonGraphTrace.IHop = {
+          from: edge.from,
+          to: edge.to,
+          kind: edge.kind,
+          depth: depth + 1,
+        };
+        const evidence = edgeEvidenceOf(edge);
+        if (evidence !== undefined) hop.evidence = evidence;
         // A back-edge to the start or an already-reached node: record the hop;
         // its endpoints are already represented.
         if (visited.has(otherId)) {
@@ -175,7 +249,7 @@ export function runTrace(
           continue;
         }
         visited.add(otherId);
-        reached.set(otherId, traceNode(graph, other, depth + 1, false, withRoles));
+        reached.set(otherId, summary(graph, other, depth + 1, withRoles));
         next.push({ id: otherId, depth: depth + 1 });
         hops.push(hop);
       }
@@ -184,14 +258,135 @@ export function runTrace(
   }
 
   return {
-    type: "trace",
-    start: traceNode(graph, start.node),
-    direction,
-    hops,
-    reached: [...reached.values()],
-    truncated,
-    steps: steps(graph, hops),
+    result: {
+      type: "trace",
+      start: summary(graph, start.node),
+      direction,
+      hops,
+      reached: [...reached.values()],
+      steps: traceSteps(graph, hops),
+      truncated,
+    },
+    next: resultNext(
+      "answer",
+      "Steps, hops, reached nodes, and evidence ranges are the flow the graph holds from this start.",
+    ),
   };
+}
+
+function traceSteps(
+  graph: SamchonGraphMemory,
+  hops: ISamchonGraphTrace.IHop[],
+): string[] {
+  return hops.slice(0, MAX_STEPS).map((hop) => {
+    const from = graph.node(hop.from);
+    const to = graph.node(hop.to);
+    // Every hop's endpoints came from a real edge in this same graph.
+    /* c8 ignore next 2 */
+    const lhs = from?.qualifiedName ?? from?.name ?? hop.from;
+    const rhs = to?.qualifiedName ?? to?.name ?? hop.to;
+    const evidence =
+      hop.evidence === undefined
+        ? ""
+        : ` at ${hop.evidence.file}:${hop.evidence.startLine}`;
+    return `${lhs} -[${hop.kind}${evidence}]-> ${rhs}`;
+  });
+}
+
+/**
+ * The symbols both ends of an unreachable path touch.
+ *
+ * A call graph cannot cross a callback: the registration hands a listener to an
+ * emitter, and `emit()` runs whatever the registration put in an array. But the
+ * registration and the emit both reference the emitter, and those are edges the
+ * indexer resolved — Excalidraw's `App.componentDidMount` and its
+ * `Store.emitDurableIncrement` both touch `Store.onDurableIncrementEmitter`,
+ * which is
+ * the exact seam the path walk stops at.
+ *
+ * So when the path is empty, name what the two ends share. It is not a path and
+ * the result says so; it is the symbol to inspect next, with the two edges that
+ * make it the seam. Nothing here is matched or inferred: a junction is an edge
+ * from each end to the same node.
+ */
+function junctionsBetween(
+  graph: SamchonGraphMemory,
+  startId: string,
+  targetId: string,
+  focus: ISamchonGraphTrace.IRequest["focus"],
+): ISamchonGraphTrace.IJunction[] {
+  const startTouches = touchedBy(graph, startId, focus);
+  const targetTouches = touchedBy(graph, targetId, focus);
+  const out: ISamchonGraphTrace.IJunction[] = [];
+  for (const [id, fromStart] of startTouches) {
+    const fromTarget = targetTouches.get(id);
+    if (fromTarget === undefined) continue;
+    const node = graph.node(id);
+    if (node === undefined || node.kind === "file" || isExternalNode(node))
+      continue;
+    out.push({
+      id: node.id,
+      name: node.qualifiedName ?? node.name,
+      kind: node.kind,
+      file: node.file,
+      ...(node.evidence?.startLine !== undefined
+        ? { line: node.evidence.startLine }
+        : {}),
+      fromStart,
+      fromTarget,
+    });
+  }
+  // A shared leaf helper is noise; a shared emitter, store, or registry is the
+  // seam. What both ends hold onto rather than merely call is the thing standing
+  // between them, so state comes first.
+  out.sort((a, b) => junctionRank(b) - junctionRank(a));
+  return out.slice(0, MAX_JUNCTIONS);
+}
+
+const MAX_JUNCTIONS = 4;
+
+/** How much a shared symbol looks like a seam rather than a shared utility. */
+function junctionRank(junction: ISamchonGraphTrace.IJunction): number {
+  let rank = 0;
+  // State, in every vocabulary the languages give it: a `field` is a `property`
+  // reported by a language server that spells it differently.
+  if (
+    junction.kind === "variable" ||
+    junction.kind === "property" ||
+    junction.kind === "field"
+  )
+    rank += 3;
+  if (junction.fromStart.kind === "accesses") rank += 2;
+  if (junction.fromTarget.kind === "accesses") rank += 2;
+  return rank;
+}
+
+/** Every node an end touches, with the edge that touches it. */
+function touchedBy(
+  graph: SamchonGraphMemory,
+  id: string,
+  focus: ISamchonGraphTrace.IRequest["focus"],
+): Map<string, ISamchonGraphTrace.IJunctionEdge> {
+  const touched = new Map<string, ISamchonGraphTrace.IJunctionEdge>();
+  for (const edge of graph.outgoing(id)) {
+    if (!traversable(edge.kind, focus)) continue;
+    if (!touched.has(edge.to))
+      touched.set(edge.to, {
+        kind: edge.kind,
+        outgoing: true,
+        ...(edge.evidence !== undefined ? { evidence: edge.evidence } : {}),
+      });
+  }
+  for (const edge of graph.incoming(id)) {
+    if (!traversable(edge.kind, focus)) continue;
+    if (!touched.has(edge.from))
+      touched.set(edge.from, {
+        kind: edge.kind,
+        outgoing: false,
+        ...(edge.evidence !== undefined ? { evidence: edge.evidence } : {}),
+      });
+  }
+  return touched;
 }
 
 /**
@@ -212,62 +407,84 @@ function findPath(
   /* c8 ignore next */
   if (startNode === undefined) return null;
   if (startId === targetId) return { path: [startNode], hops: [] };
-  const parent = new Map<string, { from: string; edge: ISamchonGraphEdge }>();
-  const queue: Array<{ id: string; depth: number }> = [
-    { id: startId, depth: 0 },
-  ];
-  const visited = new Set<string>([startId]);
-  while (queue.length > 0) {
-    const item = queue.shift()!;
-    /* c8 ignore next */
-    if (item.depth >= maxDepth) continue;
-    for (const edge of graph.outgoing(item.id)) {
-      if (!traversable(edge, focus)) continue;
-      const other = graph.node(edge.to);
-      if (other === undefined || other.kind === "file") continue;
-      if (!includeExternal && other.external) continue;
-      if (visited.has(edge.to)) continue;
-      visited.add(edge.to);
-      parent.set(edge.to, { from: item.id, edge });
-      if (edge.to === targetId) {
-        const ids = [targetId];
-        let cursor = targetId;
-        while (cursor !== startId) {
-          const p = parent.get(cursor)!;
-          ids.unshift(p.from);
-          cursor = p.from;
-        }
-        const nodes = ids
-          .map((id) => graph.node(id))
-          .filter((node): node is ISamchonGraphNode => node !== undefined);
-        const pathHops: ISamchonGraphTrace.IHop[] = [];
-        for (let i = 1; i < ids.length; i++) {
-          const p = parent.get(ids[i]!);
-          if (p !== undefined) pathHops.push(hopOf(graph, p.edge, i));
-        }
-        return { path: nodes, hops: pathHops };
-      }
-      queue.push({ id: edge.to, depth: item.depth + 1 });
+  const parent = new Map<
+    string,
+    {
+      via: string;
+      kind: string;
+      evidence?: ISamchonGraphEvidence;
     }
+  >();
+  const visited = new Set<string>([startId]);
+  let queue: Array<{ id: string; depth: number }> = [{ id: startId, depth: 0 }];
+  while (queue.length > 0) {
+    const next: Array<{ id: string; depth: number }> = [];
+    for (const { id, depth } of queue) {
+      if (depth >= maxDepth) continue;
+      for (const edge of [
+        ...graph.outgoing(id),
+        ...dispatchEdges(graph, id, focus),
+      ]) {
+        if (!traversable(edge.kind, focus)) continue;
+        const otherId = edge.to;
+        if (visited.has(otherId)) continue;
+        const other = graph.node(otherId);
+        if (other === undefined || other.kind === "file") continue;
+        if (!includeExternal && isExternalNode(other)) continue;
+        visited.add(otherId);
+        const evidence = edgeEvidenceOf(edge);
+        parent.set(otherId, {
+          via: id,
+          kind: edge.kind,
+          evidence,
+        });
+        if (otherId === targetId) {
+          const ids: string[] = [otherId];
+          let cur = otherId;
+          while (cur !== startId) {
+            const p = parent.get(cur);
+            /* c8 ignore next */
+            if (p === undefined) break;
+            ids.unshift(p.via);
+            cur = p.via;
+          }
+          const path: ISamchonGraphNode[] = [];
+          for (const nid of ids) {
+            const n = graph.node(nid);
+            if (n !== undefined) path.push(n);
+          }
+          const hops: ISamchonGraphTrace.IHop[] = [];
+          for (let i = 1; i < path.length; i++) {
+            const node = path[i]!;
+            const parentEdge = parent.get(node.id);
+            const hop: ISamchonGraphTrace.IHop = {
+              from: path[i - 1]!.id,
+              to: node.id,
+              /* c8 ignore next */
+              kind: parentEdge?.kind ?? "calls",
+              depth: i,
+            };
+            if (parentEdge?.evidence !== undefined)
+              hop.evidence = parentEdge.evidence;
+            hops.push(hop);
+          }
+          return { path, hops };
+        }
+        next.push({ id: otherId, depth: depth + 1 });
+      }
+    }
+    queue = next;
   }
   return null;
 }
 
-/**
- * Order edges before traversal. A normal trace ranks by edge kind, then the
- * traversed endpoint's declaration kind, then evidence position; an impact
- * trace ranks reached endpoints by public-surface role first so the blast
- * radius on the exported/test surface leads.
- */
-// Impact always traverses incoming edges, so its ranked endpoint is always
-// the edge's `from`.
 function orderedEdges(
   graph: SamchonGraphMemory,
   edges: readonly ISamchonGraphEdge[],
-  impact: boolean,
+  direction: string,
   reverse: boolean,
 ): readonly ISamchonGraphEdge[] {
-  if (!impact)
+  if (direction !== "impact")
     return [...edges].sort(
       (a, b) =>
         edgeKindRank(a.kind) - edgeKindRank(b.kind) ||
@@ -275,9 +492,14 @@ function orderedEdges(
           traceEndpointRank(graph, reverse ? b.from : b.to) ||
         evidenceRank(a) - evidenceRank(b),
     );
+  // An impact trace always walks incoming edges, so its ranked endpoint is
+  // always the edge's `from`; the `to` side is kept so the two comparators read
+  // the same way.
+  /* c8 ignore next 4 */
   return [...edges].sort(
     (a, b) =>
-      impactEndpointRank(graph, a.from) - impactEndpointRank(graph, b.from) ||
+      impactEndpointRank(graph, reverse ? a.from : a.to) -
+        impactEndpointRank(graph, reverse ? b.from : b.to) ||
       edgeKindRank(a.kind) - edgeKindRank(b.kind) ||
       evidenceRank(a) - evidenceRank(b),
   );
@@ -299,13 +521,18 @@ function traceEndpointRank(graph: SamchonGraphMemory, id: string): number {
   if (node === undefined) return 9;
   if (isTestPath(node.file)) return 6;
   switch (node.kind) {
+    // A `constructor` is a `method` reported by a language server that spells it
+    // differently, and a `field` is a `property`. They rank where their
+    // TypeScript-checker counterparts rank, not in the unknown-kind bucket.
     case "function":
     case "method":
+    case "constructor":
     case "class":
       return 0;
     case "variable":
       return 1;
     case "property":
+    case "field":
       return 2;
     case "interface":
     case "type":
@@ -315,48 +542,16 @@ function traceEndpointRank(graph: SamchonGraphMemory, id: string): number {
   }
 }
 
-/** An edge the trace should follow: a real dependency, not a structural edge. */
-function traversable(
-  edge: ISamchonGraphEdge,
-  focus: ISamchonGraphTrace.IRequest["focus"],
-): boolean {
-  if (
-    edge.kind === "contains" ||
-    edge.kind === "exports" ||
-    edge.kind === "imports"
-  ) {
-    return false;
-  }
-  if (focus === "execution") return isExecution(edge.kind);
-  if (focus === "types") return isTypeEdge(edge.kind);
-  return true;
-}
-
-function hopOf(
-  graph: SamchonGraphMemory,
-  edge: ISamchonGraphEdge,
-  depth: number,
-): ISamchonGraphTrace.IHop {
-  const hop: ISamchonGraphTrace.IHop = {
-    from: edge.from,
-    to: edge.to,
-    kind: edge.kind,
-    depth,
-  };
-  if (edge.evidence !== undefined) hop.evidence = publicEvidence(edge.evidence);
-  return hop;
-}
-
 /**
  * Summarize a node for a trace result. With `withRoles`, tag the public-surface
  * roles (exported / test) an impact trace reports; other directions omit them.
  */
-function traceNode(
+function summary(
   graph: SamchonGraphMemory,
   node: ISamchonGraphNode,
   depth?: number,
-  withSignature = false,
   withRoles = false,
+  withSignature = false,
 ): ISamchonGraphTrace.INode {
   const out: ISamchonGraphTrace.INode = {
     id: node.id,
@@ -364,7 +559,8 @@ function traceNode(
     kind: node.kind,
     file: node.file,
   };
-  if (node.evidence?.startLine !== undefined) out.line = node.evidence.startLine;
+  if (node.evidence?.startLine !== undefined)
+    out.line = node.evidence.startLine;
   const span = node.implementation ?? node.evidence;
   if (span !== undefined) {
     out.sourceSpan = {
@@ -375,8 +571,8 @@ function traceNode(
   }
   if (depth !== undefined) out.depth = depth;
   if (withSignature) {
-    const signature = signatureOf(graph.project, node);
-    if (signature !== undefined) out.signature = signature;
+    const sig = signatureOf(graph.project, node);
+    if (sig !== undefined) out.signature = sig;
   }
   if (withRoles) {
     const roles: string[] = [];
@@ -387,29 +583,86 @@ function traceNode(
   return out;
 }
 
-function steps(
+/**
+ * The implementations a call that lands here actually runs.
+ *
+ * A call resolved to an abstract method or an interface member lands on a
+ * declaration with no body. A forward walk stops there — and the code that
+ * executes is one _incoming_ `overrides`/`implements` edge away, which no
+ * forward traversal crosses. NestJS's whole request pipeline sits behind one:
+ * `ContextCreator.createContext` calls the abstract
+ * `createConcreteContext`, and the guards, pipes and interceptors contexts are
+ * its overrides, so the graph said a request reaches an abstract declaration
+ * and stops, and the guard it runs was reachable from nothing but its own unit
+ * test. Between 1% and 8% of every called symbol in the benchmark projects is
+ * such a declaration; every codebase with an abstract base, a strategy, an
+ * adapter or a visitor has them.
+ *
+ * So the walk dispatches: a called declaration with no body continues in the
+ * implementations that have one, as a `dispatches` hop cited at the
+ * implementation — which is the fact, since the call site named the base and
+ * the runtime lands in the override.
+ */
+function dispatchEdges(
   graph: SamchonGraphMemory,
-  hops: readonly ISamchonGraphTrace.IHop[],
-): string[] {
-  return hops.slice(0, MAX_STEPS).map((hop) => {
-    const from = graph.node(hop.from);
-    const to = graph.node(hop.to);
-    // Every hop's endpoints came from a real edge in this same graph.
-    /* c8 ignore next 2 */
-    const lhs = from?.qualifiedName ?? from?.name ?? hop.from;
-    const rhs = to?.qualifiedName ?? to?.name ?? hop.to;
-    const at =
-      hop.evidence === undefined
-        ? ""
-        : ` at ${hop.evidence.file}:${hop.evidence.startLine}`;
-    return `${lhs} -[${hop.kind}${at}]-> ${rhs}`;
-  });
+  id: string,
+  focus: ISamchonGraphTrace.IRequest["focus"],
+): ISamchonGraphEdge[] {
+  if (focus === "types" || hasExecutionBody(graph, id)) return [];
+  const out: ISamchonGraphEdge[] = [];
+  for (const edge of graph.incoming(id)) {
+    if (!DISPATCH_KINDS.has(edge.kind)) continue;
+    const implementation = graph.node(edge.from);
+    if (implementation === undefined || !hasExecutionBody(graph, edge.from))
+      continue;
+    out.push({
+      from: id,
+      to: edge.from,
+      kind: "dispatches",
+      ...(edge.evidence !== undefined ? { evidence: edge.evidence } : {}),
+    });
+  }
+  return out.length >= DISPATCH_HUB ? [] : out;
+}
+
+/** Whether the declaration has a body: something it calls, reads, or renders. */
+function hasExecutionBody(graph: SamchonGraphMemory, id: string): boolean {
+  for (const edge of graph.outgoing(id))
+    if (isExecution(edge.kind)) return true;
+  return false;
+}
+
+/** An edge the trace should follow: a real dependency, not a structural edge. */
+function traversable(
+  kind: string,
+  focus: ISamchonGraphTrace.IRequest["focus"],
+): boolean {
+  if (kind === "contains" || kind === "exports" || kind === "imports") {
+    return false;
+  }
+  if (kind === "dispatches") return focus !== "types";
+  if (focus === "execution") return isExecution(kind);
+  if (focus === "types") {
+    return (
+      kind === "type_ref" ||
+      kind === "extends" ||
+      kind === "implements" ||
+      kind === "overrides" ||
+      kind === "decorates"
+    );
+  }
+  return true;
 }
 
 function edgeKindRank(kind: string): number {
   switch (kind) {
     case "calls":
       return 0;
+    // Where a call landed on a declaration, the implementation it dispatches to
+    // is the continuation of that call, not an afterthought behind the
+    // declaration's type references.
+    case "dispatches":
+      return 1;
     case "instantiates":
       return 1;
     case "renders":
@@ -427,6 +680,8 @@ function edgeKindRank(kind: string): number {
       return 6;
     case "type_ref":
       return 7;
+    // Every kind the walk can reach is named above.
+    /* c8 ignore next 2 */
     default:
       return 10;
   }

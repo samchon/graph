@@ -4,6 +4,7 @@ import path from "node:path";
 import { IDiagnostic, LspClient } from "../lsp";
 import {
   ISamchonGraphDiagnostic,
+  ISamchonGraphDump,
   ISamchonGraphEdge,
   ISamchonGraphNode,
 } from "../structures";
@@ -16,13 +17,17 @@ import { dedupeNodes } from "./dedupeNodes";
 import { discoverLanguages } from "./discoverLanguages";
 import { ensureCompileCommands } from "./ensureCompileCommands";
 import { ensurePubDeps } from "./ensurePubDeps";
+import { finalizeGraph } from "./finalizeGraph";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IIndexerResult } from "./IIndexerResult";
 import { ILspSession } from "./ILspSession";
 import { languageIdOf } from "./languageIdOf";
 import { allExtensions, languageOf, specOf } from "./languages";
 import { scanSession } from "./scanSession";
-import { buildStaticGraph } from "./staticIndexer";
+import { IStaticGraphParts } from "./IStaticGraphParts";
+import { staticGraphParts } from "./staticGraphParts";
+import { wireEdges } from "./wireEdges";
+import { wireNodes } from "./wireNodes";
 
 export async function buildLspGraph(
   options: IBuildGraphOptions = {},
@@ -113,8 +118,11 @@ export async function buildLspGraph(
     }
   }
 
+  // The static lane is merged before the graph is finalized, not after: the
+  // export surface is followed once across the whole project, so a barrel in one
+  // lane can still publish a symbol declared in the other.
   if (staticFallbackLanguages.length > 0) {
-    const fallback = buildStaticGraph({
+    const fallback = staticGraphParts({
       ...options,
       cwd: root,
       mode: "static",
@@ -122,48 +130,68 @@ export async function buildLspGraph(
     });
     if (lspNodeCount === 0) {
       return {
-        dump: {
-          ...fallback,
-          indexer: "static",
-          warnings: [...fallback.warnings!, ...warnings],
-        },
+        dump: staticDump(fallback, warnings),
         warnings,
         ...(options.keepAlive ? { sessions } : {}),
       };
     }
     appendAll(nodes, fallback.nodes);
     appendAll(edges, fallback.edges);
-    appendAll(warnings, fallback.warnings!);
+    appendAll(warnings, fallback.warnings);
   }
 
   if (nodes.length === 0) {
-    const fallback = buildStaticGraph(options);
     return {
-      dump: {
-        ...fallback,
-        indexer: "static",
-        warnings: [...fallback.warnings!, ...warnings],
-      },
+      dump: staticDump(staticGraphParts(options), warnings),
       warnings,
       ...(options.keepAlive ? { sessions } : {}),
     };
   }
 
+  const finalized = finalizeGraph(
+    root,
+    walkSourceFiles(root, {
+      extensions: allExtensions(languages),
+      maxFiles: options.maxFiles,
+    }),
+    nodes,
+    edges,
+  );
   return {
     dump: {
       project: root,
       languages: [...new Set(nodes.map((node) => node.language))],
-      generatedAt: new Date().toISOString(),
       // Only a static fallback makes the graph a hybrid; a benign warning (e.g.
       // the reference cap) on a pure-LSP run must not relabel it.
       indexer: staticFallbackLanguages.length > 0 ? "hybrid" : "lsp",
-      nodes: dedupeNodes(nodes),
-      edges: dedupeEdges(edges),
+      nodes: wireNodes(dedupeNodes(finalized.nodes)),
+      edges: wireEdges(dedupeEdges(finalized.edges)),
       diagnostics,
       warnings,
     },
     warnings,
     ...(options.keepAlive ? { sessions } : {}),
+  };
+}
+
+/** Every language fell back to the static parser: the dump is that parse. */
+function staticDump(
+  parts: IStaticGraphParts,
+  warnings: readonly string[],
+): ISamchonGraphDump {
+  const finalized = finalizeGraph(
+    parts.root,
+    parts.files,
+    parts.nodes,
+    parts.edges,
+  );
+  return {
+    project: parts.root,
+    languages: parts.languages,
+    indexer: "static",
+    nodes: wireNodes(dedupeNodes(finalized.nodes)),
+    edges: wireEdges(dedupeEdges(finalized.edges)),
+    warnings: [...parts.warnings, ...warnings],
   };
 }
 
@@ -220,7 +248,7 @@ async function openLanguageSession(
   // Normal callers remain unlimited. Bounded callers such as the real-server
   // experiment can opt into a request deadline.
   const client = new LspClient(command, args, options.lspTimeoutMs);
-  const diagnostics: ISamchonGraphDiagnostic[] = [];
+  const diagnostics = new Map<string, ISamchonGraphDiagnostic[]>();
   let lastProgressAt = 0;
   client.onNotification("$/progress", () => {
     lastProgressAt = Date.now();
@@ -233,7 +261,15 @@ async function openLanguageSession(
     /* c8 ignore next */
     if (!isSubPath(root, file)) return;
     const rel = projectRelative(root, file);
-    appendAll(diagnostics, typed.diagnostics.map((diagnostic) => convertDiagnostic(rel, diagnostic)));
+    // A `publishDiagnostics` notification is a *replacement* for the document it
+    // names — that is what the protocol says it means — so it replaces. Appending
+    // instead kept a re-analysed file's findings twice and a deleted file's
+    // forever, and the dump became a function of the session's edit history
+    // rather than of the source on disk.
+    diagnostics.set(
+      rel,
+      typed.diagnostics.map((diagnostic) => convertDiagnostic(rel, diagnostic)),
+    );
   });
 
   try {

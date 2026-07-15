@@ -1,17 +1,16 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
-import {
-  ISamchonGraphDecorator,
-  ISamchonGraphLookup,
-  ISamchonGraphNode,
-} from "../structures";
-import {
-  bound,
-  isStructural,
-  isTestPath,
-  signatureOf,
-  subwords,
-} from "./common";
+import { ISamchonGraphLookup, ISamchonGraphNode } from "../structures";
+import { bound } from "./bound";
+import { decoratorsOf } from "./decoratorsOf";
+import { exportFanIn } from "./exportFanIn";
+import { isExternalNode } from "./isExternalNode";
+import { isStructural } from "./isStructural";
 import { isSupportPath } from "./isSupportPath";
+import { isTestPath } from "./isTestPath";
+import { IRunnerOutput } from "./IRunnerOutput";
+import { resultNext } from "./resultNext";
+import { signatureOf } from "./signatureOf";
+import { subwords } from "./subwords";
 
 // One file should not crowd out the rest of the ranking, so cap hits per file.
 const PER_FILE = 3;
@@ -28,7 +27,7 @@ const MAX_LIMIT = 6;
 export function runLookup(
   graph: SamchonGraphMemory,
   props: ISamchonGraphLookup.IRequest,
-): ISamchonGraphLookup {
+): IRunnerOutput<ISamchonGraphLookup> {
   const terms = subwords(props.query);
   const codeTerms = exactCodeTerms(props.query);
   const requestedKinds = requestedSymbolKinds(props.query);
@@ -38,14 +37,20 @@ export function runLookup(
   const includeExternal = props.includeExternal === true;
   if (terms.length === 0)
     return {
-      type: "lookup",
-      hits: [],
+      result: {
+        type: "lookup",
+        hits: [],
+      },
+      next: resultNext(
+        "clarify",
+        "The query carries no searchable terms, so no symbol could be matched.",
+      ),
     };
 
   const scored: ISamchonGraphLookup.IHit[] = [];
   for (const node of graph.nodes) {
     if (node.kind === "file") continue;
-    if (!includeExternal && node.external) continue;
+    if (!includeExternal && isExternalNode(node)) continue;
     const score = scoreNode(
       graph,
       node,
@@ -95,8 +100,20 @@ export function runLookup(
     if (sig !== undefined) hit.signature = sig;
   }
   return {
-    type: "lookup",
-    hits,
+    result: {
+      type: "lookup",
+      hits,
+    },
+    next:
+      hits.length === 0
+        ? resultNext(
+            "outside",
+            "No symbol matched, so the graph did not resolve this name.",
+          )
+        : resultNext(
+            "answer",
+            "The ranked hits and their signatures resolve the name.",
+          ),
   };
 }
 
@@ -163,6 +180,13 @@ function scoreNode(
   const fan = degree(graph, node.id);
   score += Math.min(8, Math.log2(1 + fan) * 2);
 
+  // How many modules put this symbol on the wire. Two symbols can match a name
+  // equally well while one is what a consumer imports and the other is a leftover
+  // major the package still ships behind a subpath; the re-export chain is what
+  // tells them apart, so it breaks the tie.
+  const surface = exportFanIn(graph, node.id);
+  if (surface > 0) score *= 1 + Math.min(0.4, Math.log2(1 + surface) * 0.14);
+
   // Dampen what is rarely the intended target.
   if (node.ignored) score *= 0.3;
   if (isTestPath(node.file)) score *= 0.7;
@@ -221,7 +245,12 @@ function exactCodeTerms(query: string): string[] {
 function requestedSymbolKinds(query: string): Set<string> {
   const kinds = new Set<string>();
   const lc = query.toLowerCase();
-  if (/\bmethods?\b/.test(lc)) kinds.add("method");
+  // A `constructor` is a method reported by a language server that spells it
+  // differently, so a question asking for methods is asking for it too.
+  if (/\bmethods?\b/.test(lc)) {
+    kinds.add("method");
+    kinds.add("constructor");
+  }
   if (/\bfunctions?\b/.test(lc)) {
     kinds.add("function");
     kinds.add("method");
@@ -245,13 +274,4 @@ function degree(graph: SamchonGraphMemory, id: string): number {
   for (const edge of graph.outgoing(id)) if (!isStructural(edge.kind)) n++;
   for (const edge of graph.incoming(id)) if (!isStructural(edge.kind)) n++;
   return n;
-}
-
-/** Decorator facts already captured on a node, omitted when absent. */
-function decoratorsOf(
-  node: ISamchonGraphNode,
-): ISamchonGraphDecorator[] | undefined {
-  return node.decorators !== undefined && node.decorators.length > 0
-    ? node.decorators
-    : undefined;
 }

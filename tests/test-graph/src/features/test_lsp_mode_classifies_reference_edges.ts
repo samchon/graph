@@ -49,6 +49,23 @@ export const test_lsp_mode_classifies_reference_edges = async () => {
       .filter((edge) => edge.evidence?.startLine === 17)
       .some((edge) => edge.kind === "instantiates" || edge.kind === "calls"),
   );
+
+  // The wire contract: the triple `(from, to, kind)` is unique, and a repeat
+  // keeps the FIRST source-order evidence. `Owner.fn` is invoked twice — plainly
+  // on line 2, and through a generic argument list on line 17 — and both
+  // invocations are `calls`, so the graph holds one edge, cited at the call a
+  // reader arrives at first. Keeping the last one instead would move the tiebreak
+  // in every capped list (`refRank`, `evidenceRank`) onto whichever call site
+  // happened to be written last, and print a step citing it.
+  TestValidator.equals(
+    "a repeated relationship keeps the first source-order evidence",
+    dump.edges
+      .filter(
+        (edge) => edge.kind === "calls" && edge.to.endsWith("#Owner.fn:function"),
+      )
+      .map((edge) => edge.evidence?.startLine),
+    [2],
+  );
   // An unclosed generic argument list gives up rather than misreading
   // whatever follows it as an invocation.
   TestValidator.predicate(

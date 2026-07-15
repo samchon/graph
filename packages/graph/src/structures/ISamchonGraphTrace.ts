@@ -32,10 +32,62 @@ export interface ISamchonGraphTrace {
   /** Compact hop summaries preserving node names and edge evidence, capped. */
   steps?: string[];
 
+  /**
+   * Symbols both ends touch, when no call path runs between them.
+   *
+   * Nothing calls across the gap because in an event-driven codebase nothing
+   * does: a handler registers a listener on an emitter, the emitter's `emit()`
+   * runs whatever a registration put in an array, and no call edge crosses that
+   * array. But both ends touch the emitter, and that is an edge, not a guess —
+   * Excalidraw's pointer handler and its store's emit both reference
+   * `Store.onDurableIncrementEmitter`, which is exactly the seam the call graph
+   * cannot walk.
+   *
+   * A junction is not a path. It is the symbol to look at next, and the edges
+   * that say why.
+   */
+  junctions?: ISamchonGraphTrace.IJunction[];
+
   /** When `from` was an ambiguous name, the matches to disambiguate with. */
   candidates?: ISamchonGraphTrace.INode[];
 }
 export namespace ISamchonGraphTrace {
+  /** A symbol both ends of an unreachable path touch, and how each touches it. */
+  export interface IJunction {
+    /** Stable node id: trace or inspect this symbol to cross the seam. */
+    id: string;
+
+    /** Qualified symbol name when available, otherwise the simple name. */
+    name: string;
+
+    /** Declaration kind (`variable`, `method`, `class`, ...). */
+    kind: string;
+
+    /** Project-relative path of the file that declares it. */
+    file: string;
+
+    /** 1-based declaration line, when known. */
+    line?: number;
+
+    /** How the start reaches it: the edge kind, and where that edge sits. */
+    fromStart: IJunctionEdge;
+
+    /** How the target reaches it, or is reached from it. */
+    fromTarget: IJunctionEdge;
+  }
+
+  /** One edge between an end of the requested path and the junction. */
+  export interface IJunctionEdge {
+    /** `calls`, `accesses`, `instantiates`, `type_ref`, ... */
+    kind: string;
+
+    /** True when the end is the edge's source, false when it is the target. */
+    outgoing: boolean;
+
+    /** Where the reference sits in source. */
+    evidence?: ISamchonGraphEvidence;
+  }
+
   /** Where and how far to trace dependency flow. */
   export interface IRequest {
     /** Discriminator for dependency tracing. */
@@ -83,17 +135,17 @@ export namespace ISamchonGraphTrace {
     focus?: "all" | "execution" | "types";
 
     /**
-     * Hops deep to follow (open forward/reverse cap at 2, impact at 4, path
-     * mode at 12). Raise it for path mode.
+     * Hops deep to follow (open forward/reverse cap at 8, impact at 4, path
+     * mode at 12). Raise it to follow a runtime chain to its end in one call.
      *
-     * @default 2
+     * @default 3
      */
     maxDepth?: number;
 
     /**
-     * Cap on reached nodes (open forward/reverse cap at 8, impact at 16).
+     * Cap on reached nodes (open forward/reverse cap at 32, impact at 16).
      *
-     * @default 6
+     * @default 12
      */
     maxNodes?: number;
 

@@ -1,36 +1,35 @@
-import path from "node:path";
 import { ISamchonGraphNode } from "../structures";
-import { readLines } from "../utils/fs";
+import { fileLines } from "./fileLines";
 
-export function signatureOf(project: string, node: ISamchonGraphNode): string | undefined {
-  if (node.evidence === undefined || node.file === "") return undefined;
-  const lines = readLines(path.join(project, node.evidence.file));
-  if (lines === undefined) return undefined;
-  const start = Math.max(0, node.evidence.startLine - 1);
-  const end =
-    node.evidence.endLine === undefined
-      ? Math.min(lines.length, start + 4)
-      : Math.min(lines.length, node.evidence.endLine);
+// A signature is the declaration head up to the body brace: a handful of lines.
+const MAX_SIGNATURE_LINES = 4;
+
+/**
+ * The declaration signature: the head of the declaration up to and including
+ * the line that opens its body (`{`), or the single declaration line when there
+ * is no brace, capped so a wrapped signature cannot run away.
+ */
+export function signatureOf(
+  project: string,
+  node: ISamchonGraphNode,
+): string | undefined {
+  const evidence = node.evidence;
+  const lines =
+    evidence === undefined ? undefined : fileLines(project, evidence.file);
+  if (lines === undefined || evidence === undefined) return undefined;
+  const start = Math.max(0, evidence.startLine - 1);
   const out: string[] = [];
-  for (let i = start; i < end && out.length < 4; i++) {
+  for (
+    let i = start;
+    i < lines.length && out.length < MAX_SIGNATURE_LINES;
+    i++
+  ) {
     const line = lines[i];
     /* c8 ignore next */
     if (line === undefined) break;
     out.push(line);
-    const trimmed = line.trimEnd();
-    if (trimmed.endsWith(";") || trimmed.endsWith("{") || trimmed.endsWith("}")) {
-      break;
-    }
+    if (line.includes("{") || line.trimEnd().endsWith(";")) break;
   }
   const text = out.join("\n").trim();
-  return text === "" ? undefined : compactSignature(text);
-}
-
-function compactSignature(text: string): string {
-  return text
-    .split(/\r?\n/)
-    .slice(0, 4)
-    .join("\n")
-    .replace(/\s+$/gm, "")
-    .trim();
+  return text === "" ? undefined : text;
 }

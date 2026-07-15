@@ -2,8 +2,8 @@ import path from "node:path";
 import typia from "typia";
 import { ISamchonGraphDump } from "../structures";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
-import { buildLspGraph } from "./lspIndexer";
-import { buildStaticGraph } from "./staticIndexer";
+import { buildLspGraph } from "./buildLspGraph";
+import { buildStaticGraph } from "./buildStaticGraph";
 
 export async function buildGraphDump(
   options: IBuildGraphOptions = {},

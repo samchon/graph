@@ -1,18 +1,18 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import {
-  ISamchonGraphDecorator,
   ISamchonGraphEdge,
   ISamchonGraphEntrypoints,
   ISamchonGraphNode,
 } from "../structures";
-import {
-  bound,
-  isStructural,
-  publicEvidence,
-  resolveHandle,
-  signatureOf,
-} from "./common";
+import { bound } from "./bound";
+import { decoratorsOf } from "./decoratorsOf";
+import { edgeEvidenceOf } from "./edgeEvidenceOf";
+import { isStructural } from "./isStructural";
+import { resolveGraphHandle } from "./resolveGraphHandle";
+import { IRunnerOutput } from "./IRunnerOutput";
+import { resultNext } from "./resultNext";
 import { runLookup } from "./runLookup";
+import { signatureOf } from "./signatureOf";
 
 const DEFAULT_LIMIT = 4;
 const MAX_LIMIT = 8;
@@ -29,7 +29,7 @@ const MAX_SEEDS = 3;
 export function runEntrypoints(
   graph: SamchonGraphMemory,
   props: ISamchonGraphEntrypoints.IRequest,
-): ISamchonGraphEntrypoints {
+): IRunnerOutput<ISamchonGraphEntrypoints> {
   const query = props.query.trim();
   const limit = bound(props.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
   const neighborLimit = bound(
@@ -39,11 +39,15 @@ export function runEntrypoints(
     MAX_NEIGHBORS,
   );
 
-  const lookupResult = runLookup(graph, { type: "lookup", query, limit });
+  const lookupResult = runLookup(graph, {
+    type: "lookup",
+    query,
+    limit,
+  }).result;
   const hits = lookupResult.hits.map((hit) => ({ ...hit }));
 
   const mentions = directMentions(graph, query).map((handle) => {
-    const resolved = resolveHandle(graph, handle);
+    const resolved = resolveGraphHandle(graph, handle, 6);
     const mention: ISamchonGraphEntrypoints.IMention = { handle };
     if (resolved.node !== undefined)
       mention.node = nodeOf(graph, resolved.node);
@@ -71,12 +75,7 @@ export function runEntrypoints(
   const neighborhood: ISamchonGraphEntrypoints.INeighborhood[] = [];
   for (const seed of seeds.slice(0, MAX_SEEDS)) {
     const outgoing = refs(graph, graph.outgoing(seed.id), "to", neighborLimit);
-    const incoming = refs(
-      graph,
-      graph.incoming(seed.id),
-      "from",
-      neighborLimit,
-    );
+    const incoming = refs(graph, graph.incoming(seed.id), "from", neighborLimit);
     if (outgoing.truncated || incoming.truncated) truncated = true;
     neighborhood.push({
       ...nodeOf(graph, seed),
@@ -85,13 +84,26 @@ export function runEntrypoints(
     });
   }
 
+  const resolved =
+    hits.length > 0 || mentions.some((mention) => mention.node !== undefined);
   return {
-    type: "entrypoints",
-    query,
-    hits,
-    mentions,
-    neighborhood,
-    ...(truncated ? { truncated: true } : {}),
+    result: {
+      type: "entrypoints",
+      hits,
+      mentions,
+      neighborhood,
+      ...(truncated ? { truncated: true } : {}),
+    },
+    next: resolved
+      ? resultNext(
+          "inspect",
+          "These are first-pass handles: one trace or details on the handle the question targets completes the answer.",
+          "trace",
+        )
+      : resultNext(
+          "outside",
+          "No entry handle resolved for this query, so the graph holds nothing for it.",
+        ),
   };
 }
 
@@ -127,7 +139,8 @@ function refOf(
   };
   if (node.evidence?.startLine !== undefined)
     out.line = node.evidence.startLine;
-  if (edge.evidence !== undefined) out.evidence = publicEvidence(edge.evidence);
+  const evidence = edgeEvidenceOf(edge);
+  if (evidence !== undefined) out.evidence = evidence;
   return out;
 }
 
@@ -137,8 +150,10 @@ function refs(
   end: "to" | "from",
   limit: number,
 ): { items: ISamchonGraphEntrypoints.IReference[]; truncated: boolean } {
-  const ranked: Array<{ ref: ISamchonGraphEntrypoints.IReference; rank: number }> =
-    [];
+  const ranked: Array<{
+    ref: ISamchonGraphEntrypoints.IReference;
+    rank: number;
+  }> = [];
   const seen = new Set<string>();
   let available = 0;
   for (const edge of edges) {
@@ -185,6 +200,7 @@ function edgeKindRank(kind: string): number {
       return 1;
     case "accesses":
     case "renders":
+    case "references":
       return 2;
     case "tests":
       return 3;
@@ -196,6 +212,10 @@ function edgeKindRank(kind: string): number {
       return 5;
     case "type_ref":
       return 6;
+    // Every non-structural kind the graph stores is named above, and the
+    // structural ones never reach here. `dispatches` is the only kind left, and
+    // a traversal synthesizes it — no index holds one to rank.
+    /* c8 ignore next 2 */
     default:
       return 10;
   }
@@ -230,26 +250,33 @@ function directMentions(graph: SamchonGraphMemory, query: string): string[] {
   return [...handles];
 }
 
+/**
+ * An id-shaped token in the question, when it names a *declaration*.
+ *
+ * The kinds are enumerated, not matched with a wildcard. A `file`, a `module`, a
+ * `namespace`, a `package` or an `external_symbol` has an id too, and a wildcard
+ * admits them — which turns "look at `src/order.ts`" into a resolved mention,
+ * and a resolved mention into a tour seed. A mention is the symbol the *question
+ * named*, and a container is not one.
+ *
+ * `field` and `constructor` are here because they are declarations this graph
+ * holds and the reference's TypeScript-only checker does not; nothing else is.
+ */
 function normalizeNodeIdToken(raw: string): string | undefined {
   const value = raw
     .trim()
     .replace(/^[`"'([{]+/, "")
     .replace(/[`"',.;:)\]}]+$/, "");
-  return /^[^\s#]+#[^\s#]+:[a-z_]+$/.test(value) ? value : undefined;
+  return /^[^\s#]+#[^\s#]+:(class|interface|type|enum|function|method|variable|property|field|constructor)$/.test(
+    value,
+  )
+    ? value
+    : undefined;
 }
 
 function normalizeHandle(raw: string): string | undefined {
   const value = raw.trim();
   return /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(value)
     ? value
-    : undefined;
-}
-
-/** Decorator facts already captured on a node, omitted when absent. */
-function decoratorsOf(
-  node: ISamchonGraphNode,
-): ISamchonGraphDecorator[] | undefined {
-  return node.decorators !== undefined && node.decorators.length > 0
-    ? node.decorators
     : undefined;
 }

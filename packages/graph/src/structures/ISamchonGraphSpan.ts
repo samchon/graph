@@ -3,9 +3,9 @@
  *
  * The reader already knows the file: a node's span is in the node's `file`, and
  * an edge's span is in the file its `from` id names. Sending the path a second
- * and a third time cost 17% of the document — on a large monorepo, tens of
- * megabytes of a dump that then has to be encoded, piped, parsed and validated —
- * for a value that is reconstructible exactly.
+ * and a third time cost 17% of the document — on VS Code, 55 MB of a 323 MB
+ * dump that then has to be encoded, piped, parsed and validated — for a value
+ * that is reconstructible exactly.
  *
  * {@link SamchonGraphMemory} puts the file back before any of it is read, so
  * what the graph engine and the MCP results see is the whole

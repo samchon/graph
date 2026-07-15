@@ -34,7 +34,7 @@ const MAX_LIMIT = 5;
  * question and the codebase's docs, and the tour has read neither. The other
  * half goes to what the graph says is central to the question, and the names do
  * not touch that ranking, because a caller cannot name what it does not know is
- * there: Opus named ten symbols along a subscribe path, and `operate` — the head
+ * there: Opus named ten symbols along RxJS's subscribe path, and `operate` — the head
  * of the operator chain the question asked about, and the second seed of the
  * same tour with no names at all — fell out of the tour it did not name.
  */
@@ -254,16 +254,17 @@ export function runTour(
  * the reader — `inspect`, with the tool description telling the model to make
  * exactly the one request it names.
  *
- * What that string match actually found, on the corpus: a backend's question
- * says "from request handling through auth, provider logic, Prisma", and the
+ * What that string match actually found, on the corpus: shopping-backend's
+ * question says "from request handling through auth, provider logic, Prisma",
+ * and the
  * tour reported "handling" missing on the strength of `handlePayment` and
  * `handleCancel`, two deposit and order helpers with nothing to do with
- * handling a request. A framework's says "a component/template read", and
+ * handling a request. Vue's says "a component/template read", and
  * "template" came back missing because the compiler's AST has a
- * `TemplateLiteral`. A validator's ends "the returned result", and
+ * `TemplateLiteral`. Zod's ends "the returned result", and
  * `ParseResult.data` made "result" a stage. In five of the eight
  * project-specific tours the server reported a hole it did not have and spent
- * the model a call on it — and the drill-down started there: the backend's eight
+ * the model a call on it — and the drill-down started there: shopping-backend's eight
  * follow-ups open with the `lookup` this `next` asked for.
  *
  * The failure is not a threshold. A question names concepts and a graph holds
@@ -311,7 +312,7 @@ function namedNodesOf(
     // An ambiguous guess is not evidence. A name the project declares once is a
     // symbol the caller named; a name it declares many times is a word, and the
     // graph does not get to decide which one was meant. Resolving to the first
-    // candidate decides anyway: Sonnet asked for `handlePointerDown`, the app
+    // candidate decides anyway: Sonnet asked for `handlePointerDown`, Excalidraw
     // declares it on several classes, and the tour of a drawing app opened on
     // its line editor and cost eight calls. Boosting all of them instead only
     // spreads the same guess wider. Both are the graph inventing a belief the
@@ -367,7 +368,7 @@ function tourSeedsOf(
   }
   // The other half is the graph's, and the names do not reach it. Weighting the
   // named symbols in this ranking too let them take both halves: Opus named ten
-  // symbols along a subscribe path, they filled the seeds, and `operate` — the
+  // symbols along RxJS's subscribe path, they filled the seeds, and `operate` — the
   // second seed of the same tour without any names, and the head of the operator
   // chain the question asked about — fell out of it. The model fetched it by
   // hand and said so. A caller's belief about where the answer lives is worth
@@ -673,9 +674,9 @@ function computeCentrality(graph: SamchonGraphMemory): Map<string, number> {
  * is because the seed score leans on reach, and reach breaks when it counts
  * them. Reach stands in for "gets to the code that does the work", and a method
  * whose body is full of callbacks lands in more files than one that calls three
- * things and means them: a query builder outranked its own insert path on
- * breadth alone, and the tour it led came back a walk through the builder's
- * fluent API — escape, clone, addSelect, limit, offset — while the insert flow
+ * things and means them: TypeORM's `SelectQueryBuilder` outranked its insert
+ * path on breadth alone, and the tour it led came back a walk through the query
+ * builder's fluent API — escape, clone, addSelect, limit, offset — while the insert flow
  * that reaches the broadcaster, the metadata, and the driver fell out of the
  * tour entirely. Wide and shallow beat deep and few, and the model went back to
  * the files.
@@ -793,8 +794,8 @@ function flowStepOf(
  * A tour scores the surface, and a closure is not on it — but a closure's edges
  * still land on surface nodes, and counted there they move the score of the
  * very declarations a tour ranks. Keeping closures out of the seed list was not
- * enough: a query builder's tour still traded its insert flow for a walk through
- * the fluent API. The surface is scored by the surface.
+ * enough: TypeORM's tour still traded its insert flow for a walk through the
+ * query builder's fluent API. The surface is scored by the surface.
  */
 function touchesClosure(graph: SamchonGraphMemory, id: string): boolean {
   return graph.node(id)?.closure === true;
@@ -1049,8 +1050,8 @@ function isNoisePath(file: string): boolean {
  * A question and the code it asks about name the same thing in different parts
  * of speech: the asker writes "scene mutation", the symbol is `mutateElement`.
  * Inflection alone does not bridge that — "mutation" and "mutate" share five
- * characters and the prefix rule wants six — so a tour of an edit pipeline
- * seeded four renderers, never surfaced the mutation layer the question named,
+ * characters and the prefix rule wants six — so a tour of Excalidraw's edit
+ * pipeline seeded four renderers, never surfaced the mutation layer the question named,
  * and Sonnet went and found it itself in twenty-one further graph calls.
  *
  * Stripping the derivational suffixes as well collapses both spellings onto the
@@ -1093,7 +1094,8 @@ function commonPrefixLength(a: string, b: string): number {
  *
  * `dependsOn` is the union of what a symbol calls and what it names in a type
  * position, so walking `calls`, then `types`, then `dependsOn` listed the same
- * neighbour under three labels, and the ten nearby slots of one edit tour went:
+ * neighbour under three labels, and the ten nearby slots of Excalidraw's edit
+ * tour went:
  * `_renderInteractiveScene` as a call, `_renderInteractiveScene` as a type,
  * `InteractiveSceneRenderConfig` as a type, and the same again for the next
  * symbol. Two of five stages consumed the whole list, and the stage the reader
@@ -1158,13 +1160,14 @@ function nearbyAnchorsOf(
 /**
  * The tests that exercise the tour's symbols, nearest first.
  *
- * A subject is covered by more than one suite: a framework's `NestFactoryStatic.create`
- * is called by three end-to-end specs under integration/ and by the unit spec
- * that sits beside the code, and the tour's slots went to whichever the edge
- * list happened to hold first — the e2e ones. So the model globbed the disk for
- * the unit spec, which the graph had all along. A test that lives next to its
- * subject is the one a newcomer reads, so the anchors come back ordered by how
- * much of the subject's path the test shares.
+ * A subject is covered by more than one suite: NestJS's
+ * `NestFactoryStatic.create` is called by three GraphQL end-to-end specs under
+ * integration/ and by the unit spec that sits beside the code, and the tour's
+ * slots went to whichever the edge list happened to hold first — the e2e ones.
+ * So the model globbed the disk for `packages/core/test/nest-factory.spec.ts`,
+ * which the graph had all along. A test that lives next to its subject is the
+ * one a newcomer reads, so the anchors come back ordered by how much of the
+ * subject's path the test shares.
  */
 function testAnchorsOf(
   graph: SamchonGraphMemory,

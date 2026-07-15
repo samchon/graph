@@ -21,7 +21,7 @@ const DEFAULT_MAX_NODES = 12;
 // caller asked for. A question that spans a runtime chain — a state change
 // through tracking, scheduling, rendering, then patching — is that chain hop by
 // hop, so the model re-issued a trace per hop and paid a round trip for each: a
-// single question spent twenty-six calls walking a flow the graph could have
+// single vue question spent twenty-six calls walking a flow the graph could have
 // walked once. The cap now follows the chain instead of cutting it.
 const MAX_OPEN_DEPTH = 8;
 const MAX_OPEN_NODES = 32;

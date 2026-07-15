@@ -53,8 +53,8 @@ export interface ISamchonGraphNode {
   exported?: boolean;
 
   /**
-   * True for a declaration made inside another declaration's body: a renderer's
-   * inner `patch`, a callback bound to a const inside a method.
+   * True for a declaration made inside another declaration's body: Vue's
+   * `baseCreateRenderer.patch`, a callback bound to a const inside a method.
    *
    * It is a name the runtime calls, so a trace, a lookup, or a details request
    * answers with it. An orientation tour does not rank or walk it: a tour is

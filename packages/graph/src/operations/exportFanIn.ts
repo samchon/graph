@@ -11,13 +11,13 @@ import { SamchonGraphMemory } from "../SamchonGraphMemory";
  * the package has been re-exported up a chain of barrels and carries an edge
  * from each one.
  *
- * On a library that still ships a previous major, the count is the whole
- * difference between the current API and the legacy one: the classic surface's
- * `parse` carries an edge from every barrel above it, the previous major's
- * class carries fewer, and that major's own method — which no export table ever
- * names — carries none. A ranker that knew only the `exported` flag saw all of
- * these as equally public, picked the one whose name matched the question best,
- * and opened the tour on the legacy implementation.
+ * On zod the count is the whole difference between the current API and the
+ * previous major it still ships: `parse` and `safeParse` in v4's classic
+ * surface carry five, v3's `ZodString` carries three, and v3's
+ * `ZodType.safeParse` — a class method, which no export table ever names —
+ * carries none. A ranker that knew only the `exported` flag saw all of these as
+ * equally public, picked the one whose name matched the question best, and
+ * opened zod's tour on the legacy implementation.
  *
  * The count is a fact the indexer resolved. It reads no package.json, guesses
  * from no filename, and holds for a project that has neither.

@@ -11,7 +11,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export const benchmarkDir = path.resolve(here, "..");
 export const repoRoot = path.resolve(benchmarkDir, "..", "..");
 export const graphLauncher = path.join(repoRoot, "packages", "graph", "lib", "bin.js");
-export const questionsDir = path.join(benchmarkDir, "questions");
+export const questionsDir = path.join(here, "questions");
 
 // Language servers provisioned for the benchmark live under .work/tools/<name>
 // (gitignored). Prepend each tool's bin (or root) to PATH so every child this
@@ -142,7 +142,7 @@ export function runPrepare(spec, repoDir) {
   run(spec.prepare, [], { cwd: repoDir, shell: true, stdio: "inherit" });
 }
 
-// The graph-arm gate: build a bounded dump of the pinned checkout and demand a
+// The graph-arm gate: build the full dump of the pinned checkout and demand a
 // real language-server graph. Without this, a host missing the language server
 // would silently measure the static fallback and corrupt the comparison.
 export function preflightGraph(spec, repoDir) {

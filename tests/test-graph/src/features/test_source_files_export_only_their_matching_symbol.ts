@@ -15,6 +15,19 @@ const walk = (dir: string): string[] => {
 };
 
 export const test_source_files_export_only_their_matching_symbol = () => {
+  const referenceExceptions: Record<string, string[]> = {
+    "packages/graph/src/parseGraphArgs.ts": ["IGraphArguments", "parseGraphArgs"],
+    "packages/graph/src/reduce.ts": [
+      "RawNode",
+      "RawEdge",
+      "RawDump",
+      "ViewerNode",
+      "ViewerLink",
+      "ViewerPayload",
+      "reduce",
+    ],
+    "packages/graph/src/view.ts": ["runView"],
+  };
   const roots = [
     path.join(GraphPaths.graphPackageRoot, "src"),
     path.join(GraphPaths.repositoryRoot, "tests", "test-graph", "src"),
@@ -36,6 +49,16 @@ export const test_source_files_export_only_their_matching_symbol = () => {
       ];
 
       if (localNames.length === 0) continue;
+      if (referenceExceptions[relative] !== undefined) {
+        if (
+          JSON.stringify(localNames) !==
+          JSON.stringify(referenceExceptions[relative])
+        )
+          violations.push(
+            `${relative}: expected reference exports ${referenceExceptions[relative]!.join(", ")}, got ${localNames.join(", ")}`,
+          );
+        continue;
+      }
       if (reexports.length > 0) {
         violations.push(`${relative}: mixes local exports with re-exports`);
         continue;

@@ -15,7 +15,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "rimraf lib && ttsc -p tsconfig.json && node -e \"require('node:fs').copyFileSync('../../README.md', 'README.md')\"",
+    "build": "rimraf lib && ttsc -p tsconfig.json && node build/bundle-viewer.mjs && node -e \"require('node:fs').copyFileSync('../../README.md', 'README.md')\"",
     "prepublishOnly": "node -e \"require('node:fs').copyFileSync('../../README.md', 'README.md')\""
   },
   "keywords": [
@@ -39,7 +39,11 @@
   },
   "devDependencies": {
     "@types/node": "catalog:utils",
+    "@types/three": "^0.184.1",
+    "esbuild": "catalog:bundler",
     "rimraf": "catalog:utils",
+    "three": "^0.184.0",
+    "three-forcegraph": "^1.43.4",
     "ttsc": "catalog:samchon",
     "typescript": "catalog:typescript"
   },

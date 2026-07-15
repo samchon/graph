@@ -1,0 +1,9 @@
+report.json
+agent-ab-report.json
+agent-ab-codex-report.json
+*.json
+!package.json
+!questions/manifest.json
+*.traces/
+*.out.log
+*.err.log

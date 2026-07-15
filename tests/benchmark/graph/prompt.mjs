@@ -23,31 +23,17 @@ export const GROUNDING =
   "about this project: every claim must trace to a symbol that exists here, " +
   "and cite the files and symbols it rests on.";
 
-// The line every tool arm carries, and the baseline does not — it has no tools
-// to be told about.
+// The line every tool arm carries, and the baseline does not — it has no tools to
+// be told about.
 //
 // A model that never opens the tool list cannot be judged on its tools. Asked to
 // tour a framework with no line at all, GPT-5.6 ran eleven shell commands, spent
 // 502k tokens, and never mentioned the MCP; with this line it called the graph
-// twice and spent 75k. The tools were mounted and visible in both runs. It
-// simply never went looking, and a benchmark that says nothing measures that
-// rather than the tool.
+// twice and spent 75k. The tools were mounted and visible in both runs. It simply
+// never went looking, and a benchmark that says nothing measures that rather
+// than the tool.
 //
-// The same line goes to every tool arm — this graph, codegraph, serena,
-// codebase-memory — so no arm is pointed at more precisely than another. It
-// names nothing and asks for nothing: the moment a tool's own name goes in that
-// line, what is being measured is the pointing.
+// The same line goes to every tool arm — samchon-graph, codegraph, serena,
+// codebase-memory — so no arm is pointed at more precisely than another. It names
+// nothing and asks for nothing.
 export const TOOL_NUDGE = "> code graph tools are provided";
-
-/**
- * The prompt an arm is actually given (§5a).
- *
- * Three things this gets right, and every one of them was measured: the nudge
- * names no tool; the baseline gets no nudge, because it has no tools to be told
- * about; and `GROUNDING` never goes to a tool arm, where it reads as an order to
- * go and verify what the index already resolved.
- */
-export function promptForArm(baseQuestion, armName) {
-  if (armName === "baseline") return `${baseQuestion}\n\n${GROUNDING}`;
-  return `${baseQuestion}\n\n${TOOL_NUDGE}`;
-}

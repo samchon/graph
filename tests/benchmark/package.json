@@ -5,22 +5,26 @@
   "description": "Benchmark harness scaffold for @samchon/graph.",
   "type": "module",
   "scripts": {
-    "list": "node src/list-fixtures.mjs",
-    "start": "node src/run-benchmark.mjs",
-    "corpus": "node src/list-corpus.mjs",
-    "manifest": "node src/generate-manifest.mjs",
-    "preflight": "node src/preflight.mjs",
-    "agent-ab": "node src/agent-ab.mjs",
-    "codex": "node src/agent-ab-codex.mjs",
-    "suite": "node src/run-suite.mjs",
-    "suite-parallel": "node src/run-suite-parallel.mjs",
-    "suite-codex": "node src/run-suite-codex.mjs",
-    "render": "node src/render-svg.mjs"
+    "list": "node graph/list-corpus.mjs",
+    "start": "node graph/bench.mjs",
+    "corpus": "node graph/list-corpus.mjs",
+    "manifest": "node graph/generate-manifest.mjs",
+    "preflight": "node graph/preflight.mjs",
+    "agent-ab": "node graph/agent-ab.mjs",
+    "codex": "node graph/agent-ab-codex.mjs",
+    "suite": "node graph/run-suite.mjs",
+    "orchestrate": "node graph.mjs",
+    "index-time": "node graph/index-time.mjs",
+    "publish": "node graph/publish.mjs",
+    "audit": "node graph/audit-codex-traces.mjs",
+    "test": "node test/run.mjs",
+    "render": "node build/graph-benchmark-svg.cjs",
+    "render:png": "node build/graph-benchmark-svg.cjs --png"
   },
   "dependencies": {
     "@samchon/graph": "workspace:*"
   },
   "devDependencies": {
-    "sharp": "^0.35.3"
+    "@resvg/resvg-js": "^2.6.2"
   }
 }

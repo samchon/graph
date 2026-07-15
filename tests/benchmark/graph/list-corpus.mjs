@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { CORPUS } from "./corpus.mjs";
-import { questionsDir, resolvePrompt } from "./lib.mjs";
+import { questionsDir, resolvePrompt } from "./language.mjs";
 
 console.log(`Agent-cost A/B corpus (${CORPUS.length} repos, codegraph questions, SHA-pinned):\n`);
 const common = fs.readFileSync(path.join(questionsDir, "common.md"), "utf8").trim();

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ttsc · code graph</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0a0c10;
+        color: #e6edf3;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        overflow: hidden;
+      }
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0 14px;
+        padding: 10px 16px;
+        border-bottom: 1px solid #222834;
+        background: linear-gradient(to bottom, #13171f, #0e1116);
+      }
+      header .brand {
+        font-size: 13px;
+        font-weight: 600;
+        color: #f5f5f5;
+      }
+      header .brand b {
+        color: #36e2ee;
+      }
+      header #project {
+        font-size: 12px;
+        color: #9ca3af;
+      }
+      header #counts {
+        margin-left: auto;
+        font-size: 11px;
+        color: #6b7280;
+      }
+      #graph {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+      }
+      #graph .tooltip {
+        position: absolute;
+        display: none;
+        pointer-events: none;
+        z-index: 10;
+        max-width: 24rem;
+        padding: 4px 7px;
+        border-radius: 6px;
+        background: rgba(12, 14, 19, 0.93);
+        border: 1px solid #2a313e;
+        font-size: 11px;
+        line-height: 1.4;
+      }
+      #graph .tooltip .muted {
+        color: #8b97a8;
+      }
+      footer {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        padding: 8px 16px;
+        border-top: 1px solid #222834;
+        font-size: 10px;
+        color: #6b7280;
+      }
+      footer .dot {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      footer .swatch {
+        display: inline-block;
+        width: 16px;
+        height: 2px;
+        border-radius: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <span class="brand"><b>ttsc</b> · code graph</span>
+        <span id="project"></span>
+        <span id="counts"></span>
+      </header>
+      <div id="graph"></div>
+      <footer>
+        <span class="dot"
+          ><span class="swatch" style="background: #3fb950"></span
+          >value-call</span
+        >
+        <span class="dot"
+          ><span class="swatch" style="background: #f5b042"></span
+          >type-ref</span
+        >
+        <span class="dot"
+          ><span class="swatch" style="background: #6ea8ff"></span
+          >heritage</span
+        >
+        <span>node size = connection count · color = declaration kind</span>
+      </footer>
+    </div>
+    <script src="viewer.js"></script>
+  </body>
+</html>

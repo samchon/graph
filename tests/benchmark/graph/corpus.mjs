@@ -1,7 +1,9 @@
+import path from "node:path";
+
 // Cross-language benchmark corpus. The `dedicated` questions live in
 // questions/<name>.md, taken verbatim from codegraph's evaluation suite
 // (.claude/skills/agent-eval/corpus.json) and pinned by SHA-256 in
-// questions/manifest.json (regenerate with src/generate-manifest.mjs). The
+// questions/manifest.json (regenerate with graph/generate-manifest.mjs). The
 // shared `common` onboarding question (questions/common.md) is asked against
 // every repo.
 //
@@ -137,3 +139,31 @@ export const findCorpus = (name) => {
   if (found === undefined) throw new Error(`Unknown benchmark repo: ${name}`);
   return found;
 };
+
+/** Canonical fixture shape consumed by graph.mjs, run-suite, and index-time. */
+export const PROJECTS = Object.fromEntries(
+  CORPUS.map((entry) => [
+    entry.name,
+    {
+      ...entry,
+      repoName: entry.name,
+      sourceRepo: entry.url,
+      sourceBranch: entry.commit,
+      fixtureBranch: entry.commit,
+    },
+  ]),
+);
+
+export function resolveWorkDir(repoRoot) {
+  return (
+    process.env.SAMCHON_GRAPH_BENCH_WORK ??
+    path.resolve(repoRoot, "..", "graph-benchmark-work")
+  );
+}
+
+export function projectDir(workDir, spec) {
+  return path.join(
+    workDir,
+    `${spec.repoName ?? spec.name}@${spec.commit.slice(0, 12)}`,
+  );
+}

@@ -1,10 +1,10 @@
 // Zero-spend go/no-go check for the codex benchmark: verifies every
-// prerequisite the paid run depends on, then walks the corpus and builds a
-// bounded @samchon/graph dump per repo to prove the language server actually
+// prerequisite the paid run depends on, then walks the corpus and builds the
+// full @samchon/graph LSP index per repo to prove the language server actually
 // answers on this host. Nothing here talks to a model.
 //
-//   node tests/benchmark/src/preflight.mjs
-//   node tests/benchmark/src/preflight.mjs --repos=gin,flask --skip-tools=1
+//   node tests/benchmark/graph/preflight.mjs
+//   node tests/benchmark/graph/preflight.mjs --repos=gin,flask --skip-tools=1
 import cp from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -20,7 +20,7 @@ import {
   preflightGraph,
   resolvePrompt,
   runPrepare,
-} from "./lib.mjs";
+} from "./language.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 const repos = args.repos ? args.repos.split(",") : CORPUS.map((entry) => entry.name);
@@ -53,11 +53,13 @@ if (!fs.existsSync(graphLauncher)) {
 }
 
 console.log("\n=== prompts (SHA-256 gate) ===");
-resolvePrompt({ family: "common" });
-for (const entry of CORPUS) resolvePrompt({ family: "dedicated", repo: entry.name });
-console.log(`  ${CORPUS.length + 1} prompts verified against the manifest`);
+for (const entry of CORPUS) {
+  resolvePrompt({ family: "dedicated", repo: entry.name });
+  resolvePrompt({ family: "common", repo: entry.name });
+}
+console.log(`  ${CORPUS.length * 2} prompts verified against the manifest`);
 
-console.log("\n=== corpus graph preflight (bounded dump per repo) ===");
+console.log("\n=== corpus graph preflight (full LSP index per repo) ===");
 const rows = [];
 for (const name of repos) {
   const spec = CORPUS.find((entry) => entry.name === name);

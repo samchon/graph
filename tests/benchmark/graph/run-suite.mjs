@@ -28,7 +28,12 @@ import {
   projectDir,
   resolveWorkDir,
 } from "./corpus.mjs";
-import { websiteCellKey } from "./website-cell.mjs";
+import {
+  isSuccessfulMeasuredSample,
+  sanitizeWebsiteSamples,
+  websiteCellKey,
+} from "./website-cell.mjs";
+import { assertPublicationCandidates } from "./publication-gate.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..", "..");
@@ -46,27 +51,6 @@ const graphBenchmarkScript = path.join(
   "benchmark",
   "graph.mjs",
 );
-const PUBLISHED_SAMPLE_KEYS = [
-  "tokens",
-  "cached",
-  "reasoning",
-  "tokensWithReasoning",
-  "turns",
-  "tools",
-  "reads",
-  "grep",
-  "shell",
-  "web",
-  "graph",
-  "other",
-  "sourceTouches",
-  "shellSource",
-  "cost",
-  "durMs",
-  "run",
-  "attempts",
-];
-
 function arg(name, fallback) {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : fallback;
@@ -166,7 +150,11 @@ function runFixtureSetup(repos) {
     );
 }
 
-const tmpDir = path.join(here, ".suite-tmp");
+const tmpDir = path.join(
+  here,
+  ".suite-tmp",
+  `${new Date().toISOString().replace(/[-:.TZ]/g, "")}-${process.pid}`,
+);
 fs.mkdirSync(tmpDir, { recursive: true });
 
 const median = (xs) => {
@@ -227,7 +215,9 @@ function runPrompt(prompt) {
       let samples = [];
       try {
         const rep = JSON.parse(fs.readFileSync(report, "utf8"));
-        samples = (rep.samples?.[arm] ?? []).filter(validMeasuredSample);
+        samples = (rep.samples?.[arm] ?? []).filter(
+          isSuccessfulMeasuredSample,
+        );
       } catch {
         /* report missing — child crashed */
       }
@@ -239,7 +229,18 @@ function runPrompt(prompt) {
             ? `  ${err.trim().split("\n").slice(-2).join(" | ")}`
             : ""),
       );
-      resolve({ prompt, report, samples });
+      let provenance = null;
+      try {
+        const rep = JSON.parse(fs.readFileSync(report, "utf8"));
+        provenance = {
+          commit: rep.commit,
+          fixtureTree: rep.fixtureTree,
+          questionSha256: rep.questionSha256,
+        };
+      } catch {
+        /* handled by the missing/failed sample path above */
+      }
+      resolve({ prompt, report, samples, provenance });
     });
   });
 }
@@ -272,7 +273,7 @@ if (arm === "baseline") {
   const store = fs.existsSync(storePath)
     ? JSON.parse(fs.readFileSync(storePath, "utf8"))
     : {};
-  for (const { prompt, samples } of results) {
+  for (const { prompt, samples, provenance } of results) {
     if (!samples.length) continue;
     const toks = samples.map((s) => s.tokens);
     store[`${model}/${prompt.id}`] = {
@@ -280,6 +281,9 @@ if (arm === "baseline") {
       model,
       repo: prompt.repo,
       promptId: prompt.id,
+      commit: provenance?.commit,
+      fixtureTree: provenance?.fixtureTree,
+      questionSha256: provenance?.questionSha256,
       runs: samples.length,
       medianTokens: median(toks),
       medianTools: median(samples.map((s) => s.tools)),
@@ -296,13 +300,28 @@ if (arm === "baseline") {
     : {};
   console.log(`\n${"prompt".padEnd(32)} baseline -> graph  reduction  tools`);
   const rows = [];
-  for (const { prompt, samples } of results) {
+  for (const { prompt, samples, provenance } of results) {
     if (!samples.length) continue;
     const g = median(samples.map((s) => s.tokens));
     const graphCalls = median(samples.map((s) => s.graph));
     const shellCalls = median(samples.map((s) => s.shell));
     const toolCalls = median(samples.map((s) => s.tools));
     const base = store[`${model}/${prompt.id}`];
+    if (base) {
+      for (const [label, expected, actual] of [
+        ["harness", harness, base.harness],
+        ["model", model, base.model],
+        ["commit", prompt.fixtureCommit, base.commit],
+        ["fixture tree", provenance?.fixtureTree, base.fixtureTree],
+        ["question", prompt.questionSha256, base.questionSha256],
+      ]) {
+        if (!expected || expected !== actual) {
+          throw new Error(
+            `${prompt.id} baseline ${label} provenance mismatch: ${actual ?? "missing"} != ${expected ?? "missing"}`,
+          );
+        }
+      }
+    }
     const b = base?.medianTokens ?? 0;
     const red = b ? Math.round((1 - g / b) * 100) : null;
     rows.push({
@@ -347,20 +366,38 @@ function reportsFromSuite(file) {
   return (suite.cells ?? [])
     .map((cell) => cell.report)
     .filter(Boolean)
-    .map((report) =>
-      path.isAbsolute(report) ? report : path.resolve(base, report),
-    );
+    .map((report) => {
+      if (path.isAbsolute(report)) return report;
+      const fromRoot = path.resolve(repoRoot, report);
+      return fs.existsSync(fromRoot) ? fromRoot : path.resolve(base, report);
+    });
 }
 
 function publishWebsiteReports(reports) {
-  if (noWebsite) return;
-  const cells = reports
-    .filter((report) => fs.existsSync(report))
-    .map((report) =>
-      websiteCellFromReport(JSON.parse(fs.readFileSync(report, "utf8"))),
-    )
+  for (const report of reports) {
+    if (!fs.existsSync(report)) {
+      throw new Error(`missing suite publication report: ${report}`);
+    }
+  }
+  const candidates = reports
+    .map((reportPath) => {
+      const cell = websiteCellFromReport(
+        JSON.parse(fs.readFileSync(reportPath, "utf8")),
+      );
+      return cell
+        ? { cell, harness: cell.harness, reportPath: path.resolve(reportPath) }
+        : null;
+    })
     .filter(Boolean);
+  const cells = candidates.map(({ cell }) => cell);
   if (cells.length === 0) return;
+  assertPublicationCandidates(candidates, {
+    auditPath: path.join(
+      path.dirname(path.resolve(reports[0])),
+      "codex-trace-audit.json",
+    ),
+  });
+  if (noWebsite) return;
   const prior = fs.existsSync(websiteJson)
     ? JSON.parse(fs.readFileSync(websiteJson, "utf8"))
     : null;
@@ -387,7 +424,7 @@ function websiteCellFromReport(data) {
   const rawModel = data.model ?? "unknown";
   const resolvedModel = data.modelVersion ?? rawModel;
   const tool = reportTool(data);
-  const samples = sanitizeSamples(data.samples);
+  const samples = sanitizeWebsiteSamples(data.samples);
   if (samples.baseline.length === 0 && samples.graph.length === 0) return null;
   const model = agentLabel(resolvedModel);
   const version = modelVersionId(resolvedModel) ?? modelVersionId(rawModel);
@@ -436,27 +473,4 @@ function modelVersionId(resolvedModel) {
   if (resolvedModel.startsWith("claude-") || resolvedModel.startsWith("gpt-"))
     return resolvedModel;
   return undefined;
-}
-
-function sanitizeSamples(samples) {
-  return {
-    baseline: (samples?.baseline ?? [])
-      .filter(validMeasuredSample)
-      .map(sanitizeSample),
-    graph: (samples?.graph ?? [])
-      .filter(validMeasuredSample)
-      .map(sanitizeSample),
-  };
-}
-
-function validMeasuredSample(sample) {
-  return Number(sample?.tokens ?? 0) > 0;
-}
-
-function sanitizeSample(sample) {
-  const out = {};
-  for (const key of PUBLISHED_SAMPLE_KEYS) {
-    if (sample[key] !== undefined) out[key] = sample[key];
-  }
-  return out;
 }

@@ -19,6 +19,19 @@ export const questionsDir = path.join(here, "questions");
 // in turn — can resolve them without machine-global installs.
 const toolsRoot = path.join(benchmarkDir, ".work", "tools");
 if (fs.existsSync(toolsRoot)) {
+  const dotnetRoot = path.join(toolsRoot, "dotnet");
+  const dotnetHost = path.join(
+    dotnetRoot,
+    process.platform === "win32" ? "dotnet.exe" : "dotnet",
+  );
+  if (fs.existsSync(dotnetHost)) {
+    // Framework-dependent dotnet tools resolve their runtime from DOTNET_ROOT,
+    // not PATH alone. Keep csharp-ls on the isolated .NET 10 installation that
+    // also supplies the fixture's MSBuild.
+    process.env.DOTNET_ROOT = dotnetRoot;
+    process.env.DOTNET_ROOT_X64 = dotnetRoot;
+    process.env.DOTNET_HOST_PATH = dotnetHost;
+  }
   const extra = fs
     .readdirSync(toolsRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -94,12 +107,9 @@ export function resolvePrompt({ promptId, family, repo }) {
 // the measurement must not.
 export function clonePinned(spec, corpusRoot) {
   const repoDir = path.join(corpusRoot, spec.name);
-  const ok = () =>
-    fs.existsSync(path.join(repoDir, ".git")) &&
-    run("git", ["rev-parse", "HEAD"], { cwd: repoDir }).trim() === spec.commit;
   if (fs.existsSync(repoDir)) {
-    if (ok()) return repoDir;
-    throw new Error(`${repoDir} exists but is not at pinned commit ${spec.commit}; remove it and retry`);
+    assertPinnedCheckout(spec, repoDir);
+    return repoDir;
   }
   fs.mkdirSync(repoDir, { recursive: true });
   console.log(`Fetching ${spec.url}@${spec.commit.slice(0, 12)} -> ${repoDir} ...`);
@@ -107,8 +117,39 @@ export function clonePinned(spec, corpusRoot) {
   run("git", ["remote", "add", "origin", spec.url], { cwd: repoDir });
   run("git", ["fetch", "--quiet", "--depth", "1", "origin", spec.commit], { cwd: repoDir });
   run("git", ["checkout", "--quiet", spec.commit], { cwd: repoDir });
-  if (!ok()) throw new Error(`pinned checkout of ${spec.name} failed`);
+  assertPinnedCheckout(spec, repoDir);
   return repoDir;
+}
+
+/**
+ * Refuse a fixture whose commit or source snapshot differs from the corpus.
+ * Dependency and language preparation may populate ignored paths, but an
+ * arbitrary tracked or untracked source file must never pass on HEAD alone.
+ */
+export function assertPinnedCheckout(spec, repoDir) {
+  if (!fs.existsSync(path.join(repoDir, ".git"))) {
+    throw new Error(`${repoDir} is not a git checkout`);
+  }
+  const head = run("git", ["rev-parse", "HEAD"], { cwd: repoDir }).trim();
+  if (head !== spec.commit) {
+    throw new Error(
+      `${repoDir} is at ${head || "no HEAD"}, expected pinned commit ${spec.commit}`,
+    );
+  }
+  const dirty = run(
+    "git",
+    ["status", "--porcelain=v1", "--untracked-files=all"],
+    { cwd: repoDir },
+  ).trim();
+  if (dirty !== "") {
+    throw new Error(
+      `${repoDir} is not the clean pinned snapshot (${dirty.split("\n")[0]})`,
+    );
+  }
+  return {
+    commit: head,
+    tree: run("git", ["rev-parse", "HEAD^{tree}"], { cwd: repoDir }).trim(),
+  };
 }
 
 // Install JS/TS dependencies from the lockfile so tsserver resolves imports at
@@ -124,7 +165,7 @@ export function ensureInstalled(repoDir, { noInstall = false } = {}) {
       ? { label: "npm", command: "npm", args: ["ci", "--ignore-scripts"] }
       : fs.existsSync(path.join(repoDir, "yarn.lock"))
         ? { label: "yarn", command: "corepack", args: ["yarn", "install", "--frozen-lockfile", "--ignore-scripts"] }
-        : { label: "npm", command: "npm", args: ["install", "--ignore-scripts"] };
+        : { label: "npm", command: "npm", args: ["install", "--ignore-scripts", "--no-package-lock"] };
   console.log(`Installing dependencies in ${repoDir} (${plan.label})...`);
   run(plan.command, plan.args, { cwd: repoDir, shell: true, stdio: "inherit" });
 }
@@ -132,20 +173,159 @@ export function ensureInstalled(repoDir, { noInstall = false } = {}) {
 // Per-corpus setup the generic `ensureInstalled` can't express: a shell command
 // run once in the checkout before indexing. ruby-lsp needs the Gemfile bundle
 // installed; csharp-ls (Roslyn's in-process MSBuildWorkspace) silently returns
-// zero symbols for serilog's full 19-project solution — its test/perf/AOT
-// projects break the load — so its `prepare` trims Serilog.sln to the product
-// project, which csharp-ls loads cleanly. A no-op when the entry has no
-// `prepare`.
+// zero symbols for serilog's full 19-project solution. Its `prepare` keeps the
+// product and main test projects (plus TestDummies through a project reference),
+// which csharp-ls loads cleanly without the perf/AOT entries. A no-op when the
+// entry has no `prepare`.
 export function runPrepare(spec, repoDir) {
   if (!spec.prepare) return;
   console.log(`Preparing ${spec.name}: ${spec.prepare}`);
   run(spec.prepare, [], { cwd: repoDir, shell: true, stdio: "inherit" });
 }
 
+/**
+ * Materialize one clean, pinned fixture before either benchmark arm starts.
+ * Both agents therefore see the same resolved dependency state. Preparation
+ * is allowed to write only ignored paths; the pinned source tree is checked
+ * again afterwards.
+ */
+export function prepareFixture(spec, repoDir, options = {}) {
+  const before = assertPinnedCheckout(spec, repoDir);
+  ensureInstalled(repoDir, options);
+  if (spec.language === "dart") ensureDartPubDeps(repoDir);
+  runPrepare(spec, repoDir);
+  const serverArgs = prepareExternalServerArgs(spec, repoDir);
+  const after = assertPinnedCheckout(spec, repoDir);
+  if (before.commit !== after.commit || before.tree !== after.tree) {
+    throw new Error(`${spec.name} preparation changed its pinned source tree`);
+  }
+  return { provenance: after, serverArgs };
+}
+
+/** Check --no-setup input without allowing the graph arm to prepare it later. */
+export function assertPreparedFixture(spec, repoDir) {
+  const provenance = assertPinnedCheckout(spec, repoDir);
+  if (
+    fs.existsSync(path.join(repoDir, "package.json")) &&
+    !fs.existsSync(path.join(repoDir, "node_modules"))
+  ) {
+    throw new Error(`${spec.name} has no prepared node_modules`);
+  }
+  if (spec.language === "dart") {
+    const missing = findFiles(repoDir, "pubspec.yaml").filter(
+      (dir) =>
+        !fs.existsSync(path.join(dir, ".dart_tool", "package_config.json")),
+    );
+    if (missing.length > 0) {
+      throw new Error(`${spec.name} has ${missing.length} unresolved Dart package(s)`);
+    }
+  }
+  if (
+    spec.prepareMarker &&
+    !fs.existsSync(path.resolve(repoDir, spec.prepareMarker))
+  ) {
+    throw new Error(`${spec.name} is missing preparation marker ${spec.prepareMarker}`);
+  }
+  return {
+    provenance,
+    serverArgs: serverArgsForPreparedFixture(spec, repoDir),
+  };
+}
+
+function ensureDartPubDeps(root) {
+  for (const pubspecDir of findFiles(root, "pubspec.yaml")) {
+    if (
+      fs.existsSync(
+        path.join(pubspecDir, ".dart_tool", "package_config.json"),
+      )
+    )
+      continue;
+    console.log(`Resolving Dart dependencies in ${pubspecDir}...`);
+    const lockfile = path.join(pubspecDir, "pubspec.lock");
+    const hadLockfile = fs.existsSync(lockfile);
+    run("dart", ["pub", "get"], { cwd: pubspecDir, stdio: "inherit" });
+    if (!hadLockfile && fs.existsSync(lockfile)) fs.rmSync(lockfile);
+  }
+}
+
+function findFiles(root, name) {
+  const ignored = new Set([
+    ".dart_tool",
+    ".git",
+    "build",
+    "node_modules",
+    "vendor",
+  ]);
+  const found = [];
+  const stack = [root];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!ignored.has(entry.name)) stack.push(path.join(dir, entry.name));
+      } else if (entry.isFile() && entry.name === name) found.push(dir);
+    }
+  }
+  return found.sort((a, b) => a.localeCompare(b));
+}
+
+function prepareExternalServerArgs(spec, repoDir) {
+  if (!spec.dotnetSolution) return [];
+  const solutionPath = externalSolutionPath(spec, repoDir);
+  const externalRoot = path.dirname(solutionPath);
+  fs.mkdirSync(externalRoot, { recursive: true });
+  run(
+    "dotnet",
+    [
+      "new",
+      "sln",
+      "--name",
+      spec.dotnetSolution.name,
+      "--format",
+      "sln",
+      "--output",
+      externalRoot,
+      "--force",
+    ],
+    { stdio: "inherit" },
+  );
+  run(
+    "dotnet",
+    [
+      "sln",
+      solutionPath,
+      "add",
+      ...spec.dotnetSolution.projects.map((project) =>
+        path.resolve(repoDir, project),
+      ),
+    ],
+    { stdio: "inherit" },
+  );
+  return serverArgsForPreparedFixture(spec, repoDir);
+}
+
+export function serverArgsForPreparedFixture(spec, repoDir) {
+  if (!spec.dotnetSolution) return [];
+  const solutionPath = externalSolutionPath(spec, repoDir);
+  if (!fs.existsSync(solutionPath)) {
+    throw new Error(`${spec.name} is missing external solution ${solutionPath}`);
+  }
+  return ["--solution", solutionPath];
+}
+
+function externalSolutionPath(spec, repoDir) {
+  return path.join(
+    path.dirname(repoDir),
+    ".samchon-graph-prepared",
+    path.basename(repoDir),
+    `${spec.dotnetSolution.name}.sln`,
+  );
+}
+
 // The graph-arm gate: build the full dump of the pinned checkout and demand a
 // real language-server graph. Without this, a host missing the language server
 // would silently measure the static fallback and corrupt the comparison.
-export function preflightGraph(spec, repoDir) {
+export function preflightGraph(spec, repoDir, prepared = { serverArgs: [] }) {
   // Some language servers ship inside the checkout itself (e.g. excalidraw's
   // ttscserver under node_modules/.bin) rather than machine-global or under
   // .work/tools. Prepend the repo-local bin so the preflight resolves them the
@@ -166,18 +346,62 @@ export function preflightGraph(spec, repoDir) {
       spec.language,
       "--mode",
       "lsp",
+      ...prepared.serverArgs.flatMap((arg) => ["--server-arg", arg]),
     ],
     fs.existsSync(localBin)
       ? { env: { ...process.env, PATH: `${localBin}${path.delimiter}${process.env.PATH ?? ""}` } }
       : {},
   );
   const dump = JSON.parse(out);
+  return analyzePreflightDump(spec, dump);
+}
+
+const STRUCTURAL_EDGE_KINDS = new Set(["contains", "exports", "imports"]);
+
+/** Verify that an LSP dump contains a meaningful semantic graph for its corpus. */
+export function analyzePreflightDump(spec, dump) {
+  const edgeKinds = {};
+  for (const edge of dump.edges ?? []) {
+    edgeKinds[edge.kind] = (edgeKinds[edge.kind] ?? 0) + 1;
+  }
+  const semanticKinds = Object.entries(edgeKinds).filter(
+    ([kind, count]) => !STRUCTURAL_EDGE_KINDS.has(kind) && count > 0,
+  );
+  const semanticEdges = semanticKinds.reduce((sum, [, count]) => sum + count, 0);
+  const minimums = spec.preflight;
+  if (!minimums) {
+    throw new Error(`${spec.name} has no corpus-specific preflight minimums`);
+  }
+  const warnings = dump.warnings ?? [];
+  const failures = [
+    !["lsp", "hybrid"].includes(dump.indexer)
+      ? `non-LSP indexer ${dump.indexer ?? "missing"}`
+      : null,
+    warnings.length > 0 ? `${warnings.length} fatal warning(s)` : null,
+    dump.nodes.length < minimums.nodes
+      ? `${dump.nodes.length}/${minimums.nodes} nodes`
+      : null,
+    dump.edges.length < minimums.edges
+      ? `${dump.edges.length}/${minimums.edges} edges`
+      : null,
+    semanticEdges < minimums.semanticEdges
+      ? `${semanticEdges}/${minimums.semanticEdges} semantic edges`
+      : null,
+    semanticKinds.length < minimums.semanticEdgeKinds
+      ? `${semanticKinds.length}/${minimums.semanticEdgeKinds} semantic edge kinds`
+      : null,
+  ].filter(Boolean);
   return {
     indexer: dump.indexer,
     nodes: dump.nodes.length,
     edges: dump.edges.length,
-    warnings: dump.warnings ?? [],
-    ok: dump.indexer !== "static" && dump.nodes.length > 0,
+    edgeKinds,
+    semanticEdges,
+    semanticEdgeKinds: semanticKinds.length,
+    minimums,
+    warnings,
+    failures,
+    ok: failures.length === 0,
   };
 }
 

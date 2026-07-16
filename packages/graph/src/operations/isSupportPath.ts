@@ -1,9 +1,9 @@
-/** True for tests, examples, fixtures, generated output, and build artifacts. */
+/** True for vendored dependencies, tests, fixtures, generated, and build output. */
 export function isSupportPath(file: string): boolean {
   return (
     file === "" ||
     file.startsWith("bundled://") ||
-    /(^|\/)(node_modules|vendor|site-packages)\//.test(file) ||
+    /(^|\/)(deps|node_modules|vendor|site-packages)\//.test(file) ||
     /(^|\/)(test|tests|__tests__|spec|sample|samples|fixture|fixtures|__fixtures__|example|examples)\//.test(
       file,
     ) ||

@@ -34,9 +34,11 @@ import { fileURLToPath } from "node:url";
 
 import { PROJECTS, projectDir, resolveWorkDir } from "./corpus.mjs";
 import {
-  ensureInstalled as ensureLanguageInstalled,
+  assertPinnedCheckout,
+  assertPreparedFixture,
   graphLauncher,
-  runPrepare,
+  prepareFixture,
+  serverArgsForPreparedFixture,
 } from "./language.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -130,6 +132,11 @@ fs.mkdirSync(outDir, { recursive: true });
 
 if (!parsed.flags.has("--no-setup")) {
   ensureFixtures(selected);
+} else {
+  for (const project of selected) {
+    const spec = PROJECTS[project];
+    assertPreparedFixture(spec, projectDir(workDir, spec));
+  }
 }
 
 const report = {
@@ -157,6 +164,7 @@ for (const project of selected) {
 
   for (const tool of tools) {
     const cell = runIndexCell({ project, spec, repoDir, tool });
+    assertPinnedCheckout(spec, repoDir);
     report.cells.push(cell);
     writeJson(reportPath, report);
     printCellSummary(project, cell);
@@ -219,6 +227,10 @@ function runIndexCell({ project, spec, repoDir, tool }) {
         spec.language,
         "--mode",
         "lsp",
+        ...serverArgsForPreparedFixture(spec, repoDir).flatMap((arg) => [
+          "--server-arg",
+          arg,
+        ]),
       ],
       {
         label: `samchon-graph dump ${project}`,
@@ -522,59 +534,13 @@ function ensureFixtures(projects) {
           cwd: repoDir,
         });
     } else {
+      assertPinnedCheckout(spec, repoDir);
       process.stdout.write(`[index-time] reusing fixture ${project}\n`);
     }
-    ensureLanguageInstalled(repoDir, {
+    prepareFixture(spec, repoDir, {
       noInstall: parsed.flags.has("--no-install"),
     });
-    runPrepare(spec, repoDir);
   }
-}
-
-function ensureInstalled(repoDir) {
-  if (parsed.flags.has("--no-install")) return;
-  if (fs.existsSync(path.join(repoDir, "node_modules"))) return;
-  const plan = installPlan(repoDir);
-  if (!plan) return;
-  runChecked(plan.command, plan.args, {
-    label: `install fixture dependencies (${plan.label})`,
-    logBase: path.join(outDir, `setup-${path.basename(repoDir)}-install`),
-    cwd: repoDir,
-  });
-}
-
-function installPlan(repoDir) {
-  if (fs.existsSync(path.join(repoDir, "pnpm-lock.yaml"))) {
-    return packageCommand("pnpm", [
-      "install",
-      "--frozen-lockfile",
-      "--ignore-scripts",
-    ]);
-  }
-  if (fs.existsSync(path.join(repoDir, "package-lock.json"))) {
-    return packageCommand("npm", ["ci", "--ignore-scripts"]);
-  }
-  if (fs.existsSync(path.join(repoDir, "yarn.lock"))) {
-    return packageCommand("yarn", [
-      "install",
-      "--frozen-lockfile",
-      "--ignore-scripts",
-    ]);
-  }
-  if (fs.existsSync(path.join(repoDir, "package.json"))) {
-    return packageCommand("npm", ["install", "--ignore-scripts"]);
-  }
-  return null;
-}
-
-function packageCommand(command, args) {
-  return process.platform === "win32"
-    ? {
-        label: command,
-        command: "cmd.exe",
-        args: ["/d", "/s", "/c", command, ...args],
-      }
-    : { label: command, command, args };
 }
 
 function selectTools(value) {

@@ -5,11 +5,11 @@ import { IResolvedGraphHandle } from "./IResolvedGraphHandle";
 import { isSupportPath } from "./isSupportPath";
 
 /**
- * Resolve a tool handle as an id, an exact symbol name, a dotted suffix, or a
- * file-qualified name.
+ * Resolve a tool handle as an id, an exact symbol name, a dotted suffix, a
+ * language-native qualified name, or a file-qualified name.
  *
  * A model writes handles from memory of an earlier result, and it writes them
- * the way the result read: a symbol with the file it came from. Three forms all
+ * the way the result read or the source language spells it. Several forms all
  * mean one node and all used to miss.
  *
  * - A `file#symbol` id whose file is one refactor stale (`effect.ts#track` for
@@ -29,6 +29,9 @@ import { isSupportPath } from "./isSupportPath";
  *   method (`db.query`, `app.listen`, `repo.save`), so the member is what it
  *   means, and the candidates come back ranked when several classes declare
  *   it.
+ * - `Handle::spawn` ??the Rust/C++ spelling of the dotted owner-qualified
+ *   identity the cross-language graph stores as `Handle.spawn`. Rejecting that
+ *   spelling silently turns an exact tour seed into loose text ranking.
  */
 export function resolveGraphHandle(
   graph: SamchonGraphMemory,
@@ -38,22 +41,34 @@ export function resolveGraphHandle(
   const byId = graph.node(handle);
   if (byId !== undefined) return { node: byId };
 
-  const byName = resolveGraphName(graph, handle, candidateLimit);
-  if (byName.node !== undefined || byName.candidates !== undefined)
-    return rank(graph, byName, candidateLimit);
+  const forms = nativeQualifiedForms(handle);
+  for (const form of forms) {
+    const byName = resolveGraphName(graph, form, candidateLimit);
+    if (byName.node !== undefined || byName.candidates !== undefined)
+      return rank(graph, byName, candidateLimit);
+  }
 
-  const byFile = resolveFileQualified(graph, handle, candidateLimit);
-  if (byFile.node !== undefined || byFile.candidates !== undefined)
-    return rank(graph, byFile, candidateLimit);
+  for (const form of forms) {
+    const byFile = resolveFileQualified(graph, form, candidateLimit);
+    if (byFile.node !== undefined || byFile.candidates !== undefined)
+      return rank(graph, byFile, candidateLimit);
+  }
 
-  const symbol = symbolPartOf(handle) ?? memberPartOf(handle);
-  if (symbol !== undefined)
-    return rank(
-      graph,
-      resolveGraphName(graph, symbol, candidateLimit),
-      candidateLimit,
-    );
+  for (const form of forms) {
+    const symbol = symbolPartOf(form) ?? memberPartOf(form);
+    if (symbol === undefined) continue;
+    const resolved = resolveGraphName(graph, symbol, candidateLimit);
+    if (resolved.node !== undefined || resolved.candidates !== undefined)
+      return rank(graph, resolved, candidateLimit);
+  }
   return {};
+}
+
+/** Keep exact graph spelling first, then try source-language `A::b` as `A.b`. */
+function nativeQualifiedForms(handle: string): readonly string[] {
+  if (!handle.includes("::")) return [handle];
+  const dotted = handle.replaceAll("::", ".");
+  return dotted === handle ? [handle] : [handle, dotted];
 }
 
 /**
@@ -90,6 +105,30 @@ function resolveGraphName(
   if (exact.length === 1) return { node: exact[0] };
   if (exact.length > 1) return { candidates: exact.slice(0, candidateLimit) };
 
+  // clangd can mix namespace dots with C++ member separators in one identity
+  // (`leveldb.DBImpl::Get`), while callers naturally write either
+  // `leveldb.DBImpl.Get` or `leveldb::DBImpl::Get`. Normalize both the handle
+  // and clangd's stored spelling only after the graph's exact-name lane has
+  // failed. Keeping this C++-only avoids changing dotted receiver semantics in
+  // TypeScript, Java, C#, and the other language indexes.
+  if (name.includes(".") || name.includes("::")) {
+    const canonical = cppQualifiedForm(name);
+    const suffix = `.${canonical}`;
+    const cppMatches = graph.nodes.filter((node) => {
+      if (node.language !== "cpp" || node.kind === "file") return false;
+      const simple = cppQualifiedForm(node.name);
+      const qualified = cppQualifiedForm(node.qualifiedName ?? "");
+      return (
+        simple === canonical ||
+        qualified === canonical ||
+        qualified.endsWith(suffix)
+      );
+    });
+    if (cppMatches.length === 1) return { node: cppMatches[0] };
+    if (cppMatches.length > 1)
+      return { candidates: cppMatches.slice(0, candidateLimit) };
+  }
+
   if (name.includes(".")) {
     const suffix = `.${name}`;
     const suffixMatches = graph.nodes.filter(
@@ -101,7 +140,37 @@ function resolveGraphName(
       return { candidates: suffixMatches.slice(0, candidateLimit) };
     }
   }
+
+  // JDT.LS and csharp-ls decorate callable symbol names with their parameter
+  // list (`Gson.toJson(Object)`, `Logger.Write(LogEvent)`). A handle copied
+  // from source or written from memory normally omits that list. Preserve the
+  // decorated nodes so overloads stay distinct, but resolve the undecorated
+  // callable base after every exact-name lane has failed.
+  if (!name.includes("(")) {
+    const suffix = name.includes(".") ? `.${name}` : undefined;
+    const callables = graph.nodes.filter((node) => {
+      if (!CALLABLE_KINDS.has(node.kind)) return false;
+      const simple = callableBaseOf(node.name);
+      const qualified = callableBaseOf(node.qualifiedName ?? "");
+      if (simple === name || qualified === name) return true;
+      return suffix !== undefined && qualified.endsWith(suffix);
+    });
+    if (callables.length === 1) return { node: callables[0] };
+    if (callables.length > 1)
+      return { candidates: callables.slice(0, candidateLimit) };
+  }
   return {};
+}
+
+function cppQualifiedForm(name: string): string {
+  return name.replaceAll("::", ".");
+}
+
+const CALLABLE_KINDS = new Set(["function", "method", "constructor"]);
+
+function callableBaseOf(name: string): string {
+  const open = name.indexOf("(");
+  return open <= 0 ? name : name.slice(0, open).trimEnd();
 }
 
 /**
@@ -126,6 +195,31 @@ function resolveFileQualified(
   if (matches.length === 1) return { node: matches[0] };
   if (matches.length > 1)
     return { candidates: matches.slice(0, candidateLimit) };
+
+  // A language server may preserve a callable's parameter list in both the
+  // simple and qualified names. The file portion is still the caller's
+  // disambiguator, so apply the same undecorated callable comparison used by
+  // resolveGraphName without widening the search beyond that file.
+  if (!name.includes("(")) {
+    const suffix = name.includes(".") ? `.${name}` : undefined;
+    const callables = graph.nodes.filter((node) => {
+      if (
+        !CALLABLE_KINDS.has(node.kind) ||
+        fileStem(node.file) !== stem
+      )
+        return false;
+      const simple = callableBaseOf(node.name);
+      const qualified = callableBaseOf(node.qualifiedName ?? "");
+      return (
+        simple === name ||
+        qualified === name ||
+        (suffix !== undefined && qualified.endsWith(suffix))
+      );
+    });
+    if (callables.length === 1) return { node: callables[0] };
+    if (callables.length > 1)
+      return { candidates: callables.slice(0, candidateLimit) };
+  }
   return {};
 }
 

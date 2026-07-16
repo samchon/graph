@@ -1,5 +1,6 @@
 import { AsyncSamchonGraphSource } from "./AsyncSamchonGraphSource";
 import { RESULT_AUDIT } from "./operations/RESULT_AUDIT";
+import { RESULT_AUDIT_SELECTION } from "./operations/RESULT_AUDIT_SELECTION";
 import { RESULT_AUDIT_ESCAPE } from "./operations/RESULT_AUDIT_ESCAPE";
 import { resultNext } from "./operations/resultNext";
 import { runDetails } from "./operations/runDetails";
@@ -55,30 +56,59 @@ export class SamchonGraphApplication implements ISamchonGraphApplication {
     const graph = await this.load();
     switch (props.request.type) {
       case "entrypoints": {
+        // A ranked shortlist matched against the question: its facts come from
+        // the index, but its selection is heuristic.
         const r = runEntrypoints(graph, props.request);
-        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
+        return {
+          audit: RESULT_AUDIT_SELECTION(graph.indexer),
+          next: r.next,
+          result: r.result,
+        };
       }
       case "lookup": {
+        // Natural-query matching, scoring, per-file capping, and limiting make
+        // this a selection audit even though every returned fact is indexed.
         const r = runLookup(graph, props.request);
-        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
+        return {
+          audit: RESULT_AUDIT_SELECTION(graph.indexer),
+          next: r.next,
+          result: r.result,
+        };
       }
       case "trace": {
         const r = runTrace(graph, props.request);
-        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
+        return {
+          audit: RESULT_AUDIT(graph.indexer),
+          next: r.next,
+          result: r.result,
+        };
       }
       case "details": {
         const r = runDetails(graph, props.request);
-        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
+        return {
+          audit: RESULT_AUDIT(graph.indexer),
+          next: r.next,
+          result: r.result,
+        };
       }
       case "overview": {
         const r = runOverview(graph, props.request);
-        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
+        return {
+          audit: RESULT_AUDIT(graph.indexer),
+          next: r.next,
+          result: r.result,
+        };
       }
       case "tour": {
         // The tour ranks against the question, and the question is `props`
-        // — the caller wrote it once, at the top, in the user's words.
+        // — the caller wrote it once, at the top, in the user's words. It ranks
+        // seeds, walks bounded flows, and slices to a limit.
         const r = runTour(graph, props.request, props.question);
-        return { audit: RESULT_AUDIT(graph.indexer), next: r.next, result: r.result };
+        return {
+          audit: RESULT_AUDIT_SELECTION(graph.indexer),
+          next: r.next,
+          result: r.result,
+        };
       }
       default:
         props.request satisfies never;

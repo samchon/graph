@@ -166,21 +166,16 @@ switch (experiment.language) {
     break;
   }
   case "csharp": {
-    // `dotnet-sdk-9.0` is not an apt package on Ubuntu 24.04; use the official
-    // install script. Latest csharp-ls targets .NET 9.
+    // Use the same runtime generation for the language server and MSBuild.
+    // csharp-ls 0.26.0 targets .NET 10 and can register the .NET 10 SDK that
+    // the pinned Serilog fixture asks Roslyn to load.
     const dotnetHome = path.join(os.homedir(), ".dotnet");
     const dotnet = path.join(dotnetHome, "dotnet");
     shell("curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh");
-    // 8.0 runs csharp-ls 0.20.0 (a net8 tool); 10.0 satisfies the fixture's
-    // global.json SDK pin so `dotnet restore` can load the solution.
-    shell("bash /tmp/dotnet-install.sh --channel 8.0");
     shell("bash /tmp/dotnet-install.sh --channel 10.0");
     appendGithubPath(dotnetHome);
     appendGithubPath(path.join(dotnetHome, "tools"));
-    // csharp-ls 0.21.0 ships a broken package ("DotnetToolSettings.xml was not
-    // found", razzmatazz/csharp-language-server#305); pin the last version that
-    // installs.
-    shell(`"${dotnet}" tool install --global csharp-ls --version 0.20.0 || "${dotnet}" tool update --global csharp-ls --version 0.20.0`);
+    shell(`"${dotnet}" tool install --global csharp-ls --version 0.26.0 || "${dotnet}" tool update --global csharp-ls --version 0.26.0`);
     break;
   }
   case "kotlin":
@@ -225,9 +220,6 @@ switch (experiment.language) {
     appendGithubPath(path.join(target, "bin"));
     break;
   }
-  case "bash":
-    shell("npm install -g bash-language-server");
-    break;
   case "dart": {
     const archive = path.join(toolsRoot, "dartsdk.zip");
     const target = path.join(toolsRoot, "dart-sdk-root");

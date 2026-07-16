@@ -27,7 +27,15 @@ export async function refreshLanguageSession(
   // what it said about an untouched file still stands. What it said about a file
   // that no longer exists does not, and `reconcileFiles` drops that with the
   // `didClose` it sends.
-  await reconcileFiles(session, files);
+  const progressFence = session.progressVersion?.();
+  const changed = await reconcileFiles(session, files);
+  if (
+    changed &&
+    progressFence !== undefined &&
+    session.waitForReady !== undefined
+  ) {
+    await session.waitForReady(progressFence, true);
+  }
   return scanSession(session, options);
 }
 
@@ -35,7 +43,11 @@ export async function refreshLanguageSession(
 // changed files get a full-document `didChange`, new files get `didOpen`,
 // files that disappeared get `didClose`. Called on refresh only — the initial
 // build already opens everything via `openLanguageSession`.
-async function reconcileFiles(session: ILspSession, files: readonly string[]): Promise<void> {
+async function reconcileFiles(
+  session: ILspSession,
+  files: readonly string[],
+): Promise<boolean> {
+  let changed = false;
   const onDisk = new Set(files.map((abs) => projectRelative(session.root, abs)));
   for (const rel of [...session.opened.keys()]) {
     if (onDisk.has(rel)) continue;
@@ -43,6 +55,7 @@ async function reconcileFiles(session: ILspSession, files: readonly string[]): P
       textDocument: { uri: fileUri(path.join(session.root, rel)) },
     });
     session.opened.delete(rel);
+    changed = true;
     // A file that is gone from disk has no findings, and the dump must not carry
     // the ones it had.
     session.diagnostics.delete(rel);
@@ -54,21 +67,27 @@ async function reconcileFiles(session: ILspSession, files: readonly string[]): P
     const rel = projectRelative(session.root, abs);
     const existing = session.opened.get(rel);
     if (existing === undefined) {
-      session.opened.set(rel, { abs, text });
+      const version = 1;
       session.client.notify("textDocument/didOpen", {
         textDocument: {
           uri: fileUri(abs),
           languageId: languageIdOf(session.language),
-          version: 1,
+          version,
           text,
         },
       });
+      session.opened.set(rel, { abs, text, version });
+      changed = true;
     } else if (existing.text !== text) {
-      existing.text = text;
+      const version = existing.version + 1;
       session.client.notify("textDocument/didChange", {
-        textDocument: { uri: fileUri(abs), version: Date.now() },
+        textDocument: { uri: fileUri(abs), version },
         contentChanges: [{ text }],
       });
+      existing.text = text;
+      existing.version = version;
+      changed = true;
     }
   }
+  return changed;
 }

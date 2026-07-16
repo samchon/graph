@@ -30,6 +30,15 @@ export const test_lsp_mode_advances_reference_ranges_past_trivia = async () => {
     "typeof query is a type reference",
     dump.edges.some((e) => e.to.includes("Store:class") && e.kind === "type_ref"),
   );
+  TestValidator.predicate(
+    "runtime typeof reads the declaration value instead of its type",
+    dump.edges.some(
+      (e) =>
+        e.to.includes("Store:class") &&
+        e.kind === "accesses" &&
+        e.evidence?.startLine === 10,
+    ),
+  );
 
   // A reference whose range starts inside a `/* */` block comment resolves to
   // the token after it: the edge is a call and its evidence points at the
@@ -65,21 +74,22 @@ export const test_lsp_mode_advances_reference_ranges_past_trivia = async () => {
   // An optional call `optFn?.()` invokes the target through optional chaining.
   TestValidator.equals("optional call is a call", edge("optFn")?.kind, "calls");
 
-  // §2j, in the language-server lane. `register(passedFn);` is a top-level
-  // statement, so what it does belongs to the module — the file node every
-  // top-level declaration already hangs off — and `passedFn` sits in an argument
-  // list with no `(` of its own, so the site that hands it over is what invokes
-  // it. Without either, a module's own wiring is attributed to nobody and the
-  // codebase reads back as a set of disconnected islands.
-  const moduleScoped = dump.edges.filter(
-    (e) => e.from === "src/trivia.ts" && e.kind === "calls",
-  );
+  // `register(passedFn);` belongs to the module. The callee is invoked here,
+  // while the callable argument is only accessed and handed off.
+  const moduleScoped = dump.edges.filter((e) => e.from === "src/trivia.ts");
   TestValidator.predicate(
     "a call written at the top level of a module belongs to the module",
-    moduleScoped.some((e) => e.to.endsWith("#register:function")),
+    moduleScoped.some(
+      (e) => e.to.endsWith("#register:function") && e.kind === "calls",
+    ),
   );
   TestValidator.predicate(
-    "a callable passed as a value gets the call edge that says so",
-    moduleScoped.some((e) => e.to.endsWith("#passedFn:function")),
+    "a callable passed as a value is accessed rather than called",
+    moduleScoped.some(
+      (e) => e.to.endsWith("#passedFn:function") && e.kind === "accesses",
+    ) &&
+      !moduleScoped.some(
+        (e) => e.to.endsWith("#passedFn:function") && e.kind === "calls",
+      ),
   );
 };

@@ -16,4 +16,5 @@ export type SamchonGraphNodeModifier =
   | "public"
   | "private"
   | "protected"
+  | "internal"
   | "optional";

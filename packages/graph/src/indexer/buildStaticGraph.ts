@@ -19,7 +19,7 @@ export function buildStaticGraph(
   const parts = staticGraphParts(options);
   const finalized = finalizeGraph(
     parts.root,
-    parts.files,
+    [...parts.sources.keys()],
     parts.nodes,
     parts.edges,
   );

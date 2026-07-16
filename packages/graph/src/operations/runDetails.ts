@@ -347,7 +347,6 @@ const executionKinds = new Set([
   "instantiates",
   "accesses",
   "renders",
-  "references",
 ]);
 const typeKinds = new Set(["type_ref", "extends", "implements", "overrides"]);
 const implementationKinds = new Set(["implements", "overrides"]);
@@ -499,7 +498,6 @@ function edgeKindRank(kind: string): number {
       return 1;
     case "accesses":
     case "renders":
-    case "references":
       return 2;
     case "tests":
       return 3;

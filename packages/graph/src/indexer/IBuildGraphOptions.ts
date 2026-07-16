@@ -35,9 +35,10 @@ export interface IBuildGraphOptions {
    */
   lspReadyTimeoutMs?: number;
   /**
-   * How long the server must stay silent on `$/progress` before its initial
-   * indexing is treated as settled. This is a quiet-detection threshold;
-   * `lspReadyTimeoutMs` supplies an optional overall ceiling.
+   * How long the server must stay silent on lifecycle-less `$/progress`
+   * reports before its initial indexing is treated as settled. A work-done
+   * `begin` is always awaited through its matching `end` unless
+   * `lspReadyTimeoutMs` supplies an overall ceiling.
    */
   lspReadyQuietMs?: number;
   /**

@@ -1,5 +1,11 @@
 import path from "node:path";
 import {
+  CsharpDeclarations,
+  PhpDeclarations,
+  RubyDeclarations,
+  rustImplOwner,
+} from "@samchon/graph-sitter";
+import {
   DocumentSymbolResult,
   IDocumentSymbol,
   ILocation,
@@ -24,6 +30,12 @@ import { ILspSession } from "./ILspSession";
 import { overrideEdges } from "./overrideEdges";
 import { resolveType } from "./resolveType";
 import { supertypesOf } from "./supertypesOf";
+
+const EXECUTABLE_NODE_KINDS = new Set<GraphNodeKind>([
+  "function",
+  "method",
+  "constructor",
+]);
 
 export async function scanSession(
   session: ILspSession,
@@ -66,9 +78,19 @@ export async function scanSession(
   const referenceLimit = options.lspReferenceLimit;
   // Undefined keeps the compiler-complete default. A caller that explicitly
   // sets a budget gets the historical product-code-first ordering.
+  // JDT.LS reports an anonymous class as a document symbol named
+  // `new Type() {...}`, but `textDocument/references` at that symbol does not
+  // mean references to that anonymous-class identity. It returns every
+  // construction of the anonymous class's nominal supertype. Querying each of
+  // those synthetic containers therefore creates an N x N instantiation
+  // cross-product. Keep the symbol and its children in the graph, but derive
+  // references only from declarations whose identity the server can answer.
+  const referenceCandidates = nodes.filter(
+    (node) => !isJavaAnonymousClass(node),
+  );
   const referenceTargets = referenceLimit === undefined
-    ? nodes
-    : [...nodes]
+    ? referenceCandidates
+    : [...referenceCandidates]
         .sort((a, b) => Number(isTestPath(a.file)) - Number(isTestPath(b.file)))
         .slice(0, referenceLimit);
   // Language servers build their cross-file reference index lazily — often on
@@ -98,11 +120,28 @@ export async function scanSession(
   // reference index, after which later requests are cache-fast.
   let referencesUnavailable = false;
   if (referenceTargets.length > 0) {
-    const warm = await safeReferences(
+    const progressFence = session.progressVersion?.();
+    let warm = await safeReferences(
       client,
       referenceParams(referenceTargets[0]!),
       options.lspWarmupTimeoutMs,
     );
+    if (
+      progressFence !== undefined &&
+      session.waitForReady !== undefined &&
+      session.progressVersion?.() !== progressFence
+    ) {
+      // Several servers defer their cross-file index until the first reference
+      // query. The first answer can be a valid-but-incomplete empty array while
+      // that query starts a work-done lifecycle. Wait for its end and ask once
+      // more; the second answer is from the completed index.
+      await session.waitForReady(progressFence, false);
+      warm = await safeReferences(
+        client,
+        referenceParams(referenceTargets[0]!),
+        options.lspWarmupTimeoutMs,
+      );
+    }
     if (warm === "timeout") referencesUnavailable = true;
     else referenceResults[0] = warm;
   }
@@ -162,7 +201,10 @@ export async function scanSession(
         ref.range.end.line === start.line
           ? startLineText
           : fileLines?.[ref.range.end.line];
-      const accessText = accessExpressionAt(endLineText, ref.range.end.character);
+      const accessText = accessExpressionAt(
+        endLineText,
+        ref.range.end.character,
+      );
       // The text following the reference, as one string: the rest of the end
       // line plus a bounded run of following lines. A generic call whose
       // argument list opens several lines below the name (`fn<\n  T\n>(...)`)
@@ -174,6 +216,7 @@ export async function scanSession(
         ref.range.end.character,
       );
       const kind = referenceKind(
+        language,
         target.kind,
         startLineText,
         afterText,
@@ -194,21 +237,42 @@ export async function scanSession(
         endCol: ref.range.end.character + 1,
       };
       const emit = (kindToEmit: ISamchonGraphEdge["kind"]): void => {
-        edges.push({ from: owner.id, to: target.id, kind: kindToEmit, evidence });
+        edges.push({
+          from: owner.id,
+          to: target.id,
+          kind: kindToEmit,
+          evidence,
+        });
         // A non-method class/interface member (a property or an arrow-
         // function-valued field) attributes its body's references to both
         // itself AND the enclosing class/interface, not one or the other --
         // confirmed against @ttsc/graph's own fact-builder (forEachMember
         // walks a property member's subtree once for the member, once for its
-        // container). A method is attributed solely to itself.
+        // container). A local variable is different: Python servers expose
+        // locals as document symbols, and a call in `response = dispatch()` is
+        // first owned by `response`. Attribute that edge to the nearest
+        // executable too, or the method's runtime flow loses every assigned
+        // call. A class-level variable has no executable owner and retains the
+        // existing class/interface attribution.
         if (owner.kind === "property" || owner.kind === "field" || owner.kind === "variable") {
-          const container = containerAt(owners, start.line + 1);
+          const container =
+            owner.kind === "variable"
+              ? owner.closure === true
+                ? undefined
+                : executableAt(owners, start.line + 1, owner.id) ??
+                  containerAt(owners, start.line + 1)
+              : containerAt(owners, start.line + 1);
           if (
             container !== undefined &&
             container.id !== owner.id &&
             container.id !== target.id
           ) {
-            edges.push({ from: container.id, to: target.id, kind: kindToEmit, evidence });
+            edges.push({
+              from: container.id,
+              to: target.id,
+              kind: kindToEmit,
+              evidence,
+            });
           }
         }
       };
@@ -217,7 +281,9 @@ export async function scanSession(
       // access chain reaching the component, so @ttsc/graph's AST walk emits
       // a render AND an access edge to the same target; mirror the extra
       // access when the render's tag name is dotted.
-      if (kind === "renders" && accessText !== undefined && accessText.includes(".")) {
+      if (kind === "renders" && accessText !== undefined && accessText.includes(
+        ".",
+      )) {
         emit("accesses");
       }
     }
@@ -260,13 +326,21 @@ export async function scanSession(
     for (const supertype of supertypesOf(line)) {
       const target = resolveType(supertype.name, node, byName);
       if (target === undefined) continue;
-      const key = `${supertype.relation}\0${target.id}`;
+      const relation =
+        node.language === "csharp"
+          ? CsharpDeclarations.csharpInheritanceRelation(
+              node.kind,
+              target.kind,
+              supertype.relation,
+            )
+          : supertype.relation;
+      const key = `${relation}\0${target.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
       edges.push({
         from: node.id,
         to: target.id,
-        kind: supertype.relation,
+        kind: relation,
         evidence: node.evidence,
       });
     }
@@ -416,6 +490,7 @@ function accessExpressionAt(
 // (`fn<...>`) that only closes several lines down still reveals the `(` that
 // makes the reference a call.
 function referenceKind(
+  language: GraphLanguage,
   targetKind: GraphNodeKind,
   startLine: string | undefined,
   afterText: string,
@@ -436,7 +511,11 @@ function referenceKind(
   if (/\bnew$/.test(before)) return "instantiates";
   // A `typeof X` type query depends on X's type — @ttsc/graph records it as a
   // type reference, not the value access X's own kind would otherwise imply.
-  if (/\btypeof$/.test(before)) return "type_ref";
+  // The token alone is insufficient: runtime `typeof` is a value access.
+  if (/\btypeof$/.test(before)) {
+    if (language !== "typescript") return "type_ref";
+    return isTypeScriptTypeQuery(before) ? "type_ref" : "accesses";
+  }
   // A JSX tag name never spans lines, so only consider it on a single-line
   // reference: a multi-line reference's start column can land on an unrelated
   // trailing `<` (a comparison / generic on the receiver line) and be misread
@@ -452,16 +531,15 @@ function referenceKind(
       ? "instantiates"
       : "calls";
   }
-  // §2j: a callable passed as a value (`app.use(handler)`) is how an
-  // event-driven codebase wires itself, and no call edge crosses it — the name
-  // sits in an argument list with no `(` of its own, so it used to read as a
-  // bare reference and `trace` returned an empty path between two symbols that
-  // plainly reach each other. The passing site invokes the passed function.
+  // A callable passed as a value (`app.use(handler)`) is how an event-driven
+  // codebase wires itself. It is a value access, not a call: this expression
+  // hands the callable to `use`, but does not invoke `handler` here. This is the
+  // exact distinction @ttsc/graph's handedOffValues collector preserves.
   if (
     (targetKind === "function" || targetKind === "method") &&
     isArgumentPosition(before, after)
   ) {
-    return "calls";
+    return "accesses";
   }
   switch (targetKind) {
     case "class":
@@ -473,7 +551,15 @@ function referenceKind(
     case "field":
     case "variable":
       return "accesses";
-    default:
+    case "constructor":
+    case "external_symbol":
+    case "file":
+    case "function":
+    case "method":
+    case "module":
+    case "namespace":
+    case "package":
+    case "parameter":
       // A bare non-call reference resolves by the target's kind above; a
       // callable (method/function/constructor) reached through a member
       // access (`obj.method` without a following `(`, so `accessText` carries
@@ -483,6 +569,40 @@ function referenceKind(
         ? "accesses"
         : "references";
   }
+}
+
+function isTypeScriptTypeQuery(before: string): boolean {
+  const prefix = before.replace(/\btypeof$/, "").trimEnd();
+  if (/\b(?:as|satisfies|keyof|infer)\s*$/.test(prefix)) return true;
+
+  // A type alias keeps the whole right-hand side in type space, including
+  // parenthesized, union, and intersection forms before a nested `typeof`.
+  const statement = prefix.slice(
+    Math.max(prefix.lastIndexOf(";"), prefix.lastIndexOf("{")) + 1,
+  );
+  if (/\btype\s+[A-Za-z_$][\w$]*(?:\s*<[^>]*>)?\s*=/.test(statement)) {
+    return true;
+  }
+
+  // Declaration annotations: variable/property/parameter types and callable
+  // return types. Requiring the declaration-shaped prefix avoids treating a
+  // ternary's `: typeof value` runtime branch as a type query.
+  if (
+    /\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\??\s*:\s*$/.test(prefix) ||
+    /(?:^|[(,])\s*(?:public|private|protected|readonly)?\s*[A-Za-z_$][\w$]*\??\s*:\s*$/.test(
+      prefix,
+    ) ||
+    /\)\s*:\s*$/.test(prefix) ||
+    /^\s*(?:(?:public|private|protected|static|readonly|declare|abstract)\s+)*[A-Za-z_$][\w$]*\??\s*:\s*$/.test(
+      prefix,
+    )
+  ) {
+    return true;
+  }
+
+  // Generic type arguments such as `ReturnType<typeof fn>` are unambiguously
+  // in type space when the unmatched `<` belongs directly to a type name.
+  return /\b[A-Za-z_$][\w$.]*\s*<\s*$/.test(prefix);
 }
 
 // The name is bounded by an argument list on both sides — `(name,`, `, name)`,
@@ -611,29 +731,175 @@ function convertSymbols(
   text: string,
 ): ISamchonGraphNode[] {
   const out: ISamchonGraphNode[] = [];
+  const lines = text.split(/\r?\n/);
+  const rubyDeclarations =
+    language === "ruby" ? RubyDeclarations.scan(lines) : undefined;
+  const phpNamespaces =
+    language === "php" ? PhpDeclarations.indexPhpNamespaces(text) : undefined;
+  const csharpFlatOwnerKinds =
+    language === "csharp"
+      ? csharpOwnerKindsOf(
+          (symbols ?? []).filter(
+            (symbol): symbol is ISymbolInformation => !isDocumentSymbol(symbol),
+          ),
+        )
+      : undefined;
+  const declaredRustTypes = new Set(
+    (symbols ?? [])
+      .filter(isDocumentSymbol)
+      .filter((symbol) => {
+        const kind = kindOf(symbol.kind);
+        return (
+          kind === "class" ||
+          kind === "interface" ||
+          kind === "type" ||
+          kind === "enum"
+        );
+      })
+      .map((symbol) => symbol.name),
+  );
   // ttsc marks a node exported only when its symbol is in the source file's
   // module export table (exports.go/markExports): a class member is never a
   // module export, and a top-level declaration is exported only when the file
-  // actually exports it. For a language we have not yet audited against ttsc,
-  // keep the prior behavior (every symbol exported) rather than guessing.
+  // actually exports it. Go has no export table or keyword: its specification
+  // makes the first rune of the declared identifier the package boundary, so
+  // preserve that fact directly instead of promoting every LSP symbol.
   const exportedNames = exportedTopLevelNames(language, text);
-  const isExported = (name: string, topLevel: boolean): boolean => {
+  const isExported = (
+    name: string,
+    topLevel: boolean,
+    modifiers?: ISamchonGraphNode["modifiers"],
+  ): boolean => {
+    if (!topLevel) return false;
+    if (language === "go") return isGoExportedName(name);
+    // A file-scope C declaration is externally visible unless it has
+    // `static` linkage. clangd reports both forms as ordinary top-level
+    // symbols, so the source prefix is the only place that distinction lives.
+    if (language === "c") return modifiers?.includes("static") !== true;
+    // A Java compilation unit exposes only public top-level types. Package-
+    // private declarations remain addressable inside the project, but are not
+    // consumer API and must not seed an exported-surface tour.
+    if (language === "java") return modifiers?.includes("public") === true;
     if (exportedNames === undefined) return true;
-    return topLevel && exportedNames.has(name);
+    return exportedNames.has(name);
   };
-  const visitDocument = (symbol: IDocumentSymbol, owners: string[]): void => {
-    const kind = kindOf(symbol.kind);
-    if (kind !== undefined) {
-      const qualifiedName = [...owners, symbol.name].join(".");
+  const visitDocument = (
+    symbol: IDocumentSymbol,
+    owners: string[],
+    ownerKinds: GraphNodeKind[],
+    insideClosure: boolean,
+  ): void => {
+    const rawKind = kindOf(symbol.kind);
+    const kind = ownedVariableKind(
+      language,
+      rawKind,
+      ownerKinds.at(-1),
+      owners.at(-1),
+      lines[symbol.selectionRange.start.line] ?? "",
+    );
+    const genericIdentity = symbolIdentity(language, symbol.name, owners);
+    const phpNamespace =
+      phpNamespaces === undefined
+        ? undefined
+        : PhpDeclarations.phpNamespaceAt(
+            phpNamespaces,
+            symbol.selectionRange.start.line,
+            symbol.selectionRange.start.character,
+          );
+    const identity =
+      language === "csharp"
+        ? CsharpDeclarations.csharpDocumentIdentity(
+            genericIdentity.name,
+            genericIdentity.owners,
+            kind,
+            lines[symbol.selectionRange.start.line] ?? "",
+          )
+        : language === "php"
+          ? PhpDeclarations.phpSymbolIdentity(
+              genericIdentity.name,
+              genericIdentity.owners,
+              kind,
+              phpNamespace,
+            )
+          : genericIdentity;
+    const transparentOwner =
+      rawKind === undefined && language === "rust"
+        ? rustImplOwner(symbol.name, declaredRustTypes)
+        : undefined;
+    const callableLocal =
+      language === "python" &&
+      rawKind === "variable" &&
+      EXECUTABLE_NODE_KINDS.has(ownerKinds.at(-1)!) &&
+      pythonVariableBindsLambda(symbol, lines);
+    const anonymousClass =
+      language === "java" &&
+      kind === "class" &&
+      isJavaAnonymousClassName(symbol.name);
+    const closure = insideClosure || callableLocal || anonymousClass;
+    const rubyDeclaration = rubyDeclarations?.get(
+      symbol.selectionRange.start.line,
+    );
+    const modifiers =
+      language === "ruby"
+        ? rubyDeclaration?.modifiers
+        : language === "java"
+          ? javaModifiersOf(symbol, lines)
+          : language === "csharp"
+            ? csharpModifiersOf(symbol, lines, kind, ownerKinds.at(-1))
+            : language === "php"
+              ? phpModifiersOf(symbol, lines, kind, ownerKinds.at(-1))
+              : language === "c"
+                ? cGraphModifiersOf(symbol, lines)
+                : undefined;
+    // Pyright reports every parameter and ordinary local assignment as a
+    // DocumentSymbol. The compiler-native reference graph deliberately does
+    // not: local values are not places code runs, and recording them makes the
+    // graph drown in value temporaries. Keep module/class variables and the one
+    // executable local form Python can bind directly, a lambda closure.
+    const included =
+      kind !== undefined &&
+      !(
+        language === "python" &&
+        rawKind === "variable" &&
+        EXECUTABLE_NODE_KINDS.has(ownerKinds.at(-1)!) &&
+        !callableLocal
+      );
+    if (included) {
+      const qualifiedName = [...identity.owners, identity.name].join(".");
       out.push({
         id: `${file}#${qualifiedName}:${kind}`,
         kind,
         language,
-        name: symbol.name,
-        ...(owners.length > 0 ? { qualifiedName } : {}),
+        name: identity.name,
+        ...(identity.owners.length > 0 ? { qualifiedName } : {}),
         file,
         external: false,
-        ...(isExported(symbol.name, owners.length === 0)
+        ...(closure ? { closure: true } : {}),
+        ...(modifiers !== undefined && modifiers.length > 0
+          ? { modifiers }
+          : {}),
+        ...(language === "go" && identity.owners.length > 0
+          ? {
+              modifiers: [
+                isGoExportedName(identity.name) ? "public" : "private",
+              ],
+            }
+          : {}),
+        ...((language === "ruby"
+          ? rubyDeclaration?.exported === true
+          : language === "csharp"
+            ? CsharpDeclarations.isCSharpPublishedType(
+                kind,
+                ownerKinds,
+                modifiers,
+              )
+            : language === "php"
+              ? PhpDeclarations.isPhpPublishedDeclaration(kind, ownerKinds)
+              : isExported(
+                  identity.name,
+                  identity.owners.length === 0,
+                  modifiers,
+                ))
           ? { exported: true }
           : {}),
         evidence: {
@@ -648,13 +914,226 @@ function convertSymbols(
     for (const child of symbol.children ?? []) {
       visitDocument(
         child,
-        kind === undefined ? owners : [...owners, symbol.name],
+        !included
+          ? transparentOwner === undefined
+            ? identity.owners
+            : [...identity.owners, transparentOwner]
+          : [...identity.owners, identity.name],
+        !included ? ownerKinds : [...ownerKinds, kind],
+        closure,
       );
     }
   };
   for (const symbol of symbols ?? []) {
-    if (isDocumentSymbol(symbol)) visitDocument(symbol, []);
-    else out.push(convertSymbolInformation(language, file, symbol));
+    if (isDocumentSymbol(symbol)) visitDocument(symbol, [], [], false);
+    else
+      out.push(
+        convertSymbolInformation(
+          language,
+          file,
+          symbol,
+          lines,
+          rubyDeclarations,
+          phpNamespaces,
+          csharpFlatOwnerKinds?.get(symbol),
+        ),
+      );
+  }
+  return out;
+}
+
+/** Recover file-linkage modifiers from the declaration prefix clangd owns. */
+function cGraphModifiersOf(
+  symbol: IDocumentSymbol,
+  lines: readonly string[],
+): NonNullable<ISamchonGraphNode["modifiers"]> {
+  const start = symbol.range.start;
+  const end = symbol.selectionRange.start;
+  if (end.line < start.line) return [];
+  const source: string[] = [];
+  for (let line = start.line; line <= end.line; line++) {
+    const text = lines[line] ?? "";
+    const from = line === start.line ? start.character : 0;
+    const to = line === end.line ? end.character : text.length;
+    source.push(text.slice(from, to));
+  }
+  return cStaticModifierOf(source.join("\n"));
+}
+
+function cStaticModifierOf(
+  source: string,
+): NonNullable<ISamchonGraphNode["modifiers"]> {
+  const lexical = source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/\/\/.*$/gm, " ")
+    .replace(/(["'])(?:\\.|(?!\1)[\s\S])*?\1/g, " ");
+  return /\bstatic\b/.test(lexical) ? ["static"] : [];
+}
+
+/** True only for a Python local whose value is directly a lambda expression. */
+function pythonVariableBindsLambda(
+  symbol: IDocumentSymbol,
+  lines: readonly string[],
+): boolean {
+  const line = symbol.selectionRange.end.line;
+  const tail = [
+    lines[line]!.slice(symbol.selectionRange.end.character),
+    ...lines.slice(line + 1, Math.min(symbol.range.end.line + 1, line + 4)),
+  ].join("\n");
+  return /^\s*(?::[^=\n]+)?=\s*\(*\s*lambda\b/.test(tail);
+}
+
+/** Recover modifiers from the declaration prefix csharp-ls does not expose. */
+function csharpModifiersOf(
+  symbol: IDocumentSymbol,
+  lines: readonly string[],
+  kind: GraphNodeKind | undefined,
+  ownerKind: GraphNodeKind | undefined,
+): NonNullable<ISamchonGraphNode["modifiers"]> {
+  const start = symbol.range.start;
+  const end = symbol.selectionRange.start;
+  if (end.line < start.line) return [];
+  const source: string[] = [];
+  for (let line = start.line; line <= end.line; line++) {
+    const text = lines[line] ?? "";
+    const to = line === end.line ? end.character : text.length;
+    // csharp-ls starts some field ranges at the identifier rather than at the
+    // declaration modifiers. Read from the physical line start so `readonly`
+    // and explicit visibility are not lost; comments/attributes are erased by
+    // the shared lexical modifier parser.
+    source.push(text.slice(0, to));
+  }
+  return CsharpDeclarations.csharpGraphModifiersOf(
+    source.join("\n"),
+    kind,
+    ownerKind,
+  );
+}
+
+/** Recover PHP visibility and shape omitted from Intelephense symbols. */
+function phpModifiersOf(
+  symbol: IDocumentSymbol,
+  lines: readonly string[],
+  kind: GraphNodeKind | undefined,
+  ownerKind: GraphNodeKind | undefined,
+): NonNullable<ISamchonGraphNode["modifiers"]> {
+  const start = symbol.range.start;
+  const end = symbol.selectionRange.start;
+  if (end.line < start.line) return [];
+  const source: string[] = [];
+  for (let line = start.line; line <= end.line; line++) {
+    const text = lines[line] ?? "";
+    const to = line === end.line ? end.character : text.length;
+    // Intelephense may begin a member range at `function` or the identifier,
+    // after its visibility token. Read from the physical line start; the PHP
+    // lexical helper erases comments and strings before matching modifiers.
+    source.push(text.slice(0, to));
+  }
+  return PhpDeclarations.phpGraphModifiersOf(
+    source.join("\n"),
+    kind,
+    ownerKind,
+  );
+}
+
+/** JDT.LS's synthetic identity for a Java anonymous-class body. */
+function isJavaAnonymousClass(node: ISamchonGraphNode): boolean {
+  return (
+    node.language === "java" &&
+    node.kind === "class" &&
+    isJavaAnonymousClassName(node.name)
+  );
+}
+
+function isJavaAnonymousClassName(name: string): boolean {
+  return /^new\s+[\s\S]+\{\.\.\.\}$/.test(name.trim());
+}
+
+/**
+ * Recover the Java declaration modifiers JDT.LS omits from DocumentSymbol.
+ * Its range starts at the declaration (occasionally at its Javadoc) and its
+ * selection starts at the declared identifier, so that exact prefix is the
+ * only source slice inspected. Comments, strings, and annotation arguments are
+ * erased before matching to avoid turning metadata text into visibility facts.
+ */
+function javaModifiersOf(
+  symbol: IDocumentSymbol,
+  lines: readonly string[],
+): NonNullable<ISamchonGraphNode["modifiers"]> {
+  const start = symbol.range.start;
+  const end = symbol.selectionRange.start;
+  if (end.line < start.line) return [];
+  const source: string[] = [];
+  for (let line = start.line; line <= end.line; line++) {
+    const text = lines[line] ?? "";
+    const from = line === start.line ? start.character : 0;
+    const to = line === end.line ? end.character : text.length;
+    source.push(text.slice(from, to));
+  }
+  return javaGraphModifiersOf(source.join("\n"));
+}
+
+/** Best-effort modifier recovery for the legacy flat SymbolInformation shape. */
+function javaModifiersOnLine(
+  line: string,
+  symbolName: string,
+): NonNullable<ISamchonGraphNode["modifiers"]> {
+  const declaredName = symbolName.slice(0, symbolName.indexOf("(") === -1
+    ? symbolName.length
+    : symbolName.indexOf("("));
+  const position = line.indexOf(declaredName);
+  return javaGraphModifiersOf(position === -1 ? "" : line.slice(0, position));
+}
+
+function javaGraphModifiersOf(
+  source: string,
+): NonNullable<ISamchonGraphNode["modifiers"]> {
+  const clean = eraseJavaAnnotations(
+    source
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/\/\/.*$/gm, " ")
+      .replace(/(["'])(?:\\.|(?!\1)[\s\S])*?\1/g, " "),
+  );
+  const out: NonNullable<ISamchonGraphNode["modifiers"]> = [];
+  for (const match of clean.matchAll(
+    /\b(public|private|protected|static|abstract)\b/g,
+  )) {
+    const modifier = match[1] as NonNullable<
+      ISamchonGraphNode["modifiers"]
+    >[number];
+    if (!out.includes(modifier)) out.push(modifier);
+  }
+  return out;
+}
+
+/** Replace Java annotations, including balanced argument lists, with spaces. */
+function eraseJavaAnnotations(source: string): string {
+  let out = "";
+  for (let index = 0; index < source.length; ) {
+    if (source[index] !== "@") {
+      out += source[index++]!;
+      continue;
+    }
+    index++;
+    while (index < source.length && /[\w$.]/.test(source[index]!)) index++;
+    while (index < source.length && /\s/.test(source[index]!)) index++;
+    if (source[index] === "(") {
+      let depth = 0;
+      let quote: string | undefined;
+      for (; index < source.length; index++) {
+        const char = source[index]!;
+        if (quote !== undefined) {
+          if (char === "\\") index++;
+          else if (char === quote) quote = undefined;
+        } else if (char === '"' || char === "'") quote = char;
+        else if (char === "(") depth++;
+        else if (char === ")" && --depth === 0) {
+          index++;
+          break;
+        }
+      }
+    }
+    out += " ";
   }
   return out;
 }
@@ -671,6 +1150,19 @@ function exportedTopLevelNames(
   language: GraphLanguage,
   text: string,
 ): Set<string> | undefined {
+  if (language === "rust") {
+    const names = new Set<string>();
+    // Only unrestricted `pub` is consumer API. `pub(crate)`, `pub(super)`,
+    // and `pub(in ...)` deliberately do not match because `pub` is followed
+    // by `(` rather than whitespace. Accept the qualifiers Rust permits before
+    // a function declaration while keeping the declared-name capture lexical.
+    const declaration =
+      /^\s*pub\s+(?:(?:async|const|unsafe|extern(?:\s+"[^"]*")?)\s+)*(?:fn|struct|enum|trait|type|mod|static(?:\s+mut)?|const|union)\s+([A-Za-z_][\w]*)/gm;
+    for (let match = declaration.exec(text); match !== null; match = declaration.exec(text)) {
+      names.add(match[1]!);
+    }
+    return names;
+  }
   if (language !== "typescript") return undefined;
   const names = new Set<string>();
   const inline =
@@ -698,25 +1190,152 @@ function convertSymbolInformation(
   language: GraphLanguage,
   file: string,
   symbol: ISymbolInformation,
+  lines: readonly string[],
+  rubyDeclarations?: ReadonlyMap<number, RubyDeclarations.IRubyDeclaration>,
+  phpNamespaces?: PhpDeclarations.IPhpNamespaceIndex,
+  csharpOwnerKind?: GraphNodeKind,
 ): ISamchonGraphNode {
-  const kind = kindOf(symbol.kind) ?? "external_symbol";
+  const rawKind = kindOf(symbol.kind) ?? "external_symbol";
   const owners =
     symbol.containerName === undefined || symbol.containerName === ""
       ? []
       : [symbol.containerName];
-  const qualifiedName = [...owners, symbol.name].join(".");
+  const genericIdentity = symbolIdentity(language, symbol.name, owners);
+  const declarationLine = lines[symbol.location.range.start.line] ?? "";
+  const kind =
+    ownedVariableKind(
+      language,
+      rawKind,
+      csharpOwnerKind,
+      genericIdentity.owners.at(-1),
+      declarationLine,
+    ) ?? rawKind;
+  const phpNamespace =
+    phpNamespaces === undefined
+      ? undefined
+      : PhpDeclarations.phpNamespaceAt(
+          phpNamespaces,
+          symbol.location.range.start.line,
+          symbol.location.range.start.character,
+        );
+  const identity =
+    language === "csharp"
+      ? CsharpDeclarations.csharpDocumentIdentity(
+          genericIdentity.name,
+          genericIdentity.owners,
+          kind,
+          declarationLine,
+        )
+      : language === "php"
+        ? PhpDeclarations.phpSymbolIdentity(
+            genericIdentity.name,
+            genericIdentity.owners,
+            kind,
+            phpNamespace,
+          )
+        : genericIdentity;
+  const qualifiedName = [...identity.owners, identity.name].join(".");
+  const rubyDeclaration = rubyDeclarations?.get(
+    symbol.location.range.start.line,
+  );
+  const javaModifiers =
+    language === "java"
+      ? javaModifiersOnLine(
+          lines[symbol.location.range.start.line] ?? "",
+          identity.name,
+        )
+      : undefined;
+  const csharpModifiers =
+    language === "csharp"
+      ? CsharpDeclarations.csharpGraphModifiersOf(
+          declarationLine,
+          kind,
+          csharpOwnerKind,
+        )
+      : undefined;
+  const cModifiers =
+    language === "c"
+      ? cStaticModifierOf(
+          declarationLine.slice(0, declarationLine.indexOf(identity.name)),
+        )
+      : undefined;
+  const phpOwnerKind =
+    language === "php" &&
+    (kind === "method" ||
+      kind === "constructor" ||
+      kind === "property" ||
+      kind === "field")
+      ? "class"
+      : undefined;
+  const phpModifiers =
+    language === "php"
+      ? PhpDeclarations.phpGraphModifiersOf(
+          declarationLine.slice(0, declarationLine.indexOf(identity.name)),
+          kind,
+          phpOwnerKind,
+        )
+      : undefined;
   return {
     id: `${file}#${qualifiedName}:${kind}`,
     kind,
     language,
-    name: symbol.name,
-    ...(owners.length > 0 ? { qualifiedName } : {}),
+    name: identity.name,
+    ...(identity.owners.length > 0 ? { qualifiedName } : {}),
     file,
     external: false,
+    ...(language === "java" &&
+    kind === "class" &&
+    isJavaAnonymousClassName(identity.name)
+      ? { closure: true }
+      : {}),
+    ...(javaModifiers !== undefined && javaModifiers.length > 0
+      ? { modifiers: javaModifiers }
+      : {}),
+    ...(csharpModifiers !== undefined && csharpModifiers.length > 0
+      ? { modifiers: csharpModifiers }
+      : {}),
+    ...(cModifiers !== undefined && cModifiers.length > 0
+      ? { modifiers: cModifiers }
+      : {}),
+    ...(phpModifiers !== undefined && phpModifiers.length > 0
+      ? { modifiers: phpModifiers }
+      : {}),
+    ...(rubyDeclaration?.modifiers !== undefined &&
+    rubyDeclaration.modifiers.length > 0
+      ? { modifiers: rubyDeclaration.modifiers }
+      : {}),
+    ...(language === "go" && identity.owners.length > 0
+      ? {
+          modifiers: [
+            isGoExportedName(identity.name) ? "public" : "private",
+          ],
+        }
+      : {}),
     // The flat SymbolInformation fallback carries no source text to resolve a
-    // real export surface; a contained symbol is still never a module export,
-    // so only a top-level one keeps the exported default.
-    ...(owners.length === 0 ? { exported: true } : {}),
+    // real export surface; a contained symbol is still never a module export.
+    // Go needs no source parse because capitalization is the language's export
+    // rule, so it keeps the same answer in both LSP symbol result shapes.
+    ...((language === "ruby"
+      ? rubyDeclaration?.exported === true
+      : language === "csharp"
+        ? CsharpDeclarations.isCSharpPublishedType(
+            kind,
+            csharpOwnerKind === undefined ? [] : [csharpOwnerKind],
+            csharpModifiers,
+          )
+        : language === "php"
+          ? PhpDeclarations.isPhpPublishedDeclaration(
+              kind,
+              phpOwnerKind === undefined ? [] : [phpOwnerKind],
+            )
+          : identity.owners.length === 0 &&
+            (language === "java"
+              ? javaModifiers?.includes("public") === true
+              : language === "c"
+                ? cModifiers?.includes("static") !== true
+                : language !== "go" || isGoExportedName(identity.name)))
+      ? { exported: true }
+      : {}),
     evidence: {
       file,
       startLine: symbol.location.range.start.line + 1,
@@ -725,6 +1344,104 @@ function convertSymbolInformation(
       endCol: symbol.location.range.end.character + 1,
     },
   };
+}
+
+/**
+ * Normalize the member shape a server lost before the node id is formed.
+ * Class/interface variables are declaration members, not local values. C# can
+ * recover the sharper field/property distinction from the declaration line;
+ * other servers that use SymbolKind.Variable for a member recover `property`.
+ */
+function ownedVariableKind(
+  language: GraphLanguage,
+  kind: GraphNodeKind | undefined,
+  ownerKind: GraphNodeKind | undefined,
+  ownerName: string | undefined,
+  declarationLine: string,
+): GraphNodeKind | undefined {
+  if (
+    kind !== "variable" ||
+    (ownerKind !== "class" && ownerKind !== "interface")
+  )
+    return kind;
+  if (language === "csharp") {
+    const parsed = CsharpDeclarations.parseCSharpDeclaration(
+      declarationLine,
+      ownerName,
+      ownerKind,
+    );
+    if (parsed?.kind === "field" || parsed?.kind === "property") {
+      return parsed.kind;
+    }
+  }
+  return "property";
+}
+
+/** Resolve the owner kind omitted by the legacy flat SymbolInformation form. */
+function csharpOwnerKindsOf(
+  symbols: readonly ISymbolInformation[],
+): Map<ISymbolInformation, GraphNodeKind> {
+  const containers = new Map<string, GraphNodeKind>();
+  const simple = new Map<string, GraphNodeKind | null>();
+  for (const symbol of symbols) {
+    const kind = kindOf(symbol.kind);
+    if (
+      kind !== "namespace" &&
+      kind !== "class" &&
+      kind !== "interface" &&
+      kind !== "enum"
+    )
+      continue;
+    const name = csharpContainerName(symbol.name);
+    const owner = csharpContainerName(symbol.containerName ?? "");
+    const full = owner === "" ? name : `${owner}.${name}`;
+    containers.set(full, kind);
+    simple.set(name, simple.has(name) ? null : kind);
+  }
+  const out = new Map<ISymbolInformation, GraphNodeKind>();
+  for (const symbol of symbols) {
+    const owner = csharpContainerName(symbol.containerName ?? "");
+    if (owner === "") continue;
+    const exact = containers.get(owner);
+    const fallback = simple.get(owner.slice(owner.lastIndexOf(".") + 1));
+    const kind = exact ?? fallback ?? undefined;
+    if (kind !== undefined) out.set(symbol, kind);
+  }
+  return out;
+}
+
+function csharpContainerName(name: string): string {
+  return name
+    .replace(/\\|::/g, ".")
+    .replace(/\([^)]*\)$/, "")
+    .replace(/^\.+|\.+$/g, "");
+}
+
+/** The declared part of `(*Engine).ServeHTTP` is `ServeHTTP`. */
+function isGoExportedName(name: string): boolean {
+  const declared = name.slice(name.lastIndexOf(".") + 1);
+  return /^\p{Lu}/u.test(declared);
+}
+
+/**
+ * gopls reports receiver methods as flat document symbols such as
+ * `(*Engine).ServeHTTP`, beside `Engine` rather than beneath it. Recover the
+ * ownership that a compiler-native symbol tree carries so exports, handles,
+ * containment, and centrality all see one `Engine.ServeHTTP` member.
+ */
+function symbolIdentity(
+  language: GraphLanguage,
+  name: string,
+  owners: readonly string[],
+): { name: string; owners: string[] } {
+  if (language !== "go" || owners.length !== 0) {
+    return { name, owners: [...owners] };
+  }
+  const match = /^\(\*?([^)]+)\)\.([^\s.]+)$/.exec(name);
+  if (match === null) return { name, owners: [] };
+  const generic = match[1]!.indexOf("[");
+  const receiver = generic === -1 ? match[1]! : match[1]!.slice(0, generic);
+  return { name: match[2]!, owners: [receiver] };
 }
 
 function kindOf(symbolKind: number): GraphNodeKind | undefined {
@@ -794,4 +1511,26 @@ function containerAt(
         node.evidence.endLine! >= line,
     )
     .sort((a, b) => b.evidence!.startLine - a.evidence!.startLine)[0];
+}
+
+/** The innermost callable enclosing a local symbol at `line`. */
+function executableAt(
+  nodes: readonly ISamchonGraphNode[],
+  line: number,
+  excluded: string,
+): ISamchonGraphNode | undefined {
+  return nodes
+    .filter(
+      (node) =>
+        node.id !== excluded &&
+        (node.kind === "function" ||
+          node.kind === "method" ||
+          node.kind === "constructor") &&
+        node.evidence !== undefined &&
+        node.evidence.startLine <= line &&
+        node.evidence.endLine! >= line,
+    )
+    .sort(
+      (a, b) => b.evidence!.startLine - a.evidence!.startLine,
+    )[0];
 }

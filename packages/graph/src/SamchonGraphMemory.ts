@@ -14,7 +14,8 @@ import { basename } from "./utils/path";
  *
  * It loads one dump — the indexer-resolved fact graph — then synthesizes the
  * structural layer the dump deliberately leaves to this layer: `file` container
- * nodes and the `contains` ownership tree. Every tool call is then a lookup or a
+ * nodes and the `contains` ownership tree, plus member implementation edges and
+ * class-member property refinement. Every tool call is then a lookup or a
  * traversal over the indexes built here; nothing re-indexes.
  */
 export class SamchonGraphMemory {
@@ -31,7 +32,7 @@ export class SamchonGraphMemory {
   public readonly indexer: ISamchonGraphDump["indexer"];
   /** Every node, raw plus synthesized (file containers). */
   public readonly nodes: readonly ISamchonGraphNode[];
-  /** Every edge, raw plus synthesized (contains). */
+  /** Every edge, raw plus synthesized (contains and member relations). */
   public readonly edges: readonly ISamchonGraphEdge[];
   /** Fused compiler and plugin diagnostics, when the build collected any. */
   public readonly diagnostics: readonly ISamchonGraphDiagnostic[];
@@ -143,9 +144,10 @@ function fileOfNodeId(id: string): string {
 }
 
 /**
- * Derive the structural layer from a dump's faithful facts: put back the file
- * the indexer left out of every span, add a `file` node per workspace source,
- * and connect the `contains` ownership tree.
+ * Derive the structural layer from a dump's faithful facts: refine class-member
+ * variables to properties, put back the file the indexer left out of every
+ * span, add a `file` node per workspace source, and connect the `contains`
+ * ownership tree and member implementation relations.
  *
  * `exports` edges are not synthesized here. The indexer resolves them from the
  * project's own export syntax and follows them through its barrels (§4k), so
@@ -187,21 +189,44 @@ function synthesize(dump: ISamchonGraphDump): {
     };
   });
 
-  // Index workspace nodes by (file, within-file key) so ownership can resolve a
-  // member to its declaring class/namespace.
+  // Index workspace declarations by (file, within-file key) so ownership can
+  // resolve a member to its declaring class/namespace. A strict provider may
+  // already carry canonical file nodes for compiler modules; those are
+  // containers, never symbol owners.
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const byFileKey = new Map<string, ISamchonGraphNode>();
   for (const node of nodes) {
-    if (!node.external) byFileKey.set(`${node.file}\0${keyOf(node)}`, node);
+    if (!node.external && node.kind !== "file") {
+      byFileKey.set(`${node.file}\0${keyOf(node)}`, node);
+    }
+  }
+  const owner = (node: ISamchonGraphNode): ISamchonGraphNode | undefined => {
+    const parentKey = ownerKey(keyOf(node));
+    return parentKey === ""
+      ? undefined
+      : byFileKey.get(`${node.file}\0${parentKey}`);
+  };
+
+  // Refine: a `variable` whose owner is a class or interface is a property.
+  // This deliberately changes only the cloned resident node. The raw ttsc id
+  // stays position-invariant and the caller's wire dump remains untouched.
+  for (const node of nodes) {
+    if (node.kind !== "variable" || node.external) continue;
+    const parent = owner(node);
+    if (parent?.kind === "class" || parent?.kind === "interface") {
+      node.kind = "property";
+    }
   }
 
-  // One file container node per distinct workspace source file, plus every file
-  // the dump saw an export surface on — a barrel declares nothing, so its only
-  // trace in the dump is the `exports` edges leaving it, and it is exactly the
-  // file a consumer imports the package from.
+  // One file container node per distinct workspace source file, plus every bare
+  // file id an edge leaves from. A module-scope edge is already folded onto its
+  // file id by the indexer, and that may be the file's only trace in the dump: a
+  // declaration-free bootstrap calls into the program, an import-only file names
+  // only a dependency, and a barrel only exports. Keeping the folded endpoint
+  // here means every such edge remains traversable without inventing a symbol.
   const files = new Map<string, ISamchonGraphNode>();
   const addFileNode = (file: string, language: GraphLanguage): void => {
-    if (file === "" || files.has(file)) return;
+    if (file === "" || byId.has(file) || files.has(file)) return;
     files.set(file, {
       id: file,
       kind: "file",
@@ -212,11 +237,11 @@ function synthesize(dump: ISamchonGraphDump): {
     });
   };
   for (const node of nodes) {
-    if (node.external) continue;
+    if (node.external || node.kind === "file") continue;
     addFileNode(node.file, node.language);
   }
   for (const edge of edges) {
-    if (edge.kind !== "exports") continue;
+    if (byId.has(edge.from) || fileOfNodeId(edge.from) !== edge.from) continue;
     addFileNode(edge.from, byId.get(edge.to)?.language ?? "unknown");
   }
 
@@ -224,13 +249,11 @@ function synthesize(dump: ISamchonGraphDump): {
     edges.map((edge) => `${edge.kind}\0${edge.from}\0${edge.to}`),
   );
   const structural: ISamchonGraphEdge[] = [];
+  const membersByOwner = new Map<string, ISamchonGraphNode[]>();
   for (const node of nodes) {
-    if (node.external || node.file === "") continue;
-    const parentKey = ownerKey(keyOf(node));
-    const parent =
-      parentKey === ""
-        ? undefined
-        : byFileKey.get(`${node.file}\0${parentKey}`);
+    if (node.external || node.file === "" || node.kind === "file") continue;
+    const parent = owner(node);
+    if (parent !== undefined) push(membersByOwner, parent.id, node);
     const container = parent?.id ?? node.file;
     const key = `contains\0${container}\0${node.id}`;
     if (edgeKeys.has(key)) continue;
@@ -242,8 +265,48 @@ function synthesize(dump: ISamchonGraphDump): {
     });
   }
 
+  const synthesized = [...edges, ...structural];
+  for (const edge of edges) {
+    const kind: ISamchonGraphEdge["kind"] | undefined =
+      edge.kind === "implements"
+        ? "implements"
+        : edge.kind === "extends"
+          ? "overrides"
+          : undefined;
+    if (kind === undefined) continue;
+    const derived = byId.get(edge.from);
+    const base = byId.get(edge.to);
+    if (derived === undefined || base === undefined) continue;
+    const derivedMembers = membersByOwner.get(derived.id) ?? [];
+    const baseMembers = membersByOwner.get(base.id) ?? [];
+    for (const baseMember of baseMembers) {
+      const derivedMember = derivedMembers.find(
+        (member) =>
+          member.name === baseMember.name &&
+          IMPLEMENTATION_MEMBER_KINDS.has(member.kind) &&
+          IMPLEMENTATION_MEMBER_KINDS.has(baseMember.kind),
+      );
+      if (derivedMember === undefined) continue;
+      const key = `${kind}\0${derivedMember.id}\0${baseMember.id}`;
+      if (edgeKeys.has(key)) continue;
+      edgeKeys.add(key);
+      synthesized.push({
+        from: derivedMember.id,
+        to: baseMember.id,
+        kind,
+        evidence: derivedMember.implementation ?? derivedMember.evidence,
+      });
+    }
+  }
+
   return {
     nodes: [...nodes, ...files.values()],
-    edges: [...edges, ...structural],
+    edges: synthesized,
   };
 }
+
+// Canonical ttsc emits methods and refines class-owned variables to properties.
+// Other supported language servers may already distinguish a field, which has
+// the same member-satisfaction semantics. Constructors are intentionally absent:
+// declaring a subclass constructor does not override its base constructor.
+const IMPLEMENTATION_MEMBER_KINDS = new Set(["method", "property", "field"]);

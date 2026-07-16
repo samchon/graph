@@ -56,10 +56,11 @@ export const LANGUAGE_EXPERIMENTS = [
     maxFiles: 120,
     minNodes: 1,
     minEdges: 0,
-    // csharp-ls loads the solution; restored packages make that load succeed.
-    // Drop the fixture's global.json SDK pin (exact-band 10.0.100) so restore
-    // runs on the installed SDK.
-    prepare: "rm -f global.json && dotnet restore",
+    // The upstream solution's perf/AOT entries make csharp-ls return no symbols.
+    // Keep the product and main test projects so experiments retain both the
+    // runtime graph and its test anchors without loading those broken entries.
+    prepare:
+      "dotnet new sln -n Serilog --format sln --force && dotnet sln Serilog.sln add src/Serilog/Serilog.csproj test/Serilog.Tests/Serilog.Tests.csproj",
   },
   {
     language: "kotlin",
@@ -117,13 +118,6 @@ export const LANGUAGE_EXPERIMENTS = [
   {
     language: "lua",
     repository: "https://github.com/nvim-lualine/lualine.nvim.git",
-    maxFiles: 120,
-    minNodes: 1,
-    minEdges: 0,
-  },
-  {
-    language: "bash",
-    repository: "https://github.com/ohmybash/oh-my-bash.git",
     maxFiles: 120,
     minNodes: 1,
     minEdges: 0,

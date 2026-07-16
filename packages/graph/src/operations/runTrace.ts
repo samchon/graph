@@ -484,7 +484,7 @@ function orderedEdges(
   direction: string,
   reverse: boolean,
 ): readonly ISamchonGraphEdge[] {
-  if (direction !== "impact")
+  if (direction !== "impact") {
     return [...edges].sort(
       (a, b) =>
         edgeKindRank(a.kind) - edgeKindRank(b.kind) ||
@@ -492,6 +492,7 @@ function orderedEdges(
           traceEndpointRank(graph, reverse ? b.from : b.to) ||
         evidenceRank(a) - evidenceRank(b),
     );
+  }
   // An impact trace always walks incoming edges, so its ranked endpoint is
   // always the edge's `from`; the `to` side is kept so the two comparators read
   // the same way.
@@ -537,7 +538,13 @@ function traceEndpointRank(graph: SamchonGraphMemory, id: string): number {
     case "interface":
     case "type":
       return 4;
-    default:
+    case "enum":
+    case "external_symbol":
+    case "file":
+    case "module":
+    case "namespace":
+    case "package":
+    case "parameter":
       return 3;
   }
 }
@@ -668,7 +675,6 @@ function edgeKindRank(kind: string): number {
     case "renders":
       return 2;
     case "accesses":
-    case "references":
       return 3;
     case "tests":
       return 4;

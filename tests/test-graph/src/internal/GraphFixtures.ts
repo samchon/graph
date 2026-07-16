@@ -146,8 +146,181 @@ const createDualOwnerFixture = () => {
       "    target",
       "      ();",
       "  }",
+      "  assigned() {",
+      "    const result = target();",
+      "    return result;",
+      "  }",
       "}",
       "function target() {}",
+    ].join("\n"),
+  );
+  return root;
+};
+
+const createPythonLocalFixture = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-python-locals-"));
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "src", "app.py"),
+    [
+      "class App:",
+      "    class_value = target",
+      "    def dispatch(self, ctx):",
+      "        response = target()",
+      "        handler = lambda: target()",
+      "        return response, handler",
+      "",
+      "module_value = target",
+      "def target():",
+      "    pass",
+    ].join("\n"),
+  );
+  return root;
+};
+
+const createJavaAnonymousFixture = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-java-"));
+  fs.mkdirSync(path.join(root, "src", "sample"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "src", "sample", "PublicApi.java"),
+    [
+      "package sample;",
+      "",
+      "public class PublicApi {",
+      "  public PublicApi() {}",
+      "",
+      "  public void first() {",
+      "    new Adapter() {",
+      "      @Override public void write() {}",
+      "    };",
+      "  }",
+      "",
+      "  public void second() {",
+      "    new Adapter() {",
+      "      @Override public void write() {}",
+      "    };",
+      "  }",
+      "",
+      "  public <T extends Number> java.util.List<T[]> convert(",
+      "      T value",
+      "  ) throws java.io.IOException {",
+      "    helper();",
+      "    return null;",
+      "  }",
+      "",
+      "  public String[] names() { return null; }",
+      "  private void hidden() {}",
+      "  void packageOnly() {}",
+      "  protected static void extensionPoint() {}",
+      "",
+      "  static {",
+      "    helper();",
+      "    if (true) helper();",
+      "  }",
+      "",
+      "  public static class Nested {}",
+      "}",
+      "",
+      "class PackageType {}",
+      "",
+      "abstract class Adapter {",
+      "  abstract void write();",
+      "}",
+      "",
+      "class Helper {",
+      "  static void helper() {}",
+      "}",
+    ].join("\n"),
+  );
+  return root;
+};
+
+const createPhpSemanticsFixture = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-php-"));
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "src", "Pipeline.php"),
+    [
+      "<?php",
+      "namespace Demo;",
+      "",
+      "readonly class Pipeline",
+      "{",
+      "    private string $secret;",
+      "    public static string $shared;",
+      "    function __construct() {}",
+      "    public function handle() {}",
+      "    protected function extensionPoint() {}",
+      "    private function hidden() {}",
+      "}",
+      "",
+      "interface Handler",
+      "{",
+      "    function process();",
+      "}",
+      "",
+      "function bootstrap() {}",
+    ].join("\n"),
+  );
+  return root;
+};
+
+const createRustImplFixture = () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-rust-impl-"));
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "src", "runtime.rs"),
+    [
+      "pub struct Runtime;",
+      "pub struct Handle;",
+      "",
+      "impl Runtime {",
+      "    pub fn spawn(&self) {}",
+      "}",
+      "impl Runtime {",
+      "    fn block_on(&self) {}",
+      "}",
+      "impl Handle {",
+      "    pub fn spawn(&self) {}",
+      "}",
+      "pub fn public_api() {}",
+      "pub(crate) fn crate_only() {}",
+      "fn private_helper() {}",
+      "pub struct Generic<T>(T);",
+      "impl<T> Generic<T> {",
+      "    fn get(&self) {}",
+      "}",
+      "impl Schedule for Handle {",
+      "    fn schedule(&self) {}",
+      "}",
+      "impl Schedule for External {",
+      "    fn collision(&self) {}",
+      "}",
+      "impl Schedule for () {",
+      "    fn collision(&self) {}",
+      "}",
+      "pub(super) fn super_only() {}",
+      "pub(in crate::runtime) fn scoped_only() {}",
+      "pub static GLOBAL: usize = 0;",
+      "pub(crate) static LOCAL: usize = 0;",
+      "pub union Packet { bits: u32 }",
+      "pub struct UnsafeTarget;",
+      "unsafe impl Schedule for UnsafeTarget {",
+      "    fn unsafe_schedule(&self) {}",
+      "}",
+      "impl Late {",
+      "    fn before_declaration(&self) {}",
+      "}",
+      "pub struct Late;",
+      "pub mod public_module;",
+      "pub static mut GLOBAL_MUT: usize = 0;",
+      "pub extern \"C\" fn ffi_entry() {}",
+      "impl Schedule for Arc<WrappedLate> {",
+      "    fn wrapped_before_declaration(&self) {",
+      "        let local = 1;",
+      "    }",
+      "}",
+      "pub struct WrappedLate;",
     ].join("\n"),
   );
   return root;
@@ -178,16 +351,16 @@ const createTriviaFixture = () => {
       "    lineFn();",
       "  jsx = <NS.Panel />;",
       "  opt = optFn?.();",
+      '  runtimeType = typeof Store === "function";',
       "}",
       "class Store {}",
       "function blockFn() { return 1; }",
       "function lineFn() { return 2; }",
       "const NS = { Panel: () => null };",
       "function optFn() { return 3; }",
-      // §2j, in the language-server lane: line 17 is a top-level statement, so it
-      // belongs to the module, and `passedFn` sits in an argument list with no
-      // `(` of its own — a callable handed to a call, which the site that hands it
-      // over invokes.
+      // In the language-server lane, line 19 is a top-level statement, so it
+      // belongs to the module. `passedFn` sits in an argument list with no `(`
+      // of its own: the site accesses and hands it off without invoking it.
       "function passedFn() { return 4; }",
       "function register(fn: unknown) { return fn; }",
       "register(passedFn);",
@@ -552,12 +725,6 @@ const languageFixtures = [
     source: "function luaEntry()\n  return 1\nend\n",
   },
   {
-    language: "bash",
-    file: "entry.sh",
-    symbol: "bashEntry",
-    source: "function bashEntry() {\n  return 0\n}\n",
-  },
-  {
     language: "dart",
     file: "entry.dart",
     symbol: "DartEntry",
@@ -574,6 +741,10 @@ export const GraphFixtures = {
   createCmakeFixture,
   createContractFixture,
   createDualOwnerFixture,
+  createJavaAnonymousFixture,
+  createPhpSemanticsFixture,
+  createPythonLocalFixture,
+  createRustImplFixture,
   createTriviaFixture,
   createInheritanceFixture,
   createLspInheritanceFixture,

@@ -7,6 +7,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CORPUS, PROJECTS, projectDir } from "../graph/corpus.mjs";
+import {
+  analyzePreflightDump,
+  assertPinnedCheckout,
+} from "../graph/language.mjs";
+import { assertPublicationCandidates } from "../graph/publication-gate.mjs";
+import {
+  invalidWebsiteCellReason,
+  sanitizeWebsiteSamples,
+} from "../graph/website-cell.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const benchmarkDir = path.resolve(here, "..");
@@ -17,24 +26,48 @@ const manifestPath = path.join(graphDir, "questions", "manifest.json");
 testCorpusAndPromptProvenance();
 testManifestGenerationIsDeterministic();
 testCodexTraceAuditor();
+testWebsiteCellValidityGate();
+testPublicationRequiresMatchingCodexTraceAudit();
+testFixtureAndPreflightIntegrity();
 testReferenceRenderer();
 console.log("benchmark system tests: ok");
 
 function testCorpusAndPromptProvenance() {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  assert.equal(CORPUS.length, 13);
   assert.equal(manifest.schemaVersion, 1);
-  assert.equal(manifest.prompts.length, CORPUS.length * 2);
+  assert.equal(
+    manifest.prompts.length,
+    CORPUS.reduce(
+      (count, spec) =>
+        count +
+        1 +
+        Number(fs.existsSync(path.join(graphDir, "questions", `${spec.name}.md`))),
+      0,
+    ),
+  );
   assert.deepEqual(Object.keys(PROJECTS), CORPUS.map((entry) => entry.name));
   for (const spec of CORPUS) {
     assert.match(spec.commit, /^[0-9a-f]{40}$/);
     assert.equal(PROJECTS[spec.name].sourceRepo, spec.url);
     assert.equal(PROJECTS[spec.name].sourceBranch, spec.commit);
+    assert.ok(spec.preflight.nodes > 0);
+    assert.ok(spec.preflight.edges > 0);
+    assert.ok(spec.preflight.semanticEdges > 0);
+    assert.ok(spec.preflight.semanticEdgeKinds > 0);
+    if (spec.language === "csharp") {
+      assert.equal(spec.prepare, undefined);
+      assert.ok(spec.dotnetSolution?.projects.length > 0);
+    }
     assert.equal(
       projectDir("C:/work", spec).replace(/\\/g, "/"),
       `C:/work/${spec.name}@${spec.commit.slice(0, 12)}`,
     );
-    for (const family of ["dedicated", "common"]) {
+    const families = fs.existsSync(
+      path.join(graphDir, "questions", `${spec.name}.md`),
+    )
+      ? ["dedicated", "common"]
+      : ["common"];
+    for (const family of families) {
       const prompt = manifest.prompts.find(
         (entry) => entry.repo === spec.name && entry.family === family,
       );
@@ -59,6 +92,221 @@ function testManifestGenerationIsDeterministic() {
 
 function testCodexTraceAuditor() {
   run(process.execPath, [path.join(graphDir, "audit-codex-traces.mjs"), "--self-test"]);
+}
+
+function testWebsiteCellValidityGate() {
+  const valid = {
+    runs: 1,
+    samples: {
+      baseline: [{ ok: true, tokens: 100, shell: 2, sourceTouches: 2, graph: 0 }],
+      graph: [{ ok: true, tokens: 20, shell: 0, sourceTouches: 0, graph: 1 }],
+    },
+  };
+  assert.equal(invalidWebsiteCellReason(valid), null);
+  assert.match(
+    invalidWebsiteCellReason({
+      ...valid,
+      samples: { ...valid.samples, graph: [{ ...valid.samples.graph[0], graph: 0 }] },
+    }),
+    /no MCP call/,
+  );
+  assert.match(
+    invalidWebsiteCellReason({
+      ...valid,
+      samples: { ...valid.samples, graph: [{ ...valid.samples.graph[0], shell: 1 }] },
+    }),
+    /shell\/source\/web-fallback/,
+  );
+  assert.match(
+    invalidWebsiteCellReason({
+      ...valid,
+      samples: { ...valid.samples, graph: [{ ...valid.samples.graph[0], web: 1 }] },
+    }),
+    /shell\/source\/web-fallback/,
+  );
+  assert.match(
+    invalidWebsiteCellReason({
+      ...valid,
+      samples: { ...valid.samples, graph: [{ ...valid.samples.graph[0], ok: false }] },
+    }),
+    /failed sample/,
+  );
+  assert.match(
+    invalidWebsiteCellReason({
+      ...valid,
+      samples: sanitizeWebsiteSamples({
+        ...valid.samples,
+        graph: [{ ...valid.samples.graph[0], ok: false }],
+      }),
+    }),
+    /failed sample/,
+  );
+  assert.match(
+    invalidWebsiteCellReason({ ...valid, runs: 2 }),
+    /1\/2 requested samples/,
+  );
+  assert.match(
+    invalidWebsiteCellReason({ runs: 1, samples: { baseline: [], graph: [] } }),
+    /no samples/,
+  );
+}
+
+function testPublicationRequiresMatchingCodexTraceAudit() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-publication-gate-"));
+  const traceDir = path.join(root, "traces");
+  const reportPath = path.join(root, "report.json");
+  const auditPath = path.join(root, "audit.json");
+  fs.mkdirSync(traceDir);
+  fs.writeFileSync(
+    path.join(traceDir, "graph-run-1.stream.jsonl"),
+    [
+      JSON.stringify({
+        type: "item.completed",
+        item: {
+          type: "mcp_tool_call",
+          server: "samchon-graph",
+          tool: "inspect",
+          arguments: {},
+          result: { content: [{ type: "text", text: "{}" }] },
+        },
+      }),
+      JSON.stringify({
+        type: "item.completed",
+        item: { type: "agent_message", text: "done" },
+      }),
+      JSON.stringify({
+        type: "turn.completed",
+        usage: {
+          input_tokens: 7,
+          cached_input_tokens: 0,
+          output_tokens: 3,
+          reasoning_output_tokens: 0,
+        },
+      }),
+      "",
+    ].join("\n"),
+  );
+  const sample = {
+    ok: true,
+    tokens: 10,
+    cached: 0,
+    reasoning: 0,
+    turns: 1,
+    tools: 1,
+    shell: 0,
+    graph: 1,
+    web: 0,
+    sourceTouches: 0,
+    run: 1,
+  };
+  const report = {
+    repo: "fixture",
+    commit: "1".repeat(40),
+    fixtureTree: "2".repeat(40),
+    fixtureBranch: "1".repeat(40),
+    question: "question",
+    questionSha256: sha256("question"),
+    traceDir,
+    runs: 1,
+    samples: {
+      baseline: [],
+      graph: [{ ...sample, questionSha256: sha256("question") }],
+    },
+  };
+  fs.writeFileSync(reportPath, JSON.stringify(report));
+  const cell = {
+    runs: 1,
+    samples: report.samples,
+    harness: "codex",
+    repo: "fixture",
+    fixtureBranch: "1".repeat(40),
+    questionSha256: sha256("question"),
+  };
+  assert.equal(
+    assertPublicationCandidates(
+      [{ cell, harness: "codex", reportPath }],
+      { auditPath },
+    ),
+    auditPath,
+  );
+  fs.writeFileSync(
+    reportPath,
+    JSON.stringify({
+      ...report,
+      samples: {
+        baseline: [],
+        graph: [
+          {
+            ...sample,
+            tokens: 11,
+            questionSha256: sha256("question"),
+          },
+        ],
+      },
+    }),
+  );
+  assert.throws(
+    () =>
+      assertPublicationCandidates(
+        [{ cell, harness: "codex", reportPath }],
+        { auditPath },
+      ),
+    /tokens trace=10 sample=11/,
+  );
+  fs.rmSync(root, { recursive: true, force: true });
+}
+
+function testFixtureAndPreflightIntegrity() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-fixture-git-"));
+  run("git", ["init", "--quiet", root]);
+  run("git", ["-C", root, "config", "user.email", "benchmark@example.test"]);
+  run("git", ["-C", root, "config", "user.name", "Benchmark Test"]);
+  const source = path.join(root, "source.txt");
+  fs.writeFileSync(source, "pinned\n");
+  run("git", ["-C", root, "add", "source.txt"]);
+  run("git", ["-C", root, "commit", "--quiet", "-m", "fixture"]);
+  const commit = output("git", ["-C", root, "rev-parse", "HEAD"]).trim();
+  const spec = { name: "fixture", commit };
+  assert.equal(assertPinnedCheckout(spec, root).commit, commit);
+  const extra = path.join(root, "extra.txt");
+  fs.writeFileSync(extra, "untracked\n");
+  assert.throws(() => assertPinnedCheckout(spec, root), /clean pinned snapshot/);
+  fs.rmSync(extra);
+  fs.writeFileSync(source, "changed\n");
+  assert.throws(() => assertPinnedCheckout(spec, root), /clean pinned snapshot/);
+  fs.writeFileSync(source, "pinned\n");
+  assert.equal(assertPinnedCheckout(spec, root).commit, commit);
+
+  const flightSpec = {
+    name: "fixture",
+    preflight: {
+      nodes: 2,
+      edges: 4,
+      semanticEdges: 2,
+      semanticEdgeKinds: 2,
+    },
+  };
+  const dump = {
+    indexer: "lsp",
+    nodes: [{}, {}],
+    edges: [
+      { kind: "contains" },
+      { kind: "exports" },
+      { kind: "calls" },
+      { kind: "type_ref" },
+    ],
+    warnings: [],
+  };
+  assert.equal(analyzePreflightDump(flightSpec, dump).ok, true);
+  const structuralOnly = analyzePreflightDump(flightSpec, {
+    ...dump,
+    edges: dump.edges.slice(0, 2),
+    warnings: ["server kept structural edges only"],
+  });
+  assert.equal(structuralOnly.ok, false);
+  assert.match(structuralOnly.failures.join("; "), /fatal warning/);
+  assert.match(structuralOnly.failures.join("; "), /semantic edges/);
+  fs.rmSync(root, { recursive: true, force: true });
 }
 
 function testReferenceRenderer() {
@@ -221,6 +469,20 @@ function run(command, args, env = process.env) {
     throw new Error(
       `${command} ${args.join(" ")} failed (${result.status})\n${result.stdout ?? ""}${result.stderr ?? ""}`,
     );
+}
+
+function output(command, args, env = process.env) {
+  const result = cp.spawnSync(command, args, {
+    cwd: repoRoot,
+    env,
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`${command} ${args.join(" ")} failed (${result.status})`);
+  }
+  return result.stdout ?? "";
 }
 
 function sha256(value) {

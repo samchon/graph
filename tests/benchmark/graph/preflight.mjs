@@ -12,14 +12,15 @@ import path from "node:path";
 
 import { CORPUS } from "./corpus.mjs";
 import {
+  assertPinnedCheckout,
   benchmarkDir,
   clonePinned,
-  ensureInstalled,
   graphLauncher,
   parseArgs,
+  prepareFixture,
   preflightGraph,
+  questionsDir,
   resolvePrompt,
-  runPrepare,
 } from "./language.mjs";
 
 const args = parseArgs(process.argv.slice(2));
@@ -53,11 +54,15 @@ if (!fs.existsSync(graphLauncher)) {
 }
 
 console.log("\n=== prompts (SHA-256 gate) ===");
-for (const entry of CORPUS) {
-  resolvePrompt({ family: "dedicated", repo: entry.name });
-  resolvePrompt({ family: "common", repo: entry.name });
+const promptManifest = JSON.parse(
+  fs.readFileSync(path.join(questionsDir, "manifest.json"), "utf8"),
+);
+for (const prompt of promptManifest.prompts ?? []) {
+  resolvePrompt({ promptId: prompt.id });
 }
-console.log(`  ${CORPUS.length * 2} prompts verified against the manifest`);
+console.log(
+  `  ${promptManifest.prompts?.length ?? 0} prompts verified against the manifest`,
+);
 
 console.log("\n=== corpus graph preflight (full LSP index per repo) ===");
 const rows = [];
@@ -67,9 +72,9 @@ for (const name of repos) {
   let row;
   try {
     const repoDir = clonePinned(spec, corpusRoot);
-    ensureInstalled(repoDir);
-    runPrepare(spec, repoDir);
-    const flight = preflightGraph(spec, repoDir);
+    const prepared = prepareFixture(spec, repoDir);
+    const flight = preflightGraph(spec, repoDir, prepared);
+    assertPinnedCheckout(spec, repoDir);
     row = { name, language: spec.language, ...flight };
   } catch (error) {
     row = { name, language: spec.language, indexer: "error", nodes: 0, edges: 0, ok: false, warnings: [String(error.message).split("\n")[0]] };
@@ -78,7 +83,11 @@ for (const name of repos) {
   console.log(
     `  ${row.name.padEnd(12)} ${row.language.padEnd(11)} ${row.ok ? "GO  " : "NO-GO"} ` +
       `indexer=${row.indexer} nodes=${row.nodes} edges=${row.edges}` +
-      (row.warnings.length > 0 ? ` | ${row.warnings[0]}` : ""),
+      (row.failures?.length > 0
+        ? ` | ${row.failures.join(", ")}`
+        : row.warnings.length > 0
+          ? ` | ${row.warnings[0]}`
+          : ""),
   );
 }
 
@@ -90,4 +99,4 @@ fs.writeFileSync(
   path.join(resultsRoot, "preflight.json"),
   `${JSON.stringify({ generatedAt: new Date().toISOString(), rows }, null, 2)}\n`,
 );
-if (fatal > 0) process.exitCode = 1;
+if (fatal > 0 || go !== rows.length) process.exitCode = 1;

@@ -40,7 +40,6 @@ jobs:
           - ruby
           - php
           - lua
-          - bash
           - dart
 
     steps:

@@ -21,6 +21,50 @@ export const test_lsp_mode_spawns_cmd_shim_servers = async () => {
     lspReferenceLimit: 10,
   });
   TestValidator.equals("bare command resolves through PATH", bare.indexer, "lsp");
+
+  // `--cwd` names the project whose dependencies define its language-server
+  // toolchain. Resolve a bare server from that project's local npm bin and run
+  // it in that project even when the graph process was launched elsewhere.
+  const projectBin = path.join(root, "node_modules", ".bin");
+  fs.mkdirSync(projectBin, { recursive: true });
+  const projectServer = path.join(
+    projectBin,
+    process.platform === "win32" ? "project-local-lsp.cmd" : "project-local-lsp",
+  );
+  fs.writeFileSync(
+    projectServer,
+    process.platform === "win32"
+      ? `@echo off\r\n"${process.execPath}" "${GraphPaths.fakeLspServer}" %*\r\n`
+      : `#!/bin/sh\nexec "${process.execPath}" "${GraphPaths.fakeLspServer}" "$@"\n`,
+  );
+  if (process.platform !== "win32") fs.chmodSync(projectServer, 0o755);
+  const cwdFile = path.join(root, "fake-lsp-cwd.txt");
+  const previousCwdFile = process.env.SAMCHON_GRAPH_FAKE_LSP_CWD_FILE;
+  process.env.SAMCHON_GRAPH_FAKE_LSP_CWD_FILE = cwdFile;
+  try {
+    const local = await buildGraphDump({
+      cwd: root,
+      mode: "lsp",
+      languages: ["typescript"],
+      server: "project-local-lsp",
+      lspReferenceLimit: 10,
+    });
+    TestValidator.equals(
+      "bare server resolves from the target project's npm bin",
+      local.indexer,
+      "lsp",
+    );
+    TestValidator.equals(
+      "language server runs in the target project",
+      fs.readFileSync(cwdFile, "utf8"),
+      root,
+    );
+  } finally {
+    if (previousCwdFile === undefined)
+      delete process.env.SAMCHON_GRAPH_FAKE_LSP_CWD_FILE;
+    else process.env.SAMCHON_GRAPH_FAKE_LSP_CWD_FILE = previousCwdFile;
+  }
+
   // npm installs Windows language servers as .cmd shims; CreateProcess cannot
   // spawn those directly, so the indexer must route them through cmd.exe. The
   // shim wraps the fake LSP server: on Windows the graph must come back real;

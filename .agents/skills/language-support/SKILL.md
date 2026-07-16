@@ -10,7 +10,7 @@ description: Defines how @samchon/graph keeps its supported-language registry, L
 A supported language has two product lanes:
 
 - The LSP lane resolves semantic symbols, references, inheritance, diagnostics, and live refresh through an installed language server.
-- The built-in static lane returns a useful graph when the server is absent or fails. `auto` may therefore produce an `lsp`, `hybrid`, or `static` dump without losing the languages that fell back.
+- The separately packaged graph-sitter lane returns a best-effort syntax graph when the server is absent or fails. `auto` may therefore produce an `lsp`, `hybrid`, or `static` dump without losing the languages that fell back; this lane must not be described as compiler-resolved truth.
 
 Support is not established by adding an extension to one array. Keep every owning surface synchronized and prove both lanes separately.
 
@@ -24,7 +24,8 @@ JavaScript remains intentionally unsupported. Do not add `.js`, `.jsx`, `.mjs`, 
 | Extensions, default server, arguments, comment syntax | `packages/graph/src/indexer/LANGUAGE_SPECS.ts` |
 | Extension lookup and discovery | `packages/graph/src/indexer/{allExtensions,languageOf,discoverLanguages}.ts` |
 | LSP document language id | `packages/graph/src/indexer/languageIdOf.ts` |
-| Static declarations, packages, imports, calls, inheritance | `packages/graph/src/indexer/staticGraphParts.ts` and its indexer helpers |
+| Static project discovery and graph merge adapter | `packages/graph/src/indexer/staticGraphParts.ts` |
+| Best-effort declarations, packages, imports, calls, inheritance | `packages/graph-sitter/src/indexer/staticGraphParts.ts` and its helpers |
 | MCP display name | `packages/graph/src/mcp/languageDisplayNameOf.ts` |
 | CLI acceptance | `packages/graph/src/parseGraphArgs.ts`, derived from `LANGUAGE_SPECS` |
 | Deterministic corpus | `tests/test-graph/src/internal/GraphFixtures.ts` and language feature tests |
@@ -34,9 +35,9 @@ JavaScript remains intentionally unsupported. Do not add `.js`, `.jsx`, `.mjs`, 
 | CI matrix | `.github/workflows/experiment.yml` |
 | User claim and installation instructions | `README.md` |
 
-Read the nearby implementation before deciding which helper owns a syntax family. `staticGraphParts.ts` intentionally shares some patterns and separates others by language semantics; extend the existing table or branch instead of adding a second registry.
+Read the nearby implementation before deciding which helper owns a syntax family. The graph-sitter parser intentionally shares some patterns and separates others by language semantics; extend its existing table or branch instead of adding a second syntax registry.
 
-Use the paths in this ownership map as the planning and implementation surface. Canonical source is `packages/graph/src`, deterministic tests are under `tests/test-graph`, and real-server experiments are under `tests/experiment`; do not substitute generic `src`, `test`, or `experiments` paths from another repository's conventions.
+Use the paths in this ownership map as the planning and implementation surface. Canonical semantic source is `packages/graph/src`, best-effort syntax source is `packages/graph-sitter/src`, deterministic tests are under `tests/test-graph`, and real-server experiments are under `tests/experiment`; do not substitute generic `src`, `test`, or `experiments` paths from another repository's conventions.
 
 ## Add Or Change A Language
 
@@ -62,6 +63,7 @@ Use the paths in this ownership map as the planning and implementation surface. 
 This repository has no `pnpm lint` or `pnpm typecheck` scripts. Do not invent generic validation commands. Use the package-local analysis command and the repository's actual gates:
 
 ```bash
+pnpm --dir packages/graph-sitter exec ttsc check -p tsconfig.json
 pnpm --dir packages/graph exec ttsc check -p tsconfig.json
 pnpm test
 pnpm coverage

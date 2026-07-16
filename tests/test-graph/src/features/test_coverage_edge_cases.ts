@@ -172,6 +172,11 @@ export const test_coverage_edge_cases = async () => {
     serverArgs: [GraphPaths.fakeLspServer, "--minimal-diagnostics"],
   });
   TestValidator.equals("minimal diagnostics fall back to an unknown code", minimalDiagnostics.diagnostics?.[0]?.code, "unknown");
+  TestValidator.equals(
+    "minimal diagnostics may omit severity",
+    minimalDiagnostics.diagnostics?.[0]?.severity,
+    undefined,
+  );
 
   const nullReferences = await buildGraphDump({
     cwd: lspRoot,
@@ -718,6 +723,24 @@ export const test_coverage_edge_cases = async () => {
     plainId,
   );
 
+  // Rust and C++ callers spell an owner-qualified symbol with `::`, while the
+  // graph's cross-language symbol identity uses dots. A model should not lose
+  // an exact method merely because it repeated the language-native spelling.
+  const nativeQualifiedTrace = await branchApp.inspect_code_graph({
+    question: "native-qualified trace",
+    draft: {
+      reason: "a language-native path separator names a graph member.",
+      type: "trace",
+    },
+    review: "native-qualified branch.",
+    request: { type: "trace", from: "Exact::withSignature" },
+  });
+  TestValidator.equals(
+    "a native-qualified handle resolves to the dotted graph member",
+    (nativeQualifiedTrace.result as any).start.id,
+    withSignatureId,
+  );
+
   // A bare file name is not a symbol handle, and answering with whichever symbol
   // that file happens to declare would be the graph inventing a belief the caller
   // did not have. It resolves to nothing, and `next` says to leave.
@@ -824,12 +847,28 @@ export const test_coverage_edge_cases = async () => {
   );
 
   const { fileFromUri } = await importLib<{ fileFromUri: (uri: string) => string }>("utils/fileFromUri.js");
+  const windows = process.platform === "win32";
   TestValidator.equals("non-file URI returns as-is", fileFromUri("untouched"), "untouched");
   TestValidator.equals("file URI decodes slash paths", fileFromUri("file:///tmp/samchon%20graph"), "/tmp/samchon graph");
-  TestValidator.equals("file URI decodes encoded drive colon", fileFromUri("file:///c%3A/repo/app.ts"), "c:\\repo\\app.ts");
+  TestValidator.equals("file URI decodes encoded drive colon", fileFromUri("file:///c%3A/repo/app.ts"), windows ? "c:\\repo\\app.ts" : "/c:/repo/app.ts");
   TestValidator.equals("file URI restores encoded hash", fileFromUri("file:///tmp/a%23b.ts"), "/tmp/a#b.ts");
-  TestValidator.equals("file URI decodes uppercase encoded drive colon", fileFromUri("file:///D%3A/repo/app.ts"), "D:\\repo\\app.ts");
-  TestValidator.equals("file URI keeps plain drive colon", fileFromUri("file:///C:/repo/app.ts"), "C:\\repo\\app.ts");
+  TestValidator.equals(
+    "file URI restores a server-encoded checkout marker",
+    fileFromUri("file:///D%3A/repo/flask%40commit/app.py"),
+    windows ? "D:\\repo\\flask@commit\\app.py" : "/D:/repo/flask@commit/app.py",
+  );
+  TestValidator.equals("file URI decodes uppercase encoded drive colon", fileFromUri("file:///D%3A/repo/app.ts"), windows ? "D:\\repo\\app.ts" : "/D:/repo/app.ts");
+  TestValidator.equals("file URI keeps plain drive colon", fileFromUri("file:///C:/repo/app.ts"), windows ? "C:\\repo\\app.ts" : "/C:/repo/app.ts");
+  TestValidator.equals(
+    "file URI preserves a UNC authority",
+    fileFromUri("file://server/share/Foo.cs"),
+    windows ? "\\\\server\\share\\Foo.cs" : "//server/share/Foo.cs",
+  );
+  TestValidator.equals(
+    "file URI treats localhost as the local drive",
+    fileFromUri("file://localhost/C:/repo/Foo.cs"),
+    windows ? "C:\\repo\\Foo.cs" : "/C:/repo/Foo.cs",
+  );
 
   const { readText } = await importLib<{ readText: (file: string) => string | undefined }>("utils/readText.js");
   TestValidator.equals("missing text file returns undefined", readText(path.join(orderRoot, "missing.ts")), undefined);

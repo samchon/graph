@@ -13,6 +13,7 @@
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@nestia/e2e": "catalog:samchon",
     "@samchon/graph": "workspace:*",
+    "@samchon/graph-sitter": "workspace:*",
     "@ttsc/unplugin": "catalog:samchon",
     "@types/node": "catalog:utils",
     "c8": "catalog:utils",

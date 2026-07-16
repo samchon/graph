@@ -8,9 +8,9 @@ import path from "node:path";
 // every repo.
 //
 // Coverage standard is codegraph's own: every supported language that appears
-// in its suite is here, one repo each — 13 of the 17 registered languages.
-// scala, zig, and bash are deliberately absent: codegraph has no dedicated
-// utterance for them, and inventing one would break prompt provenance. swift
+// in its suite is here, one repo each — 13 of the 16 registered languages.
+// Scala and Zig are deliberately absent: codegraph has no dedicated utterance
+// for them, and inventing one would break prompt provenance. Swift
 // (Alamofire) is absent too: this host has no Swift toolchain, sourcekit-lsp
 // ships only with the multi-GB Swift-for-Windows install, and an Apple-centric
 // SwiftPM build is not guaranteed to index cleanly here.
@@ -33,36 +33,42 @@ export const CORPUS = [
     language: "typescript",
     url: "https://github.com/samchon/ttsc-benchmark-excalidraw.git",
     commit: "98a2730b197873d43fddbe3fad6f0812df84b451",
+    preflight: preflightMinimums(1_000, 5_000, 3_000, 4),
   },
   {
     name: "gin",
     language: "go",
     url: "https://github.com/samchon/graph-benchmark-gin.git",
     commit: "34dac209ffb6ef85cc78c5d217bbb7ad001d68fd",
+    preflight: preflightMinimums(500, 1_500, 800, 3),
   },
   {
     name: "flask",
     language: "python",
     url: "https://github.com/samchon/graph-benchmark-flask.git",
     commit: "36e4a824f340fdee7ed50937ba8e7f6bc7d17f81",
+    preflight: preflightMinimums(500, 1_500, 800, 3),
   },
   {
     name: "tokio",
     language: "rust",
     url: "https://github.com/samchon/graph-benchmark-tokio.git",
     commit: "c4c6265a0746a79d4a2f3852f726aa0101f29fd3",
+    preflight: preflightMinimums(3_000, 10_000, 5_000, 4),
   },
   {
     name: "gson",
     language: "java",
     url: "https://github.com/samchon/graph-benchmark-gson.git",
     commit: "c9f3fd55854a743b66f857ace3c7b268ea3e2ef7",
+    preflight: preflightMinimums(1_000, 5_000, 3_000, 4),
   },
   {
     name: "redis",
     language: "c",
     url: "https://github.com/samchon/graph-benchmark-redis.git",
     commit: "6bf6224c3dad518329ddc893ef9c5d58dcbabdeb",
+    preflight: preflightMinimums(3_000, 10_000, 5_000, 4),
   },
   {
     // codegraph's cpp pick (nlohmann/json) is a single-header library — it
@@ -73,43 +79,55 @@ export const CORPUS = [
     language: "cpp",
     url: "https://github.com/samchon/graph-benchmark-leveldb.git",
     commit: "7ee830d02b623e8ffe0b95d59a74db1e58da04c5",
+    preflight: preflightMinimums(500, 1_500, 800, 3),
   },
   {
     name: "sinatra",
     language: "ruby",
     url: "https://github.com/samchon/graph-benchmark-sinatra.git",
     commit: "5236d3459b8b9015e5ce21ddd0c6beb0db4081d4",
+    preflight: preflightMinimums(500, 1_500, 800, 3),
     // ruby-lsp composes a bundle from the project's Gemfile; install it into a
     // vendored path first.
     prepare: "bundle config set --local path vendor/bundle && bundle install",
+    prepareMarker: "vendor/bundle",
   },
   {
     name: "slim",
     language: "php",
     url: "https://github.com/samchon/graph-benchmark-slim.git",
     commit: "0da7dd2fc66956730b6633f6a056b35e59126583",
+    preflight: preflightMinimums(1_000, 3_000, 1_500, 3),
   },
   {
     name: "serilog",
     language: "csharp",
     url: "https://github.com/samchon/graph-benchmark-serilog.git",
     commit: "6d9fc0b84e004418f2677b5961b9c8970349d0be",
-    // csharp-ls loads a project via Roslyn's in-process MSBuildWorkspace. On the
-    // full Serilog.sln (19 project/TFM entries incl. net48/net462 test projects
-    // and an AOT app) that load yields zero documentSymbols — csharp-ls returns
-    // an empty graph and the arm silently drops to the static fallback, even
-    // though raw Roslyn opens the same solution fine. Rebuild Serilog.sln with
-    // only the product project (src/Serilog): csharp-ls then indexes it cleanly
-    // instead of NO-GO. Requires a net10 csharp-ls (>= 0.14); 0.13 runs on
-    // .NET 8 and cannot even register MSBuild 10 for the net10-pinned projects.
-    prepare:
-      "dotnet new sln -n Serilog --format sln --force && dotnet sln Serilog.sln add src/Serilog/Serilog.csproj",
+    preflight: preflightMinimums(1_000, 5_000, 3_000, 4),
+    // csharp-ls loads a project via Roslyn's in-process MSBuildWorkspace. The
+    // full Serilog.sln (19 project/TFM entries including perf and AOT apps)
+    // makes csharp-ls return zero document symbols, so the arm silently drops
+    // to the static fallback with an empty language-server graph, even
+    // though raw Roslyn opens the same solution fine. Build a benchmark-only
+    // solution outside the checkout and pass it with csharp-ls --solution. The
+    // product and main test projects (plus the latter's TestDummies project
+    // reference) preserve the test anchors the common prompt asks for without
+    // rewriting the tracked Serilog.sln seen by either benchmark arm.
+    dotnetSolution: {
+      name: "Serilog.Benchmark",
+      projects: [
+        "src/Serilog/Serilog.csproj",
+        "test/Serilog.Tests/Serilog.Tests.csproj",
+      ],
+    },
   },
   {
     name: "koin",
     language: "kotlin",
     url: "https://github.com/samchon/graph-benchmark-koin.git",
     commit: "dc86ef8dd8fbe8564fb7453c03f5b738da3450bb",
+    preflight: preflightMinimums(1_000, 3_000, 1_500, 3),
     // kotlin-language-server boots a JVM and imports the build via a Gradle
     // sync (kotlinLSPProjectDeps) before answering `initialize` at all; cold,
     // this took over ten minutes on a clean Gradle cache. With no timeout, that
@@ -122,6 +140,7 @@ export const CORPUS = [
     language: "lua",
     url: "https://github.com/samchon/graph-benchmark-lualine.git",
     commit: "221ce6b2d999187044529f49da6554a92f740a96",
+    preflight: preflightMinimums(500, 1_500, 800, 3),
   },
   {
     // flutter's 6.5k-file monorepo made the Dart analysis server emit a
@@ -131,8 +150,18 @@ export const CORPUS = [
     language: "dart",
     url: "https://github.com/samchon/graph-benchmark-darthttp.git",
     commit: "5d94ef52582867e077bf41c3fa20fb8b1d1d834e",
+    preflight: preflightMinimums(500, 1_500, 800, 3),
   },
 ];
+
+function preflightMinimums(
+  nodes,
+  edges,
+  semanticEdges,
+  semanticEdgeKinds,
+) {
+  return { nodes, edges, semanticEdges, semanticEdgeKinds };
+}
 
 export const findCorpus = (name) => {
   const found = CORPUS.find((entry) => entry.name === name);

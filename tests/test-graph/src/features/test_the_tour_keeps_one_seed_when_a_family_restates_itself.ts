@@ -26,9 +26,10 @@ export const test_the_tour_keeps_one_seed_when_a_family_restates_itself =
   async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-restate-"));
     write(root, "src/paint.ts", [
-      "export function paint(): void {}",
-      "export function paintScene(): void {}",
-      "export function paintSceneNow(): void {}",
+      "function stroke(): void {}",
+      "export function paint(): void { stroke(); }",
+      "export function paintScene(): void { stroke(); }",
+      "export function paintSceneNow(): void { stroke(); }",
     ]);
 
     const dump = await buildGraphDump({

@@ -235,10 +235,53 @@ const scenario_seed_fallbacks = async () => {
   const enums = [
     node("src/e.ts#Mode:enum", "enum", "Mode", "src/e.ts", 1, 1),
     node("src/m.ts#Registry:module", "module", "Registry", "src/m.ts", 1, 1),
+    node("src/w.ts#work:function", "function", "work", "src/w.ts", 1, 1),
   ];
-  const appE = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, enums, [edge("src/m.ts#Registry:module", "src/e.ts#Mode:enum", "references", "src/m.ts")])));
+  const appE = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, enums, [
+    edge("src/m.ts#Registry:module", "src/e.ts#Mode:enum", "references", "src/m.ts"),
+    edge("src/m.ts#Registry:module", "src/w.ts#work:function", "references", "src/m.ts"),
+  ])));
   const enumTour = (await call(appE, { type: "tour", reinterpretations: [] }, "the Mode enum and Registry module")).result;
   TestValidator.predicate("non-executable seeds still produce a tour", enumTour.entrypoints.length >= 1);
+  const enumTrace = (await call(appE, { type: "trace", from: "Registry", focus: "dependencies" })).result;
+  TestValidator.predicate(
+    "dependency ordering ranks an enum endpoint without treating it as executable",
+    enumTrace.reached.some((reached) => reached.name === "Mode"),
+  );
+  const executionTrace = (
+    await call(appE, {
+      type: "trace",
+      from: "Registry",
+      focus: "execution",
+    })
+  ).result;
+  TestValidator.equals(
+    "generic references are not execution hops",
+    executionTrace.reached,
+    [],
+  );
+  const details = (
+    await call(appE, {
+      type: "details",
+      handles: ["Registry"],
+      neighbors: true,
+      dependencyLimit: 4,
+      neighborLimit: 4,
+    })
+  ).result;
+  if (details.type !== "details")
+    throw new Error(`Expected details, got ${details.type}.`);
+  const registry = details.nodes[0];
+  TestValidator.equals(
+    "generic references are not reported as direct calls",
+    registry?.calls,
+    undefined,
+  );
+  TestValidator.equals(
+    "generic references remain dependency facts",
+    registry?.dependsOn?.map((reference) => reference.relation),
+    ["references", "references"],
+  );
 
   // Entrypoints: a backtick handle that resolves plus one that is not a valid
   // handle (contains a space) so normalizeHandle rejects it.

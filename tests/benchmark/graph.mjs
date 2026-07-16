@@ -25,7 +25,16 @@ import {
   projectDir as corpusProjectDir,
   resolveWorkDir,
 } from "./graph/corpus.mjs";
-import { websiteCellKey } from "./graph/website-cell.mjs";
+import {
+  assertPreparedFixture,
+  assertPinnedCheckout,
+  prepareFixture,
+} from "./graph/language.mjs";
+import { assertPublicationCandidates } from "./graph/publication-gate.mjs";
+import {
+  sanitizeWebsiteSamples,
+  websiteCellKey,
+} from "./graph/website-cell.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
@@ -53,27 +62,6 @@ const TOOL_SERENA = "serena";
 /** Every language serena's project interview offers, declined. */
 const SERENA_DECLINE_ALL = "n\n".repeat(80);
 const TOOL_BASELINE = "baseline";
-const PUBLISHED_SAMPLE_KEYS = [
-  "tokens",
-  "cached",
-  "reasoning",
-  "tokensWithReasoning",
-  "turns",
-  "tools",
-  "reads",
-  "grep",
-  "shell",
-  "web",
-  "graph",
-  "other",
-  "sourceTouches",
-  "shellSource",
-  "cost",
-  "durMs",
-  "run",
-  "attempts",
-];
-
 const parsed = parseArgs(process.argv.slice(2));
 // Every fixture is measured at the exact commit pinned in corpus.mjs.
 const branch = "pinned";
@@ -128,6 +116,15 @@ fs.mkdirSync(outDir, { recursive: true });
 
 if (!parsed.flags.has("--no-setup")) {
   ensureFixtures(selected);
+  for (const project of selected) {
+    const spec = PROJECTS[project];
+    prepareFixture(spec, projectDir(spec));
+  }
+} else {
+  for (const project of selected) {
+    const spec = PROJECTS[project];
+    assertPreparedFixture(spec, projectDir(spec));
+  }
 }
 
 if (parsed.flags.has("--setup-only")) {
@@ -147,6 +144,7 @@ const report = {
   outDir,
   cells: [],
 };
+const publicationCandidates = [];
 
 for (const project of selected) {
   const spec = PROJECTS[project];
@@ -172,7 +170,7 @@ for (const project of selected) {
 
       for (const promptFamily of promptFamilies) {
         for (const model of models) {
-          const { cell, websiteCell } = runAgentCell({
+          const { cell, websiteCell, reportPath: cellReportPath } = runAgentCell({
             project,
             spec,
             repoDir,
@@ -190,14 +188,14 @@ for (const project of selected) {
             outDir,
           });
           report.cells.push(cell);
+          const publicationCandidate = {
+            cell: websiteCell,
+            harness: cell.harness,
+            reportPath: cellReportPath,
+          };
+          publicationCandidates.push(publicationCandidate);
           writeJson(reportPath, report);
-          refreshCodexTraceAudit(cell, reportPath, report);
           printCellSummary(cell);
-          const invalidReason = invalidWebsiteCellReason(websiteCell);
-          if (invalidReason !== null) {
-            throw new Error(`${project} ${tool} ${model}: ${invalidReason}`);
-          }
-          publishWebsiteCells([websiteCell]);
         }
       }
     } finally {
@@ -205,18 +203,20 @@ for (const project of selected) {
       if (tool === TOOL_CODEBASE_MEMORY)
         cleanupCodebaseMemoryIndex(repoDir, codebaseMemoryCacheDir);
       if (tool === TOOL_SERENA) cleanupSerenaProject(repoDir);
+      assertPinnedCheckout(spec, repoDir);
     }
   }
 }
 
 writeJson(reportPath, report);
-const codexTraceAudit = report.codexTraceAudit
-  ? path.resolve(repoRoot, report.codexTraceAudit)
-  : runCodexTraceAudit(reportPath, report);
+const codexTraceAudit = assertPublicationCandidates(publicationCandidates, {
+  auditPath: path.join(outDir, "codex-trace-audit.json"),
+});
 if (codexTraceAudit !== null) {
   report.codexTraceAudit = path.relative(repoRoot, codexTraceAudit);
   writeJson(reportPath, report);
 }
+publishWebsiteCells(publicationCandidates, { audited: true });
 process.stdout.write(
   `\nGraph benchmark report: ${path.relative(repoRoot, reportPath)}\n`,
 );
@@ -229,36 +229,6 @@ if (!parsed.flags.has("--no-website")) {
   process.stdout.write(
     `Graph benchmark website JSON: ${path.relative(repoRoot, websiteJson)}\n`,
   );
-}
-
-function refreshCodexTraceAudit(cell, currentReportPath, currentReport) {
-  if (cell.harness !== "codex") return null;
-  const auditPath = runCodexTraceAudit(currentReportPath, currentReport);
-  if (auditPath !== null) {
-    currentReport.codexTraceAudit = path.relative(repoRoot, auditPath);
-    writeJson(currentReportPath, currentReport);
-  }
-  return auditPath;
-}
-
-function runCodexTraceAudit(currentReportPath, currentReport) {
-  if (!currentReport.cells.some((cell) => cell.harness === "codex")) {
-    return null;
-  }
-  const auditPath = path.join(outDir, "codex-trace-audit.json");
-  runChecked(
-    "node",
-    [
-      path.join(graphHarnessDir, "audit-codex-traces.mjs"),
-      `--report=${currentReportPath}`,
-      `--out=${auditPath}`,
-    ],
-    {
-      label: "codex trace audit",
-      logBase: path.join(outDir, "codex-trace-audit"),
-    },
-  );
-  return auditPath;
 }
 
 // agentLabel turns a concrete model into a stable, harness-qualified cell label:
@@ -380,7 +350,7 @@ function runAgentCell({
     daemon: daemon === "1" || daemon === "true",
     runs: data.runs ?? Number(runs),
     question: data.question,
-    samples: sanitizeSamples(data.samples),
+    samples: sanitizeWebsiteSamples(data.samples),
   };
   return {
     cell: {
@@ -402,11 +372,18 @@ function runAgentCell({
       summary: summarize(data),
     },
     websiteCell,
+    reportPath: copyPath,
   };
 }
 
-function publishWebsiteCells(cells) {
+function publishWebsiteCells(candidates, { audited = false } = {}) {
   if (parsed.flags.has("--no-website")) return;
+  if (!audited) {
+    assertPublicationCandidates(candidates, {
+      auditPath: path.join(outDir, "codex-trace-audit.json"),
+    });
+  }
+  const cells = candidates.map(({ cell }) => cell);
   const prior =
     !resetWebsite && fs.existsSync(websiteJson) ? loadJson(websiteJson) : null;
   resetWebsite = false;
@@ -447,29 +424,6 @@ function publishWebsiteCells(cells) {
   }
   fs.mkdirSync(path.dirname(websiteJson), { recursive: true });
   fs.writeFileSync(websiteJson, `${JSON.stringify(out)}\n`);
-}
-
-function sanitizeSamples(samples) {
-  return {
-    baseline: (samples?.baseline ?? [])
-      .filter(validMeasuredSample)
-      .map(sanitizeSample),
-    graph: (samples?.graph ?? [])
-      .filter(validMeasuredSample)
-      .map(sanitizeSample),
-  };
-}
-
-function validMeasuredSample(sample) {
-  return Number(sample?.tokens ?? 0) > 0;
-}
-
-function sanitizeSample(sample) {
-  const out = {};
-  for (const key of PUBLISHED_SAMPLE_KEYS) {
-    if (sample[key] !== undefined) out[key] = sample[key];
-  }
-  return out;
 }
 
 function ensureCodegraphIndex(project, repoDir) {
@@ -809,11 +763,6 @@ function armSummary(samples) {
   };
 }
 
-function invalidWebsiteCellReason(cell) {
-  void cell;
-  return null;
-}
-
 function printCellSummary(cell) {
   const { summary } = cell;
   const prefix = `[graph] ${cell.project}@${cell.branch} ${cell.promptFamily} ${cell.tool} ${cell.model}: `;
@@ -865,6 +814,7 @@ function ensureFixtures(projects) {
     const spec = PROJECTS[project];
     const repoDir = projectDir(spec);
     if (fs.existsSync(repoDir)) {
+      assertPinnedCheckout(spec, repoDir);
       process.stdout.write(`[graph] reusing fixture ${project}\n`);
       continue;
     }
@@ -890,6 +840,7 @@ function ensureFixtures(projects) {
       logBase: path.join(outDir, `setup-${project}-checkout`),
       cwd: repoDir,
     });
+    assertPinnedCheckout(spec, repoDir);
   }
 }
 

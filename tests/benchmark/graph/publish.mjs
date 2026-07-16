@@ -24,10 +24,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { websiteCellKey } from "./website-cell.mjs";
+import {
+  sanitizeWebsiteSamples,
+  websiteCellKey,
+} from "./website-cell.mjs";
+import { assertPublicationCandidates } from "./publication-gate.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..", "..");
+const benchmarkDir = path.resolve(here, "..");
 const websiteJson = path.resolve(
   repoRoot,
   "tests",
@@ -59,30 +64,19 @@ const out = {
   agent: { cells: [...(prior.agent?.cells ?? [])] },
   ...(prior.index !== undefined ? { index: prior.index } : {}),
 };
-const PUBLISHED_SAMPLE_KEYS = [
-  "tokens",
-  "cached",
-  "reasoning",
-  "tokensWithReasoning",
-  "turns",
-  "tools",
-  "reads",
-  "grep",
-  "shell",
-  "web",
-  "graph",
-  "other",
-  "sourceTouches",
-  "shellSource",
-  "cost",
-  "durMs",
-  "run",
-  "attempts",
-];
-
+const agentCandidates = [];
 for (const sourceDir of sourceDirs) {
   foldSourceDir(sourceDir);
 }
+assertPublicationCandidates(agentCandidates, {
+  auditPath: path.join(
+    benchmarkDir,
+    ".work",
+    "publication-audit",
+    "codex-trace-audit.json",
+  ),
+});
+for (const { cell } of agentCandidates) upsertAgentCell(cell);
 
 fs.mkdirSync(path.dirname(websiteJson), { recursive: true });
 fs.writeFileSync(websiteJson, `${JSON.stringify(out)}\n`);
@@ -100,14 +94,8 @@ function foldSourceDir(sourceDir) {
   }
 
   // Agent cells: upsert each available report by harness/tool/repo/model.
-  foldAgent(
-    readJson(path.join(sourceDir, "agent-ab-report.json")),
-    "claude-code",
-  );
-  foldAgent(
-    readJson(path.join(sourceDir, "agent-ab-codex-report.json")),
-    "codex",
-  );
+  foldAgent(path.join(sourceDir, "agent-ab-report.json"), "claude-code");
+  foldAgent(path.join(sourceDir, "agent-ab-codex-report.json"), "codex");
 }
 
 function foldStructural(structural) {
@@ -123,7 +111,8 @@ function foldStructural(structural) {
 
 function foldSuite(report, sourceDir) {
   for (const cell of report.cells ?? []) {
-    const sourceReport = readJson(resolveReportPath(cell.report, sourceDir));
+    const sourceReportPath = resolveReportPath(cell.report, sourceDir);
+    const sourceReport = readJson(sourceReportPath);
     if (!sourceReport) {
       throw new Error(`missing suite cell report: ${cell.report}`);
     }
@@ -134,11 +123,11 @@ function foldSuite(report, sourceDir) {
       cell.model;
     const stableModel = stableAgentModel(cell.harness, cell.model, rawModel);
     const version = modelVersionId(rawModel);
-    const samples = sanitizeSamples(sourceReport.samples);
+    const samples = sanitizeWebsiteSamples(sourceReport.samples);
     if (samples.baseline.length === 0 && samples.graph.length === 0) {
       continue;
     }
-    upsertAgentCell({
+    queueAgentCell({
       harness: cell.harness,
       tool: cell.tool ?? sourceReport.tool ?? "samchon-graph",
       ...(cell.toolSetupMs !== undefined
@@ -166,21 +155,22 @@ function foldSuite(report, sourceDir) {
       runs: sourceReport.runs,
       question: sourceReport.question,
       samples,
-    });
+    }, cell.harness, sourceReportPath);
   }
   console.log(
     `suite: ${path.relative(repoRoot, sourceDir)} (${report.cells?.length ?? 0} cell(s))`,
   );
 }
 
-function foldAgent(report, harness) {
+function foldAgent(reportPath, harness) {
+  const report = readJson(reportPath);
   if (!report) return;
-  const samples = sanitizeSamples(report.samples);
+  const samples = sanitizeWebsiteSamples(report.samples);
   if (samples.baseline.length === 0 && samples.graph.length === 0) return;
   const rawModel = report.modelVersion ?? report.model ?? "unknown";
   const stableModel = stableAgentModel(harness, undefined, rawModel);
   const version = modelVersionId(rawModel);
-  upsertAgentCell({
+  queueAgentCell({
     harness,
     tool: report.tool ?? "samchon-graph",
     repo: report.repo,
@@ -198,7 +188,7 @@ function foldAgent(report, harness) {
     runs: report.runs,
     question: report.question,
     samples,
-  });
+  }, harness, reportPath);
   const n = (report.samples?.graph ?? []).length;
   console.log(
     `agent: ${harness} / ${report.tool ?? "samchon-graph"} / ${report.repo} / ${
@@ -265,27 +255,8 @@ function upsertAgentCell(cell) {
   } else out.agent.cells.push(cell);
 }
 
-function sanitizeSamples(samples) {
-  return {
-    baseline: (samples?.baseline ?? [])
-      .filter(validMeasuredSample)
-      .map(sanitizeSample),
-    graph: (samples?.graph ?? [])
-      .filter(validMeasuredSample)
-      .map(sanitizeSample),
-  };
-}
-
-function validMeasuredSample(sample) {
-  return Number(sample?.tokens ?? 0) > 0;
-}
-
-function sanitizeSample(sample) {
-  const out = {};
-  for (const key of PUBLISHED_SAMPLE_KEYS) {
-    if (sample[key] !== undefined) out[key] = sample[key];
-  }
-  return out;
+function queueAgentCell(cell, harness, reportPath) {
+  agentCandidates.push({ cell, harness, reportPath: path.resolve(reportPath) });
 }
 
 function readJson(file) {

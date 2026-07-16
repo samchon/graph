@@ -15,11 +15,20 @@ const options = {
   referenceError: false,
   nullSymbols: false,
   classify: false,
+  csharpSymbols: false,
   dualOwner: false,
+  pythonLocals: false,
+  phpSymbols: false,
+  rubySymbols: false,
   trivia: false,
   inheritance: false,
+  goReceivers: false,
+  javaAnonymous: false,
   omitChildren: false,
   progress: false,
+  progressLifecycle: false,
+  referenceProgressLifecycle: false,
+  rustImpls: false,
   specialReferences: false,
   stderr: false,
   shutdownError: false,
@@ -37,11 +46,21 @@ if (process.env.SAMCHON_GRAPH_FAKE_LSP_ARGS_FILE) {
     JSON.stringify(process.argv.slice(2)),
   );
 }
+if (process.env.SAMCHON_GRAPH_FAKE_LSP_CWD_FILE) {
+  fs.writeFileSync(process.env.SAMCHON_GRAPH_FAKE_LSP_CWD_FILE, process.cwd());
+}
 // Delay only the FIRST textDocument/references response by this many ms, then
 // answer the rest immediately — models a server that builds its reference index
 // lazily on the first call and serves the rest from cache.
 let slowFirstReferencesMs = 0;
 let referenceCallCount = 0;
+let progressLifecycleStarted = false;
+let progressLifecycleReady = false;
+let lateProgressLifecycleMs = 0;
+let referenceProgressLifecycleStarted = false;
+let referenceProgressLifecycleReady = false;
+let documentVersionLog;
+const documentVersionEvents = [];
 // Answer the first N references (enough to let the warmup succeed) and then go
 // silent — models a warm server that still times out on a few later targets.
 let hangReferencesAfter = Infinity;
@@ -71,16 +90,38 @@ for (const arg of process.argv.slice(2)) {
     options.nullSymbols = true;
   } else if (arg === "--classify") {
     options.classify = true;
+  } else if (arg === "--csharp-symbols") {
+    options.csharpSymbols = true;
   } else if (arg === "--dual-owner") {
     options.dualOwner = true;
+  } else if (arg === "--python-locals") {
+    options.pythonLocals = true;
+  } else if (arg === "--php-symbols") {
+    options.phpSymbols = true;
+  } else if (arg === "--ruby-symbols") {
+    options.rubySymbols = true;
   } else if (arg === "--trivia") {
     options.trivia = true;
   } else if (arg === "--inheritance") {
     options.inheritance = true;
+  } else if (arg === "--go-receivers") {
+    options.goReceivers = true;
+  } else if (arg === "--java-anonymous") {
+    options.javaAnonymous = true;
   } else if (arg === "--omit-children") {
     options.omitChildren = true;
   } else if (arg === "--progress") {
     options.progress = true;
+  } else if (arg === "--progress-lifecycle") {
+    options.progressLifecycle = true;
+  } else if (arg.startsWith("--late-progress-lifecycle=")) {
+    lateProgressLifecycleMs = Number(
+      arg.slice("--late-progress-lifecycle=".length),
+    );
+  } else if (arg === "--reference-progress-lifecycle") {
+    options.referenceProgressLifecycle = true;
+  } else if (arg === "--rust-impls") {
+    options.rustImpls = true;
   } else if (arg === "--special-references") {
     options.specialReferences = true;
   } else if (arg === "--stderr") {
@@ -101,6 +142,8 @@ for (const arg of process.argv.slice(2)) {
     slowFirstReferencesMs = Number(arg.slice("--slow-first-references=".length));
   } else if (arg.startsWith("--hang-references-after=")) {
     hangReferencesAfter = Number(arg.slice("--hang-references-after=".length));
+  } else if (arg.startsWith("--document-version-log=")) {
+    documentVersionLog = arg.slice("--document-version-log=".length);
   } else if (arg.startsWith("--diagnostic-severities=")) {
     diagnosticSeverities = arg
       .slice("--diagnostic-severities=".length)
@@ -108,6 +151,7 @@ for (const arg of process.argv.slice(2)) {
       .map((value) => Number(value));
   }
 }
+writeDocumentVersionLog();
 
 process.stdin.on("data", (chunk) => {
   buffer = Buffer.concat([buffer, chunk]);
@@ -152,6 +196,7 @@ function handle(message) {
   }
   if (message.method === "initialized") return;
   if (message.method === "textDocument/didOpen") {
+    recordDocumentVersion(message.method, message.params.textDocument);
     languageByUri.set(
       message.params.textDocument.uri,
       message.params.textDocument.languageId,
@@ -165,6 +210,47 @@ function handle(message) {
         value: { kind: "report", message: "indexing" },
       });
     }
+    if (options.progressLifecycle && !progressLifecycleStarted) {
+      // A real work-done phase may stay active without emitting reports for
+      // longer than the client's quiet threshold. rust-analyzer does this
+      // while Cargo resolves metadata and scans source roots. References are
+      // deliberately unavailable until the matching `end`, so a client that
+      // treats the silent gap as readiness loses every semantic edge.
+      progressLifecycleStarted = true;
+      notify("$/progress", { value: { kind: "report" } });
+      request("window/workDoneProgress/create", { token: 42 });
+      notify("$/progress", {
+        token: 42,
+        value: { kind: "begin", title: "indexing" },
+      });
+      setTimeout(() => {
+        progressLifecycleReady = true;
+        notify("$/progress", {
+          token: 42,
+          value: { kind: "end" },
+        });
+      }, 500);
+    }
+    if (lateProgressLifecycleMs > 0 && !progressLifecycleStarted) {
+      // csharp-ls may acknowledge didOpen, then begin solution loading well
+      // after the historical fixed 300ms grace. References stay incomplete
+      // until the delayed lifecycle explicitly ends.
+      progressLifecycleStarted = true;
+      setTimeout(() => {
+        request("window/workDoneProgress/create", { token: "late-index" });
+        notify("$/progress", {
+          token: "late-index",
+          value: { kind: "begin", title: "late indexing" },
+        });
+        setTimeout(() => {
+          progressLifecycleReady = true;
+          notify("$/progress", {
+            token: "late-index",
+            value: { kind: "end" },
+          });
+        }, 200);
+      }, lateProgressLifecycleMs);
+    }
     notify("textDocument/publishDiagnostics", {
       uri: message.params.textDocument.uri,
       diagnostics: diagnosticSeverities.map((severity, index) => ({
@@ -172,14 +258,23 @@ function handle(message) {
             start: { line: 4 + index, character: 0 },
             end: { line: 4 + index, character: 10 },
           },
-          severity,
           ...(options.minimalDiagnostics ? {} : {
+            severity,
             source: "fake-lsp",
             code: `FAKE00${index + 1}`,
           }),
           message: "fake warning",
         })),
     });
+    return;
+  }
+  if (message.method === "textDocument/didChange") {
+    recordDocumentVersion(message.method, message.params.textDocument);
+    return;
+  }
+  if (message.method === "textDocument/didClose") {
+    recordDocumentVersion(message.method, message.params.textDocument);
+    languageByUri.delete(message.params.textDocument.uri);
     return;
   }
   if (message.method === "textDocument/documentSymbol") {
@@ -190,6 +285,263 @@ function handle(message) {
     }
     if (options.messageLessError) return respondBareError(message.id);
     if (options.emptySymbols) return respond(message.id, []);
+    if (options.phpSymbols) {
+      const leaf = (name, kind, line, character, endLine = line, children = []) => ({
+        name,
+        detail: "",
+        kind,
+        range: {
+          start: { line, character: 0 },
+          end: { line: endLine, character: 80 },
+        },
+        selectionRange: {
+          start: { line, character },
+          end: { line, character: character + name.length },
+        },
+        children,
+      });
+      const file = decodeURIComponent(uri).replaceAll("\\", "/").split("/").at(-1);
+      let documentSymbols;
+      let information;
+      if (file === "Namespaces.php") {
+        documentSymbols = [
+          leaf("Alpha\\One", 3, 1, 10),
+          leaf("First", 5, 1, 27),
+          leaf("AfterTraps", 5, 11, 6),
+          leaf("Beta", 3, 12, 10),
+          leaf("second", 12, 12, 25),
+          leaf("Gamma\\Deep", 3, 13, 10),
+          leaf("Last", 5, 13, 28),
+        ];
+        information = [
+          ["Alpha\\One", 3, 1, 10, ""],
+          ["First", 5, 1, 27, ""],
+          ["AfterTraps", 5, 11, 6, ""],
+          ["Beta", 3, 12, 10, ""],
+          ["second", 12, 12, 25, ""],
+          ["Gamma\\Deep", 3, 13, 10, ""],
+          ["Last", 5, 13, 28, "Gamma\\Deep"],
+        ];
+      } else if (file === "Bracketed.php") {
+        documentSymbols = [
+          leaf("Red\\Blue", 3, 1, 10),
+          leaf("Box", 5, 1, 27, 1, [leaf("open", 6, 1, 42)]),
+          leaf("global_helper", 12, 2, 21),
+          leaf("Green", 3, 3, 10),
+          leaf("Contract", 11, 3, 28, 3, [leaf("run", 6, 3, 48)]),
+        ];
+        information = [
+          ["Red\\Blue", 3, 1, 10, ""],
+          ["Box", 5, 1, 27, ""],
+          ["open", 6, 1, 42, "Box"],
+          ["global_helper", 12, 2, 21, ""],
+          ["Green", 3, 3, 10, ""],
+          ["Contract", 11, 3, 28, "Green"],
+          ["run", 6, 3, 48, "Green\\Contract"],
+        ];
+      } else {
+        documentSymbols = [
+          // Intelephense reports the namespace and its declarations as
+          // top-level siblings; only type members retain hierarchy.
+          leaf("Demo", 3, 1, 10),
+          leaf("Pipeline", 5, 3, 15, 11, [
+            leaf("secret", 7, 5, 20),
+            leaf("shared", 7, 6, 25),
+            leaf("__construct", 9, 7, 13),
+            leaf("handle", 6, 8, 20),
+            leaf("extensionPoint", 6, 9, 23),
+            leaf("hidden", 6, 10, 21),
+          ]),
+          leaf("Handler", 11, 13, 10, 16, [leaf("process", 6, 15, 13)]),
+          leaf("bootstrap", 12, 18, 9),
+        ];
+        information = [
+          ["Demo", 3, 1, 10, ""],
+          ["Pipeline", 5, 3, 15, ""],
+          ["secret", 7, 5, 20, "Pipeline"],
+          ["shared", 7, 6, 25, "Demo\\Pipeline"],
+          ["__construct", 9, 7, 13, "Pipeline"],
+          ["handle", 6, 8, 20, "Demo.Pipeline"],
+          ["extensionPoint", 6, 9, 23, "Pipeline"],
+          ["hidden", 6, 10, 21, "Demo\\Pipeline"],
+          ["Handler", 11, 13, 10, "Demo"],
+          ["process", 6, 15, 13, "Demo.Handler"],
+          ["bootstrap", 12, 18, 9, ""],
+        ];
+      }
+      if (options.symbolInformation) {
+        return respond(
+          message.id,
+          information.map(([name, kind, line, character, containerName]) => ({
+            name,
+            kind,
+            containerName,
+            location: {
+              uri,
+              range: {
+                start: { line, character },
+                end: { line, character: character + name.length },
+              },
+            },
+          })),
+        );
+      }
+      return respond(message.id, documentSymbols);
+    }
+    if (options.rubySymbols) {
+      const leaf = (name, line, character, endLine = line) => ({
+        name,
+        detail: "",
+        kind: 6,
+        range: {
+          start: { line, character: 0 },
+          end: { line: endLine, character: 80 },
+        },
+        selectionRange: {
+          start: { line, character },
+          end: { line, character: character + name.length },
+        },
+        children: [],
+      });
+      return respond(message.id, [
+        {
+          name: "Demo",
+          detail: "",
+          kind: 2,
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 46, character: 3 },
+          },
+          selectionRange: {
+            start: { line: 0, character: 7 },
+            end: { line: 0, character: 11 },
+          },
+          children: [
+            {
+              name: "Router",
+              detail: "",
+              kind: 5,
+              range: {
+                start: { line: 1, character: 0 },
+                end: { line: 45, character: 5 },
+              },
+              selectionRange: {
+                start: { line: 1, character: 8 },
+                end: { line: 1, character: 14 },
+              },
+              children: [
+                leaf("call", 2, 8, 4),
+                leaf("dispatch!", 8, 8, 10),
+                leaf("route!", 14, 8, 16),
+                leaf("process_route", 20, 8, 24),
+                leaf("compile?", 28, 13, 30),
+                leaf("hidden_builder=", 35, 10, 37),
+                leaf("build!", 41, 10),
+                leaf("put", 44, 8),
+              ],
+            },
+          ],
+        },
+      ]);
+    }
+    if (options.csharpSymbols) {
+      if (options.symbolInformation) {
+        const information = (name, kind, line, character, containerName) => ({
+          name,
+          kind,
+          containerName,
+          location: {
+            uri,
+            range: {
+              start: { line, character },
+              end: { line, character: character + name.length },
+            },
+          },
+        });
+        return respond(message.id, [
+          information("Core", 3, 0, 15, ""),
+          information("ISink", 11, 2, 17, "Demo.Core"),
+          information("Emit(Event evt)", 6, 4, 9, "Demo.Core.ISink"),
+          information("Event", 5, 7, 20, "Demo.Core"),
+          information("InternalSink", 5, 9, 15, "Demo.Core"),
+          information("InternalSink()", 9, 11, 11, "Demo.Core.InternalSink"),
+          information("Emit(Event evt)", 6, 13, 16, "Demo.Core.InternalSink"),
+          information("Helper()", 6, 21, 17, "Demo.Core.InternalSink"),
+          information("ProtectedHelper()", 6, 22, 19, "Demo.Core.InternalSink"),
+          information("DefaultPrivate()", 6, 23, 9, "Demo.Core.InternalSink"),
+          information("Logger", 5, 26, 20, "Demo.Core"),
+          // Flat csharp-ls results can collapse both fields and properties to
+          // SymbolKind.Variable. Source + owner kind restore the sharper kind.
+          information("_sink", 13, 28, 27, "Demo.Core.Logger"),
+          information("Logger(ISink sink)", 9, 29, 11, "Demo.Core.Logger"),
+          information("Write(Event evt)", 6, 30, 16, "Demo.Core.Logger"),
+          information("AssemblyHelper()", 6, 31, 18, "Demo.Core.Logger"),
+          information("Enabled", 13, 32, 16, "Demo.Core.Logger"),
+          information("Route", 5, 42, 14, "Demo.Core"),
+          information("Routed", 23, 43, 21, "Demo.Core"),
+        ]);
+      }
+      const leaf = (name, kind, line, character, endLine = line) => ({
+        name,
+        detail: "",
+        kind,
+        range: {
+          start: { line, character: 0 },
+          end: { line: endLine, character: 80 },
+        },
+        selectionRange: {
+          start: { line, character },
+          end: { line, character: character + name.length },
+        },
+        children: [],
+      });
+      return respond(message.id, [
+        {
+          // csharp-ls reports only the leaf for a dotted file-scoped namespace;
+          // the declaration line is the source of the missing prefix.
+          name: "Core",
+          detail: "",
+          kind: 3,
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 43, character: 40 },
+          },
+          selectionRange: {
+            start: { line: 0, character: 15 },
+            end: { line: 0, character: 19 },
+          },
+          children: [
+            {
+              ...leaf("ISink", 11, 2, 17, 5),
+              children: [leaf("Emit(Event evt)", 6, 4, 9)],
+            },
+            leaf("Event", 5, 7, 20),
+            {
+              ...leaf("InternalSink", 5, 9, 15, 24),
+              children: [
+                leaf("InternalSink()", 9, 11, 11),
+                leaf("Emit(Event evt)", 6, 13, 16, 19),
+                leaf("Helper()", 6, 21, 17),
+                leaf("ProtectedHelper()", 6, 22, 19),
+                leaf("DefaultPrivate()", 6, 23, 9),
+              ],
+            },
+            {
+              ...leaf("Logger", 5, 26, 20, 40),
+              children: [
+                leaf("_sink", 8, 28, 27),
+                leaf("Logger(ISink sink)", 9, 29, 11),
+                leaf("Write(Event evt)", 6, 30, 16),
+                leaf("AssemblyHelper()", 6, 31, 18),
+                leaf("Enabled", 7, 32, 16, 39),
+              ],
+            },
+            leaf("Route", 5, 42, 14),
+            leaf("Routed", 23, 43, 21),
+          ],
+        },
+      ]);
+    }
     if (options.inheritance) {
       const cls = (name, kind, line) => ({
         name,
@@ -206,6 +558,93 @@ function handle(message) {
         cls("Child", 5, 5),
         cls("Solo", 5, 6),
         cls("Dup", 5, 7),
+      ]);
+    }
+    if (options.javaAnonymous) {
+      const symbol = (name, kind, line, start, endLine = line, children = []) => ({
+        name,
+        detail: "",
+        kind,
+        range: {
+          start: { line, character: 0 },
+          end: { line: endLine, character: 80 },
+        },
+        selectionRange: {
+          start: { line, character: start },
+          end: {
+            line,
+            character: start + name.replace(/\(.*/, "").length,
+          },
+        },
+        children,
+      });
+      const anonymous = (line, writeLine) =>
+        symbol("new Adapter() {...}", 5, line, 8, line + 2, [
+          symbol("write()", 6, writeLine, 28),
+        ]);
+      return respond(message.id, [
+        symbol("PublicApi", 5, 2, 13, 35, [
+          symbol("PublicApi()", 9, 3, 9),
+          symbol("first()", 6, 5, 14, 9, [anonymous(6, 7)]),
+          symbol("second()", 6, 11, 14, 15, [anonymous(12, 13)]),
+          symbol("convert(T)", 6, 17, 48, 22),
+          symbol("names()", 6, 24, 18),
+          symbol("hidden()", 6, 25, 15),
+          symbol("packageOnly()", 6, 26, 7),
+          symbol("extensionPoint()", 6, 27, 24),
+          symbol("Nested", 5, 34, 22),
+        ]),
+        symbol("PackageType", 5, 37, 6),
+        symbol("Adapter", 5, 39, 15, 41, [
+          symbol("write()", 6, 40, 16),
+        ]),
+        symbol("Helper", 5, 43, 6, 45, [
+          symbol("helper()", 6, 44, 14),
+        ]),
+      ]);
+    }
+    if (options.goReceivers) {
+      if (options.symbolInformation) {
+        const symbol = (name, kind, line) => ({
+          name,
+          kind,
+          containerName: "",
+          location: {
+            uri,
+            range: {
+              start: { line, character: 0 },
+              end: { line, character: name.length },
+            },
+          },
+        });
+        return respond(message.id, [
+          symbol("Engine", 5, 2),
+          symbol("(*Engine).ServeHTTP", 6, 4),
+          symbol("(*Engine).handleHTTPRequest", 6, 5),
+          symbol("(*GenericEngine[T]).ServeHTTP", 6, 6),
+          symbol("helper", 12, 7),
+        ]);
+      }
+      const symbol = (name, kind, line) => ({
+        name,
+        detail: "",
+        kind,
+        range: {
+          start: { line, character: 0 },
+          end: { line, character: 60 },
+        },
+        selectionRange: {
+          start: { line, character: 0 },
+          end: { line, character: name.length },
+        },
+        children: [],
+      });
+      return respond(message.id, [
+        symbol("Engine", 5, 2),
+        symbol("(*Engine).ServeHTTP", 6, 4),
+        symbol("(*Engine).handleHTTPRequest", 6, 5),
+        symbol("(*GenericEngine[T]).ServeHTTP", 6, 6),
+        symbol("helper", 12, 7),
       ]);
     }
     if (options.classify) {
@@ -245,13 +684,13 @@ function handle(message) {
           name: "Owner",
           detail: "",
           kind: 5,
-          range: { start: { line: 0, character: 0 }, end: { line: 8, character: 1 } },
+          range: { start: { line: 0, character: 0 }, end: { line: 12, character: 1 } },
           selectionRange: { start: { line: 0, character: 6 }, end: { line: 0, character: 11 } },
           children: [
             {
               name: "helper",
               detail: "",
-              kind: 7,
+              kind: 13,
               range: { start: { line: 1, character: 2 }, end: { line: 3, character: 4 } },
               selectionRange: { start: { line: 1, character: 2 }, end: { line: 1, character: 8 } },
               children: [],
@@ -264,15 +703,167 @@ function handle(message) {
               selectionRange: { start: { line: 4, character: 2 }, end: { line: 4, character: 8 } },
               children: [],
             },
+            {
+              name: "assigned",
+              detail: "",
+              kind: 6,
+              range: { start: { line: 8, character: 2 }, end: { line: 11, character: 3 } },
+              selectionRange: { start: { line: 8, character: 2 }, end: { line: 8, character: 10 } },
+              children: [
+                {
+                  name: "result",
+                  detail: "",
+                  kind: 13,
+                  range: { start: { line: 9, character: 10 }, end: { line: 9, character: 27 } },
+                  selectionRange: { start: { line: 9, character: 10 }, end: { line: 9, character: 16 } },
+                  children: [],
+                },
+              ],
+            },
           ],
         },
         {
           name: "target",
           detail: "",
           kind: 12,
-          range: { start: { line: 9, character: 0 }, end: { line: 9, character: 20 } },
-          selectionRange: { start: { line: 9, character: 9 }, end: { line: 9, character: 15 } },
+          range: { start: { line: 13, character: 0 }, end: { line: 13, character: 20 } },
+          selectionRange: { start: { line: 13, character: 9 }, end: { line: 13, character: 15 } },
           children: [],
+        },
+      ]);
+    }
+    if (options.pythonLocals) {
+      const leaf = (name, kind, line, start, end) => ({
+        name,
+        detail: "",
+        kind,
+        range: {
+          start: { line, character: start },
+          end: { line, character: end },
+        },
+        selectionRange: {
+          start: { line, character: start },
+          end: { line, character: start + name.length },
+        },
+        children: [],
+      });
+      return respond(message.id, [
+        {
+          name: "App",
+          detail: "",
+          kind: 5,
+          range: { start: { line: 0, character: 0 }, end: { line: 5, character: 32 } },
+          selectionRange: { start: { line: 0, character: 6 }, end: { line: 0, character: 9 } },
+          children: [
+            leaf("class_value", 13, 1, 4, 24),
+            {
+              name: "dispatch",
+              detail: "",
+              kind: 6,
+              range: { start: { line: 2, character: 4 }, end: { line: 5, character: 32 } },
+              selectionRange: { start: { line: 2, character: 8 }, end: { line: 2, character: 16 } },
+              children: [
+                leaf("self", 13, 2, 17, 21),
+                leaf("ctx", 13, 2, 23, 26),
+                leaf("response", 13, 3, 8, 27),
+                leaf("handler", 13, 4, 8, 34),
+              ],
+            },
+          ],
+        },
+        leaf("module_value", 13, 7, 0, 21),
+        leaf("target", 12, 8, 4, 10),
+      ]);
+    }
+    if (options.rustImpls) {
+      const leaf = (name, kind, line, start, end = start + name.length) => ({
+        name,
+        detail: "",
+        kind,
+        range: {
+          start: { line, character: 0 },
+          end: { line, character: 80 },
+        },
+        selectionRange: {
+          start: { line, character: start },
+          end: { line, character: end },
+        },
+        children: [],
+      });
+      const impl = (name, startLine, endLine, children) => ({
+        name: `impl ${name}`,
+        detail: "",
+        kind: 19,
+        range: {
+          start: { line: startLine, character: 0 },
+          end: { line: endLine, character: 1 },
+        },
+        selectionRange: {
+          start: { line: startLine, character: 0 },
+          end: { line: startLine, character: 4 + name.length },
+        },
+        children,
+      });
+      return respond(message.id, [
+        leaf("Runtime", 23, 0, 11),
+        leaf("Handle", 23, 1, 11),
+        impl("Runtime", 3, 5, [leaf("spawn", 6, 4, 11)]),
+        impl("Runtime", 6, 8, [leaf("block_on", 6, 7, 15)]),
+        impl("Handle", 9, 11, [leaf("spawn", 6, 10, 11)]),
+        leaf("public_api", 12, 12, 7),
+        leaf("crate_only", 12, 13, 14),
+        leaf("private_helper", 12, 14, 3),
+        leaf("Generic", 23, 15, 11),
+        {
+          ...impl("Generic<T>", 16, 18, [leaf("get", 6, 17, 7)]),
+          name: "impl<T> Generic<T>",
+        },
+        {
+          ...impl("Handle", 19, 21, [leaf("schedule", 6, 20, 7)]),
+          name: "impl Schedule for Handle",
+        },
+        {
+          ...impl("External", 22, 24, [leaf("collision", 6, 23, 7)]),
+          name: "impl Schedule for External",
+        },
+        {
+          ...impl("()", 25, 27, [leaf("collision", 6, 26, 7)]),
+          name: "impl Schedule for ()",
+        },
+        leaf("super_only", 12, 28, 14),
+        leaf("scoped_only", 12, 29, 26),
+        leaf("GLOBAL", 14, 30, 11),
+        leaf("LOCAL", 14, 31, 18),
+        leaf("Packet", 23, 32, 10),
+        leaf("UnsafeTarget", 23, 33, 11),
+        {
+          ...impl("UnsafeTarget", 34, 36, [
+            leaf("unsafe_schedule", 6, 35, 7),
+          ]),
+          name: "impl Schedule for UnsafeTarget",
+        },
+        impl("Late", 37, 39, [leaf("before_declaration", 6, 38, 7)]),
+        leaf("Late", 23, 40, 11),
+        leaf("public_module", 2, 41, 8),
+        leaf("GLOBAL_MUT", 14, 42, 15),
+        leaf("ffi_entry", 12, 43, 18),
+        {
+          ...impl("Arc<WrappedLate>", 44, 48, [
+            {
+              ...leaf("wrapped_before_declaration", 6, 45, 7),
+              range: {
+                start: { line: 45, character: 0 },
+                end: { line: 47, character: 80 },
+              },
+              children: [leaf("local", 13, 46, 12)],
+            },
+          ]),
+          name: "impl Schedule for Arc<WrappedLate>",
+        },
+        leaf("WrappedLate", 23, 49, 11),
+        {
+          ...impl("broken", 27, 27, []),
+          name: "impl<broken",
         },
       ]);
     }
@@ -290,7 +881,7 @@ function handle(message) {
           name: "Owner",
           detail: "",
           kind: 5,
-          range: { start: { line: 0, character: 0 }, end: { line: 9, character: 1 } },
+          range: { start: { line: 0, character: 0 }, end: { line: 10, character: 1 } },
           selectionRange: { start: { line: 0, character: 6 }, end: { line: 0, character: 11 } },
           children: [
             leaf("makeNew", 7, 1, 1, 2),
@@ -299,15 +890,16 @@ function handle(message) {
             leaf("viaLine", 7, 4, 6, 2),
             leaf("jsx", 7, 7, 7, 2),
             leaf("opt", 7, 8, 8, 2),
+            leaf("runtimeType", 7, 9, 9, 2),
           ],
         },
-        { name: "Store", detail: "", kind: 5, range: { start: { line: 10, character: 0 }, end: { line: 10, character: 14 } }, selectionRange: { start: { line: 10, character: 6 }, end: { line: 10, character: 11 } }, children: [] },
-        { name: "blockFn", detail: "", kind: 12, range: { start: { line: 11, character: 0 }, end: { line: 11, character: 32 } }, selectionRange: { start: { line: 11, character: 9 }, end: { line: 11, character: 16 } }, children: [] },
-        { name: "lineFn", detail: "", kind: 12, range: { start: { line: 12, character: 0 }, end: { line: 12, character: 31 } }, selectionRange: { start: { line: 12, character: 9 }, end: { line: 12, character: 15 } }, children: [] },
-        { name: "Panel", detail: "", kind: 12, range: { start: { line: 13, character: 13 }, end: { line: 13, character: 30 } }, selectionRange: { start: { line: 13, character: 13 }, end: { line: 13, character: 18 } }, children: [] },
-        { name: "optFn", detail: "", kind: 12, range: { start: { line: 14, character: 0 }, end: { line: 14, character: 30 } }, selectionRange: { start: { line: 14, character: 9 }, end: { line: 14, character: 14 } }, children: [] },
-        { name: "passedFn", detail: "", kind: 12, range: { start: { line: 15, character: 0 }, end: { line: 15, character: 33 } }, selectionRange: { start: { line: 15, character: 9 }, end: { line: 15, character: 17 } }, children: [] },
-        { name: "register", detail: "", kind: 12, range: { start: { line: 16, character: 0 }, end: { line: 16, character: 44 } }, selectionRange: { start: { line: 16, character: 9 }, end: { line: 16, character: 17 } }, children: [] },
+        { name: "Store", detail: "", kind: 5, range: { start: { line: 11, character: 0 }, end: { line: 11, character: 14 } }, selectionRange: { start: { line: 11, character: 6 }, end: { line: 11, character: 11 } }, children: [] },
+        { name: "blockFn", detail: "", kind: 12, range: { start: { line: 12, character: 0 }, end: { line: 12, character: 32 } }, selectionRange: { start: { line: 12, character: 9 }, end: { line: 12, character: 16 } }, children: [] },
+        { name: "lineFn", detail: "", kind: 12, range: { start: { line: 13, character: 0 }, end: { line: 13, character: 31 } }, selectionRange: { start: { line: 13, character: 9 }, end: { line: 13, character: 15 } }, children: [] },
+        { name: "Panel", detail: "", kind: 12, range: { start: { line: 14, character: 13 }, end: { line: 14, character: 30 } }, selectionRange: { start: { line: 14, character: 13 }, end: { line: 14, character: 18 } }, children: [] },
+        { name: "optFn", detail: "", kind: 12, range: { start: { line: 15, character: 0 }, end: { line: 15, character: 30 } }, selectionRange: { start: { line: 15, character: 9 }, end: { line: 15, character: 14 } }, children: [] },
+        { name: "passedFn", detail: "", kind: 12, range: { start: { line: 16, character: 0 }, end: { line: 16, character: 33 } }, selectionRange: { start: { line: 16, character: 9 }, end: { line: 16, character: 17 } }, children: [] },
+        { name: "register", detail: "", kind: 12, range: { start: { line: 17, character: 0 }, end: { line: 17, character: 44 } }, selectionRange: { start: { line: 17, character: 9 }, end: { line: 17, character: 17 } }, children: [] },
       ]);
     }
     if (options.nullSymbols) return respond(message.id, null);
@@ -443,6 +1035,36 @@ function handle(message) {
     ]);
   }
   if (message.method === "textDocument/references") {
+    if (
+      options.referenceProgressLifecycle &&
+      !referenceProgressLifecycleStarted
+    ) {
+      // The warm reference itself starts a lazy cross-file index and returns a
+      // valid but incomplete answer. The client must await the lifecycle and
+      // requery instead of preserving this first empty response.
+      referenceProgressLifecycleStarted = true;
+      request("window/workDoneProgress/create", { token: "reference-index" });
+      notify("$/progress", {
+        token: "reference-index",
+        value: { kind: "begin", title: "reference indexing" },
+      });
+      setTimeout(() => {
+        referenceProgressLifecycleReady = true;
+        notify("$/progress", {
+          token: "reference-index",
+          value: { kind: "end" },
+        });
+      }, 200);
+      return respond(message.id, []);
+    }
+    if (
+      ((options.progressLifecycle || lateProgressLifecycleMs > 0) &&
+        !progressLifecycleReady) ||
+      (options.referenceProgressLifecycle &&
+        !referenceProgressLifecycleReady)
+    ) {
+      return respond(message.id, []);
+    }
     if (options.referenceError) return respondError(message.id, "content modified");
     if (options.nullReferences) return respond(message.id, null);
     referenceCallCount += 1;
@@ -508,6 +1130,43 @@ function handle(message) {
       return respond(message.id, [
         { uri, range: { start: { line: 2, character: 4 }, end: { line: 2, character: 10 } } },
         { uri, range: { start: { line: 5, character: 4 }, end: { line: 6, character: 6 } } },
+        { uri, range: { start: { line: 9, character: 19 }, end: { line: 9, character: 25 } } },
+      ]);
+    }
+    if (options.pythonLocals) {
+      const uri = message.params.textDocument.uri;
+      return respond(message.id, [
+        { uri, range: { start: { line: 1, character: 18 }, end: { line: 1, character: 24 } } },
+        { uri, range: { start: { line: 3, character: 19 }, end: { line: 3, character: 25 } } },
+        { uri, range: { start: { line: 4, character: 26 }, end: { line: 4, character: 32 } } },
+        { uri, range: { start: { line: 7, character: 15 }, end: { line: 7, character: 21 } } },
+      ]);
+    }
+    if (options.javaAnonymous) {
+      const line = message.params.position.line;
+      // JDT.LS answers a reference query on EACH anonymous class with all
+      // constructions of the nominal Adapter supertype. The indexer must not
+      // query those synthetic identities (lines 6 and 12), or this identical
+      // response becomes an anonymous-target cross-product. Querying the real
+      // Adapter declaration (line 39) remains valid and preserves both sites.
+      if (line !== 6 && line !== 12 && line !== 39)
+        return respond(message.id, []);
+      const uri = message.params.textDocument.uri;
+      return respond(message.id, [
+        {
+          uri,
+          range: {
+            start: { line: 6, character: 8 },
+            end: { line: 6, character: 15 },
+          },
+        },
+        {
+          uri,
+          range: {
+            start: { line: 12, character: 8 },
+            end: { line: 12, character: 15 },
+          },
+        },
       ]);
     }
     if (options.trivia) {
@@ -517,13 +1176,14 @@ function handle(message) {
       // must advance to the real token. Store is used on lines 1 (`new Store`)
       // and 2 (`typeof Store`); blockFn on line 3 with a block comment before
       // it; lineFn on line 6 with the range starting on line 5's `//` comment.
-      switch (message.params.position.line) {
+      switch (message.params.position.line - 1) {
         case 10: // Store — ranges start on the space before the name so the
           // `new` / `typeof` keyword lands at the end of `before` after the
           // trivia advance, exercising the keyword-prefix classification.
           return respond(message.id, [
             { uri, range: { start: { line: 1, character: 15 }, end: { line: 1, character: 21 } } },
             { uri, range: { start: { line: 2, character: 17 }, end: { line: 2, character: 23 } } },
+            { uri, range: { start: { line: 9, character: 23 }, end: { line: 9, character: 28 } } },
           ]);
         case 11: // blockFn — range starts inside `/* pre */`
           return respond(message.id, [{ uri, range: { start: { line: 3, character: 13 }, end: { line: 3, character: 30 } } }]);
@@ -534,9 +1194,9 @@ function handle(message) {
         case 14: // optFn — an optional call `optFn?.()`
           return respond(message.id, [{ uri, range: { start: { line: 8, character: 8 }, end: { line: 8, character: 13 } } }]);
         case 15: // passedFn — handed to `register(...)` as a value, at module scope
-          return respond(message.id, [{ uri, range: { start: { line: 17, character: 9 }, end: { line: 17, character: 17 } } }]);
+          return respond(message.id, [{ uri, range: { start: { line: 18, character: 9 }, end: { line: 18, character: 17 } } }]);
         case 16: // register — called at the top level of the module
-          return respond(message.id, [{ uri, range: { start: { line: 17, character: 0 }, end: { line: 17, character: 8 } } }]);
+          return respond(message.id, [{ uri, range: { start: { line: 18, character: 0 }, end: { line: 18, character: 8 } } }]);
         default:
           return respond(message.id, []);
       }
@@ -614,6 +1274,23 @@ function notify(method, params) {
 let serverRequestId = 100000;
 function request(method, params) {
   write({ jsonrpc: "2.0", id: serverRequestId++, method, params });
+}
+
+function recordDocumentVersion(method, textDocument) {
+  if (documentVersionLog === undefined) return;
+  documentVersionEvents.push({
+    method,
+    uri: textDocument.uri,
+    ...(textDocument.version === undefined
+      ? {}
+      : { version: textDocument.version }),
+  });
+  writeDocumentVersionLog();
+}
+
+function writeDocumentVersionLog() {
+  if (documentVersionLog === undefined) return;
+  fs.writeFileSync(documentVersionLog, JSON.stringify(documentVersionEvents));
 }
 
 function write(message) {

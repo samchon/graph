@@ -17,7 +17,7 @@ These approaches are never acceptable:
 ## Work Rules
 
 - Open nearby peers before adding a file, function, public type, operation, test, or fixture. Mirror the established naming, location, export, and error-handling conventions.
-- Respect package boundaries. Canonical source lives under `packages/graph/src`; test-only helpers live under `tests/test-graph/src/internal`; real-server provisioning lives under `tests/experiment`; benchmark policy stays under `tests/benchmark`.
+- Respect package boundaries. Semantic graph, LSP, MCP, and CLI source lives under `packages/graph/src`; best-effort syntax extraction lives under `packages/graph-sitter/src`; test-only helpers live under `tests/test-graph/src/internal`; real-server provisioning lives under `tests/experiment`; benchmark policy stays under `tests/benchmark`.
 - Keep public exports synchronized through the nearest barrel and the root package surface. Public schema changes also require the matching MCP description, README contract excerpt, and compatibility review.
 - Follow the normal public-source convention of one export named for its file, with barrels containing re-exports rather than local declarations. Preserve the explicitly tested exceptions instead of generalizing them into a second style.
 - Preserve strict TypeScript assumptions, NodeNext module behavior, LF output, and `@ttsc/lint` checks from `config/`.

@@ -49,6 +49,20 @@ export const test_the_tour_takes_the_names_the_caller_sends = async () => {
     named.entrypoints.some((node) => node.name === "patch"),
   );
 
+  const oneSeat = (
+    await app.inspect_code_graph({
+      question: "show the central runtime",
+      draft: { reason: "One tour is the whole orientation.", type: "tour" },
+      review: "Tour.",
+      request: { type: "tour", reinterpretations: ["go"], limit: 1 },
+    })
+  ).result as ISamchonGraphTour;
+  TestValidator.equals(
+    "a one-seat tour reserves floor(1 / 2), not a forced named seat",
+    oneSeat.entrypoints.map((node) => node.name),
+    ["patch"],
+  );
+
   // A name the graph has never heard of is dropped without ceremony, so a wrong
   // guess costs nothing and a repository the caller has never seen is safe to
   // guess about. Prose resolves to nothing, so it is harmless too.
@@ -96,6 +110,7 @@ const dumpOf = (): ISamchonGraphDump => ({
     symbol("src/renderer.ts#patch:function", "patch", 9),
     symbol("src/renderer.ts#mount:function", "mount", 13),
     symbol("src/renderer.ts#unmount:function", "unmount", 17),
+    symbol("src/renderer.ts#go:function", "go", 19),
     // Two `render`s: a name the project declares twice is not a name it does not
     // declare, but it is not a name the caller can hand the tour either.
     symbol("src/renderer.ts#render:function", "render", 21),
@@ -109,6 +124,7 @@ const dumpOf = (): ISamchonGraphDump => ({
     exportsEdge("src/renderer.ts", "src/renderer.ts#queuePostRenderEffect:function"),
     exportsEdge("src/renderer.ts", "src/renderer.ts#mount:function"),
     exportsEdge("src/renderer.ts", "src/renderer.ts#unmount:function"),
+    exportsEdge("src/renderer.ts", "src/renderer.ts#go:function"),
     exportsEdge("src/renderer.ts", "src/renderer.ts#render:function"),
     exportsEdge("src/compiler.ts", "src/compiler.ts#render:function"),
     // `patch` is the spine: everything runs through it.

@@ -7,14 +7,13 @@ import path from "node:path";
 import { GraphPaths } from "../internal/GraphPaths";
 
 /**
- * §2j: what a module does at load belongs to the module, and a function passed as
- * a value is invoked by the site that passes it.
+ * What a module does at load belongs to the module. A callable passed as a value
+ * is accessed at the hand-off site, not invoked there.
  *
  * Without either, every event-driven codebase looks like a set of disconnected
  * islands: a router mounting its handlers at the top of a file is attributed to
  * nobody, the name in `app.use(handler)` sits in an argument list with no `(` of
- * its own and reads as a type reference, and `trace` returns an empty path
- * between two symbols that plainly reach each other.
+ * its own and must not be mistaken for either a type reference or a direct call.
  */
 export const test_module_scope_and_hand_off_edges_connect_the_islands =
   async () => {
@@ -27,6 +26,12 @@ export const test_module_scope_and_hand_off_edges_connect_the_islands =
       "}",
       "",
       "export function work(): void {}",
+      "",
+      "export function mixed(): typeof handler {",
+      "  use(handler);",
+      "  handler();",
+      "  return handler;",
+      "}",
       "",
       "use(handler);",
     ]);
@@ -49,13 +54,29 @@ export const test_module_scope_and_hand_off_edges_connect_the_islands =
         (edge) => edge.to === "src/router.ts#use:function" && edge.kind === "calls",
       ),
     );
-    // And the callable it hands over is invoked by the site that hands it over.
+    // The callable argument is accessed at this site, not invoked by it.
     TestValidator.predicate(
-      "a callable passed as a value gets the call edge that says so",
+      "a callable passed as a value gets an access edge rather than a call",
       from("src/server.ts").some(
         (edge) =>
-          edge.to === "src/server.ts#handler:function" && edge.kind === "calls",
-      ),
+          edge.to === "src/server.ts#handler:function" &&
+          edge.kind === "accesses",
+      ) &&
+        !from("src/server.ts").some(
+          (edge) =>
+            edge.to === "src/server.ts#handler:function" &&
+            edge.kind === "calls",
+        ),
+    );
+    // ttsc keys edges by (from, to, wire kind): a type use, a direct call, and
+    // a hand-off access to the same target are three independent facts.
+    TestValidator.equals(
+      "distinct relations to one target coexist",
+      from("src/server.ts#mixed:function")
+        .filter((edge) => edge.to === "src/server.ts#handler:function")
+        .map((edge) => edge.kind)
+        .sort(),
+      ["accesses", "calls", "type_ref"],
     );
     // An import names a symbol in order to bring it in, which is not the module
     // running it — so the import line contributes no module-scope edge of its own.

@@ -16,7 +16,12 @@ await build({
   bundle: true,
   entryNames: "[dir]/[name]",
   entryPoints: ["src/index.ts", ...walk("src/features")],
-  external: ["@modelcontextprotocol/sdk/*", "@nestia/e2e", "@samchon/graph"],
+  external: [
+    "@modelcontextprotocol/sdk/*",
+    "@nestia/e2e",
+    "@samchon/graph",
+    "@samchon/graph-sitter",
+  ],
   format: "esm",
   logLevel: "info",
   outdir: "lib",

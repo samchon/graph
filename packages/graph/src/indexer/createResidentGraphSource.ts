@@ -7,53 +7,83 @@ import {
   ISamchonGraphNode,
 } from "../structures";
 import { GraphLanguage } from "../typings";
+import { IBulkGraphSession } from "../provider/IBulkGraphSession";
+import { isBulkGraphSession } from "../provider/isBulkGraphSession";
+import { mergeGraphSlices } from "../provider/mergeGraphSlices";
 import { readText, walkSourceFiles } from "../utils/fs";
 import { allExtensions } from "./allExtensions";
 import { buildLspGraph } from "./buildLspGraph";
 import { staticGraphParts } from "./staticGraphParts";
-import { dedupeEdges } from "./dedupeEdges";
-import { dedupeNodes } from "./dedupeNodes";
-import { finalizeGraph } from "./finalizeGraph";
+import { discoverLanguages } from "./discoverLanguages";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { ILspSession } from "./ILspSession";
 import { IResidentGraphSource } from "./IResidentGraphSource";
+import { languageOf } from "./languageOf";
 import { refreshLanguageSession } from "./refreshLanguageSession";
 import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
+
+interface IResidentState {
+  dump: ISamchonGraphDump;
+  sessions: Map<GraphLanguage, ILspSession | IBulkGraphSession>;
+  generations: Map<GraphLanguage, number>;
+  staticLanguages: GraphLanguage[];
+  languages: GraphLanguage[];
+  hashes: Map<string, string>;
+}
+
+const DEFAULT_DEPENDENCIES = {
+  buildLspGraph,
+};
 
 // Languages that fell back to static parsing (no LSP session to hold) are
 // simply re-parsed from scratch on every refresh; `buildStaticGraph` has no
 // warm state to lose, so there is nothing to reuse there.
 export function createResidentGraphSource(
   options: IBuildGraphOptions = {},
+  dependencies: typeof DEFAULT_DEPENDENCIES = DEFAULT_DEPENDENCIES,
 ): IResidentGraphSource {
   const root = path.resolve(options.cwd ?? process.cwd());
-  let state:
-    | {
-        dump: ISamchonGraphDump;
-        sessions: Map<GraphLanguage, ILspSession>;
-        staticLanguages: GraphLanguage[];
-        hashes: Map<string, string>;
-      }
-    | undefined;
+  let state: IResidentState | undefined;
+  let queue: Promise<void> = Promise.resolve();
+  let closed = false;
 
-  async function buildFresh(): Promise<void> {
+  async function buildFresh(): Promise<IResidentState> {
     // `keepAlive: true` above guarantees `buildLspGraph` always returns a
     // sessions map, even an empty one.
-    const result = await buildLspGraph({ ...options, keepAlive: true });
-    const sessions = result.sessions!;
-    const staticLanguages = staticLanguagesOf(result.dump, sessions);
-    state = {
-      dump: result.dump,
-      sessions,
-      staticLanguages,
-      hashes: snapshotSources(root, options),
-    };
+    const result = await dependencies.buildLspGraph({
+      ...options,
+      keepAlive: true,
+    });
+    const sessions = result.sessions ?? new Map();
+    try {
+      return {
+        dump: result.dump,
+        sessions,
+        generations: bulkGenerationsOf(sessions),
+        staticLanguages: staticLanguagesOf(result.dump, sessions),
+        languages: languagesOf(result.sources, root, options, sessions),
+        hashes:
+          result.sources === undefined
+            ? snapshotSources(root, options, bulkLanguagesOf(sessions))
+            : hashSources(result.sources, bulkLanguagesOf(sessions)),
+      };
+    } catch (error) {
+      // Once the build hands its sessions to this source, every later failure
+      // on the path to publishing the state belongs to us to clean up.
+      await closeSessions(sessions);
+      throw error;
+    }
   }
 
-  async function refreshStale(current: NonNullable<typeof state>): Promise<void> {
+  async function refreshStale(
+    current: IResidentState,
+    prefetched: ReadonlyMap<GraphLanguage, IBulkGraphSession.IRefresh>,
+  ): Promise<void> {
     const nodes: ISamchonGraphNode[] = [];
     const edges: ISamchonGraphEdge[] = [];
+    const strictNodes: ISamchonGraphNode[] = [];
+    const strictEdges: ISamchonGraphEdge[] = [];
     // Rebuilt from what the servers say now, exactly like the nodes and the
     // edges. Carrying the previous dump's array forward made `diagnostics` a
     // function of the session's edit history — a deleted file's findings survived
@@ -62,17 +92,35 @@ export function createResidentGraphSource(
     // session holds them per file now, and a `didClose` drops the file's.
     const diagnostics: ISamchonGraphDiagnostic[] = [];
     const warnings: string[] = [];
+    const sources = new Map<string, string>();
+    const generations = new Map(current.generations);
 
     for (const [language, session] of current.sessions) {
+      if (isBulkGraphSession(session)) {
+        const refresh = prefetched.get(language) ?? (await session.refresh());
+        assertOpen();
+        strictNodes.push(...refresh.snapshot.nodes);
+        strictEdges.push(...refresh.snapshot.edges);
+        warnings.push(...refresh.snapshot.warnings);
+        for (const [file, text] of refresh.snapshot.sources) {
+          sources.set(file, text);
+        }
+        generations.set(language, refresh.generation);
+        continue;
+      }
       const files = walkSourceFiles(root, {
         extensions: allExtensions([language]),
         maxFiles: options.maxFiles,
       });
       const result = await refreshLanguageSession(session, files, options);
+      assertOpen();
       nodes.push(...result.nodes);
       edges.push(...result.edges);
       diagnostics.push(...result.diagnostics);
       warnings.push(...result.warnings);
+      for (const opened of session.opened.values()) {
+        sources.set(opened.abs, opened.text);
+      }
     }
     if (current.staticLanguages.length > 0) {
       const fallback = staticGraphParts({
@@ -84,41 +132,167 @@ export function createResidentGraphSource(
       nodes.push(...fallback.nodes);
       edges.push(...fallback.edges);
       warnings.push(...fallback.warnings);
+      for (const [file, text] of fallback.sources) sources.set(file, text);
     }
 
-    const finalized = finalizeGraph(
+    const finalized = mergeGraphSlices({
       root,
-      walkSourceFiles(root, {
-        extensions: allExtensions(options.languages),
-        maxFiles: options.maxFiles,
-      }),
-      nodes,
-      edges,
-    );
-    current.dump = {
+      files: [...sources.keys()],
+      genericNodes: nodes,
+      genericEdges: edges,
+      strictNodes,
+      strictEdges,
+    });
+    const dump: ISamchonGraphDump = {
       ...current.dump,
-      nodes: wireNodes(dedupeNodes(finalized.nodes)),
-      edges: wireEdges(dedupeEdges(finalized.edges)),
+      nodes: wireNodes(finalized.nodes),
+      edges: wireEdges(finalized.edges),
       diagnostics,
       warnings,
     };
-    current.hashes = snapshotSources(root, options);
+    current.dump = dump;
+    current.hashes = hashSources(sources, bulkLanguagesOf(current.sessions));
+    current.generations = generations;
+  }
+
+  async function replaceLanguages(current: IResidentState): Promise<void> {
+    const fresh = await buildFresh();
+    if (closed) {
+      await closeSessions(fresh.sessions);
+      throw closedError();
+    }
+    // Publish the complete replacement atomically before retiring the old
+    // sessions. A failed fresh build leaves `current` untouched; a failed old
+    // shutdown leaves the newly built state usable on the next call.
+    state = fresh;
+    await closeSessions(current.sessions);
   }
 
   return {
-    async load(): Promise<ISamchonGraphDump> {
-      if (state === undefined) {
-        await buildFresh();
-        return state!.dump;
-      }
-      if (isStale(state.hashes, root, options)) await refreshStale(state);
-      return state.dump;
+    load(): Promise<ISamchonGraphDump> {
+      return enqueue(async () => {
+        assertOpen();
+        if (state === undefined) {
+          const fresh = await buildFresh();
+          if (closed) {
+            await closeSessions(fresh.sessions);
+            throw closedError();
+          }
+          state = fresh;
+        } else {
+          const prefetched = await refreshBulkSessions(state.sessions);
+          const bulkChanged = [...prefetched].some(
+            ([language, refresh]) =>
+              state!.generations.get(language) !== refresh.generation,
+          );
+          if (
+            bulkChanged ||
+            isStale(
+              state.hashes,
+              root,
+              options,
+              bulkLanguagesOf(state.sessions),
+            )
+          ) {
+            const discovered = discoverLanguages(root, options);
+            if (sameLanguages(state.languages, discovered)) {
+              await refreshStale(state, prefetched);
+            } else {
+              await replaceLanguages(state);
+            }
+          }
+        }
+        assertOpen();
+        return state.dump;
+      });
     },
-    async close(): Promise<void> {
-      if (state === undefined) return;
-      for (const session of state.sessions.values()) await session.client.close();
+    close(): Promise<void> {
+      // Flip the bit synchronously. A load already inside an await observes it
+      // before publishing a newly-built/refreshed graph, while calls queued
+      // behind this point never start another language server.
+      closed = true;
+      return enqueue(async () => {
+        const current = state;
+        state = undefined;
+        if (current !== undefined) await closeSessions(current.sessions);
+      });
     },
   };
+
+  /** One queue lane per public call, without caching a rejected lane. */
+  function enqueue<T>(task: () => Promise<T>): Promise<T> {
+    let resolveResult!: (value: T) => void;
+    let rejectResult!: (error: Error) => void;
+    const result = new Promise<T>((resolve, reject) => {
+      resolveResult = resolve;
+      rejectResult = reject;
+    });
+    queue = queue
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          resolveResult(await task());
+        } catch (error) {
+          rejectResult(asError(error));
+        }
+      });
+    return result;
+  }
+
+  function assertOpen(): void {
+    if (closed) throw closedError();
+  }
+}
+
+function languagesOf(
+  sources: ReadonlyMap<string, string> | undefined,
+  root: string,
+  options: IBuildGraphOptions,
+  sessions: ReadonlyMap<GraphLanguage, ILspSession | IBulkGraphSession>,
+): GraphLanguage[] {
+  const discovered =
+    sources === undefined
+      ? discoverLanguages(root, options)
+      : [...sources.keys()]
+          .map(languageOf)
+          .filter((language) => language !== "unknown");
+  return [
+    ...new Set([...discovered, ...sessions.keys()]),
+  ];
+}
+
+function sameLanguages(
+  left: readonly GraphLanguage[],
+  right: readonly GraphLanguage[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((language) => right.includes(language))
+  );
+}
+
+function closedError(): Error {
+  return new Error("@samchon/graph: resident graph source is closed");
+}
+
+async function closeSessions(
+  sessions: Map<GraphLanguage, ILspSession | IBulkGraphSession>,
+): Promise<void> {
+  let failure: Error | undefined;
+  for (const session of sessions.values()) {
+    try {
+      if (isBulkGraphSession(session)) await session.close();
+      else await session.client.close();
+    } catch (error) {
+      // Close every resident process even when one shutdown handshake fails.
+      failure ??= asError(error);
+    }
+  }
+  if (failure !== undefined) throw failure;
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 // A language ended up in the static fallback if the dump reports it but no
@@ -126,11 +300,45 @@ export function createResidentGraphSource(
 // language that actually produced real symbols).
 function staticLanguagesOf(
   dump: ISamchonGraphDump,
-  sessions: Map<GraphLanguage, ILspSession>,
+  sessions: Map<GraphLanguage, ILspSession | IBulkGraphSession>,
 ): GraphLanguage[] {
   return dump.languages.filter(
     (language) => !sessions.has(language as GraphLanguage),
   ) as GraphLanguage[];
+}
+
+function bulkGenerationsOf(
+  sessions: ReadonlyMap<GraphLanguage, ILspSession | IBulkGraphSession>,
+): Map<GraphLanguage, number> {
+  const generations = new Map<GraphLanguage, number>();
+  for (const [language, session] of sessions) {
+    if (isBulkGraphSession(session)) {
+      generations.set(language, session.generation);
+    }
+  }
+  return generations;
+}
+
+async function refreshBulkSessions(
+  sessions: ReadonlyMap<GraphLanguage, ILspSession | IBulkGraphSession>,
+): Promise<Map<GraphLanguage, IBulkGraphSession.IRefresh>> {
+  const refreshed = new Map<GraphLanguage, IBulkGraphSession.IRefresh>();
+  for (const [language, session] of sessions) {
+    if (isBulkGraphSession(session)) {
+      refreshed.set(language, await session.refresh());
+    }
+  }
+  return refreshed;
+}
+
+function bulkLanguagesOf(
+  sessions: ReadonlyMap<GraphLanguage, ILspSession | IBulkGraphSession>,
+): ReadonlySet<GraphLanguage> {
+  const languages = new Set<GraphLanguage>();
+  for (const [language, session] of sessions) {
+    if (isBulkGraphSession(session)) languages.add(language);
+  }
+  return languages;
 }
 
 /**
@@ -151,6 +359,7 @@ function staticLanguagesOf(
 function snapshotSources(
   root: string,
   options: IBuildGraphOptions,
+  excludedLanguages: ReadonlySet<GraphLanguage> = new Set(),
 ): Map<string, string> {
   const files = walkSourceFiles(root, {
     extensions: allExtensions(options.languages),
@@ -158,6 +367,7 @@ function snapshotSources(
   });
   const snapshot = new Map<string, string>();
   for (const abs of files) {
+    if (excludedLanguages.has(languageOf(abs))) continue;
     const text = readText(abs);
     // A file removed between the walk and the read is simply absent from the
     // snapshot, which itself is a difference the next comparison will catch.
@@ -168,12 +378,26 @@ function snapshotSources(
   return snapshot;
 }
 
+/** Content hashes for the exact texts an index pass consumed. */
+function hashSources(
+  sources: ReadonlyMap<string, string>,
+  excludedLanguages: ReadonlySet<GraphLanguage> = new Set(),
+): Map<string, string> {
+  const snapshot = new Map<string, string>();
+  for (const [file, text] of sources) {
+    if (excludedLanguages.has(languageOf(file))) continue;
+    snapshot.set(file, createHash("sha256").update(text).digest("hex"));
+  }
+  return snapshot;
+}
+
 function isStale(
   previous: Map<string, string>,
   root: string,
   options: IBuildGraphOptions,
+  excludedLanguages: ReadonlySet<GraphLanguage>,
 ): boolean {
-  const current = snapshotSources(root, options);
+  const current = snapshotSources(root, options, excludedLanguages);
   if (current.size !== previous.size) return true;
   for (const [file, hash] of current) {
     if (previous.get(file) !== hash) return true;

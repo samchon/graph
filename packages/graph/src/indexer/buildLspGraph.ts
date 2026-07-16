@@ -11,6 +11,10 @@ import {
 import { GraphLanguage } from "../typings";
 import { projectRelative, readText, walkSourceFiles } from "../utils/fs";
 import { fileFromUri, fileUri, isSubPath } from "../utils/path";
+import { IBulkGraphSession } from "../provider/IBulkGraphSession";
+import { mergeGraphSlices } from "../provider/mergeGraphSlices";
+import { TtscGraphClient } from "../provider/ttscgraph/TtscGraphClient";
+import { resolveTtscGraphCommand } from "../provider/ttscgraph/resolveTtscGraphCommand";
 import { appendAll } from "./appendAll";
 import { dedupeEdges } from "./dedupeEdges";
 import { dedupeNodes } from "./dedupeNodes";
@@ -29,17 +33,25 @@ import { staticGraphParts } from "./staticGraphParts";
 import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
 
+const DEFAULT_DEPENDENCIES = {
+  resolveTtscGraphCommand,
+};
+
 export async function buildLspGraph(
   options: IBuildGraphOptions = {},
+  dependencies: typeof DEFAULT_DEPENDENCIES = DEFAULT_DEPENDENCIES,
 ): Promise<IIndexerResult> {
   const root = path.resolve(options.cwd ?? process.cwd());
   const languages = options.languages ?? discoverLanguages(root, options);
   const nodes: ISamchonGraphNode[] = [];
   const edges: ISamchonGraphEdge[] = [];
+  const strictNodes: ISamchonGraphNode[] = [];
+  const strictEdges: ISamchonGraphEdge[] = [];
   const diagnostics: ISamchonGraphDiagnostic[] = [];
   const warnings: string[] = [];
   const staticFallbackLanguages: GraphLanguage[] = [];
-  const sessions = new Map<GraphLanguage, ILspSession>();
+  const sessions = new Map<GraphLanguage, ILspSession | IBulkGraphSession>();
+  const sources = new Map<string, string>();
   let lspNodeCount = 0;
   // Computed once (not per-language) since cpp and c share the same clangd
   // compilation database and root.
@@ -55,6 +67,39 @@ export async function buildLspGraph(
       maxFiles: options.maxFiles,
     });
     if (files.length === 0) continue;
+    if (
+      language === "typescript" &&
+      options.server === undefined &&
+      options.maxFiles === undefined &&
+      options.lspReferenceLimit === undefined
+    ) {
+      const resolved = dependencies.resolveTtscGraphCommand(root);
+      if (resolved !== undefined) {
+        try {
+          const { result, session } = await collectTtscGraph(
+            root,
+            resolved.command,
+            resolved.args,
+            options,
+          );
+          appendAll(strictNodes, result.nodes);
+          appendAll(strictEdges, result.edges);
+          appendSources(sources, result.sources);
+          appendAll(warnings, result.warnings);
+          lspNodeCount += result.nodes.length;
+          if (options.keepAlive) sessions.set(language, session);
+          continue;
+        } catch (error) {
+          warnings.push(
+            `typescript: ttscgraph bulk indexing failed; using ttscserver LSP: ${(error as Error).message}`,
+          );
+        }
+      } else {
+        warnings.push(
+          "typescript: ttscgraph bulk provider was not found; using ttscserver LSP.",
+        );
+      }
+    }
     const spec = specOf(language);
     if (spec?.lsp === undefined) {
       warnings.push(`${language}: no built-in LSP server is configured.`);
@@ -75,7 +120,7 @@ export async function buildLspGraph(
       (language === "cpp" || language === "c") && compileCommandsDir !== undefined
         ? [...baseArgs, `--compile-commands-dir=${compileCommandsDir}`]
         : baseArgs;
-    const resolved = resolveCommand(command);
+    const resolved = resolveCommand(command, root);
     if (resolved === undefined) {
       warnings.push(`${language}: LSP server not found on PATH: ${command}`);
       staticFallbackLanguages.push(language);
@@ -86,7 +131,7 @@ export async function buildLspGraph(
     // pyright-langserver, and friends work from a plain package install.
     const spawnable = /\.(cmd|bat)$/i.test(resolved)
       ? { command: "cmd.exe", args: ["/d", "/s", "/c", resolved, ...args] }
-      : { command, args: [...args] };
+      : { command: resolved, args: [...args] };
     try {
       const { result, session } = await collectLanguageGraph(
         root,
@@ -103,6 +148,9 @@ export async function buildLspGraph(
         staticFallbackLanguages.push(language);
         if (options.keepAlive) await session.client.close();
       } else {
+        for (const opened of session.opened.values()) {
+          sources.set(opened.abs, opened.text);
+        }
         appendAll(nodes, result.nodes);
         appendAll(edges, result.edges);
         appendAll(diagnostics, result.diagnostics);
@@ -128,11 +176,12 @@ export async function buildLspGraph(
       mode: "static",
       languages: staticFallbackLanguages,
     });
+    appendSources(sources, fallback.sources);
     if (lspNodeCount === 0) {
       return {
         dump: staticDump(fallback, warnings),
         warnings,
-        ...(options.keepAlive ? { sessions } : {}),
+        ...(options.keepAlive ? { sessions, sources } : {}),
       };
     }
     appendAll(nodes, fallback.nodes);
@@ -140,38 +189,63 @@ export async function buildLspGraph(
     appendAll(warnings, fallback.warnings);
   }
 
-  if (nodes.length === 0) {
+  if (nodes.length === 0 && strictNodes.length === 0) {
+    const fallback = staticGraphParts(options);
+    appendSources(sources, fallback.sources);
     return {
-      dump: staticDump(staticGraphParts(options), warnings),
+      dump: staticDump(fallback, warnings),
       warnings,
-      ...(options.keepAlive ? { sessions } : {}),
+      ...(options.keepAlive ? { sessions, sources } : {}),
     };
   }
 
-  const finalized = finalizeGraph(
+  const finalized = mergeGraphSlices({
     root,
-    walkSourceFiles(root, {
-      extensions: allExtensions(languages),
-      maxFiles: options.maxFiles,
-    }),
-    nodes,
-    edges,
-  );
+    files: [...sources.keys()],
+    genericNodes: nodes,
+    genericEdges: edges,
+    strictNodes,
+    strictEdges,
+  });
   return {
     dump: {
       project: root,
-      languages: [...new Set(nodes.map((node) => node.language))],
+      languages: [
+        ...new Set(
+          [...strictNodes, ...nodes].map((node) => node.language),
+        ),
+      ],
       // Only a static fallback makes the graph a hybrid; a benign warning (e.g.
       // the reference cap) on a pure-LSP run must not relabel it.
       indexer: staticFallbackLanguages.length > 0 ? "hybrid" : "lsp",
-      nodes: wireNodes(dedupeNodes(finalized.nodes)),
-      edges: wireEdges(dedupeEdges(finalized.edges)),
+      nodes: wireNodes(finalized.nodes),
+      edges: wireEdges(finalized.edges),
       diagnostics,
       warnings,
     },
     warnings,
-    ...(options.keepAlive ? { sessions } : {}),
+    ...(options.keepAlive ? { sessions, sources } : {}),
   };
+}
+
+async function collectTtscGraph(
+  root: string,
+  command: string,
+  args: readonly string[],
+  options: IBuildGraphOptions,
+): Promise<{
+  result: IBulkGraphSession.ISnapshot;
+  session: TtscGraphClient;
+}> {
+  const session = new TtscGraphClient({ root, command, args });
+  try {
+    const result = (await session.refresh()).snapshot;
+    if (!options.keepAlive) await session.close();
+    return { result, session };
+  } catch (error) {
+    await session.close();
+    throw error;
+  }
 }
 
 /** Every language fell back to the static parser: the dump is that parse. */
@@ -181,7 +255,7 @@ function staticDump(
 ): ISamchonGraphDump {
   const finalized = finalizeGraph(
     parts.root,
-    parts.files,
+    [...parts.sources.keys()],
     parts.nodes,
     parts.edges,
   );
@@ -193,6 +267,13 @@ function staticDump(
     edges: wireEdges(dedupeEdges(finalized.edges)),
     warnings: [...parts.warnings, ...warnings],
   };
+}
+
+function appendSources(
+  target: Map<string, string>,
+  source: ReadonlyMap<string, string>,
+): void {
+  for (const [file, text] of source) target.set(file, text);
 }
 
 // Opens a fresh LSP connection and hands back BOTH the extracted graph slice
@@ -217,7 +298,14 @@ async function collectLanguageGraph(
   };
   session: ILspSession;
 }> {
-  const session = await openLanguageSession(root, language, command, args, files, options);
+  const session = await openLanguageSession(
+    root,
+    language,
+    command,
+    args,
+    files,
+    options,
+  );
   let result: {
     nodes: ISamchonGraphNode[];
     edges: ISamchonGraphEdge[];
@@ -247,11 +335,31 @@ async function openLanguageSession(
 ): Promise<ILspSession> {
   // Normal callers remain unlimited. Bounded callers such as the real-server
   // experiment can opt into a request deadline.
-  const client = new LspClient(command, args, options.lspTimeoutMs);
+  const client = new LspClient(command, args, options.lspTimeoutMs, root);
   const diagnostics = new Map<string, ISamchonGraphDiagnostic[]>();
   let lastProgressAt = 0;
-  client.onNotification("$/progress", () => {
+  let progressVersion = 0;
+  let lastLifecycleEndVersion = 0;
+  const activeProgress = new Set<string | number>();
+  client.onNotification("$/progress", (params) => {
     lastProgressAt = Date.now();
+    progressVersion += 1;
+    const progress = params as {
+      token?: string | number;
+      value?: { kind?: string };
+    };
+    if (
+      typeof progress.token !== "string" &&
+      typeof progress.token !== "number"
+    ) {
+      return;
+    }
+    if (progress.value?.kind === "begin") {
+      activeProgress.add(progress.token);
+    } else if (progress.value?.kind === "end") {
+      activeProgress.delete(progress.token);
+      lastLifecycleEndVersion = progressVersion;
+    }
   });
   client.onNotification("textDocument/publishDiagnostics", (params) => {
     const typed = params as { uri?: string; diagnostics?: IDiagnostic[] };
@@ -288,13 +396,27 @@ async function openLanguageSession(
     });
     client.notify("initialized", {});
 
+    const quietMs = options.lspReadyQuietMs ?? 1_500;
     const session: ILspSession = {
       client,
       root,
       language,
       opened: new Map(),
       diagnostics,
+      progressVersion: () => progressVersion,
+      waitForReady: (since, allowStart) =>
+        waitForIndexing(
+          since,
+          allowStart,
+          () => progressVersion,
+          () => lastProgressAt,
+          () => lastLifecycleEndVersion,
+          () => activeProgress.size,
+          quietMs,
+          options.lspReadyTimeoutMs,
+        ),
     };
+    const didOpenFence = session.progressVersion!();
     await openFiles(session, files);
 
     // Wait for the server's initial indexing BEFORE asking for symbols. Servers
@@ -305,11 +427,7 @@ async function openLanguageSession(
     //
     // The wait ends once progress goes quiet for `lspReadyQuietMs`. Its overall
     // ceiling is optional, so normal callers still wait as long as needed.
-    await waitForIndexing(
-      () => lastProgressAt,
-      options.lspReadyQuietMs ?? 1_500,
-      options.lspReadyTimeoutMs,
-    );
+    await session.waitForReady!(didOpenFence, true);
     return session;
   } catch (error) {
     // A server that never answers `initialize` (or fails before the session
@@ -329,7 +447,7 @@ async function openFiles(session: ILspSession, files: readonly string[]): Promis
     /* c8 ignore next */
     if (text === undefined) continue;
     const rel = projectRelative(session.root, abs);
-    session.opened.set(rel, { abs, text });
+    session.opened.set(rel, { abs, text, version: 1 });
     session.client.notify("textDocument/didOpen", {
       textDocument: {
         uri: fileUri(abs),
@@ -342,25 +460,43 @@ async function openFiles(session: ILspSession, files: readonly string[]): Promis
 }
 
 async function waitForIndexing(
+  since: number,
+  allowStart: boolean,
+  currentVersion: () => number,
   lastProgressAt: () => number,
+  lastLifecycleEndVersion: () => number,
+  activeProgressCount: () => number,
   quietMs: number,
   timeoutMs: number | undefined,
 ): Promise<void> {
   const start = Date.now();
-  // Give a server that reports `$/progress` a brief window to begin before we
-  // conclude it never will; without this a fast documentSymbol phase could race
-  // ahead of the first indexing notification.
-  await new Promise((resolve) => {
-    setTimeout(resolve, Math.min(300, timeoutMs ?? 300));
-  });
-  // A server that never emits progress (lastProgressAt stays 0) is treated as
-  // ready immediately; one that does is awaited until it stays quiet for
-  // `quietMs`. An undefined timeout preserves the unlimited default.
-  while (
-    lastProgressAt() !== 0 &&
-    Date.now() - lastProgressAt() < quietMs &&
-    (timeoutMs === undefined || Date.now() - start < timeoutMs)
-  ) {
+  // A work-done `begin` remains active until its matching `end`, even when the
+  // server emits no intermediate reports for longer than `quietMs`. Cargo
+  // metadata and source-root scans have exactly those silent phases; treating
+  // the gap as readiness makes rust-analyzer return valid but empty reference
+  // arrays and silently strips every semantic edge from the graph.
+  //
+  // Some servers only emit `report` notifications, so retain the quiet-period
+  // fallback for progress without a lifecycle. A server that never emits
+  // progress (lastProgressAt stays 0) is ready after its initial quiet fence.
+  // An explicit timeout remains an overall ceiling for both forms.
+  // `didOpen` is the one operation for which no progress yet is not evidence
+  // of readiness: csharp-ls can begin solution loading more than a second
+  // later. Its fence therefore waits one configured quiet window for a begin.
+  // A lazy reference request uses `allowStart=false`; it waits only if the
+  // request advanced the generation, avoiding another unconditional delay.
+  for (;;) {
+    const now = Date.now();
+    if (timeoutMs !== undefined && now - start >= timeoutMs) return;
+    if (activeProgressCount() === 0) {
+      // A matching lifecycle `end` is an explicit readiness signal; it does
+      // not need an additional quiet delay after the server declared the work
+      // complete.
+      if (lastLifecycleEndVersion() > since) return;
+      if (currentVersion() === since) {
+        if (!allowStart || now - start >= quietMs) return;
+      } else if (now - lastProgressAt() >= quietMs) return;
+    }
     await new Promise((resolve) => {
       setTimeout(resolve, 50);
     });
@@ -388,6 +524,9 @@ function severityOf(value: number | undefined): ISamchonGraphDiagnostic["severit
       return "info";
     case 4:
       return "hint";
+    case undefined:
+      return undefined;
+    /* c8 ignore next 2 */
     default:
       return undefined;
   }
@@ -399,19 +538,27 @@ function isTtscserverCommand(command: string): boolean {
 
 // Resolve a server command to the concrete path PATH lookup would run, so the
 // caller can see whether it is a .cmd/.bat shim that needs a cmd.exe wrapper.
-function resolveCommand(command: string): string | undefined {
+function resolveCommand(command: string, root: string): string | undefined {
   if (
     path.isAbsolute(command) ||
     command.includes("/") ||
     command.includes("\\")
   ) {
-    return fs.existsSync(command) ? command : undefined;
+    const resolved = path.resolve(root, command);
+    return fs.existsSync(resolved) ? resolved : undefined;
   }
   /* c8 ignore next 2 */
   const lookup = process.platform === "win32" ? "where.exe" : "command";
   const args = process.platform === "win32" ? [command] : ["-v", command];
   const result = spawnSync(lookup, args, {
     encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${path.join(root, "node_modules", ".bin")}${path.delimiter}${
+        /* c8 ignore next */
+        process.env.PATH ?? ""
+      }`,
+    },
     shell: process.platform !== "win32",
     windowsHide: true,
   });

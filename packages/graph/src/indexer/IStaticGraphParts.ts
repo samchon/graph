@@ -16,6 +16,9 @@ export interface IStaticGraphParts {
   /** Absolute paths of every source file the walk found. */
   files: string[];
 
+  /** Exact source text the static parser consumed, keyed by absolute path. */
+  sources: Map<string, string>;
+
   /** The source languages present in the parse. */
   languages: GraphLanguage[];
 

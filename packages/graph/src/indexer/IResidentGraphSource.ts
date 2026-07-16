@@ -17,7 +17,12 @@ import { ISamchonGraphDump } from "../structures";
  * this call synced to".
  */
 export interface IResidentGraphSource {
-  /** The graph for the current disk snapshot, refreshed only if it moved. */
+  /**
+   * The graph for the current disk snapshot, refreshed only if it moved.
+   * Calls are serialized so one live language-server session never receives
+   * overlapping refreshes; a failed build does not prevent the next call from
+   * retrying. Rejects after {@link close} begins.
+   */
   load(): Promise<ISamchonGraphDump>;
 
   /**
@@ -25,7 +30,8 @@ export interface IResidentGraphSource {
    * source that never loaded -- an MCP server that exits before its first tool
    * call still closes, and a language server that outlives the server that
    * spawned it holds a whole project load resident behind a session nobody is
-   * talking to.
+   * talking to. If a build is in flight, close waits for its session to become
+   * available and disposes it before resolving.
    */
   close(): Promise<void>;
 }

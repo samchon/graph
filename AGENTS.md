@@ -1,6 +1,6 @@
 # AGENTS.md
 
-`@samchon/graph` is a language-server-backed code graph and MCP server for statically typed compiled languages. It indexes declarations and relationships through real language servers when available, falls back to a built-in static parser, and exposes the result through the `samchon-graph` CLI, TypeScript API, and one typed MCP tool.
+`@samchon/graph` is a language-server-backed code graph and MCP server for statically typed compiled languages. It indexes declarations and relationships through real language servers when available, falls back to the separately packaged `@samchon/graph-sitter` best-effort syntax extractor, and exposes the result through the `samchon-graph` CLI, TypeScript API, and one typed MCP tool.
 
 ## Attitude
 

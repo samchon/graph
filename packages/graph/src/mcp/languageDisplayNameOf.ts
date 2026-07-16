@@ -16,7 +16,6 @@ const DISPLAY_NAMES: Record<Exclude<GraphLanguage, "unknown">, string> = {
   ruby: "Ruby",
   php: "PHP",
   lua: "Lua",
-  bash: "Bash",
   dart: "Dart",
 };
 

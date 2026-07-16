@@ -71,6 +71,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.26.0
         version: 1.29.0(zod@4.4.3)
+      '@samchon/graph-sitter':
+        specifier: workspace:*
+        version: link:../graph-sitter
       '@typia/interface':
         specifier: catalog:samchon
         version: 13.1.1
@@ -99,6 +102,21 @@ importers:
       three-forcegraph:
         specifier: ^1.43.4
         version: 1.43.4(three@0.184.0)
+      ttsc:
+        specifier: catalog:samchon
+        version: 0.19.0
+      typescript:
+        specifier: catalog:typescript
+        version: 7.0.2
+
+  packages/graph-sitter:
+    devDependencies:
+      '@types/node':
+        specifier: catalog:utils
+        version: 22.20.0
+      rimraf:
+        specifier: catalog:utils
+        version: 6.1.3
       ttsc:
         specifier: catalog:samchon
         version: 0.19.0
@@ -140,6 +158,9 @@ importers:
       '@samchon/graph':
         specifier: workspace:*
         version: link:../../packages/graph
+      '@samchon/graph-sitter':
+        specifier: workspace:*
+        version: link:../../packages/graph-sitter
       '@ttsc/unplugin':
         specifier: catalog:samchon
         version: 0.19.0(ttsc@0.19.0)

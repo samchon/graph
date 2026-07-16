@@ -7,7 +7,7 @@ description: Defines the @samchon/graph product contract, workspace layout, publ
 
 ## Product Contract
 
-`@samchon/graph` is a code-graph index for coding agents. It discovers supported source languages, asks installed language servers for semantic declarations and relationships, and merges a built-in static fallback for languages whose server is missing or fails. It serves the resident result through one typed MCP tool and also exposes a TypeScript API plus the `samchon-graph`, `samchon-graph dump`, and `samchon-graph view` CLI lanes.
+`@samchon/graph` is a code-graph index for coding agents. It discovers supported source languages, asks installed language servers for semantic declarations and relationships, and merges the separately packaged `@samchon/graph-sitter` best-effort fallback for languages whose server is missing or fails. It serves the resident result through one typed MCP tool and also exposes a TypeScript API plus the `samchon-graph`, `samchon-graph dump`, and `samchon-graph view` CLI lanes.
 
 The graph is an index, not a source-delivery system. Results carry declarations, signatures, relations, decorators, diagnostics, tests, anchors, and source spans. They do not inline implementation bodies. When body text or an exact textual match is needed, return or use the smallest span and read the source normally.
 
@@ -20,7 +20,7 @@ Keep the MCP contract typed and structured. Request and result union members pai
 
 The serialized dump is a deterministic function of the source snapshot. Do not add timestamps, unstable iteration order, source bodies, or reconstructable duplicate span fields. `SamchonGraphMemory` restores the compact wire shape and builds its derived indices; the MCP server sends the structured result once rather than duplicating it as a second text payload. An `escape` request on a cold server must not build the graph.
 
-The product currently supports TypeScript, Go, Rust, C++, C, Java, C#, Kotlin, Swift, Scala, Zig, Python, Ruby, PHP, Lua, Bash, and Dart. JavaScript is intentionally excluded because arbitrary repositories cannot reliably distinguish handwritten JavaScript from build output or vendored bundles without project-specific provenance.
+The product currently supports TypeScript, Go, Rust, C++, C, Java, C#, Kotlin, Swift, Scala, Zig, Python, Ruby, PHP, Lua, and Dart. JavaScript is intentionally excluded because arbitrary repositories cannot reliably distinguish handwritten JavaScript from build output or vendored bundles without project-specific provenance.
 
 ## Closed Product Decisions
 
@@ -33,13 +33,14 @@ The product currently supports TypeScript, Go, Rust, C++, C, Java, C#, Kotlin, S
 
 ## Workspace Layout
 
-- `packages/graph/src`: canonical package source.
+- `packages/graph/src`: canonical semantic graph, MCP, CLI, and LSP source.
   - `indexer/`: language discovery, LSP and static indexing, session refresh, graph finalization, and resident-source lifecycle.
   - `lsp/`: JSON-RPC language-server client and protocol structures.
   - `operations/`: handle resolution, ranking, query engines, evidence, audits, and `next` decisions.
   - `structures/`, `typings/`: public typed request, result, graph, and language contracts.
   - `mcp/`: resident source wiring and MCP server construction.
   - `viewer/`, `view.ts`: bundled reference viewer and HTTP launcher.
+- `packages/graph-sitter/src`: isolated best-effort syntax fallback; it emits raw nodes and edges but does not own the semantic graph or MCP contract.
 - `packages/graph/build`: package build helpers, including viewer bundling.
 - `tests/test-graph`: deterministic TypeScript end-to-end and regression suite. `src/internal` owns shared fixtures and fake tool processes; `src/features` contains one discovered test per file.
 - `tests/experiment`: real-language-server smoke experiments. The GitHub Actions matrix installs each actual server and rejects a static fallback.
@@ -73,6 +74,6 @@ pnpm --filter @samchon/graph-benchmark test
 pnpm --filter @samchon/graph-benchmark preflight
 ```
 
-`pnpm test` builds the package and test bundle before running every discovered feature. `pnpm coverage` rebuilds both and enforces 100 percent line, function, and branch coverage over `packages/graph/src`, excluding only the viewer surfaces named in the root script. There is no repository-wide `pnpm format` script; do not invent one or assume formatting is a separate validation gate.
+`pnpm test` builds both product packages and the test bundle before running every discovered feature. `pnpm coverage` rebuilds them and enforces 100 percent line, function, and branch coverage over `packages/graph/src` and `packages/graph-sitter/src`, excluding only the viewer surfaces named in the root script. There is no repository-wide `pnpm format` script; do not invent one or assume formatting is a separate validation gate.
 
 `ttsc format` and `ttsc fix` exist as package-local mutating commands, not read-only validation. Do not run either across a dirty worktree unless formatting or automated fixes are explicitly in scope and the affected paths are understood. The existing `security/detect-unsafe-regex` rule is warning-only; compare warnings and investigate newly introduced ones instead of treating the known warning set as an error-free baseline.

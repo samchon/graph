@@ -31,7 +31,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CORPUS, findCorpus } from "./corpus.mjs";
-import { clonePinned, runPrepare, sha256 } from "./language.mjs";
+import {
+  assertPinnedCheckout,
+  clonePinned,
+  prepareFixture,
+  sha256,
+} from "./language.mjs";
 import { GROUNDING, TOOL_NUDGE } from "./prompt.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -115,6 +120,13 @@ if (!question) {
     "benchmark question required; pass --prompt-id, --prompt-family, or --question",
   );
 }
+const questionSha256 = sha256(question.replace(/\r\n/g, "\n").trim());
+if (
+  manifestPrompt?.questionSha256 &&
+  manifestPrompt.questionSha256 !== questionSha256
+) {
+  throw new Error("explicit question does not match its manifest prompt hash");
+}
 
 const fixtureBranch =
   args["fixture-branch"] ??
@@ -179,8 +191,9 @@ if (!args["repo-dir"] && !fs.existsSync(repoDir)) {
   if (path.resolve(cloned) !== path.resolve(repoDir))
     fs.renameSync(cloned, repoDir);
 }
-if (armsRequested.graph && !cg && !cbm && !serena) ensureInstalled(repoDir);
-if (armsRequested.graph) runPrepare(spec, repoDir);
+const preparedFixture = prepareFixture(spec, repoDir, {
+  noInstall: truthy(args["no-install"]),
+});
 
 // 3. WITH = @samchon/graph; WITHOUT = empty config. Both --strict-mcp-config. The
 // graph server is the Node launcher run over stdio. Its full language-server
@@ -209,6 +222,10 @@ if (withCfg) {
                 language,
                 "--mode",
                 "lsp",
+                ...preparedFixture.serverArgs.flatMap((arg) => [
+                  "--server-arg",
+                  arg,
+                ]),
               ],
             },
           };
@@ -292,9 +309,7 @@ const thunks = arms.flatMap((arm) =>
     // Tag the sample with prompt provenance only. The benchmark does not judge
     // answer correctness in-process.
     if (promptId) m.promptId = promptId;
-    if (manifestPrompt?.questionSha256) {
-      m.questionSha256 = manifestPrompt.questionSha256;
-    }
+    m.questionSha256 = questionSha256;
     m.run = r + 1;
     m.attempts = attempts;
     samples[arm.name].push(m);
@@ -308,6 +323,10 @@ const thunks = arms.flatMap((arm) =>
   }),
 );
 await runWithConcurrency(thunks, concurrency);
+const finalProvenance = assertPinnedCheckout(spec, repoDir);
+if (finalProvenance.tree !== preparedFixture.provenance.tree) {
+  throw new Error("benchmark agent changed the prepared fixture source tree");
+}
 
 // runWithConcurrency runs thunks with at most `limit` in flight at once, draining a
 // shared cursor so a slow run never blocks a free worker.
@@ -366,6 +385,7 @@ fs.writeFileSync(
       repo: repoKey,
       language,
       commit: spec.commit,
+      fixtureTree: preparedFixture.provenance.tree,
       fixtureBranch,
       repoDir,
       model,
@@ -373,9 +393,7 @@ fs.writeFileSync(
       ...(reportModelVersion ? { modelVersion: reportModelVersion } : {}),
       ...(promptId ? { promptId } : {}),
       promptFamily,
-      ...(manifestPrompt?.questionSha256
-        ? { questionSha256: manifestPrompt.questionSha256 }
-        : {}),
+      questionSha256,
       daemon: false,
       runs,
       question,
@@ -648,55 +666,6 @@ function graphToolName() {
   if (cbm) return "codebase-memory";
   if (serena) return "serena";
   return "samchon-graph";
-}
-
-function ensureInstalled(targetRepoDir) {
-  if (truthy(args["no-install"])) return;
-  if (fs.existsSync(path.join(targetRepoDir, "node_modules"))) return;
-  const plan = installPlan(targetRepoDir);
-  if (!plan) return;
-  console.log(`Installing dependencies in ${targetRepoDir} (${plan.label})...`);
-  runOrThrow(plan.command, plan.args, targetRepoDir, process.env);
-}
-
-function installPlan(targetRepoDir) {
-  if (fs.existsSync(path.join(targetRepoDir, "pnpm-lock.yaml"))) {
-    return packageCommand("pnpm", [
-      "install",
-      "--frozen-lockfile",
-      "--ignore-scripts",
-    ]);
-  }
-  if (fs.existsSync(path.join(targetRepoDir, "package-lock.json"))) {
-    return packageCommand("npm", ["ci", "--ignore-scripts"]);
-  }
-  if (fs.existsSync(path.join(targetRepoDir, "yarn.lock"))) {
-    return packageCommand("yarn", [
-      "install",
-      "--frozen-lockfile",
-      "--ignore-scripts",
-    ]);
-  }
-  if (fs.existsSync(path.join(targetRepoDir, "package.json"))) {
-    return packageCommand("npm", ["install", "--ignore-scripts"]);
-  }
-  return null;
-}
-
-function packageCommand(command, args) {
-  return process.platform === "win32"
-    ? {
-        label: command,
-        command: "cmd.exe",
-        args: [
-          "/d",
-          "/s",
-          "/c",
-          ...(command === "yarn" ? ["corepack", "yarn"] : [command]),
-          ...args,
-        ],
-      }
-    : { label: command, command, args };
 }
 
 function truthy(value) {

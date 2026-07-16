@@ -1,6 +1,7 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import {
   ISamchonGraphDetails,
+  ISamchonGraphEdge,
   ISamchonGraphEntrypoints,
   ISamchonGraphEvidence,
   ISamchonGraphNext,
@@ -62,7 +63,6 @@ const EXECUTION_KINDS = new Set<string>([
   "instantiates",
   "accesses",
   "renders",
-  "references",
 ]);
 // `field` and `constructor` are here for the same reason they are in the node
 // kinds at all: a language server reports them where a TypeScript checker
@@ -111,7 +111,7 @@ export function runTour(
   // prose. Which words in a question are its keywords is the caller's judgement
   // to make -- it read the question -- and the server used to make it instead,
   // with a list of sixty-eight words it happened to think were filler.
-  const terms = queryTermsOf(graph, props.reinterpretations);
+  const queryTerms = queryTermsOf(graph, props.reinterpretations);
   const limit = bound(props.limit, DEFAULT_LIMIT, 1, MAX_LIMIT);
   const entry = runEntrypoints(graph, {
     type: "entrypoints",
@@ -119,7 +119,7 @@ export function runTour(
     limit,
     neighbors: 1,
   }).result;
-  const seeds = tourSeedsOf(graph, entry, query, limit, named, terms);
+  const seeds = tourSeedsOf(graph, entry, query, limit, named, queryTerms);
   const seedIds = seeds.map((node) => node.id);
   const entrypoints = seeds.map((node) => graphNodeOf(graph, node));
 
@@ -147,7 +147,7 @@ export function runTour(
       query,
       limit * FLOW_SEED_CANDIDATES,
       named,
-      terms,
+      queryTerms,
     ),
   )) {
     if (primaryFlow.length >= FLOW_SEEDS) break;
@@ -296,10 +296,10 @@ function tourNext(): ISamchonGraphNext {
  * the tour exists to save.
  *
  * So each entry is resolved the way a handle is: the graph either holds that
- * symbol or it does not, and what it does not hold is dropped without ceremony.
- * A phrase is not a name and resolves to nothing, so prose costs the tour
- * nothing — which is what makes a guess free, and a repository the caller has
- * never seen safe to guess about.
+ * exact symbol or it does not, and what it does not hold is dropped without
+ * ceremony. Whitespace cannot classify an entry as prose because languages
+ * such as Kotlin and Scala permit quoted identifiers containing whitespace;
+ * resolution is the boundary. Unresolved phrases remain soft hints below.
  */
 function namedNodesOf(
   graph: SamchonGraphMemory,
@@ -308,7 +308,7 @@ function namedNodesOf(
   const out = new Set<string>();
   for (const raw of names) {
     const name = raw.trim();
-    if (name.length === 0 || /\s/.test(name)) continue;
+    if (name.length === 0) continue;
     // An ambiguous guess is not evidence. A name the project declares once is a
     // symbol the caller named; a name it declares many times is a word, and the
     // graph does not get to decide which one was meant. Resolving to the first
@@ -319,7 +319,29 @@ function namedNodesOf(
     // caller did not have, so an ambiguous name is dropped, exactly like a name
     // the graph has never heard of.
     const resolved = resolveGraphHandle(graph, name);
-    if (resolved.node !== undefined) out.add(resolved.node.id);
+    if (/\s/.test(name)) {
+      if (
+        resolved.node !== undefined &&
+        resolved.node.language !== "typescript"
+      )
+        out.add(resolved.node.id);
+      continue;
+    }
+    if (resolved.node !== undefined) {
+      out.add(resolved.node.id);
+      continue;
+    }
+    // C/C++ language servers commonly return both a header declaration and
+    // one source definition for the same exact symbol. That pair is not an
+    // ambiguous overload: only the definition owns an invocation body. Keep
+    // the public resolver honest (it still returns candidates), while a tour
+    // that was explicitly given the symbol follows the sole executable body.
+    const definitions = (resolved.candidates ?? []).filter(
+      (node) =>
+        (node.language === "c" || node.language === "cpp") &&
+        productionInvocationOut(graph, node.id) > 0,
+    );
+    if (definitions.length === 1) out.add(definitions[0]!.id);
   }
   return out;
 }
@@ -366,14 +388,9 @@ function tourSeedsOf(
   if (share > 0 && named.size !== 0) {
     for (const node of rankedTourSeeds(graph, terms, share, named)) add(node);
   }
-  // The other half is the graph's, and the names do not reach it. Weighting the
-  // named symbols in this ranking too let them take both halves: Opus named ten
-  // symbols along RxJS's subscribe path, they filled the seeds, and `operate` — the
-  // second seed of the same tour without any names, and the head of the operator
-  // chain the question asked about — fell out of it. The model fetched it by
-  // hand and said so. A caller's belief about where the answer lives is worth
-  // half a tour; the other half is what the codebase says is central, including
-  // the symbol the caller did not think to name.
+  // The other half is the graph's, and the names do not reach it. A caller's
+  // belief about where the answer lives is worth half a tour; the other half is
+  // what the codebase says is central, including symbols the caller omitted.
   for (const node of rankedTourSeeds(graph, terms, limit)) add(node);
   if (out.length === 0) {
     for (const hit of entry.hits) add(graph.node(hit.id));
@@ -509,6 +526,45 @@ function rankedTourSeeds(
   return diverseTourSeeds(items, terms, count).map((item) => item.node);
 }
 
+/** Prefer a branch that invokes real work over an equally-ranked leaf or loop. */
+function productionInvocationOut(
+  graph: SamchonGraphMemory,
+  id: string,
+): number {
+  const sites = new Set<string>();
+  for (const edge of graph.outgoing(id)) {
+    if (!INVOKE_KINDS.has(edge.kind) || edge.to === id) continue;
+    const target = graph.node(edge.to);
+    if (
+      target !== undefined &&
+      !target.external &&
+      !target.ignored &&
+      !isTestPath(target.file) &&
+      !isNoisePath(target.file)
+    )
+      sites.add(invocationSiteOf(edge, edge.to));
+  }
+  return sites.size;
+}
+
+/** One runtime call expression, even when an LSP emits several target edges. */
+function invocationSiteOf(
+  edge: { kind: string; evidence?: ISamchonGraphEdge["evidence"] },
+  fallback: string,
+): string {
+  const evidence = edge.evidence;
+  return evidence === undefined
+    ? `${edge.kind}:${fallback}`
+    : [
+        edge.kind,
+        evidence.file,
+        evidence.startLine,
+        evidence.startCol ?? 0,
+        evidence.endLine ?? evidence.startLine,
+        evidence.endCol ?? 0,
+      ].join(":");
+}
+
 /**
  * How central a symbol is to running this codebase, as one standard algorithm
  * instead of a ledger of hand-tuned bonuses.
@@ -520,13 +576,10 @@ function rankedTourSeeds(
  * lists in numeric form. All of it was approximating one question the graph can
  * answer exactly: _if you use what this package publishes, what runs?_
  *
- * Personalized PageRank answers it. The walker starts on the export surface —
- * the symbols the package puts on the wire, members included — and follows the
- * execution edges, crossing from an abstract declaration to its implementations
- * the way `runTrace` does. Public entries hold mass because the walk starts on
- * them; the spine holds mass because every path runs through it. One damping
- * constant, 0.85, from the literature — the same algorithm aider's repo map
- * ranks symbols with.
+ * The score below answers that question with three graph facts: publication
+ * surface, bounded production reach, and production call-site fan-in. It is
+ * deliberately not a PageRank walk: the exact formula and its exclusions are
+ * documented at `computeCentrality`, where they can be audited together.
  */
 function tourSeedScore(
   graph: SamchonGraphMemory,

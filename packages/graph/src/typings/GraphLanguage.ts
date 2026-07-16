@@ -15,6 +15,5 @@ export type GraphLanguage =
   | "ruby"
   | "php"
   | "lua"
-  | "bash"
   | "dart"
   | "unknown";

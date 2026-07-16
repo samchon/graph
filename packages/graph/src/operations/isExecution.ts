@@ -3,7 +3,6 @@ export function isExecution(kind: string): boolean {
     kind === "calls" ||
     kind === "instantiates" ||
     kind === "accesses" ||
-    kind === "renders" ||
-    kind === "references"
+    kind === "renders"
   );
 }

@@ -17,6 +17,7 @@ export function isTestPath(file: string): boolean {
     // rather than a bare `test` segment.
     /(^|\/)\w*Test\//.test(file) ||
     /\.(test|spec)\.[^/]+$/.test(file) ||
+    /(^|\/)test[-_][^/]+\.[^/]+$/.test(file) ||
     /_test\.[^/]+$/.test(file)
   );
 }

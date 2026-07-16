@@ -14,13 +14,16 @@ export class LspClient {
   private buffer = Buffer.alloc(0);
   private nextId = 1;
   private exited = false;
+  private closing: Promise<void> | undefined;
 
   public constructor(
     command: string,
     args: readonly string[],
     private readonly timeoutMs?: number,
+    cwd?: string,
   ) {
     this.process = spawn(command, [...args], {
+      cwd,
       stdio: "pipe",
       windowsHide: true,
     });
@@ -81,7 +84,12 @@ export class LspClient {
     this.events.on(method, listener);
   }
 
-  public async close(): Promise<void> {
+  public close(): Promise<void> {
+    this.closing ??= this.closeOnce();
+    return this.closing;
+  }
+
+  private async closeOnce(): Promise<void> {
     // A process that already exited (crashed, or exited in response to a
     // request it was never meant to answer, e.g. a bad `initialize`) cannot
     // answer `shutdown`; sending it anyway would just wait out the full
@@ -104,8 +112,30 @@ export class LspClient {
         // Ignore close errors.
       }
       /* c8 ignore stop */
+      await this.waitForExit(1000);
     }
-    if (!this.process.killed) this.process.kill();
+    if (
+      this.process.pid !== undefined &&
+      this.process.exitCode === null &&
+      this.process.signalCode === null
+    )
+      this.process.kill();
+  }
+
+  private waitForExit(timeoutMs: number): Promise<void> {
+    if (this.exited) return Promise.resolve();
+    return new Promise((resolve) => {
+      const onExit = (): void => {
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        this.process.off("exit", onExit);
+        resolve();
+      }, timeoutMs);
+      timer.unref?.();
+      this.process.once("exit", onExit);
+    });
   }
 
   private write(payload: unknown): void {

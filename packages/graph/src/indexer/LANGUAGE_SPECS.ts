@@ -92,12 +92,6 @@ export const LANGUAGE_SPECS: ILanguageSpec[] = [
     lineComment: "--",
   },
   {
-    language: "bash",
-    extensions: [".sh", ".bash"],
-    lsp: { command: "bash-language-server", args: ["start"] },
-    lineComment: "#",
-  },
-  {
     language: "dart",
     extensions: [".dart"],
     lsp: { command: "dart", args: ["language-server"] },

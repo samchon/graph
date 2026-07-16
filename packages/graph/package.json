@@ -15,7 +15,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "rimraf lib && ttsc -p tsconfig.json && node build/bundle-viewer.mjs && node -e \"require('node:fs').copyFileSync('../../README.md', 'README.md')\"",
+    "build": "pnpm --filter @samchon/graph-sitter build && rimraf lib && ttsc -p tsconfig.json && node build/bundle-viewer.mjs && node -e \"require('node:fs').copyFileSync('../../README.md', 'README.md')\"",
     "prepublishOnly": "node -e \"require('node:fs').copyFileSync('../../README.md', 'README.md')\""
   },
   "keywords": [
@@ -33,6 +33,7 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "@samchon/graph-sitter": "workspace:*",
     "@typia/interface": "catalog:samchon",
     "@typia/mcp": "catalog:samchon",
     "typia": "catalog:samchon"

@@ -9,12 +9,14 @@ const options = {
   badJson: false,
   emptySymbols: false,
   exitOnInitialize: false,
+  exitOnShutdown: false,
   messageLessError: false,
   minimalDiagnostics: false,
   nullReferences: false,
   referenceError: false,
   nullSymbols: false,
   classify: false,
+  cSymbols: false,
   csharpSymbols: false,
   dualOwner: false,
   pythonLocals: false,
@@ -24,6 +26,7 @@ const options = {
   inheritance: false,
   goReceivers: false,
   javaAnonymous: false,
+  javaFlat: false,
   omitChildren: false,
   progress: false,
   progressLifecycle: false,
@@ -78,6 +81,8 @@ for (const arg of process.argv.slice(2)) {
     options.emptySymbols = true;
   } else if (arg === "--exit-on-initialize") {
     options.exitOnInitialize = true;
+  } else if (arg === "--exit-on-shutdown") {
+    options.exitOnShutdown = true;
   } else if (arg === "--message-less-error") {
     options.messageLessError = true;
   } else if (arg === "--minimal-diagnostics") {
@@ -90,6 +95,8 @@ for (const arg of process.argv.slice(2)) {
     options.nullSymbols = true;
   } else if (arg === "--classify") {
     options.classify = true;
+  } else if (arg === "--c-symbols") {
+    options.cSymbols = true;
   } else if (arg === "--csharp-symbols") {
     options.csharpSymbols = true;
   } else if (arg === "--dual-owner") {
@@ -108,6 +115,8 @@ for (const arg of process.argv.slice(2)) {
     options.goReceivers = true;
   } else if (arg === "--java-anonymous") {
     options.javaAnonymous = true;
+  } else if (arg === "--java-flat") {
+    options.javaFlat = true;
   } else if (arg === "--omit-children") {
     options.omitChildren = true;
   } else if (arg === "--progress") {
@@ -444,6 +453,85 @@ function handle(message) {
         },
       ]);
     }
+    if (options.cSymbols) {
+      // clangd reports a `static` C function as an ordinary top-level symbol,
+      // exactly like one with external linkage: the storage class lives only in
+      // the source prefix between the symbol's range start and its declared
+      // name. These entries carry that prefix in both reply shapes.
+      //
+      //   0: #include <stdio.h>
+      //   1: static int helper(void) {
+      //   2:   return 1;
+      //   3: }
+      //   4: int public_api(void) {
+      //   5:   return helper();
+      //   6: }
+      //   7: static const int LIMIT = 8;
+      //   8: int shared_counter = 0;
+      //   9: static void
+      //  10: wrapped_helper(void) {
+      //  11: }
+      const entries = [
+        { name: "helper", kind: 12, line: 1, character: 11, endLine: 3 },
+        { name: "public_api", kind: 12, line: 4, character: 4, endLine: 6 },
+        { name: "LIMIT", kind: 14, line: 7, character: 17, endLine: 7 },
+        { name: "shared_counter", kind: 13, line: 8, character: 4, endLine: 8 },
+        // The one entry whose declaration head opens on an earlier line than
+        // the name it declares.
+        {
+          name: "wrapped_helper",
+          kind: 12,
+          line: 10,
+          character: 0,
+          endLine: 11,
+          headLine: 9,
+        },
+      ];
+      if (options.symbolInformation) {
+        return respond(
+          message.id,
+          entries.map((entry) => ({
+            name: entry.name,
+            kind: entry.kind,
+            containerName: "",
+            location: {
+              uri,
+              range: {
+                // The flat shape carries no separate declaration range, so the
+                // storage class is recovered from the declaration line itself.
+                start: { line: entry.line, character: entry.character },
+                end: {
+                  line: entry.line,
+                  character: entry.character + entry.name.length,
+                },
+              },
+            },
+          })),
+        );
+      }
+      return respond(
+        message.id,
+        entries.map((entry) => ({
+          name: entry.name,
+          detail: "",
+          kind: entry.kind,
+          range: {
+            // The declaration range opens at the head, which may be a line
+            // above the declared name.
+            start: { line: entry.headLine ?? entry.line, character: 0 },
+            end: { line: entry.endLine, character: 80 },
+          },
+          selectionRange: {
+            start: { line: entry.line, character: entry.character },
+            end: {
+              line: entry.line,
+              character: entry.character + entry.name.length,
+            },
+          },
+          children: [],
+        })),
+      );
+    }
     if (options.csharpSymbols) {
       if (options.symbolInformation) {
         const information = (name, kind, line, character, containerName) => ({
@@ -558,6 +646,39 @@ function handle(message) {
         cls("Child", 5, 5),
         cls("Solo", 5, 6),
         cls("Dup", 5, 7),
+      ]);
+    }
+    if (options.javaFlat) {
+      // The legacy flat shape a Java server may still answer with: no nesting,
+      // no modifier fields, and a decorated callable name. Ownership arrives as
+      // `containerName` and visibility only as the source prefix.
+      //
+      //   0: package sample;
+      //   1: public class Api {
+      //   2:   @Marker('(') @SuppressWarnings("public \" static") private void hidden() {}
+      //   3:   public void shown() { new Adapter() {}; }
+      //   4:   void packageOnly() {}
+      //   5: }
+      //   6: class Internal {}
+      const information = (name, kind, line, character, containerName) => ({
+        name,
+        kind,
+        containerName,
+        location: {
+          uri,
+          range: {
+            start: { line, character },
+            end: { line, character: character + name.length },
+          },
+        },
+      });
+      return respond(message.id, [
+        information("Api", 5, 1, 13, ""),
+        information("hidden()", 6, 2, 66, "Api"),
+        information("shown()", 6, 3, 14, "Api"),
+        information("new Adapter() {...}", 5, 3, 24, "Api.shown()"),
+        information("packageOnly()", 6, 4, 7, "Api"),
+        information("Internal", 5, 6, 6, ""),
       ]);
     }
     if (options.javaAnonymous) {
@@ -1248,6 +1369,10 @@ function handle(message) {
     return respond(message.id, []);
   }
   if (message.method === "shutdown") {
+    // Several real servers treat `shutdown` as the end and simply exit instead
+    // of answering it, so the client's own `exit` notification arrives at a
+    // process that is already gone.
+    if (options.exitOnShutdown) process.exit(0);
     if (options.shutdownError) return respondError(message.id, "shutdown failed");
     return respond(message.id, null);
   }

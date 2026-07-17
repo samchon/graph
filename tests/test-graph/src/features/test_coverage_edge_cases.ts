@@ -121,7 +121,7 @@ export const test_coverage_edge_cases = async () => {
   });
   TestValidator.predicate("LSP mode can discover project languages", discoveredLsp.nodes.length > 0);
 
-  const multiLspRoot = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-lsp-language-ids-"));
+  const multiLspRoot = GraphPaths.createTempDirectory("samchon-lsp-language-ids-");
   fs.mkdirSync(path.join(multiLspRoot, "src"), { recursive: true });
   fs.writeFileSync(path.join(multiLspRoot, "src", "Entry.cs"), "public class Entry {}\n");
   fs.writeFileSync(path.join(multiLspRoot, "src", "entry.cpp"), "int entry() { return 1; }\n");
@@ -360,7 +360,7 @@ export const test_coverage_edge_cases = async () => {
     if (typescriptSpec !== undefined) typescriptSpec.lsp = originalTypescriptLsp;
   }
 
-  const staticRoot = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-static-kinds-"));
+  const staticRoot = GraphPaths.createTempDirectory("samchon-static-kinds-");
   fs.mkdirSync(path.join(staticRoot, "src"), { recursive: true });
   fs.writeFileSync(
     path.join(staticRoot, "src", "kinds.ts"),
@@ -464,7 +464,7 @@ export const test_coverage_edge_cases = async () => {
   } finally {
     process.chdir(previousCwd);
   }
-  const importLimitRoot = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-import-limit-"));
+  const importLimitRoot = GraphPaths.createTempDirectory("samchon-import-limit-");
   fs.mkdirSync(path.join(importLimitRoot, "src"), { recursive: true });
   fs.writeFileSync(
     path.join(importLimitRoot, "src", "imports.ts"),
@@ -519,7 +519,7 @@ export const test_coverage_edge_cases = async () => {
     TestValidator.equals(`overview ${aspect} result type`, overview.result.type, "overview");
   }
 
-  const branchRoot = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-branches-"));
+  const branchRoot = GraphPaths.createTempDirectory("samchon-branches-");
   fs.mkdirSync(path.join(branchRoot, "src"), { recursive: true });
   fs.mkdirSync(path.join(branchRoot, "test"), { recursive: true });
   fs.writeFileSync(
@@ -881,7 +881,7 @@ export const test_coverage_edge_cases = async () => {
   TestValidator.equals("walk stops after reaching maxFiles", walkSourceFiles(orderRoot, { extensions: new Set([".ts", ".go"]), maxFiles: 1 }).length, 1);
   TestValidator.equals("walk finds matching source files", walkSourceFiles(orderRoot, { extensions: new Set([".ts", ".go"]) }).length >= 1, true);
 
-  const signatureFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "samchon-signature-")), "sample.ts");
+  const signatureFile = path.join(GraphPaths.createTempDirectory("samchon-signature-"), "sample.ts");
   fs.writeFileSync(signatureFile, ["export function sample(", "  input: string", ") {", "  return input;", "}"].join("\n"));
   try {
     fs.symlinkSync(signatureFile, path.join(path.dirname(signatureFile), "sample-link.ts"));

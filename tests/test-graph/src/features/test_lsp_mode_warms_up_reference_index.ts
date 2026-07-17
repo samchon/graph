@@ -1,13 +1,12 @@
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
 
 const warmupFixture = (): string => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-warmup-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-warmup-");
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   for (const name of ["a.ts", "b.ts"]) {
     fs.writeFileSync(

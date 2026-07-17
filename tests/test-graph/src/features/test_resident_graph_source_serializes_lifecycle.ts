@@ -8,7 +8,6 @@ import {
   createResidentGraphSource,
 } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -58,7 +57,7 @@ const rejects = async (task: Promise<unknown>, message: string): Promise<void> =
 };
 
 export const test_resident_graph_source_serializes_lifecycle = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-resident-queue-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-resident-queue-");
   fs.writeFileSync(path.join(root, "a.ts"), "export const a = 1;\n");
 
   // Like TtscGraphSession.graph(), every caller owns a result promise while the
@@ -273,9 +272,7 @@ export const test_resident_graph_source_serializes_lifecycle = async () => {
   // live LSP language, and deleting that LSP language all require a complete
   // fresh build. The replacement is published only after it succeeds, and the
   // old sessions are retired only after the atomic swap.
-  const changingRoot = fs.mkdtempSync(
-    path.join(os.tmpdir(), "samchon-graph-resident-languages-"),
-  );
+  const changingRoot = GraphPaths.createTempDirectory("samchon-graph-resident-languages-");
   let changingBuilds = 0;
   let failChangingBuild = false;
   let failHybridRetirement = true;

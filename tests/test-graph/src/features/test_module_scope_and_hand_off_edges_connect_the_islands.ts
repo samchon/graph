@@ -1,7 +1,6 @@
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
@@ -17,7 +16,7 @@ import { GraphPaths } from "../internal/GraphPaths";
  */
 export const test_module_scope_and_hand_off_edges_connect_the_islands =
   async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-wiring-"));
+    const root = GraphPaths.createTempDirectory("samchon-graph-wiring-");
     write(root, "src/server.ts", [
       'import { use } from "./router";',
       "",
@@ -96,7 +95,7 @@ export const test_module_scope_and_hand_off_edges_connect_the_islands =
  * cannot depend on which lane built it, so the operations layer never has to ask.
  */
 const scenario_the_language_server_lane_wires_the_same_way = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-wiring-lsp-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-wiring-lsp-");
   write(root, "src/lsp.ts", [
     "export class LspService {",
     "  run(): void {",

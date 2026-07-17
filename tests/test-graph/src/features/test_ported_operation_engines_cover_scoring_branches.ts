@@ -2,8 +2,9 @@ import { TestValidator } from "@nestia/e2e";
 import { SamchonGraphMemory, SamchonGraphApplication } from "@samchon/graph";
 import type { ISamchonGraphApplication } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+
+import { GraphPaths } from "../internal/GraphPaths";
 
 const call = (
   app: SamchonGraphApplication,
@@ -73,7 +74,7 @@ const dumpOf = (root: string, nodes: unknown[], edges: unknown[]) => ({
 // spelled that way. What ranks now is what the graph holds: a symbol must be
 // published AND load-bearing.
 export const test_ported_operation_engines_cover_scoring_branches = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-score-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-score-");
   const nodes = [
     // A spread of files and depths: none of it is a ranking signal any more, which
   // is the point — the ranking is the export surface and the execution reach.
@@ -138,7 +139,7 @@ export const test_ported_operation_engines_cover_scoring_branches = async () => 
 // the ordering tiebreak, plus the non-exported seedReason branch and the
 // nearby-ref line/sourceSpan optionals in the tour.
 const scenario_impact_ranks_and_refs = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-rank-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-rank-");
   const hub = "src/x.ts#hub:function";
   const nodes = [
     node("src/x.ts#hub:function", "function", "hub", "src/x.ts", 1, 1, { exported: false }),
@@ -195,7 +196,7 @@ const scenario_impact_ranks_and_refs = async () => {
   // A minimal graph where both detail seeds are guaranteed: alpha has a
   // dependency neighbor (dependsOn present) and beta has none (dependsOn
   // absent), so the tour's nearby spread covers both sides of the guard.
-  const mini = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-mini-"));
+  const mini = GraphPaths.createTempDirectory("samchon-graph-mini-");
   const mnodes = [
     node("src/m.ts#alpha:function", "function", "alpha", "src/m.ts", 1, 1, { exported: false }),
     node("src/m.ts#beta:function", "function", "beta", "src/m.ts", 2, 2, { exported: false }),
@@ -211,7 +212,7 @@ const scenario_impact_ranks_and_refs = async () => {
 // the all-non-executable flow-seed branch, and entrypoints backtick handle
 // resolution.
 const scenario_seed_fallbacks = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-seed-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-seed-");
   // Only interface nodes: they are NOT tour-seed kinds, so rankedTourSeeds is
   // empty and tourSeedsOf must fall back to ranked hits.
   const interfaces = [
@@ -297,7 +298,7 @@ const scenario_seed_fallbacks = async () => {
 // oversized span, an unreadable file, and a container whose contained member id
 // is dangling.
 const scenario_details_edges = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-det-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-det-");
   // A real object-literal file with two members, so memberLimit=1 hits the
   // members-full break inside objectLiteralMembers.
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
@@ -355,7 +356,7 @@ const scenario_details_edges = async () => {
 // Exercises the runTrace hop-cap truncation branch: a dense back-edge cluster
 // where hops accumulate to maxHops before reached hits maxNodes.
 const scenario_trace_hop_cap = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-hop-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-hop-");
   // A hub with many callers that all also call each other, so back-edges to
   // already-reached nodes pile up as hops without growing `reached`.
   // s fans out to a 5-clique {n0..n4}; processing the clique's back-edges fills
@@ -380,7 +381,7 @@ const scenario_trace_hop_cap = async () => {
 // (traceNodeOf) and a test-file caller found via testAnchorsOf (graphNodeOf).
 // Also exercises the tour's `includeTests: false` branch.
 const scenario_evidence_less_flow_and_test_nodes = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-ghost-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-ghost-");
   const seed = node("src/g.ts#seedFn:function", "function", "seedFn", "src/g.ts", 1, 1, { exported: false });
   // Reached through the seed's forward trace, not itself a scored seed, so it
   // is never required to carry evidence → traceNodeOf's sourceSpan/line-absent
@@ -430,7 +431,7 @@ const scenario_evidence_less_flow_and_test_nodes = async () => {
 // with "bundled://" (a node_modules-style type-declaration marker) ranks
 // behind an otherwise-identical local neighbor.
 const scenario_bundled_neighbor_rank = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-bundled-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-bundled-");
   const seed = node("src/b.ts#seedFn:function", "function", "seedFn", "src/b.ts", 1, 1, { exported: false });
   const localDep = node("src/b.ts#localDep:function", "function", "localDep", "src/b.ts", 2, 2, { exported: false });
   const bundledDep = node("bundled://types.d.ts#BundledType:type", "type", "BundledType", "bundled://types.d.ts", 1, 1, { exported: false });
@@ -457,7 +458,7 @@ const scenario_bundled_neighbor_rank = async () => {
 // forward trace reaching a node under a test path ranks it behind a
 // same-kind production node.
 const scenario_normal_trace_ranks_test_path_endpoint = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-trace-rank-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-trace-rank-");
   const seed = node("src/r.ts#seedFn:function", "function", "seedFn", "src/r.ts", 1, 1, { exported: false });
   const prodCallee = node("src/r.ts#prodCallee:function", "function", "prodCallee", "src/r.ts", 2, 2, { exported: false });
   const testCallee = node("tests/r.test.ts#testCallee:function", "function", "testCallee", "tests/r.test.ts", 1, 1, { exported: false });
@@ -486,7 +487,7 @@ const scenario_normal_trace_ranks_test_path_endpoint = async () => {
 // matches nothing) and nearbyAnchorsOf's absent dependsOn/dependedOnBy
 // branches (a seed with no edges at all).
 const scenario_tour_unresolved_mention_and_edgeless_seed = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-lonely-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-lonely-");
   const lonely = node("src/l.ts#lonely:function", "function", "lonely", "src/l.ts", 1, 1, { exported: false });
   const app = new SamchonGraphApplication(SamchonGraphMemory.from(dumpOf(root, [lonely], [])));
   const tour = (await call(app, { type: "tour", reinterpretations: [] }, "lonely `NoSuchSymbol`")).result;

@@ -2,8 +2,9 @@ import { TestValidator } from "@nestia/e2e";
 import { SamchonGraphMemory, SamchonGraphApplication } from "@samchon/graph";
 import type { ISamchonGraphApplication } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+
+import { GraphPaths } from "../internal/GraphPaths";
 
 const call = (
   app: SamchonGraphApplication,
@@ -24,7 +25,7 @@ const call = (
 // (error / config / serialization) and an internal/ path for the public-API
 // noise filter.
 const createRichFixture = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-rich-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-rich-");
   fs.mkdirSync(path.join(root, "src", "internal"), { recursive: true });
   const richFile = "src/rich.ts";
   fs.writeFileSync(

@@ -1,8 +1,9 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { TestValidator } from "@nestia/e2e";
+
+import { GraphPaths } from "../internal/GraphPaths";
 import {
   type IStaticGraphParts,
   staticGraphParts,
@@ -14,9 +15,7 @@ import {
 } from "@samchon/graph-sitter";
 
 export const test_graph_sitter_package_preserves_static_adapter_contract = () => {
-  const root = fs.mkdtempSync(
-    path.join(os.tmpdir(), "samchon-graph-sitter-boundary-"),
-  );
+  const root = GraphPaths.createTempDirectory("samchon-graph-sitter-boundary-");
   try {
     const absolutePath = path.join(root, "entry.ts");
     const source = [

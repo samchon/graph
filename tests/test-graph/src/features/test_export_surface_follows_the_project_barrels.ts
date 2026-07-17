@@ -1,8 +1,9 @@
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+
+import { GraphPaths } from "../internal/GraphPaths";
 
 /**
  * The export surface is a count, not a flag.
@@ -23,7 +24,7 @@ import path from "node:path";
  * file that declares them.
  */
 export const test_export_surface_follows_the_project_barrels = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-barrel-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-barrel-");
   write(root, "src/order.ts", [
     "export class OrderService {",
     "  create(): void {}",
@@ -86,7 +87,7 @@ export const test_export_surface_follows_the_project_barrels = async () => {
  * publishes stays behind.
  */
 const scenario_named_reexports_forward_only_what_they_name = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-named-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-named-");
   write(root, "src/pair.ts", [
     "export function kept(): void {}",
     "export function renamed(): void {}",
@@ -112,7 +113,7 @@ const scenario_named_reexports_forward_only_what_they_name = async () => {
 
 /** Python's barrel is `__init__.py`; Rust's is `pub use`. */
 const scenario_python_and_rust_barrels = async () => {
-  const python = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-py-"));
+  const python = GraphPaths.createTempDirectory("samchon-graph-py-");
   write(python, "pkg/order.py", ["class Order:", "    pass"]);
   write(python, "pkg/__init__.py", ["from .order import Order"]);
   // An ordinary module's imports are imports, not a published surface: only the
@@ -129,7 +130,7 @@ const scenario_python_and_rust_barrels = async () => {
     ["pkg/__init__.py", "pkg/order.py"],
   );
 
-  const rust = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-rs-"));
+  const rust = GraphPaths.createTempDirectory("samchon-graph-rs-");
   write(rust, "src/order.rs", ["pub struct Order {}", "pub struct Line {}"]);
   write(rust, "src/lib.rs", [
     "pub use crate::order::Order;",
@@ -153,7 +154,7 @@ const scenario_python_and_rust_barrels = async () => {
  * that declares it, which is what the export surface counts.
  */
 const scenario_a_language_with_no_reexport_form = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-go-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-go-");
   write(root, "order.go", [
     "package order",
     "",
@@ -180,7 +181,7 @@ const scenario_a_language_with_no_reexport_form = async () => {
 
 /** Two files that re-export each other is legal, and must not hang the index. */
 const scenario_a_barrel_cycle_terminates = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-cycle-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-cycle-");
   write(root, "src/a.ts", ["export function fromA(): void {}", 'export * from "./b";']);
   write(root, "src/b.ts", ["export function fromB(): void {}", 'export * from "./a";']);
   const dump = await buildGraphDump({ cwd: root, mode: "static", languages: ["typescript"] });

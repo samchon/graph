@@ -1,12 +1,13 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
 
+import { GraphPaths } from "../internal/GraphPaths";
+
 export const test_lua_static_preserves_callable_forms_end_scopes_and_visibility = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-lua-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-lua-");
   fs.writeFileSync(
     path.join(root, "pipeline.lua"),
     [

@@ -1,7 +1,6 @@
 import { TestValidator } from "@nestia/e2e";
 import { ensureCompileCommands } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphFixtures } from "../internal/GraphFixtures";
@@ -32,7 +31,7 @@ export const test_ensure_compile_commands_bootstraps_or_skips_cmake = async () =
   }
 
   {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-cmake-none-"));
+    const root = GraphPaths.createTempDirectory("samchon-graph-cmake-none-");
     TestValidator.equals(
       "a project without CMakeLists.txt is skipped",
       ensureCompileCommands(root, fakeCmake),

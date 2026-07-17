@@ -1,14 +1,13 @@
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+
+import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_kotlin_static_preserves_generics_extensions_and_visibility =
   async () => {
-    const root = fs.mkdtempSync(
-      path.join(os.tmpdir(), "samchon-graph-kotlin-semantics-"),
-    );
+    const root = GraphPaths.createTempDirectory("samchon-graph-kotlin-semantics-");
     fs.writeFileSync(
       path.join(root, "Resolution.kt"),
       [

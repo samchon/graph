@@ -1,7 +1,6 @@
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphFixtures } from "../internal/GraphFixtures";
@@ -52,7 +51,7 @@ export const test_lsp_mode_collects_symbols_references_and_diagnostics = async (
   // rune is uppercase is exported. The LSP lane must preserve that fact just
   // as the static lane does instead of promoting every document symbol to a
   // package export.
-  const goRoot = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-lsp-go-"));
+  const goRoot = GraphPaths.createTempDirectory("samchon-graph-lsp-go-");
   fs.writeFileSync(
     path.join(goRoot, "service.go"),
     [

@@ -1,13 +1,12 @@
 import { TestValidator } from "@nestia/e2e";
 import { createResidentGraphSource } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_resident_graph_source_closes_sessions_on_empty_results = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-resident-empty-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-resident-empty-");
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   fs.writeFileSync(
     path.join(root, "src", "a.ts"),
@@ -59,7 +58,7 @@ export const test_resident_graph_source_closes_sessions_on_empty_results = async
   // A project with no source files at all: no language is even attempted, so
   // the build falls straight to the empty-project static branch. Resident
   // mode must still return cleanly, without a session to hold or close.
-  const bareRoot = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-resident-bare-"));
+  const bareRoot = GraphPaths.createTempDirectory("samchon-graph-resident-bare-");
   const bareSource = createResidentGraphSource({
     cwd: bareRoot,
     mode: "lsp",

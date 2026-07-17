@@ -1,12 +1,13 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { TestValidator } from "@nestia/e2e";
 import { buildGraph } from "@samchon/graph";
 
+import { GraphPaths } from "../internal/GraphPaths";
+
 export const test_c_static_linkage_controls_export_surface = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-c-linkage-"));
+  const root = GraphPaths.createTempDirectory("samchon-c-linkage-");
   fs.writeFileSync(
     path.join(root, "service.c"),
     [

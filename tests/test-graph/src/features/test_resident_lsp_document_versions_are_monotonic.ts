@@ -1,7 +1,6 @@
 import { TestValidator } from "@nestia/e2e";
 import { createResidentGraphSource } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
@@ -19,9 +18,7 @@ const sourceText = (name: string): string =>
   `export function ${name}(): void {}\n`;
 
 export const test_resident_lsp_document_versions_are_monotonic = async () => {
-  const root = fs.mkdtempSync(
-    path.join(os.tmpdir(), "samchon-graph-lsp-versions-"),
-  );
+  const root = GraphPaths.createTempDirectory("samchon-graph-lsp-versions-");
   const sourceDir = path.join(root, "src");
   const a = path.join(sourceDir, "a.ts");
   const b = path.join(sourceDir, "b.ts");

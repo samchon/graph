@@ -1,8 +1,9 @@
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump, SamchonGraphMemory } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+
+import { GraphPaths } from "../internal/GraphPaths";
 
 /**
  * Two dumps of the same unedited checkout are the same dump.
@@ -18,7 +19,7 @@ import path from "node:path";
  * impossible to even assert, so it is gone.
  */
 export const test_the_dump_is_a_function_of_its_source = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-determinism-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-determinism-");
   write(root, "src/order.ts", [
     "export class OrderService {",
     "  #secret = 1;",

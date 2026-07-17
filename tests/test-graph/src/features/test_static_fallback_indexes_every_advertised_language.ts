@@ -1,13 +1,13 @@
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphFixtures } from "../internal/GraphFixtures";
+import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_static_fallback_indexes_every_advertised_language = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-languages-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-languages-");
   for (const fixture of GraphFixtures.languageFixtures) {
     const dir = path.join(root, fixture.language);
     fs.mkdirSync(dir, { recursive: true });

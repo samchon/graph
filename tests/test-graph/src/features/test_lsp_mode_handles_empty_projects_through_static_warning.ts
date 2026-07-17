@@ -1,13 +1,11 @@
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_lsp_mode_handles_empty_projects_through_static_warning = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-empty-lsp-"));
+  const root = GraphPaths.createTempDirectory("samchon-empty-lsp-");
   const dump = await buildGraphDump({
     cwd: root,
     mode: "lsp",

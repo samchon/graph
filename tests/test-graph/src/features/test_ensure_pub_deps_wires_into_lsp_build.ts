@@ -1,13 +1,12 @@
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_ensure_pub_deps_wires_into_lsp_build = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-pub-lsp-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-pub-lsp-");
   fs.writeFileSync(path.join(root, "pubspec.yaml"), "name: fixture\n");
   fs.writeFileSync(path.join(root, "main.dart"), "void main() {}\n");
 

@@ -18,7 +18,7 @@ const writePubspec = (dir: string): void => {
 
 export const test_ensure_pub_deps_bootstraps_or_skips_pub = async () => {
   {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-pub-single-"));
+    const root = GraphPaths.createTempDirectory("samchon-graph-pub-single-");
     writePubspec(root);
     ensurePubDeps(root, fakePub);
     TestValidator.predicate(
@@ -28,7 +28,7 @@ export const test_ensure_pub_deps_bootstraps_or_skips_pub = async () => {
   }
 
   {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-pub-resolved-"));
+    const root = GraphPaths.createTempDirectory("samchon-graph-pub-resolved-");
     writePubspec(root);
     fs.mkdirSync(path.join(root, ".dart_tool"));
     fs.writeFileSync(packageConfigOf(root), '{"marker":true}');
@@ -41,7 +41,7 @@ export const test_ensure_pub_deps_bootstraps_or_skips_pub = async () => {
   }
 
   {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-pub-workspace-"));
+    const root = GraphPaths.createTempDirectory("samchon-graph-pub-workspace-");
     writePubspec(path.join(root, "pkgs", "a"));
     writePubspec(path.join(root, "pkgs", "b"));
     fs.mkdirSync(path.join(root, "build"));
@@ -59,7 +59,7 @@ export const test_ensure_pub_deps_bootstraps_or_skips_pub = async () => {
   }
 
   {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-pub-fail-"));
+    const root = GraphPaths.createTempDirectory("samchon-graph-pub-fail-");
     writePubspec(root);
     process.env.FAKE_PUB_FAIL = "1";
     try {
@@ -74,7 +74,7 @@ export const test_ensure_pub_deps_bootstraps_or_skips_pub = async () => {
   }
 
   {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-pub-deep-"));
+    const root = GraphPaths.createTempDirectory("samchon-graph-pub-deep-");
     const deep = path.join(root, "a", "b", "c", "d", "e");
     writePubspec(deep);
     ensurePubDeps(root, fakePub);

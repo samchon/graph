@@ -3,7 +3,6 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { TestValidator } from "@nestia/e2e";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphFixtures } from "../internal/GraphFixtures";
@@ -81,7 +80,7 @@ export const test_mcp_server_exposes_inspect_code_graph = async () => {
     [GraphPaths.graphBin, "dump", "--mode", "static", "--cwd", root],
     { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
   );
-  const graphFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-dump-")), "graph.json");
+  const graphFile = path.join(GraphPaths.createTempDirectory("samchon-graph-dump-"), "graph.json");
   fs.writeFileSync(graphFile, dump);
   const served = await overview(["--graph-file", graphFile]);
   TestValidator.equals("graph-file server result type", served.result.type, "overview");

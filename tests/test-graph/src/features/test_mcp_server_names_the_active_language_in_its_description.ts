@@ -3,7 +3,6 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { TestValidator } from "@nestia/e2e";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphFixtures } from "../internal/GraphFixtures";
@@ -86,7 +85,7 @@ export const test_mcp_server_names_the_active_language_in_its_description = asyn
     { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
   );
   const graphFile = path.join(
-    fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-dump-lang-")),
+    GraphPaths.createTempDirectory("samchon-graph-dump-lang-"),
     "graph.json",
   );
   fs.writeFileSync(graphFile, dump);

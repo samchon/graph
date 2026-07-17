@@ -1,9 +1,10 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
+
+import { GraphPaths } from "../internal/GraphPaths";
 import type {
   GraphLanguage,
   ISamchonGraphDump,
@@ -16,9 +17,7 @@ export const test_static_dependencies_mask_literals_and_reject_ambiguous_names =
   };
 
 async function validateResolutionEvidence(): Promise<void> {
-  const root = fs.mkdtempSync(
-    path.join(os.tmpdir(), "samchon-static-resolution-"),
-  );
+  const root = GraphPaths.createTempDirectory("samchon-static-resolution-");
   fs.writeFileSync(
     path.join(root, "owners.ts"),
     [
@@ -542,8 +541,8 @@ async function validateLexicalMasking(): Promise<void> {
   ];
 
   for (const fixture of fixtures) {
-    const root = fs.mkdtempSync(
-      path.join(os.tmpdir(), `samchon-static-mask-${fixture.language}-`),
+    const root = GraphPaths.createTempDirectory(
+      `samchon-static-mask-${fixture.language}-`,
     );
     fs.writeFileSync(
       path.join(root, `fixture.${fixture.extension}`),

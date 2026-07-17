@@ -1,12 +1,12 @@
 import { TestValidator } from "@nestia/e2e";
+import { ISamchonGraphDump, SamchonGraphMemory, buildLspGraph } from "@samchon/graph";
 import fs from "node:fs";
 import path from "node:path";
 
-import { SamchonGraphMemory } from "../../../../packages/graph/src/SamchonGraphMemory";
-import { buildLspGraph } from "../../../../packages/graph/src/indexer/buildLspGraph";
+// `TtscGraphClient` and `resolveTtscGraphCommand` are internal to the package,
+// so they are reached by path rather than through the public barrel.
 import { TtscGraphClient } from "../../../../packages/graph/src/provider/ttscgraph/TtscGraphClient";
 import { resolveTtscGraphCommand } from "../../../../packages/graph/src/provider/ttscgraph/resolveTtscGraphCommand";
-import { ISamchonGraphDump } from "../../../../packages/graph/src/structures";
 import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_ttscgraph_bulk_provider_reuses_and_atomically_replaces_snapshots =

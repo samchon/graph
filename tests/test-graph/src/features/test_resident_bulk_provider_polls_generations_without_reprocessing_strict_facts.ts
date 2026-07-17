@@ -1,12 +1,13 @@
 import { TestValidator } from "@nestia/e2e";
+import {
+  IBulkGraphSession,
+  IIndexerResult,
+  createResidentGraphSource,
+} from "@samchon/graph";
 import fs from "node:fs";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
-
-import { createResidentGraphSource } from "../../../../packages/graph/src/indexer/createResidentGraphSource";
-import { IIndexerResult } from "../../../../packages/graph/src/indexer/IIndexerResult";
-import { IBulkGraphSession } from "../../../../packages/graph/src/provider/IBulkGraphSession";
 
 export const test_resident_bulk_provider_polls_generations_without_reprocessing_strict_facts =
   async () => {

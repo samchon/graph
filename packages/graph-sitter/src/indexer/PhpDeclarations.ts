@@ -248,7 +248,7 @@ export namespace PhpDeclarations {
       return {
         kind: "property",
         name: property[1]!,
-        ...(modifiers.length > 0 ? { modifiers } : {}),
+        modifiers,
       };
     }
     const constant = /^const\s+([A-Za-z_\x80-\xff][\w\x80-\xff]*)\b/i.exec(
@@ -260,13 +260,22 @@ export namespace PhpDeclarations {
       return {
         kind: "field",
         name: constant[1]!,
-        ...(modifiers.length > 0 ? { modifiers } : {}),
+        modifiers,
       };
     }
     return undefined;
   }
 
-  /** Recover PHP modifiers, including PHP's implicit public member visibility. */
+  /**
+   * Recover PHP modifiers, including PHP's implicit public member visibility.
+   *
+   * A member of a type owner always comes back with at least one modifier: PHP
+   * declares an unqualified member public, so where a declaration spells no
+   * visibility this supplies it. That is why the member arms above assign
+   * `modifiers` outright instead of guarding on its length — the empty case they
+   * would be guarding against cannot occur past the `isTypeOwner` gate, and a
+   * branch that cannot run is one no test can ever honestly cover.
+   */
   export function phpGraphModifiersOf(
     source: string,
     kind?: GraphNodeKind,

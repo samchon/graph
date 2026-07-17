@@ -1,6 +1,13 @@
 name: test
 
+# Pull requests gate what is proposed; the push trigger gates what actually
+# landed. Without it a merge is only ever validated against the pull request's
+# own head, so master carries no verdict of its own — and #62 merged eight
+# minutes before its checks reported failure on all three platforms, leaving the
+# default branch red with nothing to say so.
 on:
+  push:
+    branches: [master]
   pull_request:
     branches: [master]
 

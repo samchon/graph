@@ -10,15 +10,28 @@ import { CppDeclarations } from "./CppDeclarations";
 import { CsharpDeclarations } from "./CsharpDeclarations";
 import { decoratorsAbove } from "./decoratorsAbove";
 import { IStaticGraphParts } from "./IStaticGraphParts";
+import { KotlinDeclarations } from "./KotlinDeclarations";
+import { LuaDeclarations } from "./LuaDeclarations";
 import { PhpDeclarations } from "./PhpDeclarations";
 import { resolveType } from "./resolveType";
 import { RubyDeclarations } from "./RubyDeclarations";
 import { rustImplOwner } from "./rustImplOwner";
+import { ScalaDeclarations } from "./ScalaDeclarations";
 import { staticDependencyEdges } from "./staticDependencyEdges";
 import { supertypesOf } from "./supertypesOf";
+import { SwiftDeclarations } from "./SwiftDeclarations";
+import { ZigDeclarations } from "./ZigDeclarations";
 
 interface IDeclaration {
   node: ISamchonGraphNode;
+  /**
+   * The declaration's own head, joined across every line it spans. A later pass
+   * that re-reads the head — supertypes, above all — must not assume it fits on
+   * the start line, because the languages that most often split it (`interface
+   * ChildResolver :` and its supertype a line below) are exactly the ones whose
+   * inheritance the graph is asked about.
+   */
+  header: string;
   startIndex: number;
   endIndex: number;
   ownerId?: string;
@@ -32,6 +45,13 @@ interface IParsedDeclaration {
   exported?: boolean;
   modifiers?: ISamchonGraphNode["modifiers"];
   ownerNames?: string[];
+  /** Receiver of a declaration that extends a type instead of declaring one. */
+  extensionOwner?: string;
+}
+
+/** A declaration a whole-file scan bounded itself, span included. */
+interface IScannedDeclaration extends IParsedDeclaration {
+  endIndex: number;
 }
 
 const EXTERNAL_MODULE_LIMIT = 1_500;
@@ -133,12 +153,16 @@ export function graphSitterParts(
       }
       for (const edge of inheritanceEdges(
         declaration.node,
-        lines[declaration.startIndex]!.trim(),
+        declaration.header,
         byName,
       )) {
         edges.push(edge);
       }
-      for (const name of decoratorsAbove(lines, declaration.startIndex)) {
+      for (const name of decoratorNamesAbove(
+        declaration.node.language,
+        lines,
+        declaration.startIndex,
+      )) {
         const target = resolveType(name, declaration.node, byName);
         if (target === undefined) continue;
         edges.push({
@@ -226,6 +250,10 @@ function declarationsOf(
   lines: readonly string[],
 ): IDeclaration[] {
   const declarations: IDeclaration[] = [];
+  // Owners that a whole-file scan names rather than nests, indexed by the
+  // qualified spelling a child writes, so resolving one is not a scan of every
+  // declaration emitted so far.
+  const byQualifiedName = new Map<string, IDeclaration[]>();
   const ownerStack: Array<{
     name: string;
     endIndex: number;
@@ -236,8 +264,19 @@ function declarationsOf(
     string,
     { name: string; id: string; kind: GraphNodeKind }
   >();
-  const rubyDeclarations =
-    language === "ruby" ? RubyDeclarations.scan(lines) : undefined;
+  const swiftTypes = new Map<
+    string,
+    { name: string; id: string; kind: GraphNodeKind }
+  >();
+  const scan = declarationScan(language, lines);
+  // Kotlin is the one language whose declaration rules cannot read the raw
+  // lines: its block comments nest and its raw strings run over line ends, so
+  // the lexical state that says whether `fun ghost()` is code arrives from
+  // earlier lines. The per-line masking every other language does inside its
+  // own parser cannot see that state. `kotlinLexicalLines` preserves every line
+  // and column, so spans, owners, and evidence columns stay exact.
+  const lexicalLines =
+    language === "kotlin" ? KotlinDeclarations.kotlinLexicalLines(lines) : lines;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     while (ownerStack.length > 0 && i > ownerStack[ownerStack.length - 1]!.endIndex) {
@@ -266,42 +305,61 @@ function declarationsOf(
     // inside a function/method body turns bare call statements (`doThing(x)`
     // with no trailing `;`, as in Go and ASI JS/TS) into phantom method nodes.
     const directOwner = ownerStack[ownerStack.length - 1];
-    const rubyDeclaration = rubyDeclarations?.get(i);
+    const scanned = scan?.get(i);
+    const header = declarationHeader(language, lexicalLines, i);
     const parsed: IParsedDeclaration | undefined =
-      rubyDeclaration ??
-      parseDeclaration(
-        language,
-        language === "java"
-          ? javaDeclarationHeader(lines, i)
-          : language === "csharp"
-            ? CsharpDeclarations.csharpDeclarationHeader(lines, i)
-            : language === "cpp"
-              ? CppDeclarations.cppDeclarationHeader(lines, i)
-              : language === "php"
-                ? PhpDeclarations.phpDeclarationHeader(lines, i)
-                : line,
-        isTypeContainer(directOwner?.kind),
-        directOwner?.name,
-        directOwner?.kind,
-      );
+      scan === undefined
+        ? parseDeclaration(
+            language,
+            header,
+            isTypeContainer(directOwner?.kind),
+            directOwner?.name,
+            directOwner?.kind,
+          )
+        : scanned;
     if (parsed !== undefined) {
+      // A Swift `extension` declares no type: it adds members to one that may
+      // be written later in the file, in another file, or in another module
+      // entirely. Emitting a node for it would publish a second `Array` beside
+      // the real one, so it becomes a transparent owner exactly as a Rust
+      // `impl` block does, resolved below once the file has been scanned.
+      if (parsed.extensionOwner !== undefined) {
+        const endIndex = declarationEndIndexOf(language, lexicalLines, i);
+        if (endIndex > i) {
+          const owner = swiftTypes.get(parsed.extensionOwner);
+          ownerStack.push({
+            name: owner?.name ?? parsed.extensionOwner,
+            endIndex,
+            ...(owner === undefined ? {} : { id: owner.id }),
+            kind: owner?.kind ?? "class",
+          });
+        }
+        continue;
+      }
       if (language === "php" && parsed.kind === "namespace") {
         while (ownerStack.at(-1)?.kind === "namespace") ownerStack.pop();
       }
       const endIndex =
-        rubyDeclaration?.endIndex ??
+        scanned?.endIndex ??
         ((language === "csharp" || language === "php") &&
           parsed.kind === "namespace" &&
           /;\s*$/.test(line)
           ? lines.length - 1
-          : declarationEndIndex(lines, i));
+          : declarationEndIndexOf(language, lexicalLines, i));
+      // Owners the declaration itself names win over the enclosing braces. A
+      // scan reports them precisely when the lexical stack cannot see them —
+      // Lua writes its owner in the head (`function M.draw()`) and a table
+      // literal is no scope, Scala's `extension` region is transparent and its
+      // scopes are indentation, and Zig attributes an anonymous `return struct`
+      // to the factory that returned it. Ruby reports none because Ruby's
+      // owners are exactly its nesting, which the stack already has.
       const ownerNames =
         language === "cpp"
           ? cppQualifiedOwners(
               ownerStack.map((entry) => entry.name),
               parsed.ownerNames ?? [],
             )
-          : ownerStack.map((entry) => entry.name);
+          : parsed.ownerNames ?? ownerStack.map((entry) => entry.name);
       const requestedOwner = ownerNames.join(".");
       const qualifiedOwnerName =
         language === "cpp" && parsed.ownerNames?.length
@@ -319,9 +377,11 @@ function declarationsOf(
         ? parsed.name
         : `${owner}.${parsed.name}`;
       const ownerId =
-        qualifiedOwnerName === undefined
-          ? ownerStack[ownerStack.length - 1]?.id
-          : qualifiedOwner?.node.id;
+        qualifiedOwnerName !== undefined
+          ? qualifiedOwner?.node.id
+          : parsed.ownerNames === undefined
+            ? ownerStack[ownerStack.length - 1]?.id
+            : enclosingOwnerId(byQualifiedName, requestedOwner, i);
       const node: ISamchonGraphNode = {
         id: `${file}#${qualifiedName}:${parsed.kind}`,
         kind: parsed.kind,
@@ -355,8 +415,9 @@ function declarationsOf(
           endLine: i + 1,
         },
       };
-      declarations.push({
+      const declaration: IDeclaration = {
         node,
+        header: header.trim(),
         startIndex: i,
         endIndex,
         ownerId,
@@ -366,7 +427,9 @@ function declarationsOf(
               ownerStack[ownerStack.length - 1] !== undefined
             ? { ownerName: ownerStack[ownerStack.length - 1]!.name }
           : {}),
-      });
+      };
+      declarations.push(declaration);
+      push(byQualifiedName, qualifiedName, declaration);
       if (
         language === "rust" &&
         (parsed.kind === "class" ||
@@ -380,10 +443,22 @@ function declarationsOf(
           kind: parsed.kind,
         });
       }
+      if (language === "swift" && isSwiftExtendable(parsed.kind)) {
+        swiftTypes.set(qualifiedName, {
+          name: qualifiedName,
+          id: node.id,
+          kind: parsed.kind,
+        });
+      }
       if (
         (isContainer(parsed.kind) ||
           (language === "csharp" && parsed.kind === "property") ||
-          (language === "php" && parsed.kind === "enum")) &&
+          // An enum body that declares members rather than only constants. The
+          // PHP, Kotlin, and Swift parsers each report an enum's methods and
+          // properties, so the enum has to own what is written inside it;
+          // without that, `fun cached()` inside `enum class Lifetime` is filed
+          // as a top-level function of the file.
+          (parsed.kind === "enum" && hasEnumMembers(language))) &&
         endIndex > i
       ) {
         ownerStack.push({
@@ -401,9 +476,135 @@ function declarationsOf(
   if (language === "rust") {
     reconnectRustImplOwners(file, declarations);
   } else if (language === "cpp") {
-    reconnectCppQualifiedOwners(declarations);
+    reconnectQualifiedOwners(declarations, isTypeContainer);
+  } else if (language === "swift") {
+    reconnectQualifiedOwners(declarations, isSwiftExtendable);
   }
   return declarations;
+}
+
+/**
+ * The languages whose declarations come from one lexical pass over the whole
+ * file instead of the shared line-by-line rules: `end`-delimited bodies (Ruby,
+ * Lua), significant indentation and transparent `extension` regions (Scala),
+ * and value-declared containers (Zig) are none of them recoverable from a brace
+ * count. A scan owns its file's declaration list end to end, and the shared
+ * regex must not run beside it: the scan masks comments and long strings out
+ * precisely so `object GhostFromComment:` cannot become a node, and a second
+ * pass over the raw lines would hand it back.
+ */
+function declarationScan(
+  language: GraphLanguage,
+  lines: readonly string[],
+): ReadonlyMap<number, IScannedDeclaration> | undefined {
+  if (language === "lua") return LuaDeclarations.scan(lines);
+  if (language === "ruby") return RubyDeclarations.scan(lines);
+  if (language === "scala") return ScalaDeclarations.scan(lines);
+  if (language === "zig") return ZigDeclarations.scan(lines);
+  return undefined;
+}
+
+/**
+ * Join the declaration head that begins on `start`. A language whose head never
+ * spans lines answers with the line itself; the rest hand back the bounded head
+ * their own parser was written against, because reading only the first line
+ * loses exactly the declarations a static fallback exists to recover.
+ */
+function declarationHeader(
+  language: GraphLanguage,
+  lines: readonly string[],
+  start: number,
+): string {
+  if (language === "cpp") return CppDeclarations.cppDeclarationHeader(lines, start);
+  if (language === "csharp")
+    return CsharpDeclarations.csharpDeclarationHeader(lines, start);
+  if (language === "java") return javaDeclarationHeader(lines, start);
+  if (language === "kotlin")
+    return KotlinDeclarations.kotlinDeclarationHeader(lines, start);
+  if (language === "php") return PhpDeclarations.phpDeclarationHeader(lines, start);
+  if (language === "swift")
+    return SwiftDeclarations.swiftDeclarationHeader(lines, start);
+  return lines[start]!;
+}
+
+/**
+ * Bound the declaration that begins on `start`. The shared brace walk assumes
+ * that a declaration without a body of its own owns the next `{}` it finds,
+ * which is true for C-shaped members and false for a bodyless Kotlin or Swift
+ * requirement: `fun clear()` would take the following `class Scope`'s braces,
+ * become a container, and misqualify every declaration after it.
+ */
+function declarationEndIndexOf(
+  language: GraphLanguage,
+  lines: readonly string[],
+  start: number,
+): number {
+  if (language === "kotlin")
+    return KotlinDeclarations.kotlinDeclarationEndIndex(lines, start);
+  if (language === "swift")
+    return SwiftDeclarations.swiftDeclarationEndIndex(lines, start);
+  return declarationEndIndex(lines, start);
+}
+
+/**
+ * The decorators written above a declaration. Swift needs its own recovery
+ * because a Swift attribute may span lines: the shared scan walks upward line
+ * by line and stops at the `)` closing a multiline `@available(...)`, which is
+ * every stacked attribute the graph is asked to attach.
+ */
+function decoratorNamesAbove(
+  language: GraphLanguage,
+  lines: readonly string[],
+  index: number,
+): string[] {
+  return language === "swift"
+    ? SwiftDeclarations.swiftDecoratorsAbove(lines, index)
+    : decoratorsAbove(lines, index);
+}
+
+/**
+ * The languages whose enum body is a member surface rather than a constant
+ * list. Each of their declaration parsers reports an enum's methods and
+ * properties, which only makes sense if the enum owns them; the shared regex
+ * lane has no enum-member rule for the other languages, so an enum there would
+ * own nothing and only qualify its constants under a scope they do not have.
+ */
+function hasEnumMembers(language: GraphLanguage): boolean {
+  return language === "kotlin" || language === "php" || language === "swift";
+}
+
+/**
+ * The Swift declarations an `extension` can extend. Broader than the shared
+ * type-container test on purpose: Swift extends an `enum` and a `typealias`
+ * with the same syntax it extends a `class` with, and an extension that fails
+ * to find its type manufactures a duplicate of it.
+ */
+function isSwiftExtendable(kind: GraphNodeKind): boolean {
+  return (
+    kind === "class" ||
+    kind === "interface" ||
+    kind === "enum" ||
+    kind === "type"
+  );
+}
+
+/**
+ * The node a scanned owner name refers to at `index`. One qualified name can be
+ * written twice in a file — Scala's `opaque type UserId` and the `object UserId`
+ * beside it — so the owner is the one whose own range still encloses the child,
+ * not merely the last one declared.
+ */
+function enclosingOwnerId(
+  byQualifiedName: ReadonlyMap<string, IDeclaration[]>,
+  owner: string,
+  index: number,
+): string | undefined {
+  const candidates = byQualifiedName.get(owner);
+  if (candidates === undefined) return undefined;
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    if (candidates[i]!.endIndex >= index) return candidates[i]!.node.id;
+  }
+  return undefined;
 }
 
 /** Connect a C++ source definition to a type declared in another file. */
@@ -488,10 +689,20 @@ function cppQualifiedOwner(
   );
 }
 
-function reconnectCppQualifiedOwners(declarations: IDeclaration[]): void {
+/**
+ * Attach every declaration whose owner was written by name to the node that
+ * owner turned out to be. A C++ out-of-line definition and a Swift `extension`
+ * both name a type the file may declare after them, so the link is made once
+ * the whole file has been scanned; one that names a type this file never
+ * declares stays a transparent owner rather than inventing a node for it.
+ */
+function reconnectQualifiedOwners(
+  declarations: IDeclaration[],
+  owns: (kind: GraphNodeKind) => boolean,
+): void {
   const types = new Map(
     declarations
-      .filter((declaration) => isTypeContainer(declaration.node.kind))
+      .filter((declaration) => owns(declaration.node.kind))
       .map(
         (declaration) => [
           declaration.node.qualifiedName ?? declaration.node.name,
@@ -775,6 +986,12 @@ function parseDeclaration(
       ownerKind,
     );
   }
+  // Swift is answered before the package rule, not after it: `package` is an
+  // access modifier in Swift, so `package actor Loader` reaching the rule below
+  // would index a package named `actor`.
+  if (language === "swift") {
+    return SwiftDeclarations.parseSwiftDeclaration(text, ownerName, ownerKind);
+  }
   const packageDeclaration = /^package\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*;?/.exec(
     text,
   );
@@ -784,6 +1001,12 @@ function parseDeclaration(
       name: packageDeclaration[1]!,
       exported: true,
     };
+  }
+  // Kotlin is answered after it: a Kotlin package clause is the same JVM
+  // package the rule above already recognizes, and KotlinDeclarations parses
+  // declarations only, so reaching it first would drop the clause entirely.
+  if (language === "kotlin") {
+    return KotlinDeclarations.parseKotlinDeclaration(text, ownerName, ownerKind);
   }
   if (inContainer) {
     if (language === "java" && ownerName !== undefined) {
@@ -963,8 +1186,27 @@ function importsOf(
     } else if (language === "cpp" || language === "c") {
       const match = /^#include\s+[<"]([^>"]+)[>"]/.exec(text);
       if (match !== null) names.push(match[1]!);
+    } else if (language === "swift") {
+      // Swift's declaration-scoped forms (`import struct Foundation.URL`) and
+      // its access-control attributes both sit where the shared rule expects a
+      // module path, so the import is read by Swift's own rule.
+      const imported = SwiftDeclarations.parseSwiftImport(text);
+      if (imported !== undefined) names.push(imported.name);
+    } else if (language === "zig") {
+      // Zig has no import statement at all: a module arrives as an ordinary
+      // `const std = @import("std");`, which no keyword-led rule can see.
+      for (const imported of ZigDeclarations.zigImportsOf(text)) {
+        names.push(imported.name);
+      }
     } else {
-      const match = /^(?:import|using|package)\s+([^;]+)/.exec(text);
+      // A `package` clause is not an import. It says where the file's own
+      // declarations live, and the declaration lane already indexes it as one
+      // of them — as the shared package rule for Java and Kotlin, and as
+      // `ScalaDeclarations` reports it for Scala. Reading it here as well hung
+      // an external module off the very file that declares it, so `demo` was
+      // both `demo` and a dependency named `demo`. Go never had the bug because
+      // it has a rule of its own above.
+      const match = /^(?:import|using)\s+([^;]+)/.exec(text);
       if (match !== null) names.push(match[1]!.trim());
     }
     for (const name of names.filter((value) => value !== "")) {
@@ -1000,15 +1242,31 @@ function dependencyEdges(
   return staticDependencyEdges(source, body, byName);
 }
 
+// Swift writes inheritance and protocol conformance as one `:` list, so the
+// head names no relation of its own: `class Child: Base, Sendable` extends the
+// first and conforms to the second with identical syntax. The relation carried
+// here is therefore provisional; only the target's kind settles it, which is
+// what `swiftInheritanceRelation` decides below.
+function swiftSupertypesOf(
+  header: string,
+): Array<{ name: string; relation: "extends" | "implements" }> {
+  return SwiftDeclarations.swiftInheritedTypes(header).map((name) => ({
+    name,
+    relation: "extends" as const,
+  }));
+}
+
 function inheritanceEdges(
   source: ISamchonGraphNode,
-  line: string,
+  header: string,
   byName: Map<string, ISamchonGraphNode[]>,
 ): ISamchonGraphEdge[] {
   if (source.kind !== "class" && source.kind !== "interface") return [];
   const out: ISamchonGraphEdge[] = [];
   const seen = new Set<string>();
-  for (const supertype of supertypesOf(line)) {
+  for (const supertype of source.language === "swift"
+    ? swiftSupertypesOf(header)
+    : supertypesOf(header)) {
     const target = resolveType(supertype.name, source, byName);
     if (target === undefined) continue;
     const relation =
@@ -1018,7 +1276,9 @@ function inheritanceEdges(
             target.kind,
             supertype.relation,
           )
-        : supertype.relation;
+        : source.language === "swift"
+          ? SwiftDeclarations.swiftInheritanceRelation(source.kind, target.kind)
+          : supertype.relation;
     const key = `${relation}\0${target.id}`;
     if (seen.has(key)) continue;
     seen.add(key);

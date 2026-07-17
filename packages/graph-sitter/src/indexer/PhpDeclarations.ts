@@ -33,6 +33,13 @@ export namespace PhpDeclarations {
     "enum",
   ]);
 
+  /**
+   * The tags that switch PHP between text and code. They delimit the code
+   * region; they are never part of a declaration written inside it, so the head
+   * a line begins is whatever follows the tag rather than the raw line.
+   */
+  const MODE_TAG = /^\s*(?:<\?(?:php\b|=)?|\?>)\s*/i;
+
   /** Index PHP namespace scopes while preserving LSP's UTF-16 source offsets. */
   export function indexPhpNamespaces(source: string): IPhpNamespaceIndex {
     const lexical = erasePhpNonCode(source);
@@ -134,7 +141,17 @@ export namespace PhpDeclarations {
     lines: readonly string[],
     start: number,
   ): string {
-    const first = lines[start]!.trim();
+    // Decide from the code the line carries, not from the tag that introduced
+    // it. `<?php` alone is the line every PHP file opens with, and reading it
+    // raw makes it look like a head still waiting for its `;` or `{`: the join
+    // below then reaches into the following lines to find one and hands back
+    // `<?php class PhpOwner {`. `parsePhpDeclaration` strips the tag and reports
+    // the *next* line's class as though it were declared on the tag line, so the
+    // class is emitted twice — once at the tag with a bogus name-relative column,
+    // once at its own line — and because the phantom spans the real body it
+    // becomes its own owner. Every member of a file's first declaration then
+    // qualifies as `PhpOwner.PhpOwner.target`, which no caller can name.
+    const first = lines[start]!.replace(MODE_TAG, "").trim();
     if (
       first === "" ||
       first.startsWith("#[") ||

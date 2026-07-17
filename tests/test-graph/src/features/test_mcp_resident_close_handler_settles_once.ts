@@ -11,7 +11,7 @@ export const test_mcp_resident_close_handler_settles_once = async () => {
         GraphPaths.graphPackageRoot,
         "lib",
         "mcp",
-        "startServer.js",
+        "createResidentCloseHandler.js",
       ),
     ).href
   )) as {

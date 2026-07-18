@@ -192,28 +192,70 @@ export const test_graph_sitter_static_covers_multi_language_ownership = () => {
     [true, true, false],
   );
 
-  // A mid-edit Java class carries heads no compiler would accept: a parameter
-  // list left unclosed and a head whose tail is an assignment rather than a body
-  // or `throws`. Neither becomes a phantom method.
-  const javaTruncated = names(
+  // The Java member reader survives mid-edit and off-shape heads: a parameter
+  // list left unclosed at the end of the file, a head whose tail is a stray word
+  // rather than a body or `throws`, and an annotation written with a space before
+  // its arguments. None of the malformed heads becomes a phantom method, and the
+  // annotated head is still read.
+  const javaEof = names(
     parts({
-      path: "Draft.java",
+      path: "Eof.java",
       language: "java",
       source: [
-        "class Draft {",
-        "    void truncated(int value",
-        "    int broken() = 5",
+        "class Eof {",
+        "    int dangling(int value",
+        "    void real() {}",
+        "}",
+      ].join("\n"),
+    }),
+  );
+  const javaTail = names(
+    parts({
+      path: "Tail.java",
+      language: "java",
+      source: [
+        "class Tail {",
+        "    int strayTail() nonsense",
+        "    void real() {}",
+        "}",
+      ].join("\n"),
+    }),
+  );
+  const javaAnnotated = names(
+    parts({
+      path: "Anno.java",
+      language: "java",
+      source: [
+        "class Anno {",
+        "    @Deprecated (\"legacy\")",
+        "    void tagged() {}",
         "}",
       ].join("\n"),
     }),
   );
   TestValidator.equals(
-    "a truncated head and an assignment tail are no Java methods",
+    "the Java reader drops malformed heads and keeps the annotated method",
     [
-      javaTruncated.includes("Draft.truncated"),
-      javaTruncated.includes("Draft.broken"),
+      javaEof.includes("Eof.dangling"),
+      javaTail.includes("Tail.strayTail"),
+      javaTail.includes("Tail.real"),
+      javaAnnotated.includes("Anno.tagged"),
     ],
-    [false, false],
+    [false, false, true, true],
+  );
+
+  // A C++ definition whose owner type is declared nowhere in the project finds
+  // no owner to attach to and is left as a free declaration rather than guessed.
+  const cppOrphan = names(
+    parts({
+      path: "orphan.cpp",
+      language: "cpp",
+      source: ["void Nowhere::lost() {}"].join("\n"),
+    }),
+  );
+  TestValidator.predicate(
+    "a C++ member of an undeclared owner attaches to nothing",
+    cppOrphan.some((name) => name.endsWith("lost")),
   );
 
   // The generic keyword parser maps a `def`/`func` token onto a callable kind

@@ -106,4 +106,55 @@ export const test_static_dependency_edges_bind_receivers_and_owners = () => {
     ),
     ["calls:solo"],
   );
+
+  // An ancestor receiver (`super`) is not evidence of which inherited member is
+  // dispatched: a same-name member on another owner is not the base's member, so
+  // the reference stays unresolved across every language that spells `super`.
+  TestValidator.equals(
+    "a super receiver resolves to nothing without a base dispatch table",
+    wires(
+      staticDependencyEdges(
+        node("Panel.repaint", "method", "repaint", "dart", "Panel.repaint"),
+        "super.paint();",
+        index(node("Base.paint", "method", "paint", "dart", "Base.paint")),
+      ),
+    ),
+    [],
+  );
+
+  // `Self` in Swift names the enclosing type, so a `Self.` reference resolves
+  // within the same owner exactly as an instance `self` would.
+  TestValidator.equals(
+    "a Swift `Self.` reference resolves within the enclosing type",
+    wires(
+      staticDependencyEdges(
+        node("Shape.area", "method", "area", "swift", "Shape.area"),
+        "Self.make();",
+        index(node("Shape.make", "method", "make", "swift", "Shape.make")),
+      ),
+    ),
+    ["calls:Shape.make"],
+  );
+
+  // A C++ anonymous namespace has no name a caller can write, so its members
+  // answer to the enclosing (file) scope as well as their own literal owner.
+  TestValidator.equals(
+    "a C++ anonymous-namespace member is reachable from file scope",
+    wires(
+      staticDependencyEdges(
+        node("driver", "function", "driver", "cpp"),
+        "helper();",
+        index(
+          node(
+            "(anonymous namespace).helper",
+            "function",
+            "helper",
+            "cpp",
+            "(anonymous namespace).helper",
+          ),
+        ),
+      ),
+    ),
+    ["calls:(anonymous namespace).helper"],
+  );
 };

@@ -263,4 +263,21 @@ export const test_zig_declarations_preserve_container_ownership_and_visibility =
     ),
     ["Missing", "Invalid", "Nested"],
   );
+
+  // Lexical masking has to blank a trailing `//` note and a string's escaped
+  // quote in place: either could otherwise carry a brace that mis-bounds a
+  // declaration or spell a phantom one. The scan still sees only the two consts.
+  TestValidator.equals(
+    "a trailing comment and an escaped-quote string leave the scan undisturbed",
+    [
+      ...ZigDeclarations.scan([
+        "const value: u8 = 5; // sets a { brace } loose in a note",
+        'const message = "she said \\"} {\\" once";',
+      ]).values(),
+    ].map((declaration) => [declaration.name, declaration.kind]),
+    [
+      ["value", "variable"],
+      ["message", "variable"],
+    ],
+  );
 };

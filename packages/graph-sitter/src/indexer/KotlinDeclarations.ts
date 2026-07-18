@@ -186,11 +186,16 @@ export namespace KotlinDeclarations {
         declaration,
       );
     if (companion !== null && /\bcompanion\b/.test(clean)) {
+      // A companion object is only legal inside a class, interface, or object,
+      // so `ownerKind` is never a callable and `kotlinGraphModifiersOf` — asked
+      // for a `class` kind — always supplies a visibility modifier. The list is
+      // never empty, so it is attached outright; a `.length` guard here would be
+      // a branch that cannot run and no test can honestly cover.
       const modifiers = kotlinGraphModifiersOf(clean, "class", ownerKind);
       return {
         kind: "class",
         name: companion[1] === undefined ? "Companion" : unquote(companion[1]),
-        ...(modifiers.length > 0 ? { modifiers } : {}),
+        modifiers,
       };
     }
 
@@ -235,11 +240,16 @@ export namespace KotlinDeclarations {
     }
 
     if (isTypeOwner(ownerKind) && /^constructor\s*\(/.test(declaration)) {
+      // Past the `isTypeOwner` gate `kotlinGraphModifiersOf` always supplies the
+      // owner's default member visibility, so `modifiers` is never empty and is
+      // attached outright — the empty case a `.length` guard would cover cannot
+      // occur here. The owner name may still be absent (an anonymous type owner),
+      // where the constructor falls back to the language keyword.
       const modifiers = kotlinGraphModifiersOf(clean, "constructor", ownerKind);
       return {
         kind: "constructor",
         name: ownerName?.slice(ownerName.lastIndexOf(".") + 1) ?? "constructor",
-        ...(modifiers.length > 0 ? { modifiers } : {}),
+        modifiers,
       };
     }
 

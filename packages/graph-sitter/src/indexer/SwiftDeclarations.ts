@@ -63,16 +63,21 @@ export namespace SwiftDeclarations {
       first.startsWith("/*") ||
       first.startsWith("*")
     )
+      // `first` is `""` when `start` is past the end of `lines`, so this is the
+      // only arm that may see an absent line; `?? ""` gives it an empty source.
       return { source: lines[start] ?? "", endIndex: start };
+    // Reaching either arm below means `first` was non-empty, which happens only
+    // when `lines[start]` is a defined, non-blank string, so it is read outright.
+    // A `?? ""` fallback here would be a branch that cannot run.
     if (
       first.startsWith("@") &&
       !DECLARATION_HEAD.test(
         eraseLeadingAttributes(swiftLexicalText(first)).trimStart(),
       )
     )
-      return { source: lines[start] ?? "", endIndex: start };
+      return { source: lines[start]!, endIndex: start };
     if (!DECLARATION_HEAD.test(swiftLexicalText(first))) {
-      return { source: lines[start] ?? "", endIndex: start };
+      return { source: lines[start]!, endIndex: start };
     }
 
     const out: string[] = [];

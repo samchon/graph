@@ -21,11 +21,19 @@ export const test_kotlin_local_and_member_declarations_keep_their_owner_facts = 
         "class",
       ),
       KotlinDeclarations.parseKotlinDeclaration("constructor(value: Int)"),
+      // An anonymous type owner supplies no name, so the constructor falls back
+      // to the language keyword rather than borrowing an owner it does not have.
+      KotlinDeclarations.parseKotlinDeclaration(
+        "constructor(value: Int)",
+        undefined,
+        "class",
+      ),
     ],
     [
       { kind: "constructor", name: "Scope", modifiers: ["public"] },
       { kind: "constructor", name: "Scope", modifiers: ["private"] },
       undefined,
+      { kind: "constructor", name: "constructor", modifiers: ["public"] },
     ],
   );
 

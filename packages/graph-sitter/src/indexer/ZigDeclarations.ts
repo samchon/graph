@@ -294,15 +294,19 @@ export namespace ZigDeclarations {
 
   /** Zig module imports are ordinary const declarations around `@import`. */
   export function zigImportsOf(source: string): IZigImport[] {
-    const lexical = zigLexicalText(source);
     const out: IZigImport[] = [];
     const pattern = new RegExp(
       `^\\s*(?:pub\\s+)?const\\s+(${IDENTIFIER})\\s*=\\s*@import\\(\\s*"((?:\\\\.|[^"\\\\])*)"\\s*\\)\\s*;`,
       "gm",
     );
+    // The `^\s*(?:pub\s+)?const` anchor forces `const` to be the first token on
+    // its line, so a matched `@import` is always real code: a `//` comment line
+    // begins with `/` and a `\\` multiline-string line begins with `\`, so
+    // neither ever matches, and the only text the regex allows between `const
+    // NAME =` and `@import(` is identifiers and whitespace — nothing that opens
+    // a Zig string or comment. Re-checking the lexically masked source would
+    // therefore reject nothing; that guard could never run and was removed.
     for (let match = pattern.exec(source); match !== null; match = pattern.exec(source)) {
-      const quote = match.index + match[0]!.indexOf('"');
-      if (!lexical.slice(match.index, quote).includes("@import")) continue;
       out.push({ binding: match[1]!, name: unescapeString(match[2]!) });
     }
     return out;

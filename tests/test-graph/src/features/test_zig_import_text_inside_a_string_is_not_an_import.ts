@@ -2,14 +2,14 @@ import { TestValidator } from "@nestia/e2e";
 import { ZigDeclarations } from "@samchon/graph-sitter";
 
 /**
- * A `const x = @import("y");` written inside a Zig multiline string is text,
- * not an import.
+ * A `const x = @import("y");` written inside a Zig multiline string or a line
+ * comment is text, not an import.
  *
- * `zigImportsOf` matches the `@import` shape against the raw source so a match's
- * columns stay true, then confirms the `@import` survives in the lexically
- * masked source before trusting it — Zig's `\\` multiline strings and `//` line
- * comments are blanked in that masked copy. Without the confirm, a fake import
- * embedded in string data would surface a phantom module edge.
+ * `zigImportsOf` matches the `@import` shape against the raw source with a
+ * `^\s*(?:pub\s+)?const` anchor, so `const` must be the first token on its line.
+ * A `\\` multiline-string line begins with `\` and a `//` comment line begins
+ * with `/`, so neither can ever open the match — the anchor alone rejects the
+ * phantom module edges these fakes would otherwise surface.
  */
 export const test_zig_import_text_inside_a_string_is_not_an_import = () => {
   const real = 'const std = @import("std");\n';

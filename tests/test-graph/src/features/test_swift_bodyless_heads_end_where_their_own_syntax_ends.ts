@@ -101,4 +101,29 @@ export const test_swift_bodyless_heads_end_where_their_own_syntax_ends = () => {
       0,
     ],
   );
+
+  // An index past the end of the file names no line at all. Both the head and
+  // the bound must answer with an empty, self-terminating head rather than read
+  // undefined -- the scan can hand either an out-of-range index while it works
+  // from a previous declaration's end.
+  TestValidator.equals(
+    "an out-of-range line index yields an empty head that bounds itself",
+    [
+      SwiftDeclarations.swiftDeclarationHeader(["struct A {}"], 5),
+      SwiftDeclarations.swiftDeclarationEndIndex(["struct A {}"], 5),
+    ],
+    ["", 5],
+  );
+
+  // A bodyless head may carry a trailing block comment whose text holds a `{` on
+  // a later line. The next line reads as if it opened a body, but the masked
+  // source has no real brace, so the declaration still ends at its own head.
+  TestValidator.equals(
+    "a `{` sealed inside a trailing comment does not open a body",
+    SwiftDeclarations.swiftDeclarationEndIndex(
+      ["let value: Int /*", "{", "*/"],
+      0,
+    ),
+    0,
+  );
 };

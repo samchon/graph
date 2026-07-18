@@ -615,7 +615,7 @@ export namespace ScalaDeclarations {
   }
 
   function leadingWhitespace(source: string): number {
-    return /^\s*/.exec(source)?.[0].length ?? 0;
+    return /^\s*/.exec(source)![0].length;
   }
 
   function normalizeType(source: string): string {

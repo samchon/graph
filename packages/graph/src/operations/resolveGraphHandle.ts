@@ -68,7 +68,7 @@ export function resolveGraphHandle(
 function nativeQualifiedForms(handle: string): readonly string[] {
   if (!handle.includes("::")) return [handle];
   const dotted = handle.replaceAll("::", ".");
-  return dotted === handle ? [handle] : [handle, dotted];
+  return [handle, dotted];
 }
 
 /**

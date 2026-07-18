@@ -400,9 +400,9 @@ export namespace ZigDeclarations {
     lexical: readonly string[],
     start: number,
   ): IHeader {
-    const first = lexical[start]?.trim() ?? "";
+    const first = lexical[start]!.trim();
     if (!declarationStart(first)) {
-      return { source: lines[start] ?? "", endIndex: start };
+      return { source: lines[start]!, endIndex: start };
     }
     let parentheses = 0;
     let brackets = 0;
@@ -525,7 +525,7 @@ export namespace ZigDeclarations {
       ...(ownerKind === undefined && modifiers.includes("public")
         ? { exported: true }
         : {}),
-      ...(modifiers.length > 0 ? { modifiers } : {}),
+      modifiers,
     };
   }
 
@@ -565,7 +565,7 @@ export namespace ZigDeclarations {
     let parentheses = 0;
     let brackets = 0;
     let typeBraces = 0;
-    const callable = startsFunction(lexical[start] ?? "");
+    const callable = startsFunction(lexical[start]!);
     let prefix = "";
     for (let line = start; line <= headerEnd; line++) {
       for (let column = 0; column < lexical[line]!.length; column++) {

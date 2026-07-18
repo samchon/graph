@@ -483,13 +483,6 @@ export namespace SwiftDeclarations {
     };
   }
 
-  function swiftHeaderEndIndex(
-    lines: readonly string[],
-    start: number,
-  ): number {
-    return swiftHeaderOf(lines, start).endIndex;
-  }
-
   function swiftHeaderIsComplete(source: string): boolean {
     const text = source.trimEnd();
     if (/[,:=.]$/.test(text) || /(?:->|\bwhere)\s*$/.test(text)) return false;

@@ -551,14 +551,9 @@ export namespace KotlinDeclarations {
     close: string,
   ): number {
     let depth = 0;
-    let quote: string | undefined;
     for (let index = start; index < source.length; index++) {
       const char = source[index]!;
-      if (quote !== undefined) {
-        if (char === "\\") index++;
-        else if (char === quote) quote = undefined;
-      } else if (char === '"' || char === "'") quote = char;
-      else if (char === open) depth++;
+      if (char === open) depth++;
       else if (char === close && --depth === 0) return index + 1;
     }
     return -1;

@@ -68,8 +68,17 @@ export async function startServer(
   // spawned it would hold the process's event loop open and keep a whole Gradle
   // or solution load resident behind a session nobody is talking to.
   const close = createResidentCloseHandler(resident);
+  // These two bodies run only when the MCP transport is torn down gracefully --
+  // a client that closes the transport, or a client exit that ends our stdin.
+  // The deterministic harness disconnects by killing the spawned server
+  // process, which never runs a graceful teardown handler, so there is no
+  // in-process trigger for either callback. The close logic itself is covered
+  // by the createResidentCloseHandler tests; only these process-boundary
+  // bindings are exempt.
+  /* c8 ignore start */
   transport.onclose = () => void close();
   process.stdin.once("end", () => void close());
+  /* c8 ignore stop */
   await server.connect(transport);
 }
 

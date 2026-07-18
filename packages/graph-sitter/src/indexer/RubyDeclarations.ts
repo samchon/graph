@@ -483,7 +483,7 @@ export namespace RubyDeclarations {
       )
     )
       return true;
-    if (!/\s/.test(source[index - 1] ?? "")) return false;
+    if (!/\s/.test(source[index - 1]!)) return false;
     // Ruby's command-call form permits `match /pattern/`, while `value / rhs`
     // is division. In that ambiguous lexer state a space immediately after the
     // slash is an operand boundary, not a regular-expression body.

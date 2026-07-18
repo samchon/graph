@@ -255,12 +255,10 @@ export namespace PhpDeclarations {
       declaration,
     );
     if (constant !== null) {
-      const modifiers = phpGraphModifiersOf(clean, "field", ownerKind);
-      if (!modifiers.includes("const")) modifiers.push("const");
       return {
         kind: "field",
         name: constant[1]!,
-        modifiers,
+        modifiers: phpGraphModifiersOf(clean, "field", ownerKind),
       };
     }
     return undefined;
@@ -436,7 +434,7 @@ export namespace PhpDeclarations {
           source.slice(index),
         );
         if (header !== null) {
-          const label = header[1] ?? header[2] ?? header[3] ?? "";
+          const label = (header[1] ?? header[2] ?? header[3])!;
           let stop = index + header[0].length;
           while (stop < source.length) {
             const lineEnd = source.indexOf("\n", stop);

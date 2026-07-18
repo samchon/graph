@@ -186,16 +186,17 @@ export namespace KotlinDeclarations {
         declaration,
       );
     if (companion !== null && /\bcompanion\b/.test(clean)) {
-      // A companion object is only legal inside a class, interface, or object,
-      // so `ownerKind` is never a callable and `kotlinGraphModifiersOf` — asked
-      // for a `class` kind — always supplies a visibility modifier. The list is
-      // never empty, so it is attached outright; a `.length` guard here would be
-      // a branch that cannot run and no test can honestly cover.
+      // A companion asked for a `class` kind gets a default visibility only when
+      // its owner is not a callable; the line scanner still descends into method
+      // and function bodies, so a companion written there arrives with a callable
+      // `ownerKind` and no modifiers at all, exactly as a local `fun` does. The
+      // empty list is therefore reachable and, like the sibling type and function
+      // arms, is omitted rather than attached as `[]`.
       const modifiers = kotlinGraphModifiersOf(clean, "class", ownerKind);
       return {
         kind: "class",
         name: companion[1] === undefined ? "Companion" : unquote(companion[1]),
-        modifiers,
+        ...(modifiers.length > 0 ? { modifiers } : {}),
       };
     }
 

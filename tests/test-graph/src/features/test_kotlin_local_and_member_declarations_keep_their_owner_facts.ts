@@ -39,7 +39,10 @@ export const test_kotlin_local_and_member_declarations_keep_their_owner_facts = 
 
   // Kotlin lets a function declare classes and functions inside its body. They
   // are reachable from nowhere but that body, so they carry no visibility of
-  // their own and cannot reach the module's export surface.
+  // their own and cannot reach the module's export surface. A companion object
+  // written there is not valid Kotlin, but the line scanner still reaches it as
+  // it descends the callable, and it too comes back with no default visibility
+  // -- so its modifiers are omitted, never attached as an empty list.
   TestValidator.equals(
     "declarations inside a Kotlin callable are local and carry no visibility",
     [
@@ -53,11 +56,17 @@ export const test_kotlin_local_and_member_declarations_keep_their_owner_facts = 
         "load",
         "method",
       ),
+      KotlinDeclarations.parseKotlinDeclaration(
+        "companion object Cache",
+        "load",
+        "method",
+      ),
       KotlinDeclarations.parseKotlinDeclaration("class LocalType(val value: Int)"),
     ],
     [
       { kind: "class", name: "LocalType" },
       { kind: "function", name: "helper" },
+      { kind: "class", name: "Cache" },
       {
         kind: "class",
         name: "LocalType",

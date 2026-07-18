@@ -376,10 +376,47 @@ export namespace ContractParity {
       },
       {
         reason:
+          "The details rework split exact identity from bounded fan-out without changing the application shape: `trace` and `overview` remain bounded walks, while `details` returns the selected symbol whole and directs callers to `trace` for the rest of its relations.",
+        layer: "prose",
+        from: "For exact operations (`trace`, `details`, `overview`) it reports the structure held for the named handles.",
+        to: "For the walks from a named handle (`trace`, `overview`) it reports the structure held for the named handles, bounded where `truncated` says. For `details` it reports the two halves of a resolved symbol: its own shape returned whole, its fan-out returned as a slice with `trace` for the rest.",
+      },
+      {
+        reason:
           "Documents this product's real ranked-operation `audit` string: the facts are checked rather than verified (authority), and the rest is reworded with no change of meaning (`the caller's` becomes `yours`).",
         layer: "prose",
         from: "For the ranked operations (`lookup`, `entrypoints`, `tour`) it adds that the selection is heuristic — matched, scored, ranked, and limited against the question — so the facts are verified but the shortlist's coverage is the caller's to judge.",
         to: "For ranked operations (`lookup`, `entrypoints`, `tour`) it additionally says that selection was matched, scored, ranked, and limited against the question, so the facts are checked but shortlist coverage is yours to judge.",
+      },
+    ],
+    Details: [
+      {
+        reason:
+          "The details rework defines this cap as a small orientation slice and directs exhaustive use questions to `trace`; the limit remains two.",
+        layer: "prose",
+        from: "Maximum dependencies and dependents per side when `neighbors:true`. Above a few is usually overfetch; call `trace` for flow instead. @default 2",
+        to: "Dependencies and dependents per side when `neighbors:true`. A small orientation slice by default; what uses a symbol grows with its popularity, so `trace` answers the whole \"who uses this\". @default 2",
+      },
+      {
+        reason:
+          "Owned members are part of a symbol's identity, so the details rework returns the complete outline by default and caps it only when the caller supplies a number.",
+        layer: "prose",
+        from: "Maximum owned members for a container or object literal. @default 6",
+        to: "Owned members for a container or object literal. The complete outline by default — a class's members and an enum's are the symbol itself, so they are not sampled. Pass a number to cap.",
+      },
+      {
+        reason:
+          "Direct relations remain a bounded orientation slice; the details rework corrects the stale prose default from one to two, matching the existing implementation, and directs exhaustive fan-out to `trace`.",
+        layer: "prose",
+        from: "Maximum direct execution and type references per group. @default 1",
+        to: "Direct execution and type references per group. A small orientation slice by default; `trace` follows the whole fan-out. @default 2",
+      },
+      {
+        reason:
+          "String-literal values belong to the selected symbol's identity, so the details rework documents that they are returned whole rather than sampled with relation fan-out.",
+        layer: "prose",
+        from: "/** String literal values from the signature. */",
+        to: "/** String-literal values found in the declaration signature, such as a union or enum's value set. Returned whole rather than sampled: a symbol's value set is part of its identity, not a slice of its fan-out. /",
       },
     ],
     Dump: [
@@ -628,6 +665,15 @@ export namespace ContractParity {
         layer: "prose",
         from: "`renders` is a JSX component use",
         to: "`renders` is a component use",
+      },
+    ],
+    Tour: [
+      {
+        reason:
+          "The tour implementation already defaults to five central entrypoints; the details rework corrected the stale prose value from four without changing the request shape.",
+        layer: "prose",
+        from: "Central entrypoints to seed the tour. Raise only when the question names several public paths that must all appear in one answer. @default 4",
+        to: "Central entrypoints to seed the tour. Raise only when the question names several public paths that must all appear in one answer. @default 5",
       },
     ],
     Span: [

@@ -17,7 +17,7 @@ import { GraphPaths } from "./internal/GraphPaths";
  * to be right on one maintainer's disk is not a contract, and baking one in
  * would make the tool lie everywhere else.
  *
- *   node lib/parity.mjs --reference=<path to a samchon/ttsc checkout>
+ *   node lib/parity.mjs --reference=<path to a samchon/ttsc checkout> [--diff]
  */
 const argumentOf = (key: string): string | undefined => {
   const prefix = `--${key}=`;
@@ -32,9 +32,10 @@ const git = (repository: string, ...args: string[]): string =>
 
 const main = (): void => {
   const reference: string | undefined = argumentOf("reference");
+  const showDiff: boolean = process.argv.slice(2).includes("--diff");
   if (reference === undefined || reference === "") {
     console.error(
-      "usage: node lib/parity.mjs --reference=<path to a samchon/ttsc checkout>",
+      "usage: node lib/parity.mjs --reference=<path to a samchon/ttsc checkout> [--diff]",
     );
     process.exit(1);
   }
@@ -75,17 +76,19 @@ const main = (): void => {
     reference: { repository: "samchon/ttsc", commit, directory },
     contracts,
   };
-  fs.writeFileSync(
-    GraphPaths.ttscCanonicalContract,
-    `${JSON.stringify(canonical, null, 2)}\n`,
-    "utf8",
-  );
+  // `--diff` is the review pass: report the candidate without replacing the
+  // checked-in fixture. A subsequent invocation without it is the deliberate
+  // write step, and still refuses to end quietly on a contract it cannot explain.
+  if (!showDiff)
+    fs.writeFileSync(
+      GraphPaths.ttscCanonicalContract,
+      `${JSON.stringify(canonical, null, 2)}\n`,
+      "utf8",
+    );
 
-  // Regenerating and reporting are one step on purpose. A fixture that was
-  // written but never checked is exactly the silent drift this gate exists to
-  // prevent, so the tool refuses to end quietly on a contract it cannot explain.
-  const showDiff: boolean = process.argv.slice(2).includes("--diff");
-  console.log(`reference: samchon/ttsc @ ${commit}`);
+  console.log(
+    `reference: samchon/ttsc @ ${commit}${showDiff ? " (preview)" : ""}`,
+  );
   const failed: string[] = [];
   for (const contract of Object.keys(ContractParity.CONTRACTS)) {
     const outcome: string[] = [];
@@ -120,7 +123,10 @@ const main = (): void => {
   if (failed.length !== 0) {
     console.error(
       `\nparity: ${failed.join(", ")} no longer reproduce the reference.\n` +
-        `The fixture was still written, so the diff is inspectable — but either the\n` +
+        (showDiff
+          ? `The checked-in fixture was not changed; the diff above is the candidate.\n`
+          : `The fixture was written, so the mismatch remains inspectable.\n`) +
+        `Either the\n` +
         `reference moved in a way nobody reviewed, or this product drifted from it.\n` +
         `Review the difference and record it as a rule; do not loosen the gate.`,
     );
@@ -129,6 +135,8 @@ const main = (): void => {
   console.log(
     `\nall ${Object.keys(ContractParity.CONTRACTS).length} contracts reproduce the reference`,
   );
+  if (showDiff)
+    console.log("preview only; the checked-in canonical fixture was not changed");
 };
 
 // Print the first few line-level differences between what the reference should

@@ -94,8 +94,13 @@ export const test_application_contract_parity_fails_closed_on_drift = () => {
   // instruction changes what a caller is told. Both must fail here, and both are
   // invisible to a comment-stripped diff.
   const details: string = canonical.contracts.Details.prose;
+  const expectedDetails: string = ContractParity.expected(
+    "Details",
+    details,
+    "prose",
+  );
   const driftedProse = (mutate: (text: string) => string): string =>
-    ContractParity.expected("Details", mutate(details), "prose");
+    mutate(expectedDetails);
 
   TestValidator.notEquals(
     "a changed @default breaks prose parity though the shape is identical",

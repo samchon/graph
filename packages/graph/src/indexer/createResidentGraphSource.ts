@@ -97,7 +97,13 @@ export function createResidentGraphSource(
 
     for (const [language, session] of current.sessions) {
       if (isBulkGraphSession(session)) {
-        const refresh = prefetched.get(language) ?? (await session.refresh());
+        // `load` refreshes every bulk session through `refreshBulkSessions`
+        // before it decides to refresh at all, and hands those results here as
+        // `prefetched`. Both loops walk the same `state.sessions` map, which is
+        // never mutated in place, so a bulk session reached here is always one
+        // that was already prefetched — its snapshot is present without a second
+        // (double-counting) refresh.
+        const refresh = prefetched.get(language)!;
         assertOpen();
         strictNodes.push(...refresh.snapshot.nodes);
         strictEdges.push(...refresh.snapshot.edges);

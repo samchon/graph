@@ -21,6 +21,17 @@ export const test_kotlin_property_receiver_generics_and_stray_annotations = () =
     { kind: "variable", name: "mid", exported: true, modifiers: ["public"] },
   );
 
+  // `val @[Foo Bar] Baz.qux` is an extension property whose receiver type carries
+  // a bracketed multi-annotation (`@[...]`). The property-name scan has to balance
+  // the `[`/`]` of that annotation list — brackets that sit at the top level of
+  // the head, not inside the parentheses of an argument list — so it lands on
+  // `qux` rather than stopping inside the annotation.
+  TestValidator.equals(
+    "an extension property is named past a bracketed multi-annotation on its receiver",
+    KotlinDeclarations.parseKotlinDeclaration("val @[Foo Bar] Baz.qux: Int", "class"),
+    { kind: "variable", name: "qux", exported: true, modifiers: ["public"] },
+  );
+
   // A `@` with no identifier after it is not an annotation. `eraseLeadingAnnotations`
   // leaves it in place, so the head still begins with `@` and matches no
   // declaration form: the parser declines rather than misreading `class Bar`.

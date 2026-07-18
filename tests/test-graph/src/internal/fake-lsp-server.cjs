@@ -18,6 +18,7 @@ const options = {
   classify: false,
   cSymbols: false,
   csharpSymbols: false,
+  csharpOwnerFallback: false,
   dualOwner: false,
   pythonLocals: false,
   phpSymbols: false,
@@ -99,6 +100,8 @@ for (const arg of process.argv.slice(2)) {
     options.cSymbols = true;
   } else if (arg === "--csharp-symbols") {
     options.csharpSymbols = true;
+  } else if (arg === "--csharp-owner-fallback") {
+    options.csharpOwnerFallback = true;
   } else if (arg === "--dual-owner") {
     options.dualOwner = true;
   } else if (arg === "--python-locals") {
@@ -577,6 +580,23 @@ function handle(message) {
             },
           },
         });
+        if (options.csharpOwnerFallback) {
+          // Exercise the flat-owner-kind recovery paths that the ordinary
+          // csharp-ls data never reaches: every symbol there carries a full,
+          // exactly registered `containerName`. Here `Widget` reports *no*
+          // container (its `Field1` member must be reattached by unique
+          // simple-name fallback), and two `Sink` classes share a simple name
+          // across namespaces (so a member that names only `Sink` is ambiguous
+          // and stays unresolved).
+          return respond(message.id, [
+            information("Widget", 5, 2, 17, undefined),
+            information("Sink", 5, 7, 30, "Alpha"),
+            information("Sink", 5, 8, 29, "Beta"),
+            information("Field1", 13, 4, 19, "Root.Widget"),
+            information("Orphan", 13, 9, 15, "Ghost.Unknown"),
+            information("Ambiguous", 14, 10, 15, "Gamma.Sink"),
+          ]);
+        }
         return respond(message.id, [
           information("Core", 3, 0, 15, ""),
           information("ISink", 11, 2, 17, "Demo.Core"),

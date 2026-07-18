@@ -305,11 +305,16 @@ export namespace ScalaDeclarations {
               entry.declaration.endIndex >= index &&
               isScope(entry.declaration.kind),
           )
+          // The enclosing scopes of an export are the properly-nested owner
+          // scopes covering its line, so their `ownerNames.length` is strictly
+          // increasing from outer to inner — no two are ever equal, and the
+          // deepest (largest length) is the immediate owner. A positional
+          // tie-break would need two equal-depth scopes covering one line,
+          // which the scan's containment stack cannot produce.
           .sort(
             (left, right) =>
               right.declaration.ownerNames.length -
-                left.declaration.ownerNames.length ||
-              right.index - left.index,
+              left.declaration.ownerNames.length,
           )[0];
         out.set(index, {
           ownerNames:

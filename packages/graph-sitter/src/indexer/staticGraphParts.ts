@@ -748,6 +748,11 @@ function reconnectRustImplOwners(
   for (const declaration of declarations) {
     if (declaration.ownerId !== undefined || declaration.ownerName === undefined)
       continue;
+    // `rustImplOwner` cannot return undefined for an `impl <name>` we build from
+    // a receiver that is already a resolved type spelling: its own two
+    // undefined paths are unreachable (see rustImplOwner.ts) and the prefix
+    // always matches, so the `?? declaration.ownerName` fallback is dead.
+    /* c8 ignore next 3 -- rustImplOwner never returns undefined for this input */
     const ownerName =
       rustImplOwner(`impl ${declaration.ownerName}`, names) ??
       declaration.ownerName;
@@ -886,6 +891,10 @@ function isJavaReturnType(type: string): boolean {
     /\.\s*</.test(type)
   )
     return false;
+  // The guard above only lets a `type` beginning with an identifier character
+  // through, so this match always finds at least that identifier; the `?? []`
+  // fallback is unreachable defensive code.
+  /* c8 ignore next -- guard above forces a non-null match, so `?? []` is dead */
   const words = type.match(/[A-Za-z_$][\w$]*/g) ?? [];
   return !words.some((word) => JAVA_STATEMENT_WORDS.has(word));
 }

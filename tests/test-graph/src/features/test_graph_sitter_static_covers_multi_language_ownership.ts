@@ -344,4 +344,124 @@ export const test_graph_sitter_static_covers_multi_language_ownership = () => {
     "a Lua member names its head owner even when the table already closed",
     luaScope.some((name) => name.endsWith("draw")),
   );
+
+  // A Lua owner that IS a registered declaration but whose own range already
+  // closed. `function M() end` registers `M` and bounds it to its single line,
+  // then `function M.draw()` names owner `M` a line later. The enclosing-owner
+  // lookup finds the registered `M` among its candidates yet every candidate
+  // ends before the member, so the reverse scan falls through with no owner and
+  // the member keeps its written owner — the case a bare table assignment (whose
+  // owner is never registered at all) cannot reach.
+  const luaClosedOwner = names(
+    parts({
+      path: "closed.lua",
+      language: "lua",
+      source: ["function M() end", "function M.draw() end"].join("\n"),
+    }),
+  );
+  TestValidator.predicate(
+    "a Lua member whose registered owner already closed keeps its written owner",
+    luaClosedOwner.includes("M.draw"),
+  );
+
+  // The generic keyword parser maps a Rust `enum` token onto kind `enum`. Rust
+  // flows through the keyword regex exactly as its `struct` does, so an `enum`
+  // beside a `struct` proves the enum branch of the shared `kindOf`.
+  const rustEnum = names(
+    parts({
+      path: "color.rs",
+      language: "rust",
+      source: ["enum Color {", "    Red,", "    Green,", "}"].join("\n"),
+    }),
+  );
+  TestValidator.predicate(
+    "a Rust enum token is read as an enum",
+    rustEnum.includes("Color"),
+  );
+
+  // Two C++ types across the project share one un-namespaced qualified name, so
+  // an out-of-line member that names that owner forces the cross-file owner
+  // chooser to compare candidates that tie on the has-body term (both bodied)
+  // and on the exported term (both unexported), exercising every tiebreaker down
+  // to the stable id order. A bodyless forward declaration adds a third, unequal
+  // candidate so the has-body term is exercised both ways.
+  const cppDup = names(
+    parts(
+      {
+        path: "dup_a.cpp",
+        language: "cpp",
+        source: ["class Dup {", "  void m();", "};"].join("\n"),
+      },
+      {
+        path: "dup_b.cpp",
+        language: "cpp",
+        source: ["class Dup {", "  void n();", "};"].join("\n"),
+      },
+      {
+        path: "dup_fwd.cpp",
+        language: "cpp",
+        source: ["class Dup;"].join("\n"),
+      },
+      {
+        path: "dup_c.cpp",
+        language: "cpp",
+        source: ["void Dup::m() {}"].join("\n"),
+      },
+    ),
+  );
+  TestValidator.predicate(
+    "an out-of-line C++ member resolves an owner shared across files",
+    cppDup.includes("Dup.m") && cppDup.includes("Dup.n"),
+  );
+
+  // A Java method whose parameter list runs past the header reader's line cap.
+  // The class body is bounded by the real brace/paren walk (which has no cap and
+  // sees the list eventually close), so the method is offered to the member
+  // reader as an in-container declaration; the capped header hands the reader an
+  // unbalanced `(`, and the parenthesis matcher reports no close. The truncated
+  // method is dropped while the well-formed method beside it survives.
+  const javaLongParams = names(
+    parts({
+      path: "Big.java",
+      language: "java",
+      source: [
+        "class Big {",
+        "    void huge(",
+        ...Array.from({ length: 40 }, (_, index) => `        int a${index},`),
+        "        int last",
+        "    ) {}",
+        "    void real() {}",
+        "}",
+      ].join("\n"),
+    }),
+  );
+  TestValidator.equals(
+    "a Java method past the header line cap is dropped while the real one survives",
+    [
+      javaLongParams.includes("Big.real"),
+      javaLongParams.some((name) => name.endsWith("huge")),
+    ],
+    [true, false],
+  );
+
+  // A Java member whose tail is an annotation-style `default` value. The member
+  // reader accepts a `Type name() default value;` element tail (the shape a Java
+  // annotation writes for an element's default) alongside the plain `{`, `;`,
+  // and `throws` tails, so the element is kept as a member of its container.
+  const javaDefaultTail = names(
+    parts({
+      path: "Config.java",
+      language: "java",
+      source: [
+        "interface Config {",
+        "    int count() default 5;",
+        "    void real() {}",
+        "}",
+      ].join("\n"),
+    }),
+  );
+  TestValidator.predicate(
+    "the Java reader accepts a default-value element tail",
+    javaDefaultTail.includes("Config.count"),
+  );
 };

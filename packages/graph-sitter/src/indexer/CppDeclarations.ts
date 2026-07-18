@@ -155,13 +155,16 @@ export namespace CppDeclarations {
 
   function parseType(source: string): ICppDeclaration | undefined {
     const declaration = eraseLeadingTemplates(source);
-    const match = /^(class|struct|union|enum(?:\s+(?:class|struct))?)\s+(.+?)(?:\s*:\s*(?!:)|\s*\{|\s*;)/.exec(
+    // The base-class separator is a single `:`; a qualified name uses `::`. The
+    // `(?!:)` already refuses the first colon of `::`, and the `(?<!:)` refuses
+    // the second, so `class Outer::Inner {` keeps its qualifier while
+    // `class D : public B {` still splits before the base list.
+    const match = /^(class|struct|union|enum(?:\s+(?:class|struct))?)\s+(.+?)(?:\s*(?<!:):\s*(?!:)|\s*\{|\s*;)/.exec(
       declaration,
     );
     if (match === null) return undefined;
-    const qualified = /((?:[A-Za-z_]\w*::)*[A-Za-z_]\w*)\s*$/.exec(
-      match[2]!,
-    )?.[1];
+    const header = stripTrailingTypeSpecifiers(match[2]!.trim());
+    const qualified = /((?:[A-Za-z_]\w*::)*[A-Za-z_]\w*)\s*$/.exec(header)?.[1];
     if (qualified === undefined) return undefined;
     const parts = qualified.split("::");
     const name = parts.pop()!;
@@ -170,6 +173,21 @@ export namespace CppDeclarations {
       name,
       ...(parts.length > 0 ? { ownerNames: parts } : {}),
     };
+  }
+
+  /**
+   * Drop the contextual class-header keywords `final` and `override`, which are
+   * specifiers rather than the type name (`struct Vec final` names `Vec`). They
+   * are only stripped after a real class-head-name, so a type legitimately
+   * named `final` immediately after the class-key is preserved.
+   */
+  function stripTrailingTypeSpecifiers(header: string): string {
+    let out = header;
+    for (;;) {
+      const stripped = /^(.+\S)\s+(?:final|override)$/.exec(out);
+      if (stripped === null) return out;
+      out = stripped[1]!;
+    }
   }
 
   function isReturnType(prefix: string): boolean {
@@ -183,7 +201,11 @@ export namespace CppDeclarations {
   }
 
   function isModifierOnly(prefix: string): boolean {
-    return /^(?:(?:constexpr|consteval|explicit|extern|friend|inline|static)\s+)*$/.test(
+    // The prefix reaching here is already trimmed, so the final modifier has no
+    // trailing whitespace: `explicit Engine(int)` hands over exactly
+    // `"explicit"`. Each modifier is therefore followed by whitespace or the
+    // end of the string, never whitespace alone.
+    return /^(?:(?:constexpr|consteval|explicit|extern|friend|inline|static)(?:\s+|$))*$/.test(
       prefix,
     );
   }

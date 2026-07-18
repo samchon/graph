@@ -116,9 +116,13 @@ export namespace CsharpDeclarations {
 
     if (ownerName === undefined || !isTypeOwner(ownerKind)) return undefined;
     const modifiers = csharpGraphModifiersOf(clean, undefined, ownerKind);
-    const open = declaration.indexOf("(");
+    // Mask string and character literals before locating and balancing the
+    // parameter list, so a `(` or `)` inside a default value
+    // (`Log(string prefix = "(")`) is text rather than a counted parenthesis.
+    const masked = stripStringsAndComments(declaration);
+    const open = masked.indexOf("(");
     if (open !== -1) {
-      const before = declaration.slice(0, open).trim();
+      const before = masked.slice(0, open).trim();
       if (before !== "" && !/[=;{}]|=>/.test(before)) {
         const nameMatch = /([A-Za-z_$][\w$]*)\s*(?:<[^<>]*>)?\s*$/.exec(before);
         if (nameMatch !== null && !STATEMENT_WORDS.has(nameMatch[1]!)) {
@@ -126,11 +130,11 @@ export namespace CsharpDeclarations {
           const returnType = before.slice(0, nameMatch.index).trim();
           const ownerSimpleName = ownerName.slice(ownerName.lastIndexOf(".") + 1);
           const constructor = name === ownerSimpleName && returnType === "";
-          const close = matchingParenthesisEnd(declaration, open);
+          const close = matchingParenthesisEnd(masked, open);
           if (
             close !== -1 &&
             (constructor || isReturnType(returnType)) &&
-            /^(?:\{|;|=>|:|where\b|$)/.test(declaration.slice(close + 1).trim())
+            /^(?:\{|;|=>|:|where\b|$)/.test(masked.slice(close + 1).trim())
           ) {
             return {
               kind: constructor ? "constructor" : "method",

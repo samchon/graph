@@ -3,7 +3,30 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+// Find the root by the file that marks it, not by counting `..` upward.
+//
+// esbuild inlines this module into every entry point, so `import.meta.url` is
+// the *entry's* location, not this file's: a bundle under `lib/features/` sits
+// one directory deeper than one under `lib/`. A fixed number of `..` is
+// therefore only correct for the depth it was written against, and silently
+// resolves outside the repository for any other — which is a wrong path, not an
+// error, so it surfaces far from its cause.
+const repositoryRootOf = (start: string): string => {
+  for (let dir = start; ; ) {
+    if (fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      throw new Error(
+        `test paths: no pnpm-workspace.yaml above ${start}, so the repository root is unknown.`,
+      );
+    }
+    dir = parent;
+  }
+};
+
+const repositoryRoot = repositoryRootOf(
+  path.dirname(fileURLToPath(import.meta.url)),
+);
 const graphPackageRoot = path.join(repositoryRoot, "packages", "graph");
 
 // `os.tmpdir()` does not report the canonical spelling of the temp root on
@@ -45,4 +68,12 @@ export const GraphPaths = {
   graphBin: path.join(graphPackageRoot, "lib", "bin.js"),
   graphPackageRoot,
   repositoryRoot,
+  ttscCanonicalContract: path.join(
+    repositoryRoot,
+    "tests",
+    "test-graph",
+    "src",
+    "internal",
+    "ttsc-canonical-contract.json",
+  ),
 };

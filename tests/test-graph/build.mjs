@@ -40,7 +40,10 @@ const redirectInternalSource = {
 await build({
   bundle: true,
   entryNames: "[dir]/[name]",
-  entryPoints: ["src/index.ts", ...walk("src/features")],
+  // `parity` is a second entry beside the runner: it regenerates the canonical
+  // contract from a local ttsc checkout, which is parity development rather than
+  // a discovered test, so it must not live under `src/features`.
+  entryPoints: ["src/index.ts", "src/parity.ts", ...walk("src/features")],
   external: [
     "@modelcontextprotocol/sdk/*",
     "@nestia/e2e",

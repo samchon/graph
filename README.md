@@ -315,12 +315,14 @@ export namespace ISamchonGraphApplication {
      * own words. The audit names the LSP, static, or hybrid index that built the
      * current snapshot.
      *
-     * The audit is operation-aware. For exact operations (`trace`, `details`,
-     * `overview`) it reports the structure held for the named handles. For
-     * ranked operations (`lookup`, `entrypoints`, `tour`) it additionally says
-     * that selection was matched, scored, ranked, and limited against the
-     * question, so the facts are checked but shortlist coverage is yours to
-     * judge.
+     * The audit is operation-aware. For the walks from a named handle (`trace`,
+     * `overview`) it reports the structure held for the named handles, bounded
+     * where `truncated` says. For `details` it reports the two halves of a
+     * resolved symbol: its own shape returned whole, its fan-out returned as a
+     * slice with `trace` for the rest. For ranked operations (`lookup`,
+     * `entrypoints`, `tour`) it additionally says that selection was matched,
+     * scored, ranked, and limited against the question, so the facts are checked
+     * but shortlist coverage is yours to judge.
      */
     audit: string;
 

@@ -237,6 +237,12 @@ export namespace ContractParity {
     },
     {
       reason:
+        "The reference's graph is built by the compiler; this product's is built by its index. The article moves with the noun, exactly as for the `-derived` form above.",
+      from: "a compiler-built",
+      to: "an index-built",
+    },
+    {
+      reason:
         "The reference derives facts from the compiler; this product derives them from its index.",
       from: "compiler-derived",
       to: "index-derived",
@@ -252,6 +258,12 @@ export namespace ContractParity {
       from: "the compiler resolved",
       to: "the index resolved",
     },
+    {
+      reason:
+        "`checker` and `compiler` are the reference's two names for the one resolving authority; where it resolved a symbol, this product's index checked it. Sibling of the `compiler resolved` rewrite above.",
+      from: "the checker resolved",
+      to: "the index resolved",
+    },
   ];
 
   /**
@@ -265,6 +277,111 @@ export namespace ContractParity {
    * enforced rather than only where it is documented.
    */
   export const DEVIATIONS: Record<string, readonly IDeviation[]> = {
+    // The tool's own instruction manual. Structurally the request/output shape is
+    // byte-identical to the reference, but the JSDoc a caller reads is rewritten
+    // throughout for an index: a compiler resolves-and-verifies a fact, the index
+    // checks it; the reference's audit names a type-checked program, this one names
+    // the LSP/static/hybrid index that built the snapshot. A handful of edits carry
+    // no such authority — they only trim or reword an unchanged meaning; each says
+    // so in its reason rather than borrowing an authority it does not have.
+    Application: [
+      {
+        reason:
+          "The compiler resolves a fact and verifies it; the index checks it. The same guarantee, named for the authority that gives it.",
+        layer: "prose",
+        from: "is compiler-resolved and verified for the snapshot",
+        to: "is checked against the index for the snapshot",
+      },
+      {
+        reason:
+          "A compiler verifies; an index checks. The facts under a ranked shortlist stay checked — only the selection around them is heuristic.",
+        layer: "prose",
+        from: "the facts stay verified but the selection",
+        to: "the facts stay checked but the selection",
+      },
+      {
+        reason:
+          "The compiler resolves-and-verifies; the index checks against the snapshot its `audit` names. The `named by audit` clause is pulled forward here so the later sentence need not repeat it.",
+        layer: "prose",
+        from: "every returned fact is compiler-resolved and verified. Never use",
+        to: "every returned fact has been checked against the index named by `audit`. Never use",
+      },
+      {
+        reason:
+          "A compiler resolves each fact to its type-checked program; this product checks it against the current index. The reference's `and audit says so on every result` is dropped because the opening sentence already named the index as the one `audit` names.",
+        layer: "prose",
+        from: "The server resolved each one to the type-checked program for the snapshot the call synced to, and `audit` says so on every result.",
+        to: "The server checked each one against the current index for the snapshot the call synced to.",
+      },
+      {
+        reason:
+          "No authority: `Selection is the separate question` is trimmed to `Selection is separate`, with no change of meaning.",
+        layer: "prose",
+        from: "Selection is the separate question.",
+        to: "Selection is separate.",
+      },
+      {
+        reason:
+          "A compiler verifies; an index checks. `are still` becomes `stay` to read alongside the other `stay checked` above.",
+        layer: "prose",
+        from: "their facts are still verified, but whether",
+        to: "their facts stay checked, but whether",
+      },
+      {
+        reason: "A compiler resolves a fact; an index checks it.",
+        layer: "prose",
+        from: "re-confirming a fact the graph already resolved is not.",
+        to: "re-confirming a fact the graph already checked is not.",
+      },
+      {
+        reason: "A compiler resolves a fact; an index has already checked it.",
+        layer: "prose",
+        from: "do not re-confirm what the graph resolved.",
+        to: "do not re-confirm what the graph already checked.",
+      },
+      {
+        reason:
+          "There is no compiler to own the index; the repository's own program index answers the question.",
+        layer: "prose",
+        from: "Answer a __LANG__ question from the compiler's own index of this repository.",
+        to: "Answer a __LANG__ question from this repository's own program index.",
+      },
+      {
+        reason:
+          "The checker's resolution, audited, becomes a check against the index — the product has a checker nowhere, an index everywhere.",
+        layer: "prose",
+        from: "Every fact in a result is the checker's own resolution, audited before return, so no fact needs verifying",
+        to: "Every fact in a result is checked against the index before return, so no fact needs verifying",
+      },
+      {
+        reason:
+          "No authority: the sentence is reworded with no change of meaning (a comma becomes `or`, `in` becomes `inside`).",
+        layer: "prose",
+        from: "Read a file for what the graph does not carry: a body, the text in a span.",
+        to: "Read a file for what the graph does not carry: a body or the text inside a span.",
+      },
+      {
+        reason:
+          "The `audit` string is what the server actually returns, and this product's differs: it names the LSP, static, or hybrid index that built the snapshot rather than a type-checked program the reference's checker resolved every fact to.",
+        layer: "prose",
+        from: "What the server audited this result against before returning it, in its own words: every node, span, edge, signature, member, and step in it resolves to the type-checked program for the snapshot the call synced to, so opening a file it cites only returns a fact already in it.",
+        to: "What the server checked this result against before returning it, in its own words. The audit names the LSP, static, or hybrid index that built the current snapshot.",
+      },
+      {
+        reason:
+          "Documents this product's real exact-operation `audit` string: trimmed wording, and it omits the reference's `bounded only where truncated says` because the product's audit does not say it.",
+        layer: "prose",
+        from: "For the exact operations (`trace`, `details`, `overview`) it reports the result as the structure the graph holds for the handles named, bounded only where `truncated` says.",
+        to: "For exact operations (`trace`, `details`, `overview`) it reports the structure held for the named handles.",
+      },
+      {
+        reason:
+          "Documents this product's real ranked-operation `audit` string: the facts are checked rather than verified (authority), and the rest is reworded with no change of meaning (`the caller's` becomes `yours`).",
+        layer: "prose",
+        from: "For the ranked operations (`lookup`, `entrypoints`, `tour`) it adds that the selection is heuristic — matched, scored, ranked, and limited against the question — so the facts are verified but the shortlist's coverage is the caller's to judge.",
+        to: "For ranked operations (`lookup`, `entrypoints`, `tour`) it additionally says that selection was matched, scored, ranked, and limited against the question, so the facts are checked but shortlist coverage is yours to judge.",
+      },
+    ],
     Dump: [
       {
         reason:
@@ -315,6 +432,74 @@ export namespace ContractParity {
           'extends Omit<ISamchonGraphNode, "evidence" | "implementation"> {',
         ].join("\n"),
       },
+      {
+        reason:
+          "The CLI is named for the product, the fact-builder is no longer a separate Go program but this product's indexer, and a multi-language engine cannot name one language: `__LANG__ graph engine` becomes `code graph engine`.",
+        layer: "prose",
+        from: "The whole-graph export `ttscgraph dump` writes and the MCP server loads — the wire contract between the Go fact-builder and the __LANG__ graph engine.",
+        to: "The whole-graph export `samchon-graph dump` writes and the MCP server loads — the wire contract between the indexer and the code graph engine.",
+      },
+      {
+        reason:
+          "The reference's snapshot is a native (Go) artifact; this product's is just the snapshot the indexer parses.",
+        layer: "prose",
+        from: "The server parses each changed native snapshot",
+        to: "The server parses each changed snapshot",
+      },
+      {
+        reason:
+          "No authority: the reference closes on its bundled 3D viewer; this product documents its own dump invariant instead — a deterministic, timestamp-free function of the source, which is a closed product decision, not a compiler-vs-index difference.",
+        layer: "prose",
+        from: "while project inputs stay unchanged; the bundled 3D viewer reduces the same dump.",
+        to: "while project inputs stay unchanged. It is a pure function of its source: two dumps of the same unedited checkout are byte-identical, so a graph can be cached, diffed, and trusted. Nothing here records when it was built — a timestamp would move under an unchanged source, which is exactly the property a cache and a diff depend on.",
+      },
+      {
+        reason:
+          "Follows the structural rules above: the `tsconfig` path is gone and a `diagnostics` array is new, so the absolute/relative-path note names neither `tsconfig` nor omits `diagnostics`.",
+        layer: "prose",
+        from: "Paths in `project` and `tsconfig` are absolute; `file` fields on nodes and edges are project-relative.",
+        to: "Paths in `project` are absolute; `file` fields on nodes, edges, and diagnostics are project-relative.",
+      },
+      {
+        reason:
+          "The `tsconfig`-to-`languages`/`indexer` swap above is a code rule the structure layer sees; each new field's JSDoc, which that layer drops, is documented here.",
+        layer: "prose",
+        from: [
+          '/** The tsconfig the program was loaded from, relative to `project`. */',
+          "languages: GraphLanguage[];",
+          'indexer: "lsp" | "static" | "hybrid";',
+        ].join("\n"),
+        to: [
+          "/** The source languages present in this dump. */",
+          "languages: GraphLanguage[];",
+          "/** Which indexing strategy produced the graph. */",
+          'indexer: "lsp" | "static" | "hybrid";',
+        ].join("\n"),
+      },
+      {
+        reason:
+          "The `diagnostics` and `warnings` additions above are code rules; their JSDoc lives only in the prose layer. A folded multi-line block closes as ` /` because the fold strips the leading `*` from its final line.",
+        layer: "prose",
+        from: [
+          "edges: ISamchonGraphDump.IEdge[];",
+          "diagnostics?: ISamchonGraphDiagnostic[];",
+          "warnings?: string[];",
+        ].join("\n"),
+        to: [
+          "edges: ISamchonGraphDump.IEdge[];",
+          "/** What the language server said about the source while it indexed it. Absent when the dump was built without one — a static parse has nobody to ask. /",
+          "diagnostics?: ISamchonGraphDiagnostic[];",
+          "/** Non-fatal problems encountered while building the graph. */",
+          "warnings?: string[];",
+        ].join("\n"),
+      },
+      {
+        reason:
+          "The node/edge wire rows are emitted by this product's indexer, not the reference's separate builder process. Applies to both the `INode` and `IEdge` namespace docs.",
+        layer: "prose",
+        from: "the builder sends it",
+        to: "the indexer sends it",
+      },
     ],
     Edge: [
       {
@@ -327,6 +512,13 @@ export namespace ContractParity {
         reason: "Follows the vocabulary relocation.",
         from: "kind: SamchonGraphEdgeKind;",
         to: "kind: GraphEdgeKind;",
+      },
+      {
+        reason:
+          "A compiler resolves every edge, so the reference can call the whole graph a single checker-resolved fact. This product's edges are resolved by whichever index built the graph, so the graph is one kind of fact and each result's `audit` names which kind.",
+        layer: "prose",
+        from: "Every edge is compiler-resolved, so there is no per-edge trust flag: the whole graph is checker-resolved fact.",
+        to: "Every edge is resolved by the index that built the graph, so there is no per-edge trust flag: the whole graph is one kind of fact, and a result's `audit` names which kind.",
       },
     ],
     Node: [
@@ -352,6 +544,23 @@ export namespace ContractParity {
           "A node carries its language. In a single-language graph the answer was the whole graph's; here two nodes in one dump can disagree.",
         from: "kind: SamchonGraphNodeKind;",
         to: ["kind: GraphNodeKind;", "language: GraphLanguage;"].join("\n"),
+      },
+      {
+        reason:
+          "The `language` field the rule above added is a code line the structure layer sees; its JSDoc, which that layer drops, is documented here. Runs after that rule, on the line it produced.",
+        layer: "prose",
+        from: "language: GraphLanguage;",
+        to: [
+          "/** The source language this node was declared in. */",
+          "language: GraphLanguage;",
+        ].join("\n"),
+      },
+      {
+        reason:
+          "No authority: the example is reworded with no change of meaning (indefinite articles added before `Prisma client` and `codegen output`).",
+        layer: "prose",
+        from: "git-ignored generated code (Prisma client, codegen output)",
+        to: "git-ignored generated code (a Prisma client, a codegen output)",
       },
     ],
     NodeModifier: [
@@ -379,6 +588,20 @@ export namespace ContractParity {
           '| "external_symbol";',
         ].join("\n"),
       },
+      {
+        reason:
+          "Follows the enum extension above: the symbol kinds now run `file` through `constructor`, not `file` through `parameter`, because `field` and `constructor` were added after `parameter`.",
+        layer: "prose",
+        from: "`file` through `parameter`",
+        to: "`file` through `constructor`",
+      },
+      {
+        reason:
+          "The reference's TypeScript program owns the declarations and its checker resolves them; this product's language server both owns and resolves them.",
+        layer: "prose",
+        from: "declarations the __LANG__ program owns and the checker resolves",
+        to: "declarations the language server owns and resolves",
+      },
     ],
     EdgeKind: [
       {
@@ -391,6 +614,29 @@ export namespace ContractParity {
           "A relationship a language server reports without classifying it further. The compiler-backed reference always knew which kind it was; a generic LSP lane does not, and inventing a stronger kind would overclaim.",
         from: '| "tests";',
         to: ['| "tests"', '| "references";'].join("\n"),
+      },
+      {
+        reason:
+          "The reference's checker resolves the value and type edges and the dispatch target; this product's language server does. `the checker` appears twice in this doc, both times the language server.",
+        layer: "prose",
+        from: "the checker",
+        to: "the language server",
+      },
+      {
+        reason:
+          "JSX is a TypeScript/React form; this product indexes many languages, so `renders` names a generic component use, not a JSX one.",
+        layer: "prose",
+        from: "`renders` is a JSX component use",
+        to: "`renders` is a component use",
+      },
+    ],
+    Span: [
+      {
+        reason:
+          "The reference's wire shape sits between its Go builder and the loader; this product's sits between its indexer and the loader.",
+        layer: "prose",
+        from: "This shape exists only between the Go builder and the loader.",
+        to: "This shape exists only between the indexer and the loader.",
       },
     ],
   };

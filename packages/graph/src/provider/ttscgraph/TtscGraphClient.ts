@@ -173,10 +173,17 @@ export class TtscGraphClient implements IBulkGraphSession {
       this.pending.set(id, { resolve, reject });
     });
     this.child.stdin.write(`${JSON.stringify({ id })}\n`, (error) => {
+      // A stdin write failure is an OS-level pipe boundary a deterministic fake
+      // cannot schedule, and the `?.` guards a race the failure can only lose:
+      // the write callback fires on a later tick, and `rejectPending` (on a
+      // process `error`/`exit` in that window) may have already cleared this id.
+      // Both arms are real; neither is reproducible without an unkillable pipe.
+      /* c8 ignore start */
       if (error === null || error === undefined) return;
       const pending = this.pending.get(id);
       this.pending.delete(id);
       pending?.reject(error);
+      /* c8 ignore stop */
     });
     return response;
   }

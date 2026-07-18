@@ -22,6 +22,19 @@ const dropped = dropArg?.slice("--drop-capability=".length);
 // Moves the build universe under an `incremental` label — a producer claiming it
 // reused a program whose own inputs say it could not have.
 const universeDrift = args.includes("--universe-drift");
+// Transport- and process-level fault injection. These stand in for the wire
+// conditions a well-formed producer never emits but a real one can: a process
+// that dies mid-serve, a stream chunked or blank-padded by the OS, a line that
+// is not JSON, a frame routed to nobody, and a first answer that claims a
+// snapshot still holds when there is none yet to reuse.
+const stderrExit = args.includes("--stderr-exit");
+const exitSilently = args.includes("--exit-silently");
+const ignoreStdin = args.includes("--ignore-stdin");
+const blankLine = args.includes("--blank-line");
+const splitFrame = args.includes("--split-frame");
+const nonJson = args.includes("--nonjson");
+const unknownId = args.includes("--unknown-id");
+const firstUnchanged = args.includes("--first-unchanged");
 let requests = 0;
 
 const CAPABILITIES = [
@@ -167,12 +180,56 @@ const frame = (id, rest) => ({
   ...rest,
 });
 
+// A producer that crashes before it can answer. With something on stderr the
+// client must surface it verbatim; with nothing, the bare exit still rejects.
+// Both happen at startup, before a single request is read, so the client meets
+// a process that is already gone.
+if (stderrExit) {
+  process.stderr.write("ttscgraph diagnostic: fatal\n", () => process.exit(1));
+  return;
+}
+if (exitSilently) {
+  process.exit(1);
+}
+
+// Writes one response, subject to the transport-fault flags: a non-JSON line,
+// a blank line before the frame, a frame split across two stdout chunks, or a
+// frame routed to an id nobody is waiting on. Each is a stream condition the
+// envelope parser never sees, because the client's own NDJSON reassembly is
+// what has to survive it.
+const emit = (response) => {
+  if (nonJson) {
+    process.stdout.write("this is not a ttscgraph frame\n");
+    return;
+  }
+  const routed = unknownId ? { ...response, id: response.id + 1000 } : response;
+  const payload = `${blankLine ? "\n" : ""}${JSON.stringify(routed)}\n`;
+  if (!splitFrame) {
+    process.stdout.write(payload);
+    return;
+  }
+  // Two chunks, the first deliberately short of the newline, so the client's
+  // reassembly buffer — not readline on this side — is what joins them.
+  const cut = Math.max(1, Math.floor(payload.length / 2));
+  process.stdout.write(payload.slice(0, cut));
+  setTimeout(() => process.stdout.write(payload.slice(cut)), 10);
+};
+
 const input = readline.createInterface({ input: process.stdin });
+if (ignoreStdin) {
+  // Stay alive after stdin closes so close() must fall through to the kill.
+  // The marker below still records that stdin closed; what the client proves is
+  // that it ended the exact owned process, not that the process cooperated.
+  setInterval(() => {}, 1_000);
+}
 input.on("line", (line) => {
   const request = JSON.parse(line);
   requests += 1;
   let response;
-  if (invalidMode !== undefined) {
+  if (firstUnchanged) {
+    // A first answer that reuses a snapshot that does not exist yet.
+    response = frame(request.id, { changed: false, mode: "unchanged" });
+  } else if (invalidMode !== undefined) {
     const dump = graph("broken");
     if (invalidMode === "--invalid") {
       dump.edges[0].to = "src/core/order.ts#missing:function";
@@ -236,7 +293,7 @@ input.on("line", (line) => {
       error: "synthetic failure",
     });
   }
-  process.stdout.write(`${JSON.stringify(response)}\n`);
+  emit(response);
 });
 input.on("close", () => {
   if (marker !== undefined) fs.writeFileSync(marker, "closed\n");

@@ -1,9 +1,38 @@
 import { TestValidator } from "@nestia/e2e";
+import { createHash } from "node:crypto";
 
 // `adaptTtscGraphDump` is internal to the package, so it is reached by path
 // rather than through the public barrel.
 import { adaptTtscGraphDump } from "../../../../packages/graph/src/provider/ttscgraph/adaptTtscGraphDump";
 import { GraphPaths } from "../internal/GraphPaths";
+
+const sha = (text: string): string =>
+  createHash("sha256").update(text).digest("hex");
+
+// #70 made the dump carry its own proof: the adapter now validates a
+// `provenance` — the source manifest, the build universe, and the producer's
+// capabilities — before it will adapt a single fact, because a slice of facts
+// with no program behind it is a slice nothing downstream may quote. Every
+// well-formed fixture below therefore rides a well-formed provenance whose
+// manifest names the one workspace file its nodes name (`src/a.ts`); the
+// malformed cases each corrupt a node, an edge, or a span, and so still fail at
+// the fact they target, long before this provenance is ever read.
+const provenance = () => ({
+  schemaVersion: 1,
+  capabilities: ["universe", "sourceDigests", "diskDigests", "diagnostics"],
+  producer: { tool: "ttscgraph", version: "0.19.2", typescript: "5.9.0" },
+  universe: {
+    configs: [{ file: "tsconfig.json", digest: sha("tsconfig.json") }],
+    roots: [{ config: "tsconfig.json", file: "src/a.ts" }],
+  },
+  sources: [
+    {
+      file: "src/a.ts",
+      checkerDigest: sha("src/a.ts:checker"),
+      diskDigest: sha("src/a.ts:disk"),
+    },
+  ],
+});
 
 /**
  * The strict adapter is the trust boundary between raw compiler output and the
@@ -16,6 +45,8 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
 
   const good = () => ({
     project,
+    provenance: provenance(),
+    diagnostics: [] as unknown[],
     nodes: [
       { id: "src/a.ts#src/a.ts:module", kind: "module", name: "src/a.ts", file: "src/a.ts", external: false },
       { id: "src/a.ts#foo:function", kind: "function", name: "foo", file: "src/a.ts", external: false },
@@ -76,6 +107,8 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   const rich = adaptTtscGraphDump(
     {
       project,
+      provenance: provenance(),
+      diagnostics: [],
       nodes: [
         { id: "src/a.ts#src/a.ts:module", kind: "module", name: "src/a.ts", file: "src/a.ts", external: false },
         {

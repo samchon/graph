@@ -35,7 +35,7 @@ export const test_ttscgraph_provider_surfaces_process_failures = async () => {
   const dying = new TtscGraphClient({
     root,
     command: process.execPath,
-    args: [GraphPaths.fakeTtscGraphServer, "--serve=stderr-exit"],
+    args: [GraphPaths.fakeTtscGraphServer, "--stderr-exit"],
   });
   await delay(200);
   let crash: unknown;
@@ -64,7 +64,7 @@ export const test_ttscgraph_provider_surfaces_process_failures = async () => {
   const silent = new TtscGraphClient({
     root,
     command: process.execPath,
-    args: [GraphPaths.fakeTtscGraphServer, "--serve=exit-silently"],
+    args: [GraphPaths.fakeTtscGraphServer, "--exit-silently"],
   });
   await rejects(silent.refresh(), "a silently exiting process rejects the refresh");
   await rejects(
@@ -100,7 +100,7 @@ export const test_ttscgraph_provider_surfaces_process_failures = async () => {
     command: process.execPath,
     args: [
       GraphPaths.fakeTtscGraphServer,
-      "--serve=ignore-stdin",
+      "--ignore-stdin",
       `--marker=${marker}`,
     ],
   });

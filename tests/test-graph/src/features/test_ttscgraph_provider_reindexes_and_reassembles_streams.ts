@@ -8,10 +8,16 @@ import { TtscGraphClient } from "../../../../packages/graph/src/provider/ttscgra
 import { GraphPaths } from "../internal/GraphPaths";
 
 /**
- * A resident strict session must reassemble the NDJSON stream regardless of how
- * it is chunked, re-adapt the newer generation when the compiler edits again
- * mid-encode, and abort cleanly when the confirming poll fails — all without
- * corrupting the published snapshot.
+ * The serve stream is NDJSON, and the client owns the framing. A frame the OS
+ * hands over in two chunks, or one preceded by a blank line, must reassemble
+ * into exactly the same snapshot as a frame delivered whole — the transport
+ * must never leak into the facts.
+ *
+ * The confirmation round-trip this file once also covered is gone: the client
+ * no longer re-reads disk or issues a second poll to confirm a dump still holds
+ * (the producer's manifest answers that in the same envelope), so there is no
+ * "concurrent edit during confirmation" path left to drive. What survives #70's
+ * rewrite is the framing invariant, and that is what this test now states.
  */
 export const test_ttscgraph_provider_reindexes_and_reassembles_streams =
   async () => {
@@ -23,59 +29,23 @@ export const test_ttscgraph_provider_reindexes_and_reassembles_streams =
 
     // A blank NDJSON line before a valid frame is ignored, not treated as a
     // response.
-    const blank = await refreshOnce(root, "blank-line");
+    const blank = await refreshOnce(root, "--blank-line");
     TestValidator.predicate(
       "a blank NDJSON line is ignored and the real frame still applies",
       blank.changed && blank.generation === 1 && blank.snapshot.nodes[0]?.name === "first",
     );
 
-    // A frame split across stream chunks is reassembled before parsing.
-    const split = await refreshOnce(root, "split-frame");
+    // A frame split across two stream chunks is reassembled before parsing.
+    const split = await refreshOnce(root, "--split-frame");
     TestValidator.predicate(
       "a frame split across stream chunks is reassembled",
       split.changed && split.generation === 1 && split.snapshot.nodes[0]?.name === "first",
     );
-
-    // When the compiler produces another full dump while the first is being
-    // confirmed, the client adapts the newer generation, not the stale one.
-    const concurrent = await refreshOnce(root, "confirm-changed");
-    TestValidator.predicate(
-      "a concurrent edit during confirmation adapts the newer generation",
-      concurrent.changed &&
-        concurrent.generation === 1 &&
-        concurrent.snapshot.nodes[0]?.name === "second",
-    );
-
-    // A confirming poll that returns an error aborts the refresh and publishes
-    // nothing, leaving the client at generation zero.
-    const failing = new TtscGraphClient({
-      root,
-      command: process.execPath,
-      args: [GraphPaths.fakeTtscGraphServer, "--serve=confirm-error"],
-    });
-    try {
-      let error: unknown;
-      try {
-        await failing.refresh();
-      } catch (caught) {
-        error = caught;
-      }
-      TestValidator.predicate(
-        "a failed confirming poll aborts the refresh",
-        error instanceof Error,
-      );
-      TestValidator.predicate(
-        "a failed confirming poll publishes no snapshot",
-        failing.current === undefined && failing.generation === 0,
-      );
-    } finally {
-      await failing.close();
-    }
   };
 
 async function refreshOnce(
   root: string,
-  serveCase: string,
+  serveFlag: string,
 ): Promise<{
   changed: boolean;
   generation: number;
@@ -84,7 +54,7 @@ async function refreshOnce(
   const client = new TtscGraphClient({
     root,
     command: process.execPath,
-    args: [GraphPaths.fakeTtscGraphServer, `--serve=${serveCase}`],
+    args: [GraphPaths.fakeTtscGraphServer, serveFlag],
   });
   try {
     return await client.refresh();

@@ -72,6 +72,16 @@ export const test_static_dependency_masking_ignores_language_literals = () => {
     ["calls:real"],
   );
   TestValidator.equals(
+    "a Ruby block comment opened at the end of the file still masks to the end",
+    masked("ruby", "real()\n=begin"),
+    ["calls:real"],
+  );
+  TestValidator.equals(
+    "a Ruby data section marker at the end of the file masks to the end",
+    masked("ruby", "real()\n__END__"),
+    ["calls:real"],
+  );
+  TestValidator.equals(
     "a Ruby `%` modulo is not a percent literal",
     masked("ruby", "real(); x = a % b"),
     ["calls:real"],

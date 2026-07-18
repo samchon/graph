@@ -157,4 +157,33 @@ export const test_static_dependency_edges_bind_receivers_and_owners = () => {
     ),
     ["calls:(anonymous namespace).helper"],
   );
+
+  // The only declaration a name indexes may be the source itself, reached under
+  // an alias key. Filtering the source out leaves nothing, so no self-edge forms.
+  const selfOnly = node("owner", "function", "owner", "cpp");
+  TestValidator.equals(
+    "a name that indexes only the source resolves to no edge",
+    wires(
+      staticDependencyEdges(
+        selfOnly,
+        "alias();",
+        new Map([["alias", [selfOnly]]]),
+      ),
+    ),
+    [],
+  );
+
+  // A source whose qualified name is a single segment has no lexical owner to
+  // read; a bare reference still reaches a top-level declaration.
+  TestValidator.equals(
+    "a single-segment source name yields no owner but still resolves top level",
+    wires(
+      staticDependencyEdges(
+        node("member", "method", "member", "cpp", "standalone"),
+        "helper();",
+        index(node("helper", "function", "helper", "cpp")),
+      ),
+    ),
+    ["calls:helper"],
+  );
 };

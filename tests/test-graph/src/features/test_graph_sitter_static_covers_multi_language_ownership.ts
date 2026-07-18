@@ -282,4 +282,66 @@ export const test_graph_sitter_static_covers_multi_language_ownership = () => {
     "the generic parser recovers callables across scanner-less languages",
     generic.includes("compute") && generic.includes("Compute"),
   );
+
+  // A `func` token in a scanner-less language still maps to a callable kind
+  // through the generic keyword parser.
+  const funcToken = names(
+    parts({
+      path: "gen.dart",
+      language: "dart",
+      source: ["func handler() {}"].join("\n"),
+    }),
+  );
+  TestValidator.predicate(
+    "a generic `func` token is read as a callable",
+    funcToken.includes("handler"),
+  );
+
+  // A control keyword is not a C function name: a head shaped like a definition
+  // but named for a control word declares nothing.
+  const cControl = names(
+    parts({
+      path: "ctl.c",
+      language: "c",
+      source: ["int if(int x)", "{", "    return x;", "}"].join("\n"),
+    }),
+  );
+  TestValidator.equals("a C control keyword names no function", cControl, []);
+
+  // The Java member reader rejects a head with no name before its parameters and
+  // a head whose return type is malformed, while keeping the real method beside
+  // them.
+  const javaOffshape = names(
+    parts({
+      path: "Odd.java",
+      language: "java",
+      source: [
+        "class Odd {",
+        "    int[] () {}",
+        "    a.<b>c() {}",
+        "    void real() {}",
+        "}",
+      ].join("\n"),
+    }),
+  );
+  TestValidator.equals(
+    "malformed Java heads are dropped while the real method survives",
+    [javaOffshape.includes("Odd.real"), javaOffshape.length],
+    [true, 2],
+  );
+
+  // A Lua owner written in the head (`function M.draw()`) may name a table whose
+  // own declaration already closed above it; the owner lookup finds no enclosing
+  // declaration and the member keeps its written owner.
+  const luaScope = names(
+    parts({
+      path: "scope.lua",
+      language: "lua",
+      source: ["M = {}", "function M.draw() end"].join("\n"),
+    }),
+  );
+  TestValidator.predicate(
+    "a Lua member names its head owner even when the table already closed",
+    luaScope.some((name) => name.endsWith("draw")),
+  );
 };

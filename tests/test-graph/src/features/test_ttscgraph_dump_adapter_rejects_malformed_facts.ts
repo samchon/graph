@@ -82,6 +82,42 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d.nodes[1] as { modifiers: unknown }).modifiers = ["banana"])), project), "an unsupported modifier");
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d.edges[0] as { kind: unknown }).kind = "banana")), project), "an unsupported edge kind");
 
+  // Capability claims and the payload they authorize must agree. A digest or
+  // diagnostic without its corresponding claim is unproven data, not a
+  // degraded snapshot the adapter may silently accept.
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => {
+          d.provenance.capabilities = d.provenance.capabilities.filter(
+            (capability) => capability !== "diskDigests",
+          );
+        }),
+        project,
+      ),
+    "a disk digest without the diskDigests capability",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => {
+          d.provenance.capabilities = d.provenance.capabilities.filter(
+            (capability) => capability !== "diagnostics",
+          );
+          d.diagnostics.push({
+            file: "src/a.ts",
+            line: 1,
+            column: 1,
+            code: 2322,
+            category: "error",
+            message: "unclaimed diagnostic",
+          });
+        }),
+        project,
+      ),
+    "a diagnostic without the diagnostics capability",
+  );
+
   // Identity format and uniqueness.
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d.nodes[1] as { id: string }).id = "no-hash-here")), project), "a node id that does not encode its file and kind");
   rejects(() => adaptTtscGraphDump(mutate((d) => d.nodes.push({ ...(d.nodes[1] as object) })), project), "a duplicate node id");

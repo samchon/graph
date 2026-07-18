@@ -1,7 +1,6 @@
 import { TestValidator } from "@nestia/e2e";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { SamchonGraphMemory } from "../../../../packages/graph/src/SamchonGraphMemory";
@@ -13,8 +12,8 @@ import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_ttscgraph_bulk_provider_reuses_and_atomically_replaces_snapshots =
   async () => {
-    const root = fs.mkdtempSync(
-      path.join(os.tmpdir(), "samchon-graph-ttscgraph-provider-"),
+    const root = GraphPaths.createTempDirectory(
+      "samchon-graph-ttscgraph-provider-",
     );
     fs.mkdirSync(path.join(root, "src", "core"), { recursive: true });
     fs.writeFileSync(

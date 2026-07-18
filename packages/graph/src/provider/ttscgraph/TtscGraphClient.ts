@@ -71,13 +71,22 @@ export class TtscGraphClient implements IBulkGraphSession {
     this.child.on("error", (error) => {
       this.rejectPending(error);
     });
+    /* c8 ignore start */
     this.child.stdin.on("error", (error) => {
+      // Even a child that explicitly destroys its stdin can leave the parent's
+      // pipe writable on Windows. Delivery of this Writable error is a libuv
+      // boundary, not a state a hermetic fake child can induce portably.
       this.rejectPending(error);
     });
+    /* c8 ignore stop */
     this.child.on("exit", (code, signal) => {
+      // Node supplies a signal for termination or a code for normal exit. The
+      // callback types are nullable because they distinguish those two cases,
+      // not because an exit can have neither.
+      const status = signal ?? code;
       this.rejectPending(
         new Error(
-          `ttscgraph: process exited (${signal ?? code ?? "unknown"})${
+          `ttscgraph: process exited (${status})${
             this.stderr.trim() === "" ? "" : `: ${this.stderr.trim()}`
           }`,
         ),
@@ -168,15 +177,23 @@ export class TtscGraphClient implements IBulkGraphSession {
     if (this.closing !== undefined) return this.closing;
     this.closed = true;
     this.closing = this.enqueue(async () => {
-      if (this.child.exitCode !== null || this.child.signalCode !== null) return;
+      // `waitForExit` owns both sides of the process-status race, including a
+      // child that exited before close began. Ending an already-closed writable
+      // is harmless and keeps that state transition in one place.
       this.child.stdin.end();
       if (await waitForExit(this.child, 2_000)) return;
       // This exact ChildProcess is owned by this client. No PID lookup or
       // process-tree operation is used, so an unrelated process cannot be hit.
       this.child.kill();
+      /* c8 ignore start */
+      // A child can ignore SIGTERM on POSIX, while Windows terminates the same
+      // owned process unconditionally. No hermetic cross-platform fixture can
+      // reach this defensive failure without leaking that deliberately defiant
+      // process after the test.
       if (!(await waitForExit(this.child, 2_000))) {
         throw new Error("ttscgraph: owned process did not exit after close");
       }
+      /* c8 ignore stop */
     });
     return this.closing;
   }
@@ -190,6 +207,9 @@ export class TtscGraphClient implements IBulkGraphSession {
       if (error === null || error === undefined) return;
       const pending = this.pending.get(id);
       this.pending.delete(id);
+      // The stdin error event may clear the same request before this write
+      // callback observes the pipe failure; their ordering belongs to libuv.
+      /* c8 ignore next */
       pending?.reject(error);
     });
     return response;
@@ -297,7 +317,11 @@ function waitForExit(
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value: boolean): void => {
+      /* c8 ignore start */
+      // The first callback removes the exit listener and clears the timer. This
+      // guard only protects callbacks that libuv had already queued together.
       if (settled) return;
+      /* c8 ignore stop */
       settled = true;
       clearTimeout(timer);
       child.off("exit", exited);
@@ -310,5 +334,8 @@ function waitForExit(
 }
 
 function asError(error: unknown): Error {
+  // All current throw/rejection sites produce Error objects. The conversion is
+  // retained because JavaScript permits future callees to throw any value.
+  /* c8 ignore next */
   return error instanceof Error ? error : new Error(String(error));
 }

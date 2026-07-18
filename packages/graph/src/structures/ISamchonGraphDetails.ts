@@ -49,24 +49,26 @@ export namespace ISamchonGraphDetails {
     neighbors?: boolean;
 
     /**
-     * Maximum dependencies and dependents per side when `neighbors:true`. Above
-     * a few is usually overfetch; call `trace` for flow instead.
+     * Dependencies and dependents per side when `neighbors:true`. A small
+     * orientation slice by default; what uses a symbol grows with its
+     * popularity, so `trace` answers the whole "who uses this".
      *
      * @default 2
      */
     neighborLimit?: number;
 
     /**
-     * Maximum owned members for a container or object literal.
-     *
-     * @default 6
+     * Owned members for a container or object literal. The complete outline by
+     * default — a class's members and an enum's are the symbol itself, so they
+     * are not sampled. Pass a number to cap.
      */
     memberLimit?: number;
 
     /**
-     * Maximum direct execution and type references per group.
+     * Direct execution and type references per group. A small orientation slice
+     * by default; `trace` follows the whole fan-out.
      *
-     * @default 1
+     * @default 2
      */
     dependencyLimit?: number;
 
@@ -145,7 +147,11 @@ export namespace ISamchonGraphDetails {
     /** Concrete nodes that implement or override this interface/base member. */
     implementedBy?: IReference[];
 
-    /** String literal values from the signature. */
+    /**
+     * String-literal values found in the declaration signature, such as a union
+     * or enum's value set. Returned whole rather than sampled: a symbol's value
+     * set is part of its identity, not a slice of its fan-out.
+     */
     literals?: string[];
 
     /**

@@ -307,10 +307,10 @@ const scenario_details_edges = async () => {
     ["export const opts = {", "  host: \"h\",", "  connect() { return 1; },", "};"].join("\n"),
   );
   // A declaration line packed with literal tokens. "dup" repeats, the long
-  // string and "()" are placed early so they land within detail.literals'
-  // exposed 6-item slice (exercising cleanLiteral's dedup/overlong/
-  // punctuation-only rejection branches), and 25 filler tokens after them
-  // push literalSummaries' own internal candidate list past its 20-item cap.
+  // string and "()" are placed early so they fall within the extracted value
+  // set (exercising cleanLiteral's dedup/overlong/punctuation-only rejection
+  // branches), and 25 filler tokens after them push literalSummaries' own
+  // internal candidate list past its 20-item cap.
   const fillers = Array.from({ length: 25 }, (_, i) => `"f${i}"`).join(", ");
   fs.writeFileSync(
     path.join(root, "src", "literals.ts"),
@@ -344,8 +344,12 @@ const scenario_details_edges = async () => {
   TestValidator.predicate("details resolves the selected nodes", details.nodes.length >= 1);
   const literalsDetails = (await call(app, { type: "details", handles: ["labels"] })).result;
   const literals = literalsDetails.nodes.find((n) => n.name === "labels")?.literals ?? [];
-  // detail.literals exposes at most 6 of literalSummaries' (up to 20) candidates.
-  TestValidator.equals("exposed literals cap at 6", literals.length, 6);
+  // #742 makes a union or enum's value set identity — returned whole, not
+  // sampled — so detail.literals is no longer sliced to 6. It now exposes the
+  // whole extracted set, bounded only by literalSummaries' internal 20-item
+  // safety cap (graph scrapes the signature text rather than reading a
+  // checker-resolved list, so the parse stays bounded).
+  TestValidator.equals("literals return whole, bounded by the extraction cap", literals.length, 20);
   TestValidator.predicate("literal summaries dedupe repeats", literals.filter((l) => l === "dup").length === 1);
   TestValidator.predicate("literal summaries drop overlong and punctuation-only tokens", !literals.includes("()") && !literals.some((l) => l.length > 40));
   // memberLimit=1 breaks after the first object-literal member.

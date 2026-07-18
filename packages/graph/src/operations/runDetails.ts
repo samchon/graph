@@ -19,13 +19,14 @@ import { IRunnerOutput } from "./IRunnerOutput";
 import { resultNext } from "./resultNext";
 import { signatureOf } from "./signatureOf";
 
-// Neighbor lists are a map, not a dump; keep them scannable.
+// A symbol's fan-out — what it calls, what names it in a type, what depends on
+// it — scales with how popular it is, not with the symbol: a central type is
+// named in a thousand places, and returning all of them is a "who uses this"
+// trace/impact question, not "what is this". So fan-out is a small default
+// slice; identity (members, literals) is not, because a class's members and a
+// union's values are the symbol itself and are bounded by the declaration.
 const DEFAULT_NEIGHBORS = 2;
 const MAX_NEIGHBORS = 3;
-// A container outline can be long; default to a scannable first page.
-const DEFAULT_MEMBERS = 6;
-const MAX_MEMBERS = 8;
-// Direct dependency groups are orientation slices, not full fan-out dumps.
 const DEFAULT_DEPENDENCIES = 2;
 const MAX_DEPENDENCIES = 4;
 // Object literal outlines are navigation aids, not source excerpts.
@@ -49,13 +50,19 @@ export function runDetails(
   graph: SamchonGraphMemory,
   props: ISamchonGraphDetails.IRequest,
 ): IRunnerOutput<ISamchonGraphDetails> {
+  // Identity is the whole answer. The caller named this handle to learn what it
+  // is, and a class's members or a union's values are the symbol itself — cut
+  // them and the model reads the file for the rest, the read this index exists
+  // to remove. So `memberLimit` (and `literals`) default to unlimited. Fan-out
+  // does not: what names or uses a symbol is bounded by its popularity, not by
+  // it, so those stay a small slice with `trace` for the rest.
+  const memberLimit = limitOf(props.memberLimit);
   const neighborLimit = bound(
     props.neighborLimit,
     DEFAULT_NEIGHBORS,
     1,
     MAX_NEIGHBORS,
   );
-  const memberLimit = bound(props.memberLimit, DEFAULT_MEMBERS, 1, MAX_MEMBERS);
   const dependencyLimit = bound(
     props.dependencyLimit,
     DEFAULT_DEPENDENCIES,
@@ -152,8 +159,9 @@ export function runDetails(
       );
       if (list.length > 0) detail.members = list;
     }
-    if (signatureLiterals.length > 0)
-      detail.literals = signatureLiterals.slice(0, 6);
+    // A union or enum's value set is part of the symbol's identity, not a
+    // sample of it, so the literals a signature names are returned whole.
+    if (signatureLiterals.length > 0) detail.literals = signatureLiterals;
     if (wantNeighbors) {
       detail.dependsOn = refs(
         graph,
@@ -458,6 +466,21 @@ function cleanLiteral(value: string | undefined): string | undefined {
     return undefined;
   }
   return text;
+}
+
+/**
+ * An identity list's cap: none by default, honored when a caller passes one.
+ *
+ * `details` answers a named handle's own shape in full — its members, its
+ * values — so the default is unlimited; the tour passes an explicit number to
+ * embed a compact slice of its own. Fan-out lists keep the small capped default
+ * that `bound` gives them instead, because what uses a symbol grows with its
+ * popularity, not with the symbol.
+ */
+function limitOf(value: number | undefined): number {
+  return value === undefined || !Number.isFinite(value)
+    ? Infinity
+    : Math.max(1, Math.floor(value));
 }
 
 /**

@@ -215,7 +215,12 @@ export namespace PhpDeclarations {
       return {
         kind,
         name: type[2]!,
-        exported: isTypeOwner(ownerKind) ? undefined : true,
+        // A PHP type is always exported at this layer: unlike a callable it
+        // cannot be declared directly inside a class/interface/enum — PHP
+        // forbids nested type declarations — so `ownerKind` is never a type
+        // owner here. A type written inside a function body is demoted to a
+        // non-export by the caller's own owner-stack check, not by this field.
+        exported: true,
         ...(modifiers.length > 0 ? { modifiers } : {}),
       };
     }

@@ -398,6 +398,37 @@ function handle(message) {
       return respond(message.id, documentSymbols);
     }
     if (options.rubySymbols) {
+      if (options.symbolInformation) {
+        // A Ruby server (e.g. Solargraph) can answer with the legacy flat
+        // SymbolInformation shape: no nesting, no modifier fields, ownership
+        // only as `containerName`. Visibility is recovered from the source the
+        // same way, keyed by each declaration's own line — the exact lines the
+        // hierarchical reply below reports for the same `router.rb`.
+        const information = (name, kind, line, character, containerName) => ({
+          name,
+          kind,
+          containerName,
+          location: {
+            uri,
+            range: {
+              start: { line, character },
+              end: { line, character: character + name.length },
+            },
+          },
+        });
+        return respond(message.id, [
+          information("Demo", 2, 0, 7, ""),
+          information("Router", 5, 1, 8, "Demo"),
+          information("call", 6, 2, 8, "Demo.Router"),
+          information("dispatch!", 6, 8, 8, "Demo.Router"),
+          information("route!", 6, 14, 8, "Demo.Router"),
+          information("process_route", 6, 20, 8, "Demo.Router"),
+          information("compile?", 6, 28, 13, "Demo.Router"),
+          information("hidden_builder=", 6, 35, 10, "Demo.Router"),
+          information("build!", 6, 41, 10, "Demo.Router"),
+          information("put", 6, 44, 8, "Demo.Router"),
+        ]);
+      }
       const leaf = (name, line, character, endLine = line) => ({
         name,
         detail: "",

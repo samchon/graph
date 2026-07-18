@@ -40,6 +40,7 @@ const options = {
   unknownResponse: false,
   unknownParent: false,
   changeSymbolsOnRefresh: false,
+  overflowSymbols: false,
 };
 const symbolCallCountByUri = new Map();
 let diagnosticSeverities = [2];
@@ -148,6 +149,8 @@ for (const arg of process.argv.slice(2)) {
     options.unknownParent = true;
   } else if (arg === "--change-symbols-on-refresh") {
     options.changeSymbolsOnRefresh = true;
+  } else if (arg === "--overflow-symbols") {
+    options.overflowSymbols = true;
   } else if (arg.startsWith("--hang-method=")) {
     hangMethod = arg.slice("--hang-method=".length);
   } else if (arg.startsWith("--slow-first-references=")) {
@@ -297,6 +300,41 @@ function handle(message) {
     }
     if (options.messageLessError) return respondBareError(message.id);
     if (options.emptySymbols) return respond(message.id, []);
+    if (options.overflowSymbols) {
+      // Flat SymbolInformation whose members start on a line PAST the end of the
+      // source file. The declaration line then resolves to "" through the
+      // out-of-range fallback, so the C# field/property recovery parses nothing
+      // and the member stays a plain property, and the Java modifier scan reads
+      // an empty line. Each file gets the shape appropriate to its language.
+      const languageId = languageByUri.get(uri);
+      const information = (name, kind, line, character, containerName) => ({
+        name,
+        kind,
+        containerName,
+        location: {
+          uri,
+          range: {
+            start: { line, character },
+            end: { line, character: character + name.length },
+          },
+        },
+      });
+      if (languageId === "csharp") {
+        // `loose` starts past the source, so its declaration line is "" and the
+        // field/property recovery finds nothing (the member stays a property by
+        // default). `Score` points at a real property declaration, so the same
+        // recovery reaches the second `property` arm of the field/property test.
+        return respond(message.id, [
+          information("Bag", 5, 0, 17, ""),
+          information("loose", 13, 500, 8, "Bag"),
+          information("Score", 13, 4, 19, "Bag"),
+        ]);
+      }
+      return respond(message.id, [
+        information("Api", 5, 0, 13, ""),
+        information("gone()", 6, 500, 4, "Api"),
+      ]);
+    }
     if (options.phpSymbols) {
       const leaf = (name, kind, line, character, endLine = line, children = []) => ({
         name,

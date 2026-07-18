@@ -1206,6 +1206,10 @@ function convertSymbolInformation(
       : [symbol.containerName];
   const genericIdentity = symbolIdentity(language, symbol.name, owners);
   const declarationLine = lines[symbol.location.range.start.line] ?? "";
+  // `ownedVariableKind` is handed `rawKind`, which is always defined, and only
+  // ever returns undefined when its own `kind` argument is undefined; the
+  // `?? rawKind` fallback is therefore unreachable for this caller.
+  /* c8 ignore next 8 -- ownedVariableKind never returns undefined for a defined kind */
   const kind =
     ownedVariableKind(
       language,

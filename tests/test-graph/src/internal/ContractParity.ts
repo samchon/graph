@@ -22,9 +22,9 @@ import { GraphPaths } from "./GraphPaths";
  * added here, a union member dropped there, an unreviewed edit, or drift in the
  * reference itself — fails closed, because no rule explains it.
  *
- * Prose is deliberately excluded here. {@link normalize} strips comments so the
- * structural gate cannot be masked by wording, and JSDoc parity is a separate
- * concern with its own reviewed fixture.
+ * The two fidelities stay separate. {@link normalize} strips comments for the
+ * structural gate so wording cannot mask a shape change, while the prose gate
+ * keeps JSDoc and defaults and applies only explicitly prose-scoped rules.
  */
 export namespace ContractParity {
   /** Where a canonical fixture was derived from. */
@@ -91,6 +91,9 @@ export namespace ContractParity {
 
     /** Which layers the rule applies to. `"both"` unless stated. */
     layer?: "both" | "prose";
+
+    /** Exact number of reference occurrences this rule reviewed. @default 1 */
+    occurrences?: number;
   }
 
   /**
@@ -416,7 +419,7 @@ export namespace ContractParity {
           "String-literal values belong to the selected symbol's identity, so the details rework documents that they are returned whole rather than sampled with relation fan-out.",
         layer: "prose",
         from: "/** String literal values from the signature. */",
-        to: "/** String-literal values found in the declaration signature, such as a union or enum's value set. Returned whole rather than sampled: a symbol's value set is part of its identity, not a slice of its fan-out. /",
+        to: "/** String-literal values found in the declaration signature, such as a union or enum's value set. Returned whole rather than sampled: a symbol's value set is part of its identity, not a slice of its fan-out. */",
       },
     ],
     Dump: [
@@ -515,7 +518,7 @@ export namespace ContractParity {
       },
       {
         reason:
-          "The `diagnostics` and `warnings` additions above are code rules; their JSDoc lives only in the prose layer. A folded multi-line block closes as ` /` because the fold strips the leading `*` from its final line.",
+          "The `diagnostics` and `warnings` additions above are code rules; their JSDoc lives only in the prose layer.",
         layer: "prose",
         from: [
           "edges: ISamchonGraphDump.IEdge[];",
@@ -524,7 +527,7 @@ export namespace ContractParity {
         ].join("\n"),
         to: [
           "edges: ISamchonGraphDump.IEdge[];",
-          "/** What the language server said about the source while it indexed it. Absent when the dump was built without one — a static parse has nobody to ask. /",
+          "/** What the language server said about the source while it indexed it. Absent when the dump was built without one — a static parse has nobody to ask. */",
           "diagnostics?: ISamchonGraphDiagnostic[];",
           "/** Non-fatal problems encountered while building the graph. */",
           "warnings?: string[];",
@@ -536,6 +539,7 @@ export namespace ContractParity {
         layer: "prose",
         from: "the builder sends it",
         to: "the indexer sends it",
+        occurrences: 2,
       },
     ],
     Edge: [
@@ -658,6 +662,7 @@ export namespace ContractParity {
         layer: "prose",
         from: "the checker",
         to: "the language server",
+        occurrences: 2,
       },
       {
         reason:
@@ -730,7 +735,12 @@ export namespace ContractParity {
     return source.replace(/\/\*\*[\s\S]*?\*\//g, (block) =>
       block
         .split("\n")
-        .map((line) => line.trim().replace(/^\*\s?/, "").trimEnd())
+        .map((line) => {
+          const trimmed: string = line.trim();
+          return trimmed === "*/"
+            ? trimmed
+            : trimmed.replace(/^\*\s?/, "").trimEnd();
+        })
         .join(" ")
         .replace(/\s+/g, " ")
         .trim(),
@@ -739,11 +749,13 @@ export namespace ContractParity {
 
   /** Apply one reviewed rule, failing when it no longer matches. */
   export function rewrite(source: string, deviation: IDeviation): string {
-    if (!source.includes(deviation.from)) {
+    const expectedOccurrences: number = deviation.occurrences ?? 1;
+    const actualOccurrences: number = source.split(deviation.from).length - 1;
+    if (actualOccurrences !== expectedOccurrences) {
       throw new Error(
         `contract parity: a reviewed rule no longer matches the reference.\n` +
           `  reason: ${deviation.reason}\n` +
-          `  expected to find:\n${deviation.from}\n` +
+          `  expected ${expectedOccurrences} occurrence(s), found ${actualOccurrences}:\n${deviation.from}\n` +
           `The reference moved under a rule that was reviewed against its old shape. ` +
           `Re-review the rule rather than deleting it.`,
       );

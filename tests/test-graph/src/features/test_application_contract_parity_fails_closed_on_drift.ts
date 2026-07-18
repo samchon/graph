@@ -88,6 +88,16 @@ export const test_application_contract_parity_fails_closed_on_drift = () => {
       ),
   );
 
+  TestValidator.error(
+    "an extra occurrence beyond what a reviewed rule covered stops the gate",
+    () =>
+      ContractParity.rewrite("reviewed target; reviewed target", {
+        reason: "the review covered one exact occurrence",
+        from: "reviewed target",
+        to: "accepted target",
+      }),
+  );
+
   // The prose layer exists for exactly the drift the structure layer is blind
   // to. A `@default` bump changes behaviour while leaving the shape untouched —
   // this is the ttsc `details` change that motivated the layer — and a reworded
@@ -129,5 +139,13 @@ export const test_application_contract_parity_fails_closed_on_drift = () => {
       "prose",
     ),
     ContractParity.normalize("/**\n * one two\n * three four five\n */", "prose"),
+  );
+  TestValidator.equals(
+    "one-line and wrapped JSDoc normalize to the same prose",
+    ContractParity.normalize("/** one two three four five */", "prose"),
+    ContractParity.normalize(
+      "/**\n * one two three\n * four five\n */",
+      "prose",
+    ),
   );
 };

@@ -47,13 +47,33 @@ export const test_application_contract_diff_preview_does_not_write_canonical =
 
       const canonical: ContractParity.ICanonical = ContractParity.canonical();
       for (const [name, entry] of Object.entries(ContractParity.CONTRACTS)) {
-        const file: string = path.join(
+        const referenceFile: string = path.join(
           reference,
           canonical.reference.directory,
           entry.reference,
         );
-        fs.mkdirSync(path.dirname(file), { recursive: true });
-        fs.writeFileSync(file, canonical.contracts[name]!.prose, "utf8");
+        fs.mkdirSync(path.dirname(referenceFile), { recursive: true });
+        // Normalization folds each complete JSDoc block to a valid one-line
+        // comment, so canonical prose is itself a valid synthetic source that
+        // deterministically reproduces both fidelities.
+        fs.writeFileSync(
+          referenceFile,
+          canonical.contracts[name]!.prose,
+          "utf8",
+        );
+
+        const productFile: string = path.join(
+          previewRoot,
+          "packages",
+          "graph",
+          "src",
+          entry.product,
+        );
+        fs.mkdirSync(path.dirname(productFile), { recursive: true });
+        fs.copyFileSync(
+          path.join(GraphPaths.graphPackageRoot, "src", entry.product),
+          productFile,
+        );
       }
       execFileSync("git", ["init"], { cwd: reference, stdio: "ignore" });
       execFileSync("git", ["add", "."], { cwd: reference, stdio: "ignore" });
@@ -76,9 +96,13 @@ export const test_application_contract_diff_preview_does_not_write_canonical =
       const preview = spawnSync(
         process.execPath,
         [parity, `--reference=${reference}`, "--diff"],
-        { encoding: "utf8", stdio: "ignore" },
+        { encoding: "utf8" },
       );
       if (preview.error !== undefined) throw preview.error;
+      if (preview.status !== 0)
+        throw new Error(
+          `parity diff preview failed:\n${preview.stdout}\n${preview.stderr}`,
+        );
       TestValidator.equals(
         "the diff preview leaves the canonical untouched",
         fs.readFileSync(destination, "utf8"),
@@ -88,9 +112,11 @@ export const test_application_contract_diff_preview_does_not_write_canonical =
       const write = spawnSync(
         process.execPath,
         [parity, `--reference=${reference}`],
-        { encoding: "utf8", stdio: "ignore" },
+        { encoding: "utf8" },
       );
       if (write.error !== undefined) throw write.error;
+      if (write.status !== 0)
+        throw new Error(`parity write failed:\n${write.stdout}\n${write.stderr}`);
       TestValidator.notEquals(
         "the write mode replaces the canonical under the same inputs",
         fs.readFileSync(destination, "utf8"),

@@ -64,6 +64,7 @@ function resolveProjectTtscPackage(root: string): string | undefined {
 
 function platformBinaryOf(ttscPackage: string): string | undefined {
   const packageName = `@ttsc/${process.platform}-${process.arch}`;
+  /* c8 ignore next -- only one platform's binary name runs per OS */
   const executable = process.platform === "win32" ? "ttscgraph.exe" : "ttscgraph";
   try {
     const resolver = createRequire(ttscPackage);
@@ -77,6 +78,7 @@ function platformBinaryOf(ttscPackage: string): string | undefined {
 function graphBesideServer(server: string): ITtscGraphCommand | undefined {
   const sibling = path.join(
     path.dirname(server),
+    /* c8 ignore next -- only one platform's binary name runs per OS */
     process.platform === "win32" ? "ttscgraph.exe" : "ttscgraph",
   );
   if (isSpawnableFile(sibling)) return spawnable(sibling);
@@ -94,7 +96,15 @@ function resolveExecutable(
   env: NodeJS.ProcessEnv,
   includeGlobal: boolean,
 ): string | undefined {
-  const lookup = process.platform === "win32" ? "where.exe" : "command";
+  // Invoke `where.exe` by absolute path: the project-only lookup restricts PATH
+  // to the project bin, and libuv resolves a bare command name against that same
+  // restricted PATH, so a bare "where.exe" would fail to launch. POSIX `command`
+  // is a shell builtin resolved by the shell itself.
+  /* c8 ignore next 5 -- only one platform's lookup command runs per OS */
+  const lookup =
+    process.platform === "win32"
+      ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "where.exe")
+      : "command";
   const args = process.platform === "win32" ? [command] : ["-v", command];
   const projectBin = path.join(root, "node_modules", ".bin");
   const inheritedPath = includeGlobal ? env.PATH ?? "" : "";
@@ -116,7 +126,11 @@ function resolveExecutable(
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line !== "");
-  if (process.platform !== "win32") return lines[0];
+  // `where` lists every shim: npm emits an extensionless sh script first, then
+  // the .cmd Windows can actually run. Rank Windows-executable extensions ahead
+  // of the rest (branchlessly, so every platform runs the same lines) and take
+  // the winner. POSIX `command -v` prints a single path that matches neither
+  // filter, so this reduces to `lines[0]` there.
   const executable = lines.filter((line) => /\.exe$/i.test(line));
   const commandShim = lines.filter((line) => /\.(?:cmd|bat)$/i.test(line));
   return [...executable, ...commandShim, ...lines][0];

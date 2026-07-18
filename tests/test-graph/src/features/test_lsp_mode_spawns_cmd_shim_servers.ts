@@ -1,7 +1,6 @@
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphFixtures } from "../internal/GraphFixtures";
@@ -69,7 +68,7 @@ export const test_lsp_mode_spawns_cmd_shim_servers = async () => {
   // spawn those directly, so the indexer must route them through cmd.exe. The
   // shim wraps the fake LSP server: on Windows the graph must come back real;
   // elsewhere cmd.exe does not exist and the language must fall back cleanly.
-  const shimDir = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-shim-"));
+  const shimDir = GraphPaths.createTempDirectory("samchon-graph-shim-");
   const shim = path.join(shimDir, "fake-server.cmd");
   fs.writeFileSync(
     shim,

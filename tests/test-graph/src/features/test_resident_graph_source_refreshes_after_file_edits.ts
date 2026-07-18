@@ -1,13 +1,12 @@
 import { TestValidator } from "@nestia/e2e";
 import { createResidentGraphSource } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
 
 const residentFixture = (): string => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-resident-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-resident-");
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   const ts = (name: string): void => {
     fs.writeFileSync(

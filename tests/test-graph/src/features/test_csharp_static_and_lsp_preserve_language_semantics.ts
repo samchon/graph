@@ -1,15 +1,12 @@
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump, ISamchonGraphDump } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_csharp_static_and_lsp_preserve_language_semantics = async () => {
-  const root = fs.mkdtempSync(
-    path.join(os.tmpdir(), "samchon-graph-csharp-semantics-"),
-  );
+  const root = GraphPaths.createTempDirectory("samchon-graph-csharp-semantics-");
   fs.writeFileSync(
     path.join(root, "Pipeline.cs"),
     [

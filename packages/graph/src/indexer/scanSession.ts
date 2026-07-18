@@ -1053,8 +1053,9 @@ function isJavaAnonymousClassName(name: string): boolean {
  * Recover the Java declaration modifiers JDT.LS omits from DocumentSymbol.
  * Its range starts at the declaration (occasionally at its Javadoc) and its
  * selection starts at the declared identifier, so that exact prefix is the
- * only source slice inspected. Comments, strings, and annotation arguments are
- * erased before matching to avoid turning metadata text into visibility facts.
+ * only source slice inspected. Comments and annotations — argument strings and
+ * all — are erased before matching to avoid turning metadata text into
+ * visibility facts.
  */
 function javaModifiersOf(
   symbol: IDocumentSymbol,
@@ -1088,11 +1089,14 @@ function javaModifiersOnLine(
 function javaGraphModifiersOf(
   source: string,
 ): NonNullable<ISamchonGraphNode["modifiers"]> {
+  // Only comments are neutralized before the eraser runs; the eraser itself
+  // tracks quotes inside an annotation's argument list, so a separate string
+  // pre-strip would be redundant and, by consuming every complete string first,
+  // would keep the eraser's own close-quote handling from ever executing.
   const clean = eraseJavaAnnotations(
     source
       .replace(/\/\*[\s\S]*?\*\//g, " ")
-      .replace(/\/\/.*$/gm, " ")
-      .replace(/(["'])(?:\\.|(?!\1)[\s\S])*?\1/g, " "),
+      .replace(/\/\/.*$/gm, " "),
   );
   const out: NonNullable<ISamchonGraphNode["modifiers"]> = [];
   for (const match of clean.matchAll(
@@ -1202,6 +1206,10 @@ function convertSymbolInformation(
       : [symbol.containerName];
   const genericIdentity = symbolIdentity(language, symbol.name, owners);
   const declarationLine = lines[symbol.location.range.start.line] ?? "";
+  // `ownedVariableKind` is handed `rawKind`, which is always defined, and only
+  // ever returns undefined when its own `kind` argument is undefined; the
+  // `?? rawKind` fallback is therefore unreachable for this caller.
+  /* c8 ignore next 8 -- ownedVariableKind never returns undefined for a defined kind */
   const kind =
     ownedVariableKind(
       language,

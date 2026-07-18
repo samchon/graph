@@ -9,13 +9,16 @@ const options = {
   badJson: false,
   emptySymbols: false,
   exitOnInitialize: false,
+  exitOnShutdown: false,
   messageLessError: false,
   minimalDiagnostics: false,
   nullReferences: false,
   referenceError: false,
   nullSymbols: false,
   classify: false,
+  cSymbols: false,
   csharpSymbols: false,
+  csharpOwnerFallback: false,
   dualOwner: false,
   pythonLocals: false,
   phpSymbols: false,
@@ -24,6 +27,7 @@ const options = {
   inheritance: false,
   goReceivers: false,
   javaAnonymous: false,
+  javaFlat: false,
   omitChildren: false,
   progress: false,
   progressLifecycle: false,
@@ -36,6 +40,9 @@ const options = {
   unknownResponse: false,
   unknownParent: false,
   changeSymbolsOnRefresh: false,
+  overflowSymbols: false,
+  declarationSlices: false,
+  typeQueries: false,
 };
 const symbolCallCountByUri = new Map();
 let diagnosticSeverities = [2];
@@ -78,6 +85,8 @@ for (const arg of process.argv.slice(2)) {
     options.emptySymbols = true;
   } else if (arg === "--exit-on-initialize") {
     options.exitOnInitialize = true;
+  } else if (arg === "--exit-on-shutdown") {
+    options.exitOnShutdown = true;
   } else if (arg === "--message-less-error") {
     options.messageLessError = true;
   } else if (arg === "--minimal-diagnostics") {
@@ -90,8 +99,12 @@ for (const arg of process.argv.slice(2)) {
     options.nullSymbols = true;
   } else if (arg === "--classify") {
     options.classify = true;
+  } else if (arg === "--c-symbols") {
+    options.cSymbols = true;
   } else if (arg === "--csharp-symbols") {
     options.csharpSymbols = true;
+  } else if (arg === "--csharp-owner-fallback") {
+    options.csharpOwnerFallback = true;
   } else if (arg === "--dual-owner") {
     options.dualOwner = true;
   } else if (arg === "--python-locals") {
@@ -108,6 +121,8 @@ for (const arg of process.argv.slice(2)) {
     options.goReceivers = true;
   } else if (arg === "--java-anonymous") {
     options.javaAnonymous = true;
+  } else if (arg === "--java-flat") {
+    options.javaFlat = true;
   } else if (arg === "--omit-children") {
     options.omitChildren = true;
   } else if (arg === "--progress") {
@@ -136,6 +151,12 @@ for (const arg of process.argv.slice(2)) {
     options.unknownParent = true;
   } else if (arg === "--change-symbols-on-refresh") {
     options.changeSymbolsOnRefresh = true;
+  } else if (arg === "--overflow-symbols") {
+    options.overflowSymbols = true;
+  } else if (arg === "--declaration-slices") {
+    options.declarationSlices = true;
+  } else if (arg === "--type-queries") {
+    options.typeQueries = true;
   } else if (arg.startsWith("--hang-method=")) {
     hangMethod = arg.slice("--hang-method=".length);
   } else if (arg.startsWith("--slow-first-references=")) {
@@ -285,6 +306,113 @@ function handle(message) {
     }
     if (options.messageLessError) return respondBareError(message.id);
     if (options.emptySymbols) return respond(message.id, []);
+    if (options.overflowSymbols) {
+      // Flat SymbolInformation whose members start on a line PAST the end of the
+      // source file. The declaration line then resolves to "" through the
+      // out-of-range fallback, so the C# field/property recovery parses nothing
+      // and the member stays a plain property, and the Java modifier scan reads
+      // an empty line. Each file gets the shape appropriate to its language.
+      const languageId = languageByUri.get(uri);
+      const information = (name, kind, line, character, containerName) => ({
+        name,
+        kind,
+        containerName,
+        location: {
+          uri,
+          range: {
+            start: { line, character },
+            end: { line, character: character + name.length },
+          },
+        },
+      });
+      if (languageId === "csharp") {
+        // `loose` starts past the source, so its declaration line is "" and the
+        // field/property recovery finds nothing (the member stays a property by
+        // default). `Score` points at a real property declaration, so the same
+        // recovery reaches the second `property` arm of the field/property test.
+        return respond(message.id, [
+          information("Bag", 5, 0, 17, ""),
+          information("loose", 13, 500, 8, "Bag"),
+          information("Score", 13, 4, 19, "Bag"),
+        ]);
+      }
+      return respond(message.id, [
+        information("Api", 5, 0, 13, ""),
+        information("gone()", 6, 500, 4, "Api"),
+      ]);
+    }
+    if (options.declarationSlices) {
+      // Hierarchical DocumentSymbols that drive the per-language modifier reader
+      // through its three edge branches. `spanned` places the modifiers on the
+      // line ABOVE the identifier (its range spans two lines, so the reader
+      // slices both). `inverted` selects before its range starts (a server that
+      // inverts the two — the reader bails with no modifiers). `gone` starts
+      // past the end of the source (every read falls back to the empty string).
+      const languageId = languageByUri.get(uri);
+      const doc = (name, kind, rsL, rsC, reL, reC, ssL, ssC, seL, seC, children) => ({
+        name,
+        detail: "",
+        kind,
+        range: { start: { line: rsL, character: rsC }, end: { line: reL, character: reC } },
+        selectionRange: {
+          start: { line: ssL, character: ssC },
+          end: { line: seL, character: seC },
+        },
+        children: children ?? [],
+      });
+      if (languageId === "c") {
+        return respond(message.id, [
+          doc("spanned", 12, 0, 0, 1, 31, 1, 4, 1, 11),
+          doc("inverted", 12, 1, 0, 1, 10, 0, 0, 0, 6),
+          doc("gone", 12, 500, 0, 500, 10, 500, 0, 500, 6),
+        ]);
+      }
+      if (languageId === "csharp") {
+        return respond(message.id, [
+          doc("Holder", 5, 0, 0, 3, 1, 0, 6, 0, 12, [
+            doc("Spanned", 6, 1, 0, 2, 27, 2, 16, 2, 23),
+            doc("inverted", 6, 2, 0, 2, 10, 1, 0, 1, 6),
+            doc("gone", 6, 500, 0, 500, 10, 500, 0, 500, 6),
+          ]),
+        ]);
+      }
+      if (languageId === "php") {
+        return respond(message.id, [
+          doc("Holder", 5, 1, 0, 4, 1, 1, 6, 1, 12, [
+            doc("spanned", 6, 2, 0, 3, 24, 3, 13, 3, 20),
+            doc("inverted", 6, 3, 0, 3, 10, 2, 0, 2, 6),
+            doc("gone", 6, 500, 0, 500, 10, 500, 0, 500, 6),
+          ]),
+        ]);
+      }
+      return respond(message.id, [
+        doc("Holder", 5, 0, 0, 3, 1, 0, 6, 0, 12, [
+          doc("spanned", 6, 1, 0, 2, 28, 2, 16, 2, 23),
+          doc("inverted", 6, 2, 0, 2, 10, 1, 0, 1, 6),
+          doc("gone", 6, 500, 0, 500, 10, 500, 0, 500, 6),
+        ]),
+      ]);
+    }
+    if (options.typeQueries) {
+      // A single `Target` type per file; the reference handler points the query
+      // sites at the `typeof` contexts the reference classifier must read.
+      const languageId = languageByUri.get(uri);
+      const doc = (name, kind, rsL, rsC, reL, reC, ssL, ssC, seL, seC) => ({
+        name,
+        detail: "",
+        kind,
+        range: { start: { line: rsL, character: rsC }, end: { line: reL, character: reC } },
+        selectionRange: {
+          start: { line: ssL, character: ssC },
+          end: { line: seL, character: seC },
+        },
+        children: [],
+      });
+      if (languageId === "typescript") {
+        return respond(message.id, [doc("Target", 5, 0, 0, 0, 21, 0, 13, 0, 19)]);
+      }
+      return respond(message.id, [doc("Target", 5, 1, 0, 1, 20, 1, 5, 1, 11)]);
+    }
     if (options.phpSymbols) {
       const leaf = (name, kind, line, character, endLine = line, children = []) => ({
         name,
@@ -389,6 +517,37 @@ function handle(message) {
       return respond(message.id, documentSymbols);
     }
     if (options.rubySymbols) {
+      if (options.symbolInformation) {
+        // A Ruby server (e.g. Solargraph) can answer with the legacy flat
+        // SymbolInformation shape: no nesting, no modifier fields, ownership
+        // only as `containerName`. Visibility is recovered from the source the
+        // same way, keyed by each declaration's own line — the exact lines the
+        // hierarchical reply below reports for the same `router.rb`.
+        const information = (name, kind, line, character, containerName) => ({
+          name,
+          kind,
+          containerName,
+          location: {
+            uri,
+            range: {
+              start: { line, character },
+              end: { line, character: character + name.length },
+            },
+          },
+        });
+        return respond(message.id, [
+          information("Demo", 2, 0, 7, ""),
+          information("Router", 5, 1, 8, "Demo"),
+          information("call", 6, 2, 8, "Demo.Router"),
+          information("dispatch!", 6, 8, 8, "Demo.Router"),
+          information("route!", 6, 14, 8, "Demo.Router"),
+          information("process_route", 6, 20, 8, "Demo.Router"),
+          information("compile?", 6, 28, 13, "Demo.Router"),
+          information("hidden_builder=", 6, 35, 10, "Demo.Router"),
+          information("build!", 6, 41, 10, "Demo.Router"),
+          information("put", 6, 44, 8, "Demo.Router"),
+        ]);
+      }
       const leaf = (name, line, character, endLine = line) => ({
         name,
         detail: "",
@@ -444,6 +603,85 @@ function handle(message) {
         },
       ]);
     }
+    if (options.cSymbols) {
+      // clangd reports a `static` C function as an ordinary top-level symbol,
+      // exactly like one with external linkage: the storage class lives only in
+      // the source prefix between the symbol's range start and its declared
+      // name. These entries carry that prefix in both reply shapes.
+      //
+      //   0: #include <stdio.h>
+      //   1: static int helper(void) {
+      //   2:   return 1;
+      //   3: }
+      //   4: int public_api(void) {
+      //   5:   return helper();
+      //   6: }
+      //   7: static const int LIMIT = 8;
+      //   8: int shared_counter = 0;
+      //   9: static void
+      //  10: wrapped_helper(void) {
+      //  11: }
+      const entries = [
+        { name: "helper", kind: 12, line: 1, character: 11, endLine: 3 },
+        { name: "public_api", kind: 12, line: 4, character: 4, endLine: 6 },
+        { name: "LIMIT", kind: 14, line: 7, character: 17, endLine: 7 },
+        { name: "shared_counter", kind: 13, line: 8, character: 4, endLine: 8 },
+        // The one entry whose declaration head opens on an earlier line than
+        // the name it declares.
+        {
+          name: "wrapped_helper",
+          kind: 12,
+          line: 10,
+          character: 0,
+          endLine: 11,
+          headLine: 9,
+        },
+      ];
+      if (options.symbolInformation) {
+        return respond(
+          message.id,
+          entries.map((entry) => ({
+            name: entry.name,
+            kind: entry.kind,
+            containerName: "",
+            location: {
+              uri,
+              range: {
+                // The flat shape carries no separate declaration range, so the
+                // storage class is recovered from the declaration line itself.
+                start: { line: entry.line, character: entry.character },
+                end: {
+                  line: entry.line,
+                  character: entry.character + entry.name.length,
+                },
+              },
+            },
+          })),
+        );
+      }
+      return respond(
+        message.id,
+        entries.map((entry) => ({
+          name: entry.name,
+          detail: "",
+          kind: entry.kind,
+          range: {
+            // The declaration range opens at the head, which may be a line
+            // above the declared name.
+            start: { line: entry.headLine ?? entry.line, character: 0 },
+            end: { line: entry.endLine, character: 80 },
+          },
+          selectionRange: {
+            start: { line: entry.line, character: entry.character },
+            end: {
+              line: entry.line,
+              character: entry.character + entry.name.length,
+            },
+          },
+          children: [],
+        })),
+      );
+    }
     if (options.csharpSymbols) {
       if (options.symbolInformation) {
         const information = (name, kind, line, character, containerName) => ({
@@ -458,6 +696,23 @@ function handle(message) {
             },
           },
         });
+        if (options.csharpOwnerFallback) {
+          // Exercise the flat-owner-kind recovery paths that the ordinary
+          // csharp-ls data never reaches: every symbol there carries a full,
+          // exactly registered `containerName`. Here `Widget` reports *no*
+          // container (its `Field1` member must be reattached by unique
+          // simple-name fallback), and two `Sink` classes share a simple name
+          // across namespaces (so a member that names only `Sink` is ambiguous
+          // and stays unresolved).
+          return respond(message.id, [
+            information("Widget", 5, 2, 17, undefined),
+            information("Sink", 5, 7, 30, "Alpha"),
+            information("Sink", 5, 8, 29, "Beta"),
+            information("Field1", 13, 4, 19, "Root.Widget"),
+            information("Orphan", 13, 9, 15, "Ghost.Unknown"),
+            information("Ambiguous", 14, 10, 15, "Gamma.Sink"),
+          ]);
+        }
         return respond(message.id, [
           information("Core", 3, 0, 15, ""),
           information("ISink", 11, 2, 17, "Demo.Core"),
@@ -558,6 +813,39 @@ function handle(message) {
         cls("Child", 5, 5),
         cls("Solo", 5, 6),
         cls("Dup", 5, 7),
+      ]);
+    }
+    if (options.javaFlat) {
+      // The legacy flat shape a Java server may still answer with: no nesting,
+      // no modifier fields, and a decorated callable name. Ownership arrives as
+      // `containerName` and visibility only as the source prefix.
+      //
+      //   0: package sample;
+      //   1: public class Api {
+      //   2:   @Marker('(') @SuppressWarnings("public \" static") private void hidden() {}
+      //   3:   public void shown() { new Adapter() {}; }
+      //   4:   void packageOnly() {}
+      //   5: }
+      //   6: class Internal {}
+      const information = (name, kind, line, character, containerName) => ({
+        name,
+        kind,
+        containerName,
+        location: {
+          uri,
+          range: {
+            start: { line, character },
+            end: { line, character: character + name.length },
+          },
+        },
+      });
+      return respond(message.id, [
+        information("Api", 5, 1, 13, ""),
+        information("hidden()", 6, 2, 66, "Api"),
+        information("shown()", 6, 3, 14, "Api"),
+        information("new Adapter() {...}", 5, 3, 24, "Api.shown()"),
+        information("packageOnly()", 6, 4, 7, "Api"),
+        information("Internal", 5, 6, 6, ""),
       ]);
     }
     if (options.javaAnonymous) {
@@ -1078,6 +1366,24 @@ function handle(message) {
       setTimeout(() => handle(message), delay);
       return;
     }
+    if (options.typeQueries) {
+      const uri = message.params.textDocument.uri;
+      const languageId = languageByUri.get(uri);
+      const at = (line, startChar, endChar) => ({
+        uri,
+        range: {
+          start: { line, character: startChar },
+          end: { line, character: endChar },
+        },
+      });
+      if (languageId === "typescript") {
+        // `type Alias = typeof Target` and `null as typeof Target`: a type-alias
+        // right-hand side and an `as` type assertion, both type queries.
+        return respond(message.id, [at(1, 20, 26), at(2, 25, 31)]);
+      }
+      // A non-TypeScript `typeof Target`: always a type reference.
+      return respond(message.id, [at(2, 15, 21)]);
+    }
     if (options.classify) {
       const uri = message.params.textDocument.uri;
       const at = (line, startChar = 0, endChar = 4) => ({
@@ -1248,6 +1554,10 @@ function handle(message) {
     return respond(message.id, []);
   }
   if (message.method === "shutdown") {
+    // Several real servers treat `shutdown` as the end and simply exit instead
+    // of answering it, so the client's own `exit` notification arrives at a
+    // process that is already gone.
+    if (options.exitOnShutdown) process.exit(0);
     if (options.shutdownError) return respondError(message.id, "shutdown failed");
     return respond(message.id, null);
   }

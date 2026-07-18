@@ -1,15 +1,12 @@
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump, ISamchonGraphDump } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_ruby_preserves_end_scopes_method_names_and_visibility = async () => {
-  const root = fs.mkdtempSync(
-    path.join(os.tmpdir(), "samchon-graph-ruby-semantics-"),
-  );
+  const root = GraphPaths.createTempDirectory("samchon-graph-ruby-semantics-");
   fs.writeFileSync(
     path.join(root, "router.rb"),
     [
@@ -86,9 +83,7 @@ export const test_ruby_preserves_end_scopes_method_names_and_visibility = async 
 };
 
 async function validateLexicalLiterals(): Promise<void> {
-  const root = fs.mkdtempSync(
-    path.join(os.tmpdir(), "samchon-graph-ruby-literals-"),
-  );
+  const root = GraphPaths.createTempDirectory("samchon-graph-ruby-literals-");
   fs.writeFileSync(
     path.join(root, "literals.rb"),
     [

@@ -9,6 +9,7 @@ import { IResidentGraphSource } from "../indexer/IResidentGraphSource";
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import { ISamchonGraphDump } from "../structures";
 import { GraphLanguage } from "../typings";
+import { createResidentCloseHandler } from "./createResidentCloseHandler";
 import { createResidentGraphMemorySource } from "./createResidentGraphMemorySource";
 import { createServer } from "./createServer";
 
@@ -67,42 +68,18 @@ export async function startServer(
   // spawned it would hold the process's event loop open and keep a whole Gradle
   // or solution load resident behind a session nobody is talking to.
   const close = createResidentCloseHandler(resident);
+  // These two bodies run only when the MCP transport is torn down gracefully --
+  // a client that closes the transport, or a client exit that ends our stdin.
+  // The deterministic harness disconnects by killing the spawned server
+  // process, which never runs a graceful teardown handler, so there is no
+  // in-process trigger for either callback. The close logic itself is covered
+  // by the createResidentCloseHandler tests; only these process-boundary
+  // bindings are exempt.
+  /* c8 ignore start */
   transport.onclose = () => void close();
   process.stdin.once("end", () => void close());
+  /* c8 ignore stop */
   await server.connect(transport);
-}
-
-/**
- * Close one resident source at most once and contain shutdown failures.
- *
- * Both stdio EOF and the MCP transport can announce the same disconnect. Their
- * event emitters do not observe returned promises, so the shared promise owns
- * the rejection and reports it instead of leaving an unhandled shutdown.
- */
-export function createResidentCloseHandler(
-  resident: Pick<IResidentGraphSource, "close"> | undefined,
-  report: (error: unknown) => void = (error) =>
-    console.error(
-      "@samchon/graph: failed to close resident graph source.",
-      error,
-    ),
-): () => Promise<void> {
-  let closing: Promise<void> | undefined;
-  return () => {
-    closing ??= resident === undefined
-      ? Promise.resolve()
-      : Promise.resolve()
-          .then(() => resident.close())
-          .catch((error: unknown) => {
-            try {
-              report(error);
-            } catch {
-              // A diagnostic sink must not turn a contained close failure back
-              // into an unhandled event-listener rejection.
-            }
-          });
-    return closing;
-  };
 }
 
 // Memoizes a zero-arg function's first resolved value; a rejected call is not

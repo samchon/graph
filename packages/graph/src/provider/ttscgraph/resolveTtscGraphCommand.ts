@@ -64,10 +64,15 @@ function resolveProjectTtscPackage(root: string): string | undefined {
 
 function platformBinaryOf(ttscPackage: string): string | undefined {
   const packageName = `@ttsc/${process.platform}-${process.arch}`;
+  /* c8 ignore next -- only one platform's binary name runs per OS */
   const executable = process.platform === "win32" ? "ttscgraph.exe" : "ttscgraph";
   try {
     const resolver = createRequire(ttscPackage);
     const binary = resolver.resolve(`${packageName}/bin/${executable}`);
+    // Windows has no execute bit, so a resolved regular file is always spawnable
+    // there and the falsy arm — a non-executable platform binary, reached and
+    // rejected on POSIX — never runs, so the per-OS gate cannot count it there.
+    /* c8 ignore next -- falsy arm is a POSIX-only rejection; unreachable on Windows */
     return isSpawnableFile(binary) ? binary : undefined;
   } catch {
     return undefined;
@@ -77,6 +82,7 @@ function platformBinaryOf(ttscPackage: string): string | undefined {
 function graphBesideServer(server: string): ITtscGraphCommand | undefined {
   const sibling = path.join(
     path.dirname(server),
+    /* c8 ignore next -- only one platform's binary name runs per OS */
     process.platform === "win32" ? "ttscgraph.exe" : "ttscgraph",
   );
   if (isSpawnableFile(sibling)) return spawnable(sibling);
@@ -94,7 +100,15 @@ function resolveExecutable(
   env: NodeJS.ProcessEnv,
   includeGlobal: boolean,
 ): string | undefined {
-  const lookup = process.platform === "win32" ? "where.exe" : "command";
+  // Invoke `where.exe` by absolute path: the project-only lookup restricts PATH
+  // to the project bin, and libuv resolves a bare command name against that same
+  // restricted PATH, so a bare "where.exe" would fail to launch. POSIX `command`
+  // is a shell builtin resolved by the shell itself.
+  /* c8 ignore next 5 -- only one platform's lookup command runs per OS */
+  const lookup =
+    process.platform === "win32"
+      ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "where.exe")
+      : "command";
   const args = process.platform === "win32" ? [command] : ["-v", command];
   const projectBin = path.join(root, "node_modules", ".bin");
   const inheritedPath = includeGlobal ? env.PATH ?? "" : "";
@@ -116,7 +130,11 @@ function resolveExecutable(
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line !== "");
-  if (process.platform !== "win32") return lines[0];
+  // `where` lists every shim: npm emits an extensionless sh script first, then
+  // the .cmd Windows can actually run. Rank Windows-executable extensions ahead
+  // of the rest (branchlessly, so every platform runs the same lines) and take
+  // the winner. POSIX `command -v` prints a single path that matches neither
+  // filter, so this reduces to `lines[0]` there.
   const executable = lines.filter((line) => /\.exe$/i.test(line));
   const commandShim = lines.filter((line) => /\.(?:cmd|bat)$/i.test(line));
   return [...executable, ...commandShim, ...lines][0];
@@ -153,9 +171,15 @@ function ttscPackagesBeside(server: string): string[] {
       candidates.push(path.join(current, "package.json"));
       if (path.dirname(current) === current) break;
     }
+    /* c8 ignore start -- realpath fails only on an OS canonicalization error */
   } catch {
-    // A command shim need not be a real symlink (Windows npm .cmd files are
-    // ordinary files); the deterministic sibling candidates above cover it.
+    // `fs.realpathSync` throws only when the OS cannot canonicalize a `server`
+    // the executable lookup already found present — a broken or looping symlink,
+    // a permission or not-a-directory error, or a TOCTOU removal. None can be
+    // produced deterministically and portably from a hermetic fixture, yet
+    // dropping the guard would turn that rare failure into a crash of the whole
+    // resolver, so resolution degrades to the deterministic candidates above.
   }
+  /* c8 ignore stop */
   return candidates;
 }

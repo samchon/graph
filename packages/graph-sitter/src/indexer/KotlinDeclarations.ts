@@ -186,6 +186,12 @@ export namespace KotlinDeclarations {
         declaration,
       );
     if (companion !== null && /\bcompanion\b/.test(clean)) {
+      // A companion asked for a `class` kind gets a default visibility only when
+      // its owner is not a callable; the line scanner still descends into method
+      // and function bodies, so a companion written there arrives with a callable
+      // `ownerKind` and no modifiers at all, exactly as a local `fun` does. The
+      // empty list is therefore reachable and, like the sibling type and function
+      // arms, is omitted rather than attached as `[]`.
       const modifiers = kotlinGraphModifiersOf(clean, "class", ownerKind);
       return {
         kind: "class",
@@ -235,11 +241,16 @@ export namespace KotlinDeclarations {
     }
 
     if (isTypeOwner(ownerKind) && /^constructor\s*\(/.test(declaration)) {
+      // Past the `isTypeOwner` gate `kotlinGraphModifiersOf` always supplies the
+      // owner's default member visibility, so `modifiers` is never empty and is
+      // attached outright — the empty case a `.length` guard would cover cannot
+      // occur here. The owner name may still be absent (an anonymous type owner),
+      // where the constructor falls back to the language keyword.
       const modifiers = kotlinGraphModifiersOf(clean, "constructor", ownerKind);
       return {
         kind: "constructor",
         name: ownerName?.slice(ownerName.lastIndexOf(".") + 1) ?? "constructor",
-        ...(modifiers.length > 0 ? { modifiers } : {}),
+        modifiers,
       };
     }
 
@@ -479,7 +490,9 @@ export namespace KotlinDeclarations {
   }
 
   function leadingWhitespace(source: string): number {
-    return /^\s*/.exec(source)?.[0].length ?? 0;
+    // `^\s*` matches at every position (the empty run included), so `exec`
+    // never returns null here.
+    return /^\s*/.exec(source)![0].length;
   }
 
   function nextCodeLine(
@@ -551,14 +564,9 @@ export namespace KotlinDeclarations {
     close: string,
   ): number {
     let depth = 0;
-    let quote: string | undefined;
     for (let index = start; index < source.length; index++) {
       const char = source[index]!;
-      if (quote !== undefined) {
-        if (char === "\\") index++;
-        else if (char === quote) quote = undefined;
-      } else if (char === '"' || char === "'") quote = char;
-      else if (char === open) depth++;
+      if (char === open) depth++;
       else if (char === close && --depth === 0) return index + 1;
     }
     return -1;

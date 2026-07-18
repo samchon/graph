@@ -1,14 +1,13 @@
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+
+import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_scala_static_preserves_scala3_declarations_and_ownership =
   async () => {
-    const root = fs.mkdtempSync(
-      path.join(os.tmpdir(), "samchon-graph-scala3-semantics-"),
-    );
+    const root = GraphPaths.createTempDirectory("samchon-graph-scala3-semantics-");
     fs.writeFileSync(
       path.join(root, "Api.scala"),
       [

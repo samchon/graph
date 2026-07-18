@@ -1,6 +1,7 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+
+import { GraphPaths } from "./GraphPaths";
 
 const GRAPH_NODE_KINDS = [
   "file",
@@ -59,7 +60,7 @@ const GRAPH_REQUEST_TYPES = [
 ];
 
 const createOrderFixture = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-");
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   fs.writeFileSync(
     path.join(root, "src", "service.ts"),
@@ -99,13 +100,13 @@ const createOrderFixture = () => {
 };
 
 const createCmakeFixture = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-cmake-root-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-cmake-root-");
   fs.writeFileSync(path.join(root, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.10)\n");
   return root;
 };
 
 const createLspFixture = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-lsp-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-lsp-");
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   fs.writeFileSync(
     path.join(root, "src", "lsp.ts"),
@@ -129,7 +130,7 @@ const createLspFixture = () => {
 };
 
 const createDualOwnerFixture = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-dual-owner-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-dual-owner-");
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   // `method`'s call is deliberately split across two lines (`target` / `();`)
   // so the same fixture also covers a reference whose reported range spans
@@ -158,7 +159,7 @@ const createDualOwnerFixture = () => {
 };
 
 const createPythonLocalFixture = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-python-locals-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-python-locals-");
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   fs.writeFileSync(
     path.join(root, "src", "app.py"),
@@ -179,7 +180,7 @@ const createPythonLocalFixture = () => {
 };
 
 const createJavaAnonymousFixture = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-java-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-java-");
   fs.mkdirSync(path.join(root, "src", "sample"), { recursive: true });
   fs.writeFileSync(
     path.join(root, "src", "sample", "PublicApi.java"),
@@ -236,7 +237,7 @@ const createJavaAnonymousFixture = () => {
 };
 
 const createPhpSemanticsFixture = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-php-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-php-");
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   fs.writeFileSync(
     path.join(root, "src", "Pipeline.php"),
@@ -266,7 +267,7 @@ const createPhpSemanticsFixture = () => {
 };
 
 const createRustImplFixture = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-rust-impl-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-rust-impl-");
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   fs.writeFileSync(
     path.join(root, "src", "runtime.rs"),
@@ -327,7 +328,7 @@ const createRustImplFixture = () => {
 };
 
 const createTriviaFixture = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-trivia-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-trivia-");
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   // The fake server reports each reference's range starting on the token's
   // leading trivia (a full-start does this), so the indexer must advance to
@@ -370,7 +371,7 @@ const createTriviaFixture = () => {
 };
 
 const createClassifyFixture = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-classify-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-classify-");
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   // The fake server points references at line 1 (an invocation — `(` right
   // after column 4), line 2 (a bare member access), line 13 (a JSX opening
@@ -411,7 +412,7 @@ const createClassifyFixture = () => {
 };
 
 const createInheritanceFixture = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-inherit-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-inherit-");
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   const write = (name, lines) =>
     fs.writeFileSync(path.join(root, "src", name), `${lines.join("\n")}\n`);
@@ -470,7 +471,7 @@ const createInheritanceFixture = () => {
 };
 
 const createLspInheritanceFixture = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-lsp-inherit-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-lsp-inherit-");
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   // Line numbers here must match the selectionRanges the fake server reports in
   // `--inheritance` mode, since the LSP indexer reads the declaration line back
@@ -492,7 +493,7 @@ const createLspInheritanceFixture = () => {
 };
 
 const createContractFixture = () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-contract-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-contract-");
   fs.mkdirSync(path.join(root, "src"), { recursive: true });
   fs.writeFileSync(
     path.join(root, "src", "contract.ts"),

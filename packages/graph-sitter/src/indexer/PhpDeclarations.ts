@@ -33,6 +33,13 @@ export namespace PhpDeclarations {
     "enum",
   ]);
 
+  /**
+   * The tags that switch PHP between text and code. They delimit the code
+   * region; they are never part of a declaration written inside it, so the head
+   * a line begins is whatever follows the tag rather than the raw line.
+   */
+  const MODE_TAG = /^\s*(?:<\?(?:php\b|=)?|\?>)\s*/i;
+
   /** Index PHP namespace scopes while preserving LSP's UTF-16 source offsets. */
   export function indexPhpNamespaces(source: string): IPhpNamespaceIndex {
     const lexical = erasePhpNonCode(source);
@@ -134,7 +141,17 @@ export namespace PhpDeclarations {
     lines: readonly string[],
     start: number,
   ): string {
-    const first = lines[start]!.trim();
+    // Decide from the code the line carries, not from the tag that introduced
+    // it. `<?php` alone is the line every PHP file opens with, and reading it
+    // raw makes it look like a head still waiting for its `;` or `{`: the join
+    // below then reaches into the following lines to find one and hands back
+    // `<?php class PhpOwner {`. `parsePhpDeclaration` strips the tag and reports
+    // the *next* line's class as though it were declared on the tag line, so the
+    // class is emitted twice — once at the tag with a bogus name-relative column,
+    // once at its own line — and because the phantom spans the real body it
+    // becomes its own owner. Every member of a file's first declaration then
+    // qualifies as `PhpOwner.PhpOwner.target`, which no caller can name.
+    const first = lines[start]!.replace(MODE_TAG, "").trim();
     if (
       first === "" ||
       first.startsWith("#[") ||
@@ -198,7 +215,12 @@ export namespace PhpDeclarations {
       return {
         kind,
         name: type[2]!,
-        exported: isTypeOwner(ownerKind) ? undefined : true,
+        // A PHP type is always exported at this layer: unlike a callable it
+        // cannot be declared directly inside a class/interface/enum — PHP
+        // forbids nested type declarations — so `ownerKind` is never a type
+        // owner here. A type written inside a function body is demoted to a
+        // non-export by the caller's own owner-stack check, not by this field.
+        exported: true,
         ...(modifiers.length > 0 ? { modifiers } : {}),
       };
     }
@@ -231,25 +253,32 @@ export namespace PhpDeclarations {
       return {
         kind: "property",
         name: property[1]!,
-        ...(modifiers.length > 0 ? { modifiers } : {}),
+        modifiers,
       };
     }
     const constant = /^const\s+([A-Za-z_\x80-\xff][\w\x80-\xff]*)\b/i.exec(
       declaration,
     );
     if (constant !== null) {
-      const modifiers = phpGraphModifiersOf(clean, "field", ownerKind);
-      if (!modifiers.includes("const")) modifiers.push("const");
       return {
         kind: "field",
         name: constant[1]!,
-        ...(modifiers.length > 0 ? { modifiers } : {}),
+        modifiers: phpGraphModifiersOf(clean, "field", ownerKind),
       };
     }
     return undefined;
   }
 
-  /** Recover PHP modifiers, including PHP's implicit public member visibility. */
+  /**
+   * Recover PHP modifiers, including PHP's implicit public member visibility.
+   *
+   * A member of a type owner always comes back with at least one modifier: PHP
+   * declares an unqualified member public, so where a declaration spells no
+   * visibility this supplies it. That is why the member arms above assign
+   * `modifiers` outright instead of guarding on its length — the empty case they
+   * would be guarding against cannot occur past the `isTypeOwner` gate, and a
+   * branch that cannot run is one no test can ever honestly cover.
+   */
   export function phpGraphModifiersOf(
     source: string,
     kind?: GraphNodeKind,
@@ -410,7 +439,7 @@ export namespace PhpDeclarations {
           source.slice(index),
         );
         if (header !== null) {
-          const label = header[1] ?? header[2] ?? header[3] ?? "";
+          const label = (header[1] ?? header[2] ?? header[3])!;
           let stop = index + header[0].length;
           while (stop < source.length) {
             const lineEnd = source.indexOf("\n", stop);

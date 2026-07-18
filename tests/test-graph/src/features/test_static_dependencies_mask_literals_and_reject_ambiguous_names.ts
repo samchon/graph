@@ -1,9 +1,10 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
+
+import { GraphPaths } from "../internal/GraphPaths";
 import type {
   GraphLanguage,
   ISamchonGraphDump,
@@ -16,9 +17,7 @@ export const test_static_dependencies_mask_literals_and_reject_ambiguous_names =
   };
 
 async function validateResolutionEvidence(): Promise<void> {
-  const root = fs.mkdtempSync(
-    path.join(os.tmpdir(), "samchon-static-resolution-"),
-  );
+  const root = GraphPaths.createTempDirectory("samchon-static-resolution-");
   fs.writeFileSync(
     path.join(root, "owners.ts"),
     [
@@ -204,11 +203,16 @@ async function validateResolutionEvidence(): Promise<void> {
   );
   const handler = named("handler");
   const wire = named("wire");
+  // `subscribe(handler)` hands the callable over; it does not invoke it, and
+  // whether `subscribe` ever runs it is not something the source states. So the
+  // edge is a value access, which is what the reference implementation resolves
+  // it to as well — @ttsc/graph's own `handedOffValues` walks argument-position
+  // identifiers to `EdgeValueAccess`, never `EdgeValueCall`.
   TestValidator.equals(
     "a callable handoff retains its argument coordinate",
     dump.edges.find(
       (edge) =>
-        edge.kind === "calls" &&
+        edge.kind === "accesses" &&
         edge.from === wire?.id &&
         edge.to === handler?.id,
     )?.evidence,
@@ -537,8 +541,8 @@ async function validateLexicalMasking(): Promise<void> {
   ];
 
   for (const fixture of fixtures) {
-    const root = fs.mkdtempSync(
-      path.join(os.tmpdir(), `samchon-static-mask-${fixture.language}-`),
+    const root = GraphPaths.createTempDirectory(
+      `samchon-static-mask-${fixture.language}-`,
     );
     fs.writeFileSync(
       path.join(root, `fixture.${fixture.extension}`),

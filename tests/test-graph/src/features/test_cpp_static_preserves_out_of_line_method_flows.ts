@@ -1,12 +1,13 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
 
+import { GraphPaths } from "../internal/GraphPaths";
+
 export const test_cpp_static_preserves_out_of_line_method_flows = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-cpp-methods-"));
+  const root = GraphPaths.createTempDirectory("samchon-cpp-methods-");
   fs.writeFileSync(
     path.join(root, "engine.hpp"),
     [

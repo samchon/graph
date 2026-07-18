@@ -125,7 +125,7 @@ function resolveOccurrence(
   );
   if (candidates.length === 0) return undefined;
 
-  const qualifier = qualifierBefore(body, occurrence);
+  const qualifier = qualifierBefore(body, occurrence, source.language);
   const sourceOwner = lexicalOwnerOf(source);
   if (qualifier.present) {
     if (qualifier.names.length === 0) return undefined;
@@ -143,10 +143,11 @@ function resolveOccurrence(
       // same-name member on another owner is not evidence that it is inherited.
       return undefined;
     }
-    const qualified = candidates.filter((candidate) => {
-      const owner = ownerOf(candidate);
-      return owner === receiver || owner?.endsWith(`.${receiver}`) === true;
-    });
+    const qualified = candidates.filter((candidate) =>
+      ownerKeysOf(candidate).some(
+        (owner) => owner === receiver || owner?.endsWith(`.${receiver}`) === true,
+      ),
+    );
     if (qualified.length > 0) return chooseLocal(source, qualified);
     // A lower-case/object receiver carries no usable static type. Project-wide
     // uniqueness of the member name does not prove that receiver's class.
@@ -155,8 +156,8 @@ function resolveOccurrence(
 
   if (sourceOwner !== undefined) {
     for (const scope of enclosingScopes(sourceOwner)) {
-      const sameScope = candidates.filter(
-        (candidate) => ownerOf(candidate) === scope,
+      const sameScope = candidates.filter((candidate) =>
+        ownerKeysOf(candidate).includes(scope),
       );
       if (sameScope.length === 0) continue;
       // An ambiguity in the nearest lexical scope must not fall through to a
@@ -169,7 +170,7 @@ function resolveOccurrence(
   // not become B.run merely because B is the only declaration in the project.
   return chooseLocal(
     source,
-    candidates.filter((candidate) => ownerOf(candidate) === undefined),
+    candidates.filter((candidate) => ownerKeysOf(candidate).includes(undefined)),
   );
 }
 
@@ -221,6 +222,28 @@ function ownerOf(node: ISamchonGraphNode): string | undefined {
   return boundary === -1 ? undefined : qualified.slice(0, boundary);
 }
 
+// C++ gives an anonymous namespace no name a caller can write, and its members
+// are visible throughout the enclosing namespace for the whole translation unit.
+// So such a declaration answers to the scope *outside* it as well as its own,
+// and a resolver that only compares the literal owner never finds it from there.
+// `staticGraphParts` already elides these segments when it keys owners; this is
+// the same rule on the reading side.
+const ANONYMOUS_NAMESPACE = "(anonymous namespace)";
+
+function ownerKeysOf(
+  node: ISamchonGraphNode,
+): readonly (string | undefined)[] {
+  const owner = ownerOf(node);
+  if (owner === undefined) return [undefined];
+  if (node.language !== "cpp" && node.language !== "c") return [owner];
+  const parts = owner.split(".");
+  if (!parts.includes(ANONYMOUS_NAMESPACE)) return [owner];
+  const alias = parts.filter((name) => name !== ANONYMOUS_NAMESPACE).join(".");
+  // An anonymous namespace at file scope elides to nothing, which is the
+  // top-level key — the same one a free function answers to.
+  return [owner, alias === "" ? undefined : alias];
+}
+
 function isOwnerKind(kind: GraphNodeKind): boolean {
   return (
     kind === "class" ||
@@ -231,12 +254,16 @@ function isOwnerKind(kind: GraphNodeKind): boolean {
   );
 }
 
-function qualifierBefore(body: string, occurrence: number): IQualifier {
+function qualifierBefore(
+  body: string,
+  occurrence: number,
+  language: GraphLanguage,
+): IQualifier {
   let cursor = skipWhitespaceBackward(body, occurrence - 1);
   const names: string[] = [];
   let present = false;
   for (;;) {
-    const separator = receiverSeparatorBefore(body, cursor);
+    const separator = receiverSeparatorBefore(body, cursor, language);
     if (separator === undefined) break;
     present = true;
     cursor = skipWhitespaceBackward(body, separator - 1);
@@ -255,6 +282,7 @@ function qualifierBefore(body: string, occurrence: number): IQualifier {
 function receiverSeparatorBefore(
   body: string,
   cursor: number,
+  language: GraphLanguage,
 ): number | undefined {
   if (cursor < 0) return undefined;
   if (body[cursor] === "." || body[cursor] === ":") {
@@ -265,6 +293,13 @@ function receiverSeparatorBefore(
       (body[cursor - 1] === "?" || body[cursor - 1] === "&")
     )
       return cursor - 1;
+    // A lone `:` reaches a member only in Lua, which spells a method call
+    // `obj:method()`. Everywhere else it opens a type annotation, and reading
+    // `value: Model` as a receiver makes `Model` a member of `value` — a
+    // lower-case receiver carries no static type, so the occurrence resolves to
+    // nothing and the annotation loses the very `type_ref` it exists to state.
+    // The doubled `::` that C++, PHP, Ruby, and Rust use is already taken above.
+    if (body[cursor] === ":" && language !== "lua") return undefined;
     return cursor;
   }
   if (body[cursor] === ">" && cursor > 0 && body[cursor - 1] === "-") {
@@ -767,10 +802,14 @@ function startsSlashLiteral(
     return true;
   const prefix = source.slice(Math.max(0, previous - 12), previous + 1);
   if (/\b(?:case|return|throw|yield)$/.test(prefix)) return true;
+  // Reaching here means `slashLiteralEnd` already found a closing slash after
+  // `start` (so `start + 1` is in range) and a non-whitespace char precedes
+  // `start` (so `previous >= 0`, hence `start - 1` is in range). Neither index
+  // is ever out of bounds, so a `?? ""` fallback here could never run.
   return (
     language === "ruby" &&
-    /\s/.test(source[start - 1] ?? "") &&
-    !/\s/.test(source[start + 1] ?? "")
+    /\s/.test(source[start - 1]!) &&
+    !/\s/.test(source[start + 1]!)
   );
 }
 

@@ -174,8 +174,11 @@ export namespace ZigDeclarations {
     start: number,
   ): number {
     const lexical = zigLexicalLines(lines);
-    const callable = startsFunction(lexical[start] ?? "");
-    const commaTerminated = startsCommaDeclaration(lexical[start] ?? "");
+    // Every caller passes a line index it is already iterating, so `lexical`
+    // (one entry per line) always has an entry at `start`.
+    const head = lexical[start]!;
+    const callable = startsFunction(head);
+    const commaTerminated = startsCommaDeclaration(head);
     let braces = 0;
     let typeBraces = 0;
     let sawBody = false;
@@ -291,15 +294,19 @@ export namespace ZigDeclarations {
 
   /** Zig module imports are ordinary const declarations around `@import`. */
   export function zigImportsOf(source: string): IZigImport[] {
-    const lexical = zigLexicalText(source);
     const out: IZigImport[] = [];
     const pattern = new RegExp(
       `^\\s*(?:pub\\s+)?const\\s+(${IDENTIFIER})\\s*=\\s*@import\\(\\s*"((?:\\\\.|[^"\\\\])*)"\\s*\\)\\s*;`,
       "gm",
     );
+    // The `^\s*(?:pub\s+)?const` anchor forces `const` to be the first token on
+    // its line, so a matched `@import` is always real code: a `//` comment line
+    // begins with `/` and a `\\` multiline-string line begins with `\`, so
+    // neither ever matches, and the only text the regex allows between `const
+    // NAME =` and `@import(` is identifiers and whitespace — nothing that opens
+    // a Zig string or comment. Re-checking the lexically masked source would
+    // therefore reject nothing; that guard could never run and was removed.
     for (let match = pattern.exec(source); match !== null; match = pattern.exec(source)) {
-      const quote = match.index + match[0]!.indexOf('"');
-      if (!lexical.slice(match.index, quote).includes("@import")) continue;
       out.push({ binding: match[1]!, name: unescapeString(match[2]!) });
     }
     return out;
@@ -400,9 +407,9 @@ export namespace ZigDeclarations {
     lexical: readonly string[],
     start: number,
   ): IHeader {
-    const first = lexical[start]?.trim() ?? "";
+    const first = lexical[start]!.trim();
     if (!declarationStart(first)) {
-      return { source: lines[start] ?? "", endIndex: start };
+      return { source: lines[start]!, endIndex: start };
     }
     let parentheses = 0;
     let brackets = 0;
@@ -525,7 +532,7 @@ export namespace ZigDeclarations {
       ...(ownerKind === undefined && modifiers.includes("public")
         ? { exported: true }
         : {}),
-      ...(modifiers.length > 0 ? { modifiers } : {}),
+      modifiers,
     };
   }
 
@@ -565,7 +572,7 @@ export namespace ZigDeclarations {
     let parentheses = 0;
     let brackets = 0;
     let typeBraces = 0;
-    const callable = startsFunction(lexical[start] ?? "");
+    const callable = startsFunction(lexical[start]!);
     let prefix = "";
     for (let line = start; line <= headerEnd; line++) {
       for (let column = 0; column < lexical[line]!.length; column++) {

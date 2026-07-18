@@ -1,8 +1,9 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { TestValidator } from "@nestia/e2e";
+
+import { GraphPaths } from "../internal/GraphPaths";
 import {
   buildGraphDump,
   SamchonGraphApplication,
@@ -10,7 +11,7 @@ import {
 } from "@samchon/graph";
 
 export const test_static_calls_keep_distinct_expression_evidence = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-static-sites-"));
+  const root = GraphPaths.createTempDirectory("samchon-static-sites-");
   fs.writeFileSync(
     path.join(root, "flow.ts"),
     [

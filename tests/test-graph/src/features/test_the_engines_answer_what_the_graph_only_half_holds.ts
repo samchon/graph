@@ -12,8 +12,9 @@ import type {
   ISamchonGraphTrace,
 } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+
+import { GraphPaths } from "../internal/GraphPaths";
 
 /**
  * A real index is not uniform: a span goes missing, an edge carries no evidence,
@@ -39,7 +40,7 @@ export const test_the_engines_answer_what_the_graph_only_half_holds = async () =
  * would be putting prose in the reader's mouth.
  */
 const scenario_a_comment_that_documents_nothing = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-nodoc-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-nodoc-");
   // The file opens on a dangling `*/`, so the walk upward from the declaration
   // finds a line that closes a comment and never finds one that opens it.
   write(root, "src/dangling.ts", [" */", "export function dangling(): void {}"]);
@@ -212,7 +213,7 @@ const scenario_an_ambiguous_handle_the_graph_holds_no_span_for = async () => {
  * newcomer reads.
  */
 const scenario_a_tour_over_a_graph_that_is_missing_its_evidence = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-half-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-half-");
   write(root, "src/order/create.ts", [
     "/**",
     " * Creates an order, which is the flow this whole tour is about.",
@@ -591,7 +592,7 @@ const scenario_a_file_qualified_handle_two_files_answer_to = async () => {
  * holds.
  */
 const scenario_a_doc_whose_span_the_source_moved_out_from_under = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-stale-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-stale-");
   write(root, "src/short.ts", [
     "/** Still here. */",
     "export function present(): void {}",

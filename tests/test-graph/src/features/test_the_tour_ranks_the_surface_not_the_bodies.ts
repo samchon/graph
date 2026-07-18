@@ -6,8 +6,9 @@ import {
 } from "@samchon/graph";
 import type { ISamchonGraphTour } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+
+import { GraphPaths } from "../internal/GraphPaths";
 
 /**
  * A tour ranks and walks the project's surface, and a closure is not on it.
@@ -26,7 +27,7 @@ import path from "node:path";
  * asked for.
  */
 export const test_the_tour_ranks_the_surface_not_the_bodies = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-closure-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-closure-");
   write(root, "src/engine.ts", [
     "export function runEngine(): void {",
     "  function innerStep(): void {",

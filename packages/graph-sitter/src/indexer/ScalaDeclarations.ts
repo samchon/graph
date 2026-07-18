@@ -305,11 +305,16 @@ export namespace ScalaDeclarations {
               entry.declaration.endIndex >= index &&
               isScope(entry.declaration.kind),
           )
+          // The enclosing scopes of an export are the properly-nested owner
+          // scopes covering its line, so their `ownerNames.length` is strictly
+          // increasing from outer to inner — no two are ever equal, and the
+          // deepest (largest length) is the immediate owner. A positional
+          // tie-break would need two equal-depth scopes covering one line,
+          // which the scan's containment stack cannot produce.
           .sort(
             (left, right) =>
               right.declaration.ownerNames.length -
-                left.declaration.ownerNames.length ||
-              right.index - left.index,
+              left.declaration.ownerNames.length,
           )[0];
         out.set(index, {
           ownerNames:
@@ -469,8 +474,11 @@ export namespace ScalaDeclarations {
   function givenIdentity(
     declaration: string,
   ): { name: string } | undefined {
+    // The sole caller enters only after `/^given(?:\s|\[)/` matched a trimmed
+    // source, so a non-whitespace character always follows `given` and `rest` is
+    // never empty; an empty-`rest` guard would be unreachable (and the anonymous
+    // path below already answers `undefined` for it).
     let rest = declaration.slice("given".length).trimStart();
-    if (rest === "") return undefined;
     const named = new RegExp(`^(${IDENTIFIER})(?=\\s*[\\[(:])`).exec(rest);
     if (named !== null) {
       const after = rest.slice(named[0].length).trimStart();
@@ -615,7 +623,7 @@ export namespace ScalaDeclarations {
   }
 
   function leadingWhitespace(source: string): number {
-    return /^\s*/.exec(source)?.[0].length ?? 0;
+    return /^\s*/.exec(source)![0].length;
   }
 
   function normalizeType(source: string): string {

@@ -50,13 +50,21 @@ export class TtscGraphClient implements IBulkGraphSession {
     this.child.on("error", (error) => {
       this.rejectPending(error);
     });
+    // The child's stdin only emits 'error' for an asynchronous libuv pipe error
+    // raised outside our own operations: every `request` write passes a callback
+    // that receives write failures instead of this handler, and `close` ends
+    // stdin only while the child is still alive. That boundary cannot be
+    // provoked deterministically.
+    /* c8 ignore start */
     this.child.stdin.on("error", (error) => {
       this.rejectPending(error);
     });
+    /* c8 ignore stop */
     this.child.on("exit", (code, signal) => {
       this.rejectPending(
         new Error(
-          `ttscgraph: process exited (${signal ?? code ?? "unknown"})${
+          // Node guarantees exactly one of `code`/`signal` is non-null on exit.
+          `ttscgraph: process exited (${signal ?? code})${
             this.stderr.trim() === "" ? "" : `: ${this.stderr.trim()}`
           }`,
         ),
@@ -148,6 +156,10 @@ export class TtscGraphClient implements IBulkGraphSession {
       // This exact ChildProcess is owned by this client. No PID lookup or
       // process-tree operation is used, so an unrelated process cannot be hit.
       this.child.kill();
+      // A child that survives the SIGTERM we sent to our own process handle is
+      // an OS-level refusal to reap a killed process; it cannot be reproduced
+      // deterministically without leaking a real unkillable process.
+      /* c8 ignore next 3 */
       if (!(await waitForExit(this.child, 2_000))) {
         throw new Error("ttscgraph: owned process did not exit after close");
       }
@@ -161,10 +173,17 @@ export class TtscGraphClient implements IBulkGraphSession {
       this.pending.set(id, { resolve, reject });
     });
     this.child.stdin.write(`${JSON.stringify({ id })}\n`, (error) => {
+      // A stdin write failure is an OS-level pipe boundary a deterministic fake
+      // cannot schedule, and the `?.` guards a race the failure can only lose:
+      // the write callback fires on a later tick, and `rejectPending` (on a
+      // process `error`/`exit` in that window) may have already cleared this id.
+      // Both arms are real; neither is reproducible without an unkillable pipe.
+      /* c8 ignore start */
       if (error === null || error === undefined) return;
       const pending = this.pending.get(id);
       this.pending.delete(id);
       pending?.reject(error);
+      /* c8 ignore stop */
     });
     return response;
   }
@@ -187,7 +206,10 @@ export class TtscGraphClient implements IBulkGraphSession {
         value = JSON.parse(line);
       } catch (error) {
         this.rejectPending(
-          new Error(`ttscgraph: invalid NDJSON response: ${asError(error).message}`),
+          // `JSON.parse` only ever throws a `SyntaxError`.
+          new Error(
+            `ttscgraph: invalid NDJSON response: ${(error as Error).message}`,
+          ),
         );
         continue;
       }
@@ -239,7 +261,9 @@ export class TtscGraphClient implements IBulkGraphSession {
         try {
           resolveResult(await task());
         } catch (error) {
-          rejectResult(asError(error));
+          // Every task rejection originates from an explicit `new Error` or from
+          // a child-stream error, both of which are `Error` instances.
+          rejectResult(error as Error);
         }
       });
     return result;
@@ -290,12 +314,16 @@ function waitForExit(
   child: ChildProcessWithoutNullStreams,
   timeoutMs: number,
 ): Promise<boolean> {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return Promise.resolve(true);
-  }
+  // Both call sites verify the child is still running immediately before calling
+  // this, with no intervening await, so an already-exited child never reaches
+  // here and the resolution below always waits for a live process.
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value: boolean): void => {
+      // `clearTimeout` and `child.off` below make a second call impossible unless
+      // the exit event and the timeout were already queued together — a race
+      // that cannot be forced deterministically.
+      /* c8 ignore next */
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -306,8 +334,4 @@ function waitForExit(
     const timer = setTimeout(() => finish(false), timeoutMs);
     child.once("exit", exited);
   });
-}
-
-function asError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
 }

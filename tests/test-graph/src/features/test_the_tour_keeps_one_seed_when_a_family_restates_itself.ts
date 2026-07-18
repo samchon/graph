@@ -6,8 +6,9 @@ import {
 } from "@samchon/graph";
 import type { ISamchonGraphTour } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+
+import { GraphPaths } from "../internal/GraphPaths";
 
 /**
  * A family of names that restate each other takes one tour seed, not all of
@@ -24,7 +25,7 @@ import path from "node:path";
  */
 export const test_the_tour_keeps_one_seed_when_a_family_restates_itself =
   async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-restate-"));
+    const root = GraphPaths.createTempDirectory("samchon-graph-restate-");
     write(root, "src/paint.ts", [
       "function stroke(): void {}",
       "export function paint(): void { stroke(); }",

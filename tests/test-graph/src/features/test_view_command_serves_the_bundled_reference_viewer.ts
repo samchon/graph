@@ -3,13 +3,12 @@ import { ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_view_command_serves_the_bundled_reference_viewer = async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "samchon-graph-view-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-view-");
   const graphFile = path.join(root, "graph.json");
   await fs.writeFile(
     graphFile,

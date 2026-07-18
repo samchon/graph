@@ -12,8 +12,9 @@ import type {
   ISamchonGraphTrace,
 } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+
+import { GraphPaths } from "../internal/GraphPaths";
 
 /**
  * The branches of the ported engines a behavioural test does not reach on its
@@ -174,7 +175,7 @@ const scenario_details_reports_what_implements_a_declaration = async () => {
  * declaration.
  */
 const scenario_a_doc_comment_says_what_a_symbol_is_for = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-doc-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-doc-");
   write(root, "src/doc.ts", [
     "/**",
     " * Drains the queue until it is empty. The rest of the comment is the file's",
@@ -282,7 +283,7 @@ const scenario_an_implementation_span_keeps_the_file_it_cannot_derive = () => {
 
 /** Every re-export form the three barrel languages actually write. */
 const scenario_the_reexport_forms_each_language_writes = async () => {
-  const python = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-py2-"));
+  const python = GraphPaths.createTempDirectory("samchon-graph-py2-");
   write(python, "pkg/sale.py", ["class Sale:", "    pass", "class _Hidden:", "    pass"]);
   // A star import in a package initializer forwards the module's whole surface.
   write(python, "pkg/__init__.py", ["from .sale import *"]);
@@ -305,7 +306,7 @@ const scenario_the_reexport_forms_each_language_writes = async () => {
     [],
   );
 
-  const rust = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-rs2-"));
+  const rust = GraphPaths.createTempDirectory("samchon-graph-rs2-");
   write(rust, "src/order/mod.rs", ["pub struct Order {}", "pub struct Line {}"]);
   write(rust, "src/lib.rs", [
     // A braced group forwards each name in it.
@@ -333,7 +334,7 @@ const scenario_the_reexport_forms_each_language_writes = async () => {
  * costs the surface count nothing.
  */
 const scenario_a_module_specifier_that_names_nothing_in_the_project = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-outside-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-outside-");
   write(root, "src/index.ts", [
     'export * from "typia";',
     'export * from "./missing";',

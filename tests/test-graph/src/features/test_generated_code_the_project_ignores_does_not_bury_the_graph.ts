@@ -2,8 +2,9 @@ import { TestValidator } from "@nestia/e2e";
 import { buildGraphDump } from "@samchon/graph";
 import cp from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+
+import { GraphPaths } from "../internal/GraphPaths";
 
 /**
  * Generated code the project does not check in does not get to bury the graph.
@@ -25,7 +26,7 @@ import path from "node:path";
  */
 export const test_generated_code_the_project_ignores_does_not_bury_the_graph =
   async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-ignored-"));
+    const root = GraphPaths.createTempDirectory("samchon-graph-ignored-");
     // A generated client emitted straight into src/, and a .gitignore that says
     // so. Nothing about the path looks generated; only the project knows.
     write(root, ".gitignore", ["src/client.ts"]);
@@ -69,7 +70,7 @@ export const test_generated_code_the_project_ignores_does_not_bury_the_graph =
  * here can answer, and it is what §0 means by never inventing one.
  */
 const scenario_a_project_git_cannot_answer_for = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-nogit-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-nogit-");
   write(root, "src/order.ts", ["export class OrderService {}"]);
   const dump = await buildGraphDump({
     cwd: root,

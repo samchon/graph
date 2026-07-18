@@ -1,17 +1,17 @@
 import { TestValidator } from "@nestia/e2e";
+import {
+  IBulkGraphSession,
+  IIndexerResult,
+  createResidentGraphSource,
+} from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
-import { createResidentGraphSource } from "../../../../packages/graph/src/indexer/createResidentGraphSource";
-import { IIndexerResult } from "../../../../packages/graph/src/indexer/IIndexerResult";
-import { IBulkGraphSession } from "../../../../packages/graph/src/provider/IBulkGraphSession";
+import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_resident_bulk_provider_polls_generations_without_reprocessing_strict_facts =
   async () => {
-    const root = fs.mkdtempSync(
-      path.join(os.tmpdir(), "samchon-graph-resident-bulk-"),
-    );
+    const root = GraphPaths.createTempDirectory("samchon-graph-resident-bulk-");
     const file = path.join(root, "a.ts");
     const text = "export const answer = 1;\n";
     fs.writeFileSync(file, text);

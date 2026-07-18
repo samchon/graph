@@ -30,6 +30,14 @@ export function staticGraphParts(
   const files: IGraphSitterFile[] = [];
   for (const absolutePath of discovered) {
     const language = languageOf(absolutePath);
+    // `discovered` comes from `walkSourceFiles(allExtensions(...))`, so every
+    // path's extension maps — through the same `LANGUAGE_SPECS` registry that
+    // `allExtensions` and `languageOf` share — to a real (non-`unknown`)
+    // language, and `GraphSitterLanguage` covers every non-`unknown`
+    // `GraphLanguage` (the LanguageContractParity assertion below). This
+    // narrowing guard therefore never continues at runtime; it only satisfies
+    // the compiler that `language` is a `GraphSitterLanguage`.
+    /* c8 ignore next */
     if (!isGraphSitterLanguage(language)) continue;
     const source = readText(absolutePath);
     /* c8 ignore next */

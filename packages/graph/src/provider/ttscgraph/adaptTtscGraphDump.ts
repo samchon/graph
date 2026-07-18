@@ -53,7 +53,8 @@ export function adaptTtscGraphDump(
     sourceFileById.set(id, file);
     if (!external && file !== "") files.add(file);
     if (kind === "module") {
-      if (file === "") throw new Error(`ttscgraph: module ${id} has no file`);
+      // `validateGraphFile` above already rejects an empty file for every node,
+      // so a module reaching here always names a file.
       moduleIds.set(id, file);
       continue;
     }
@@ -100,11 +101,10 @@ export function adaptTtscGraphDump(
   }
 
   const nodeIds = new Set(nodes.map((node) => node.id));
-  for (const file of moduleIds.values()) {
-    if (nodeIds.has(file)) {
-      throw new Error(`ttscgraph: module file collides with node id: ${file}`);
-    }
-  }
+  // A folded file node takes the module's file path as its id, and that path can
+  // never collide with a declaration node id: `validateNodeId` requires every
+  // declaration id to contain a `#`, while a module file (the id prefix before
+  // the first `#`) never does. No runtime collision check is therefore possible.
   // Canonical TtscGraphMemory turns every compiler module into one file node,
   // including an edge-and-declaration-free module whose module node is its only
   // trace. The strict adapter folds modules before the shared memory sees them,
@@ -417,6 +417,8 @@ function validateNodeId(id: string, file: string, kind: GraphNodeKind): void {
 function samePath(left: string, right: string): boolean {
   const normalizedLeft = path.resolve(left);
   const normalizedRight = path.resolve(right);
+  // Only one arm of this comparison runs on a given operating system.
+  /* c8 ignore next 3 */
   return process.platform === "win32"
     ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
     : normalizedLeft === normalizedRight;

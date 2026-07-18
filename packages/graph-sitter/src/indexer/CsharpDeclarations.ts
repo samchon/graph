@@ -116,9 +116,13 @@ export namespace CsharpDeclarations {
 
     if (ownerName === undefined || !isTypeOwner(ownerKind)) return undefined;
     const modifiers = csharpGraphModifiersOf(clean, undefined, ownerKind);
-    const open = declaration.indexOf("(");
+    // Mask string and character literals before locating and balancing the
+    // parameter list, so a `(` or `)` inside a default value
+    // (`Log(string prefix = "(")`) is text rather than a counted parenthesis.
+    const masked = stripStringsAndComments(declaration);
+    const open = masked.indexOf("(");
     if (open !== -1) {
-      const before = declaration.slice(0, open).trim();
+      const before = masked.slice(0, open).trim();
       if (before !== "" && !/[=;{}]|=>/.test(before)) {
         const nameMatch = /([A-Za-z_$][\w$]*)\s*(?:<[^<>]*>)?\s*$/.exec(before);
         if (nameMatch !== null && !STATEMENT_WORDS.has(nameMatch[1]!)) {
@@ -126,16 +130,16 @@ export namespace CsharpDeclarations {
           const returnType = before.slice(0, nameMatch.index).trim();
           const ownerSimpleName = ownerName.slice(ownerName.lastIndexOf(".") + 1);
           const constructor = name === ownerSimpleName && returnType === "";
-          const close = matchingParenthesisEnd(declaration, open);
+          const close = matchingParenthesisEnd(masked, open);
           if (
             close !== -1 &&
             (constructor || isReturnType(returnType)) &&
-            /^(?:\{|;|=>|:|where\b|$)/.test(declaration.slice(close + 1).trim())
+            /^(?:\{|;|=>|:|where\b|$)/.test(masked.slice(close + 1).trim())
           ) {
             return {
               kind: constructor ? "constructor" : "method",
               name,
-              ...(modifiers.length > 0 ? { modifiers } : {}),
+              modifiers,
             };
           }
         }
@@ -149,7 +153,7 @@ export namespace CsharpDeclarations {
       return {
         kind: "property",
         name: property[2]!,
-        ...(modifiers.length > 0 ? { modifiers } : {}),
+        modifiers,
       };
     }
     const field = /^(?:event\s+)?(.+?)\s+([A-Za-z_$][\w$]*)\s*(?:=|;)/.exec(
@@ -159,13 +163,22 @@ export namespace CsharpDeclarations {
       return {
         kind: "field",
         name: field[2]!,
-        ...(modifiers.length > 0 ? { modifiers } : {}),
+        modifiers,
       };
     }
     return undefined;
   }
 
-  /** Recover C# modifiers, including language-default member visibility. */
+  /**
+   * Recover C# modifiers, including language-default member visibility.
+   *
+   * A member of a type owner always comes back with at least one modifier: the
+   * language gives every member a default visibility, so where a declaration
+   * spells none this supplies it. That is why the member arms above assign
+   * `modifiers` outright instead of guarding on its length — the empty case they
+   * would be guarding against cannot occur past the `isTypeOwner` gate, and a
+   * branch that cannot run is one no test can ever honestly cover.
+   */
   export function csharpGraphModifiersOf(
     source: string,
     kind?: GraphNodeKind,
@@ -254,7 +267,7 @@ export namespace CsharpDeclarations {
     return {
       kind,
       name,
-      ...(modifiers.length > 0 ? { modifiers } : {}),
+      modifiers,
       ...(modifiers.includes("public") ? { exported: true } : {}),
     };
   }
@@ -291,7 +304,9 @@ export namespace CsharpDeclarations {
       /[=;{}]/.test(type)
     )
       return false;
-    const words = type.match(/[A-Za-z_$][\w$]*/g) ?? [];
+    // The guard above accepts only a non-empty string beginning with an
+    // identifier character, so at least one identifier always matches here.
+    const words = type.match(/[A-Za-z_$][\w$]*/g)!;
     return !words.some((word) => STATEMENT_WORDS.has(word));
   }
 

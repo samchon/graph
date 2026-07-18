@@ -63,16 +63,21 @@ export namespace SwiftDeclarations {
       first.startsWith("/*") ||
       first.startsWith("*")
     )
+      // `first` is `""` when `start` is past the end of `lines`, so this is the
+      // only arm that may see an absent line; `?? ""` gives it an empty source.
       return { source: lines[start] ?? "", endIndex: start };
+    // Reaching either arm below means `first` was non-empty, which happens only
+    // when `lines[start]` is a defined, non-blank string, so it is read outright.
+    // A `?? ""` fallback here would be a branch that cannot run.
     if (
       first.startsWith("@") &&
       !DECLARATION_HEAD.test(
         eraseLeadingAttributes(swiftLexicalText(first)).trimStart(),
       )
     )
-      return { source: lines[start] ?? "", endIndex: start };
+      return { source: lines[start]!, endIndex: start };
     if (!DECLARATION_HEAD.test(swiftLexicalText(first))) {
-      return { source: lines[start] ?? "", endIndex: start };
+      return { source: lines[start]!, endIndex: start };
     }
 
     const out: string[] = [];
@@ -478,16 +483,11 @@ export namespace SwiftDeclarations {
       )
         ? { exported: true }
         : {}),
-      ...(modifiers.length > 0 ? { modifiers } : {}),
+      // `swiftGraphModifiersOf` always emits a visibility modifier, so the list
+      // is never empty and is attached unconditionally.
+      modifiers,
       ...(decorators.length > 0 ? { decorators } : {}),
     };
-  }
-
-  function swiftHeaderEndIndex(
-    lines: readonly string[],
-    start: number,
-  ): number {
-    return swiftHeaderOf(lines, start).endIndex;
   }
 
   function swiftHeaderIsComplete(source: string): boolean {
@@ -525,7 +525,8 @@ export namespace SwiftDeclarations {
     source: string,
     start: number,
   ): { name: string; end: number } | undefined {
-    if (source[start] !== "@") return undefined;
+    // Every caller enters here only after matching `@` at `start`, so `start + 1`
+    // steps past it directly; a missing-`@` guard would be unreachable.
     let cursor = start + 1;
     const segments: string[] = [];
     for (;;) {

@@ -12,8 +12,9 @@ import type {
   ISamchonGraphTrace,
 } from "@samchon/graph";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+
+import { GraphPaths } from "../internal/GraphPaths";
 
 /**
  * The edges of the ported engines: the caps that fire, the hubs the flow refuses
@@ -242,7 +243,7 @@ const scenario_a_path_that_runs_past_its_depth = async () => {
 
 /** Every boundary the doc reader has to hold: the file's edge, and the sentence's. */
 const scenario_a_doc_comment_at_every_boundary = async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "samchon-graph-doc2-"));
+  const root = GraphPaths.createTempDirectory("samchon-graph-doc2-");
   write(root, "src/edges.ts", [
     // A declaration on the first line has nothing above it to read.
     "export function first(): void {}",

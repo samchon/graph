@@ -1,12 +1,33 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 import {
   ISamchonGraphDecorator,
+  ISamchonGraphDiagnostic,
   ISamchonGraphEdge,
   ISamchonGraphEvidence,
   ISamchonGraphNode,
 } from "../../structures";
 import { GraphEdgeKind, GraphNodeKind } from "../../typings";
+import { IBulkGraphSession } from "../IBulkGraphSession";
+import { ITtscGraphSnapshot } from "./ITtscGraphSnapshot";
+
+/**
+ * One validated dump, in the product's own terms.
+ *
+ * The protocol version is the envelope's to state, not the dump's: the same
+ * body can arrive over the wire or be read from a file, and only one of those
+ * rode a protocol. {@link TtscGraphClient} completes the provenance with the
+ * version of the frame that carried it.
+ */
+interface IAdaptedDump {
+  nodes: ISamchonGraphNode[];
+  edges: ISamchonGraphEdge[];
+  diagnostics: ISamchonGraphDiagnostic[];
+  sources: Map<string, IBulkGraphSession.ISourceDigest>;
+  provenance: Omit<IBulkGraphSession.IProvenance, "protocolVersion">;
+  warnings: string[];
+}
 
 /**
  * Adapt a `ttscgraph serve` dump to one strict TypeScript language slice.
@@ -16,15 +37,19 @@ import { GraphEdgeKind, GraphNodeKind } from "../../typings";
  * fold as ttsc's canonical TtscGraphMemory. It rejects malformed identities,
  * dangling endpoints, and collisions instead of repairing or deduplicating
  * compiler output.
+ *
+ * It also decides whether the dump has proved itself. The facts, the manifest,
+ * and the diagnostics are only worth adapting together if they came from one
+ * `Program`, and the dump is the only place that can say so: everything here is
+ * checked against the dump's own `provenance` rather than against the disk,
+ * which is a later instant and a different question. A dump whose nodes name a
+ * file its manifest never loaded is not a dump with a missing entry — it is two
+ * programs' output in one envelope, and no part of it can be trusted.
  */
 export function adaptTtscGraphDump(
   input: unknown,
   expectedRoot: string,
-): {
-  nodes: ISamchonGraphNode[];
-  edges: ISamchonGraphEdge[];
-  files: string[];
-} {
+): IAdaptedDump {
   const dump = objectOf(input, "dump");
   const project = stringOf(dump.project, "dump.project");
   if (!samePath(project, expectedRoot)) {
@@ -156,13 +181,260 @@ export function adaptTtscGraphDump(
     edges.push(edge);
   }
 
+  const warnings: string[] = [];
+  const manifest = manifestOf(dump.provenance);
+  const sources = new Map<string, IBulkGraphSession.ISourceDigest>();
+  // The workspace file set still comes from the nodes, exactly as before: the
+  // manifest is every file the *program* loaded, which includes the bundled
+  // libs and every `node_modules` declaration the checker pulled in, and those
+  // are not this project's sources. What the manifest changes is that the set
+  // is now provable — each of these files must be one the same program loaded,
+  // and it arrives with the digest of the text the checker actually read.
+  for (const file of [...files].sort((left, right) =>
+    left.localeCompare(right),
+  )) {
+    const digest = manifest.get(file);
+    if (digest === undefined) {
+      throw new Error(
+        `ttscgraph: dump declares facts for ${file}, which its own source manifest never loaded`,
+      );
+    }
+    sources.set(path.resolve(expectedRoot, file), digest);
+  }
+
+  const capabilities = stringArrayOf(
+    objectOf(dump.provenance, "dump.provenance").capabilities,
+    "dump.provenance.capabilities",
+  );
+  const diagnostics = capabilities.includes(
+    ITtscGraphSnapshot.CAPABILITY_DIAGNOSTICS,
+  )
+    ? diagnosticsOf(dump.diagnostics, manifest)
+    : refuseDiagnostics(dump.diagnostics, warnings);
+
   return {
     nodes,
     edges,
-    files: [...files]
-      .sort((left, right) => left.localeCompare(right))
-      .map((file) => path.resolve(expectedRoot, file)),
+    diagnostics,
+    sources,
+    provenance: provenanceOf(dump.provenance, capabilities),
+    warnings,
   };
+}
+
+/**
+ * The manifest, indexed by the identity the producer gave each file.
+ *
+ * Validating it costs one pass whether or not a caller reads every entry, and
+ * that is deliberate: a manifest is evidence, and evidence checked only where
+ * it happens to be consulted is evidence for nothing.
+ */
+function manifestOf(
+  value: unknown,
+): Map<string, IBulkGraphSession.ISourceDigest> {
+  const provenance = objectOf(value, "dump.provenance");
+  const capabilities = stringArrayOf(
+    provenance.capabilities,
+    "dump.provenance.capabilities",
+  );
+  // Without this claim the manifest is empty by construction rather than by
+  // fact, and an empty manifest would make every "did the program load this
+  // file?" check below pass vacuously — turning the one proof this client has
+  // into a formality. There is no honest fallback: re-reading the disk to fill
+  // the gap is precisely the unsound reconstruction the manifest replaced.
+  if (!capabilities.includes(ITtscGraphSnapshot.CAPABILITY_SOURCE_DIGESTS)) {
+    throw new Error(
+      `ttscgraph: producer does not claim the ${ITtscGraphSnapshot.CAPABILITY_SOURCE_DIGESTS} capability, so its snapshot cannot prove which program produced its facts`,
+    );
+  }
+  const hasDiskDigests = capabilities.includes(
+    ITtscGraphSnapshot.CAPABILITY_DISK_DIGESTS,
+  );
+  const raw = arrayOf(provenance.sources, "dump.provenance.sources");
+  const manifest = new Map<string, IBulkGraphSession.ISourceDigest>();
+  for (let index = 0; index < raw.length; index++) {
+    const label = `dump.provenance.sources[${index}]`;
+    const entry = objectOf(raw[index], label);
+    const file = stringOf(entry.file, `${label}.file`);
+    validateGraphFile(file, `${label}.file`, true);
+    if (manifest.has(file)) {
+      throw new Error(`ttscgraph: duplicate source manifest entry: ${file}`);
+    }
+    const diskDigest = stringOf(entry.diskDigest, `${label}.diskDigest`);
+    // An absent disk digest is the producer's way of saying the file vanished
+    // mid-load or never had an on-disk identity; a disk digest the producer
+    // never claimed to compute is a different statement, and neither is an
+    // arbitrary string.
+    if (diskDigest !== "") {
+      if (!hasDiskDigests) {
+        throw new Error(
+          `ttscgraph: ${label}.diskDigest is set although the producer does not claim the ${ITtscGraphSnapshot.CAPABILITY_DISK_DIGESTS} capability`,
+        );
+      }
+      validateDigest(diskDigest, `${label}.diskDigest`);
+    }
+    manifest.set(file, {
+      checkerDigest: validateDigest(
+        stringOf(entry.checkerDigest, `${label}.checkerDigest`),
+        `${label}.checkerDigest`,
+      ),
+      diskDigest,
+    });
+  }
+  return manifest;
+}
+
+/**
+ * The universe fingerprint: one digest over the inputs that decide the file set.
+ *
+ * Hashed rather than carried because the only question anything asks of it is
+ * whether it is the one from last time. The encoding length-prefixes every
+ * field so that no rearrangement of config and root names can collide — without
+ * it, a config named `a` with root `b/c` and a config named `a/b` with root `c`
+ * would fingerprint identically, and a universe change that reshuffled exactly
+ * that way would look like no change at all.
+ */
+function universeOf(value: unknown): string {
+  const universe = objectOf(value, "dump.provenance.universe");
+  const hash = createHash("sha256");
+  const push = (text: string): void => {
+    hash.update(`${String(text.length)}:${text}`);
+  };
+  const configs = arrayOf(universe.configs, "dump.provenance.universe.configs");
+  // A program is always loaded from at least one config; a universe naming none
+  // fingerprints every project identically, which would make the comparison
+  // that guards `incremental` say "unchanged" forever.
+  if (configs.length === 0) {
+    throw new Error(
+      "ttscgraph: dump.provenance.universe.configs names no config, so the build universe has no fingerprint",
+    );
+  }
+  push("configs");
+  for (let index = 0; index < configs.length; index++) {
+    const label = `dump.provenance.universe.configs[${index}]`;
+    const config = objectOf(configs[index], label);
+    const file = stringOf(config.file, `${label}.file`);
+    validateGraphFile(file, `${label}.file`);
+    push(file);
+    push(
+      validateDigest(
+        stringOf(config.digest, `${label}.digest`),
+        `${label}.digest`,
+      ),
+    );
+  }
+  const roots = arrayOf(universe.roots, "dump.provenance.universe.roots");
+  push("roots");
+  for (let index = 0; index < roots.length; index++) {
+    const label = `dump.provenance.universe.roots[${index}]`;
+    const root = objectOf(roots[index], label);
+    const config = stringOf(root.config, `${label}.config`);
+    validateGraphFile(config, `${label}.config`);
+    const file = stringOf(root.file, `${label}.file`);
+    validateGraphFile(file, `${label}.file`, true);
+    push(config);
+    push(file);
+  }
+  return hash.digest("hex");
+}
+
+function provenanceOf(
+  value: unknown,
+  capabilities: string[],
+): Omit<IBulkGraphSession.IProvenance, "protocolVersion"> {
+  const provenance = objectOf(value, "dump.provenance");
+  // Read the universe even though only the fingerprint is kept: skipping the
+  // walk when nothing reads the parts would let a malformed universe through on
+  // every snapshot whose fingerprint nobody happened to compare.
+  if (!capabilities.includes(ITtscGraphSnapshot.CAPABILITY_UNIVERSE)) {
+    throw new Error(
+      `ttscgraph: producer does not claim the ${ITtscGraphSnapshot.CAPABILITY_UNIVERSE} capability, so its snapshot cannot state which inputs decided its file set`,
+    );
+  }
+  const producer = objectOf(provenance.producer, "dump.provenance.producer");
+  return {
+    tool: stringOf(producer.tool, "dump.provenance.producer.tool"),
+    toolVersion: stringOf(producer.version, "dump.provenance.producer.version"),
+    compilerVersion: stringOf(
+      producer.typescript,
+      "dump.provenance.producer.typescript",
+    ),
+    universe: universeOf(provenance.universe),
+    capabilities,
+  };
+}
+
+const DIAGNOSTIC_SEVERITIES = new Set(["error", "warning"]);
+
+function diagnosticsOf(
+  value: unknown,
+  manifest: ReadonlyMap<string, IBulkGraphSession.ISourceDigest>,
+): ISamchonGraphDiagnostic[] {
+  const raw = arrayOf(value, "dump.diagnostics");
+  return raw.map((item, index) => {
+    const label = `dump.diagnostics[${index}]`;
+    const entry = objectOf(item, label);
+    const file = stringOf(entry.file, `${label}.file`);
+    validateGraphFile(file, `${label}.file`, true);
+    // The same one-program test the facts pass. A finding about a file the
+    // program never loaded did not come from this generation, and a checker
+    // that reports one is not describing the graph shipped beside it.
+    if (!manifest.has(file)) {
+      throw new Error(
+        `ttscgraph: ${label} reports ${file}, which the dump's own source manifest never loaded`,
+      );
+    }
+    const severity = stringOf(entry.category, `${label}.category`);
+    if (!DIAGNOSTIC_SEVERITIES.has(severity)) {
+      throw new Error(`ttscgraph: unsupported ${label}.category: ${severity}`);
+    }
+    return {
+      file,
+      line: integerOf(entry.line, `${label}.line`),
+      column: integerOf(entry.column, `${label}.column`),
+      code: integerOf(entry.code, `${label}.code`),
+      message: stringOf(entry.message, `${label}.message`),
+      severity: severity as ISamchonGraphDiagnostic["severity"],
+    };
+  });
+}
+
+/**
+ * A producer that does not claim `diagnostics` has none to give, and the graph
+ * says so out loud rather than shipping an empty list that reads as a clean
+ * bill of health. Findings sent without the claim are refused outright: a
+ * producer whose envelope and payload disagree is one this client cannot quote.
+ */
+function refuseDiagnostics(
+  value: unknown,
+  warnings: string[],
+): ISamchonGraphDiagnostic[] {
+  if (arrayOf(value, "dump.diagnostics").length !== 0) {
+    throw new Error(
+      `ttscgraph: dump carries diagnostics although the producer does not claim the ${ITtscGraphSnapshot.CAPABILITY_DIAGNOSTICS} capability`,
+    );
+  }
+  warnings.push(
+    `typescript: ttscgraph did not collect compiler diagnostics (no ${ITtscGraphSnapshot.CAPABILITY_DIAGNOSTICS} capability); this graph reports none because none were asked for, not because the project has none.`,
+  );
+  return [];
+}
+
+const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
+
+function validateDigest(digest: string, label: string): string {
+  if (!DIGEST_PATTERN.test(digest)) {
+    throw new Error(
+      `ttscgraph: ${label} must be a hex-encoded SHA-256: ${digest}`,
+    );
+  }
+  return digest;
+}
+
+function stringArrayOf(value: unknown, label: string): string[] {
+  return arrayOf(value, label).map((item, index) =>
+    stringOf(item, `${label}[${index}]`),
+  );
 }
 
 const NODE_KINDS = new Set<GraphNodeKind>([

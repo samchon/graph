@@ -1,17 +1,21 @@
 import { TestValidator } from "@nestia/e2e";
-import { ISamchonGraphDump, SamchonGraphMemory, buildLspGraph } from "@samchon/graph";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
-// `TtscGraphClient` and `resolveTtscGraphCommand` are internal to the package,
-// so they are reached by path rather than through the public barrel.
+import { SamchonGraphMemory } from "../../../../packages/graph/src/SamchonGraphMemory";
+import { buildLspGraph } from "../../../../packages/graph/src/indexer/buildLspGraph";
 import { TtscGraphClient } from "../../../../packages/graph/src/provider/ttscgraph/TtscGraphClient";
 import { resolveTtscGraphCommand } from "../../../../packages/graph/src/provider/ttscgraph/resolveTtscGraphCommand";
+import { ISamchonGraphDump } from "../../../../packages/graph/src/structures";
 import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_ttscgraph_bulk_provider_reuses_and_atomically_replaces_snapshots =
   async () => {
-    const root = GraphPaths.createTempDirectory("samchon-graph-ttscgraph-provider-");
+    const root = fs.mkdtempSync(
+      path.join(os.tmpdir(), "samchon-graph-ttscgraph-provider-"),
+    );
     fs.mkdirSync(path.join(root, "src", "core"), { recursive: true });
     fs.writeFileSync(
       path.join(root, "tsconfig.json"),
@@ -33,10 +37,15 @@ export const test_ttscgraph_bulk_provider_reuses_and_atomically_replaces_snapsho
     fs.writeFileSync(path.join(root, "src", "empty.ts"), "export {};\n");
     assertResolverPrecedence(root);
     const marker = path.join(root, "closed.txt");
+    const requestLog = path.join(root, "requests.txt");
     const client = new TtscGraphClient({
       root,
       command: process.execPath,
-      args: [GraphPaths.fakeTtscGraphServer, `--marker=${marker}`],
+      args: [
+        GraphPaths.fakeTtscGraphServer,
+        `--marker=${marker}`,
+        `--request-log=${requestLog}`,
+      ],
     });
 
     const initial = await client.refresh();
@@ -77,9 +86,41 @@ export const test_ttscgraph_bulk_provider_reuses_and_atomically_replaces_snapsho
         initial.snapshot.nodes[0]?.decorators?.[0]?.arguments[0]?.literal === 1,
     );
     TestValidator.equals(
-      "the snapshot exposes its observed source text",
+      "the snapshot names its files by the digest the compiler read, not by their text",
       initial.snapshot.sources.get(path.join(root, "src", "core", "order.ts")),
-      "export async function first() {}\n",
+      {
+        checkerDigest: sha256("export async function first() {}\n"),
+        diskDigest: sha256("export async function first() {}\n"),
+      },
+    );
+    TestValidator.equals(
+      "the snapshot reports the producer behind its facts",
+      initial.snapshot.provenance.tool,
+      "ttscgraph",
+    );
+    TestValidator.equals(
+      "the snapshot reports the protocol it was carried over",
+      initial.snapshot.provenance.protocolVersion,
+      1,
+    );
+    TestValidator.equals(
+      "the first snapshot reports the compiler's own mode, not an inferred one",
+      initial.mode,
+      "initial",
+    );
+    TestValidator.equals(
+      "compiler diagnostics ride the generation that produced the facts",
+      initial.snapshot.diagnostics,
+      [
+        {
+          file: "src/core/order.ts",
+          line: 1,
+          column: 1,
+          code: 2322,
+          message: "synthetic finding for first",
+          severity: "error",
+        },
+      ],
     );
 
     const unchanged = await client.refresh();
@@ -89,6 +130,12 @@ export const test_ttscgraph_bulk_provider_reuses_and_atomically_replaces_snapsho
     );
     TestValidator.equals("unchanged keeps the generation", unchanged.generation, 1);
 
+    TestValidator.equals(
+      "an unchanged refresh reports the compiler's unchanged mode",
+      unchanged.mode,
+      "unchanged",
+    );
+
     const changed = await client.refresh();
     TestValidator.predicate(
       "a validated full dump atomically replaces the snapshot",
@@ -96,6 +143,11 @@ export const test_ttscgraph_bulk_provider_reuses_and_atomically_replaces_snapsho
         changed.generation === 2 &&
         changed.snapshot !== initial.snapshot &&
         changed.snapshot.nodes[0]?.name === "second",
+    );
+    TestValidator.equals(
+      "a reused program is reported as incremental because the compiler said so",
+      changed.mode,
+      "incremental",
     );
     await rejects(client.refresh(), "serve errors are surfaced");
     TestValidator.predicate(
@@ -107,6 +159,16 @@ export const test_ttscgraph_bulk_provider_reuses_and_atomically_replaces_snapsho
       "close reaches only the provider process owned by the client",
       fs.readFileSync(marker, "utf8"),
       "closed\n",
+    );
+    // Four refreshes, four requests. The client used to spend a second
+    // round-trip per *changed* snapshot asking the server whether the dump it
+    // had just parsed still held — a question that narrowed the race without
+    // closing it and that the manifest now answers in the same envelope. With
+    // that confirmation still in place this reads 6, not 4.
+    TestValidator.equals(
+      "one refresh costs exactly one round-trip",
+      fs.readFileSync(requestLog, "utf8"),
+      "4\n",
     );
 
     const integrated = await buildLspGraph(
@@ -219,7 +281,55 @@ export const test_ttscgraph_bulk_provider_reuses_and_atomically_replaces_snapsho
       "--invalid-bundled-workspace",
       "a workspace node using an external bundled URI",
     );
+    // The provenance is evidence, so a malformed one fails exactly as closed as
+    // a malformed fact does. A snapshot that cannot prove which program built it
+    // is not a snapshot with a cosmetic gap; it is one nothing downstream may
+    // quote.
+    await assertInvalid(
+      root,
+      "--invalid-manifest",
+      "facts naming a file the manifest never loaded",
+    );
+    await assertInvalid(
+      root,
+      "--invalid-manifest-digest",
+      "a manifest digest that is not a SHA-256",
+    );
+    await assertInvalid(
+      root,
+      "--invalid-manifest-duplicate",
+      "a manifest naming one file twice",
+    );
+    await assertInvalid(
+      root,
+      "--invalid-disk-digest",
+      "a disk digest that is not a SHA-256",
+    );
+    await assertInvalid(
+      root,
+      "--invalid-diagnostic-file",
+      "a diagnostic about a file the program never loaded",
+    );
+    await assertInvalid(
+      root,
+      "--invalid-diagnostic-category",
+      "a diagnostic category the compiler does not publish",
+    );
+    await assertInvalid(
+      root,
+      "--invalid-universe-configs",
+      "a build universe naming no config",
+    );
+    await assertInvalid(
+      root,
+      "--invalid-universe-digest",
+      "a config digest that is not a SHA-256",
+    );
   };
+
+function sha256(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
 
 function assertResolverPrecedence(root: string): void {
   const resolverRoot = path.join(root, "resolver-project");

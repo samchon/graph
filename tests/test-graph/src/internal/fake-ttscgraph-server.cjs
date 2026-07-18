@@ -1,3 +1,4 @@
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const readline = require("node:readline");
@@ -8,20 +9,118 @@ const project = cwdIndex === -1 ? process.cwd() : path.resolve(args[cwdIndex + 1
 const invalidMode = args.find((arg) => arg.startsWith("--invalid"));
 const markerArg = args.find((arg) => arg.startsWith("--marker="));
 const marker = markerArg?.slice("--marker=".length);
-const serveArg = args.find((arg) => arg.startsWith("--serve="));
-const serveCase = serveArg?.slice("--serve=".length);
+const requestLogArg = args.find((arg) => arg.startsWith("--request-log="));
+const requestLog = requestLogArg?.slice("--request-log=".length);
+// Stands in for a producer that speaks a protocol this client refuses, so the
+// pin can be proved without shipping a second fake.
+const protocolArg = args.find((arg) => arg.startsWith("--protocol="));
+const protocolVersion =
+  protocolArg === undefined ? 1 : Number(protocolArg.slice("--protocol=".length));
+// Drops one capability, so the client's degrade-and-say-so paths are reachable.
+const dropArg = args.find((arg) => arg.startsWith("--drop-capability="));
+const dropped = dropArg?.slice("--drop-capability=".length);
+// Moves the build universe under an `incremental` label — a producer claiming it
+// reused a program whose own inputs say it could not have.
+const universeDrift = args.includes("--universe-drift");
+// Transport- and process-level fault injection. These stand in for the wire
+// conditions a well-formed producer never emits but a real one can: a process
+// that dies mid-serve, a stream chunked or blank-padded by the OS, a line that
+// is not JSON, a frame routed to nobody, and a first answer that claims a
+// snapshot still holds when there is none yet to reuse.
+const stderrExit = args.includes("--stderr-exit");
+const exitSilently = args.includes("--exit-silently");
+const ignoreStdin = args.includes("--ignore-stdin");
+const blankLine = args.includes("--blank-line");
+const splitFrame = args.includes("--split-frame");
+const nonJson = args.includes("--nonjson");
+const unknownId = args.includes("--unknown-id");
+const firstUnchanged = args.includes("--first-unchanged");
+const envelopeCapabilityMismatch = args.includes(
+  "--envelope-capability-mismatch",
+);
 let requests = 0;
 
-// A resident serve process may emit diagnostics on stderr; the client must
-// surface them verbatim when the process then dies.
-if (serveCase === "stderr-exit") process.stderr.write("ttscgraph diagnostic: fatal\n");
-// A process that keeps running after its stdin closes forces the client's
-// graceful-close timeout, then its owned-process kill.
-if (serveCase === "ignore-stdin") setInterval(() => {}, 1_000_000);
+const CAPABILITIES = [
+  "universe",
+  "sourceDigests",
+  "diskDigests",
+  "diagnostics",
+].filter((capability) => capability !== dropped);
 
-const graph = (name) => ({
+// Every workspace file the fake program loaded. The manifest must cover every
+// file the nodes below name, because that is exactly what the client checks.
+const WORKSPACE_FILES = ["src/index.ts", "src/core/order.ts", "src/empty.ts"];
+
+const digestOf = (text) =>
+  crypto.createHash("sha256").update(text).digest("hex");
+
+const readProjectFile = (rel) => {
+  try {
+    return fs.readFileSync(path.join(project, rel), "utf8");
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * The source manifest.
+ *
+ * `checkerDigest` is what the producer's checker parsed, and the fake reports it
+ * whether or not the file is on disk right now — that is the property under
+ * test. A real `ttscgraph` answers from the Program it holds; neither it nor
+ * this fake needs the client to go looking on disk, and a file the client cannot
+ * read still has a perfectly well-defined digest here.
+ */
+const manifest = (drift) =>
+  WORKSPACE_FILES.map((file) => {
+    const text = readProjectFile(file);
+    return {
+      file,
+      checkerDigest: digestOf(text ?? `absent:${file}${drift ?? ""}`),
+      diskDigest:
+        dropped === "diskDigests" || text === undefined ? "" : digestOf(text),
+    };
+  });
+
+const universe = (drift) => ({
+  configs: [
+    {
+      file: "tsconfig.json",
+      digest: digestOf(`${readProjectFile("tsconfig.json") ?? ""}${drift ?? ""}`),
+    },
+  ],
+  roots: WORKSPACE_FILES.map((file) => ({ config: "tsconfig.json", file })),
+});
+
+const provenance = (drift) => ({
+  schemaVersion: 1,
+  capabilities: CAPABILITIES,
+  producer: {
+    tool: "ttscgraph",
+    version: "0.19.2",
+    typescript: "5.9.0",
+  },
+  universe: universe(drift),
+  sources: manifest(drift),
+});
+
+const graph = (name, options = {}) => ({
   project,
   tsconfig: "tsconfig.json",
+  provenance: provenance(options.drift),
+  diagnostics:
+    dropped === "diagnostics"
+      ? []
+      : [
+          {
+            file: "src/core/order.ts",
+            line: 1,
+            column: 1,
+            code: 2322,
+            category: "error",
+            message: `synthetic finding for ${name}`,
+          },
+        ],
   nodes: [
     {
       id: "src/index.ts#src/index.ts:module",
@@ -76,95 +175,66 @@ const graph = (name) => ({
   ],
 });
 
-// Emit one deterministic protocol fault (or a well-formed but chunked/blank
-// stream) so the client's NDJSON framing, response validation, and lifecycle
-// error paths can each be asserted as a product invariant.
-const respondServe = (request) => {
-  const id = request.id;
-  const send = (object) => process.stdout.write(`${JSON.stringify(object)}\n`);
-  const raw = (text) => process.stdout.write(text);
-  const changedFirst = { id, changed: true, mode: "initial", dump: graph("first") };
-  const unchanged = { id, changed: false, mode: "unchanged" };
-  switch (serveCase) {
-    case "stderr-exit":
-      process.exit(1);
-      return;
-    case "exit-silently":
-      process.exit(1);
-      return;
-    case "ignore-stdin":
-      send(requests === 1 ? changedFirst : unchanged);
-      return;
-    case "unchanged-first":
-      send(unchanged);
-      return;
-    case "changed-no-dump":
-      send({ id, changed: true, mode: "initial" });
-      return;
-    case "unchanged-with-dump":
-      send({ id, changed: false, mode: "unchanged", dump: graph("first") });
-      return;
-    case "confirm-changed":
-      send(
-        requests === 1
-          ? changedFirst
-          : requests === 2
-            ? { id, changed: true, mode: "incremental", dump: graph("second") }
-            : unchanged,
-      );
-      return;
-    case "confirm-error":
-      send(requests === 1 ? changedFirst : { id, changed: false, error: "confirmation failed" });
-      return;
-    case "changed-not-boolean":
-      send({ id, changed: "yes", mode: "initial" });
-      return;
-    case "error-not-string":
-      send({ id, changed: false, error: 123 });
-      return;
-    case "mode-not-string":
-      send({ id, changed: false, mode: 7 });
-      return;
-    case "invalid-json":
-      raw("this is not valid json\n");
-      return;
-    case "non-object":
-      raw("[1, 2, 3]\n");
-      return;
-    case "missing-id":
-      raw(`${JSON.stringify({ changed: true, mode: "initial" })}\n`);
-      return;
-    case "unknown-id":
-      raw(`${JSON.stringify({ id: id + 1000, changed: true, mode: "initial" })}\n`);
-      return;
-    case "blank-line":
-      if (requests === 1) raw(`\n${JSON.stringify(changedFirst)}\n`);
-      else send(unchanged);
-      return;
-    case "split-frame":
-      if (requests === 1) {
-        const full = JSON.stringify(changedFirst);
-        const mid = Math.floor(full.length / 2);
-        raw(full.slice(0, mid));
-        // A later stream chunk completes the line, exercising reassembly.
-        setTimeout(() => raw(`${full.slice(mid)}\n`), 20);
-      } else send(unchanged);
-      return;
-    default:
-      throw new Error(`unknown serve case: ${serveCase}`);
+/** Every response owes the client these, whatever became of the request. */
+const frame = (id, rest) => ({
+  id,
+  protocolVersion,
+  capabilities: envelopeCapabilityMismatch
+    ? CAPABILITIES.filter((capability) => capability !== "diagnostics")
+    : CAPABILITIES,
+  ...rest,
+});
+
+// A producer that crashes before it can answer. With something on stderr the
+// client must surface it verbatim; with nothing, the bare exit still rejects.
+// Both happen at startup, before a single request is read, so the client meets
+// a process that is already gone.
+if (stderrExit) {
+  process.stderr.write("ttscgraph diagnostic: fatal\n", () => process.exit(1));
+  return;
+}
+if (exitSilently) {
+  process.exit(1);
+}
+
+// Writes one response, subject to the transport-fault flags: a non-JSON line,
+// a blank line before the frame, a frame split across two stdout chunks, or a
+// frame routed to an id nobody is waiting on. Each is a stream condition the
+// envelope parser never sees, because the client's own NDJSON reassembly is
+// what has to survive it.
+const emit = (response) => {
+  if (nonJson) {
+    process.stdout.write("this is not a ttscgraph frame\n");
+    return;
   }
+  const routed = unknownId ? { ...response, id: response.id + 1000 } : response;
+  const payload = `${blankLine ? "\n" : ""}${JSON.stringify(routed)}\n`;
+  if (!splitFrame) {
+    process.stdout.write(payload);
+    return;
+  }
+  // Two chunks, the first deliberately short of the newline, so the client's
+  // reassembly buffer — not readline on this side — is what joins them.
+  const cut = Math.max(1, Math.floor(payload.length / 2));
+  process.stdout.write(payload.slice(0, cut));
+  setTimeout(() => process.stdout.write(payload.slice(cut)), 10);
 };
 
 const input = readline.createInterface({ input: process.stdin });
+if (ignoreStdin) {
+  // Stay alive after stdin closes so close() must fall through to the kill.
+  // The marker below still records that stdin closed; what the client proves is
+  // that it ended the exact owned process, not that the process cooperated.
+  setInterval(() => {}, 1_000);
+}
 input.on("line", (line) => {
   const request = JSON.parse(line);
   requests += 1;
-  if (serveCase !== undefined) {
-    respondServe(request);
-    return;
-  }
   let response;
-  if (invalidMode !== undefined) {
+  if (firstUnchanged) {
+    // A first answer that reuses a snapshot that does not exist yet.
+    response = frame(request.id, { changed: false, mode: "unchanged" });
+  } else if (invalidMode !== undefined) {
     const dump = graph("broken");
     if (invalidMode === "--invalid") {
       dump.edges[0].to = "src/core/order.ts#missing:function";
@@ -183,23 +253,57 @@ input.on("line", (line) => {
       dump.edges[0].evidence.file = "src/core/order.ts";
     } else if (invalidMode === "--invalid-bundled-workspace") {
       dump.nodes.at(-1).external = false;
+    } else if (invalidMode === "--invalid-manifest") {
+      // A file the facts name but the manifest never loaded: two programs'
+      // output in one envelope.
+      dump.provenance.sources = dump.provenance.sources.filter(
+        (entry) => entry.file !== "src/core/order.ts",
+      );
+    } else if (invalidMode === "--invalid-manifest-digest") {
+      dump.provenance.sources[0].checkerDigest = "not-a-sha256";
+    } else if (invalidMode === "--invalid-manifest-duplicate") {
+      dump.provenance.sources.push({ ...dump.provenance.sources[0] });
+    } else if (invalidMode === "--invalid-diagnostic-file") {
+      dump.diagnostics[0].file = "src/never-loaded.ts";
+    } else if (invalidMode === "--invalid-diagnostic-category") {
+      dump.diagnostics[0].category = "advice";
+    } else if (invalidMode === "--invalid-universe-configs") {
+      dump.provenance.universe.configs = [];
+    } else if (invalidMode === "--invalid-universe-digest") {
+      dump.provenance.universe.configs[0].digest = "0123";
+    } else if (invalidMode === "--invalid-disk-digest") {
+      dump.provenance.sources[0].diskDigest = "not-a-sha256";
     } else {
       throw new Error(`unknown invalid mode: ${invalidMode}`);
     }
-    response = { id: request.id, changed: true, mode: "initial", dump };
+    response = frame(request.id, { changed: true, mode: "initial", dump });
   } else if (requests === 1) {
-    response = { id: request.id, changed: true, mode: "initial", dump: graph("first") };
-  } else if (requests === 2 || requests === 3) {
-    response = { id: request.id, changed: false, mode: "unchanged" };
-  } else if (requests === 4) {
-    response = { id: request.id, changed: true, mode: "incremental", dump: graph("second") };
-  } else if (requests === 5) {
-    response = { id: request.id, changed: false, mode: "unchanged" };
+    response = frame(request.id, {
+      changed: true,
+      mode: "initial",
+      dump: graph("first"),
+    });
+  } else if (requests === 2) {
+    response = frame(request.id, { changed: false, mode: "unchanged" });
+  } else if (requests === 3) {
+    response = frame(request.id, {
+      changed: true,
+      mode: "incremental",
+      dump: graph("second", universeDrift ? { drift: "moved" } : {}),
+    });
   } else {
-    response = { id: request.id, changed: false, error: "synthetic failure" };
+    response = frame(request.id, {
+      changed: false,
+      mode: "error",
+      error: "synthetic failure",
+    });
   }
-  process.stdout.write(`${JSON.stringify(response)}\n`);
+  emit(response);
 });
 input.on("close", () => {
   if (marker !== undefined) fs.writeFileSync(marker, "closed\n");
+  // The count is the evidence that one refresh costs one request. The client
+  // used to spend a second round-trip per changed snapshot asking whether the
+  // first one still held, so four refreshes would have produced six requests.
+  if (requestLog !== undefined) fs.writeFileSync(requestLog, `${requests}\n`);
 });

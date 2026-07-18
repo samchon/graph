@@ -1,9 +1,38 @@
 import { TestValidator } from "@nestia/e2e";
+import { createHash } from "node:crypto";
 
 // `adaptTtscGraphDump` is internal to the package, so it is reached by path
 // rather than through the public barrel.
 import { adaptTtscGraphDump } from "../../../../packages/graph/src/provider/ttscgraph/adaptTtscGraphDump";
 import { GraphPaths } from "../internal/GraphPaths";
+
+const sha = (text: string): string =>
+  createHash("sha256").update(text).digest("hex");
+
+// #70 made the dump carry its own proof: the adapter now validates a
+// `provenance` — the source manifest, the build universe, and the producer's
+// capabilities — before it will adapt a single fact, because a slice of facts
+// with no program behind it is a slice nothing downstream may quote. Every
+// well-formed fixture below therefore rides a well-formed provenance whose
+// manifest names the one workspace file its nodes name (`src/a.ts`). That keeps
+// the proof boundary satisfied so each malformed case can reach and fail at the
+// node, edge, or span it targets.
+const provenance = () => ({
+  schemaVersion: 1,
+  capabilities: ["universe", "sourceDigests", "diskDigests", "diagnostics"],
+  producer: { tool: "ttscgraph", version: "0.19.2", typescript: "5.9.0" },
+  universe: {
+    configs: [{ file: "tsconfig.json", digest: sha("tsconfig.json") }],
+    roots: [{ config: "tsconfig.json", file: "src/a.ts" }],
+  },
+  sources: [
+    {
+      file: "src/a.ts",
+      checkerDigest: sha("src/a.ts:checker"),
+      diskDigest: sha("src/a.ts:disk"),
+    },
+  ],
+});
 
 /**
  * The strict adapter is the trust boundary between raw compiler output and the
@@ -16,6 +45,8 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
 
   const good = () => ({
     project,
+    provenance: provenance(),
+    diagnostics: [] as unknown[],
     nodes: [
       { id: "src/a.ts#src/a.ts:module", kind: "module", name: "src/a.ts", file: "src/a.ts", external: false },
       { id: "src/a.ts#foo:function", kind: "function", name: "foo", file: "src/a.ts", external: false },
@@ -45,11 +76,67 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
 
   // Structural types.
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d as { nodes: unknown }).nodes = "x")), project), "a non-array nodes field");
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => (d.provenance.schemaVersion = 2)),
+        project,
+      ),
+    "a dump above the pinned schema",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate(
+          (d) =>
+            ((d.provenance as { schemaVersion?: number }).schemaVersion =
+              undefined),
+        ),
+        project,
+      ),
+    "a dump that omitted its schema",
+  );
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d.nodes[1] as { id: unknown }).id = 123)), project), "a non-string node id");
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d.nodes[1] as { external: unknown }).external = "no")), project), "a non-boolean external flag");
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d.nodes[1] as { kind: unknown }).kind = "banana")), project), "an unsupported node kind");
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d.nodes[1] as { modifiers: unknown }).modifiers = ["banana"])), project), "an unsupported modifier");
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d.edges[0] as { kind: unknown }).kind = "banana")), project), "an unsupported edge kind");
+
+  // Capability claims and the payload they authorize must agree. A digest or
+  // diagnostic without its corresponding claim is unproven data, not a
+  // degraded snapshot the adapter may silently accept.
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => {
+          d.provenance.capabilities = d.provenance.capabilities.filter(
+            (capability) => capability !== "diskDigests",
+          );
+        }),
+        project,
+      ),
+    "a disk digest without the diskDigests capability",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => {
+          d.provenance.capabilities = d.provenance.capabilities.filter(
+            (capability) => capability !== "diagnostics",
+          );
+          d.diagnostics.push({
+            file: "src/a.ts",
+            line: 1,
+            column: 1,
+            code: 2322,
+            category: "error",
+            message: "unclaimed diagnostic",
+          });
+        }),
+        project,
+      ),
+    "a diagnostic without the diagnostics capability",
+  );
 
   // Identity format and uniqueness.
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d.nodes[1] as { id: string }).id = "no-hash-here")), project), "a node id that does not encode its file and kind");
@@ -76,6 +163,8 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   const rich = adaptTtscGraphDump(
     {
       project,
+      provenance: provenance(),
+      diagnostics: [],
       nodes: [
         { id: "src/a.ts#src/a.ts:module", kind: "module", name: "src/a.ts", file: "src/a.ts", external: false },
         {

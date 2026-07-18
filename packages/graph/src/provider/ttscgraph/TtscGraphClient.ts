@@ -1,9 +1,30 @@
 import { ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { readText } from "../../utils/fs";
 import { IBulkGraphSession } from "../IBulkGraphSession";
 import { adaptTtscGraphDump } from "./adaptTtscGraphDump";
+import { ITtscGraphSnapshot } from "./ITtscGraphSnapshot";
+import { parseTtscGraphSnapshot } from "./parseTtscGraphSnapshot";
 
-/** Resident NDJSON client for `ttscgraph serve`. */
+/**
+ * Resident NDJSON client for `ttscgraph serve`.
+ *
+ * One request per refresh, and no disk read. Both of those used to be false and
+ * were the same defect: this client adapted the dump, then `readText`-ed every
+ * file the dump named — off the disk, outside the compiler's program, at a
+ * later instant — and then issued a *second* `{id}` round-trip purely to ask
+ * whether anything had moved in between, looping if it had.
+ *
+ * That protocol narrowed the race without closing it, and could not close it. A
+ * write that lands and reverts between the dump and the confirmation is
+ * invisible to both. And a clean confirmation only ever proved that the *server*
+ * saw no change — never that the bytes this process read are the bytes the
+ * checker resolved against, which is the only thing the sources were wanted for.
+ * Under a source-preamble plugin the two are not even supposed to match.
+ *
+ * The manifest ends the question by answering it at the source: the producer
+ * publishes the digest of the text its checker read, in the same envelope as
+ * the facts. There is nothing left to confirm, so there is no second request,
+ * and nothing left to read, so there is no disk access.
+ */
 export class TtscGraphClient implements IBulkGraphSession {
   public readonly kind = "bulk" as const;
   public readonly language = "typescript" as const;
@@ -13,7 +34,7 @@ export class TtscGraphClient implements IBulkGraphSession {
   private readonly pending = new Map<
     number,
     {
-      resolve: (value: unknown) => void;
+      resolve: (value: ITtscGraphSnapshot) => void;
       reject: (error: Error) => void;
     }
   >();
@@ -50,21 +71,22 @@ export class TtscGraphClient implements IBulkGraphSession {
     this.child.on("error", (error) => {
       this.rejectPending(error);
     });
-    // The child's stdin only emits 'error' for an asynchronous libuv pipe error
-    // raised outside our own operations: every `request` write passes a callback
-    // that receives write failures instead of this handler, and `close` ends
-    // stdin only while the child is still alive. That boundary cannot be
-    // provoked deterministically.
     /* c8 ignore start */
     this.child.stdin.on("error", (error) => {
+      // Even a child that explicitly destroys its stdin can leave the parent's
+      // pipe writable on Windows. Delivery of this Writable error is a libuv
+      // boundary, not a state a hermetic fake child can induce portably.
       this.rejectPending(error);
     });
     /* c8 ignore stop */
     this.child.on("exit", (code, signal) => {
+      // Node supplies a signal for termination or a code for normal exit. The
+      // callback types are nullable because they distinguish those two cases,
+      // not because an exit can have neither.
+      const status = signal ?? code;
       this.rejectPending(
         new Error(
-          // Node guarantees exactly one of `code`/`signal` is non-null on exit.
-          `ttscgraph: process exited (${signal ?? code})${
+          `ttscgraph: process exited (${status})${
             this.stderr.trim() === "" ? "" : `: ${this.stderr.trim()}`
           }`,
         ),
@@ -83,66 +105,76 @@ export class TtscGraphClient implements IBulkGraphSession {
   public refresh(): Promise<IBulkGraphSession.IRefresh> {
     return this.enqueue(async () => {
       this.assertOpen();
-      let response = responseOf(await this.request());
-      for (;;) {
-        if (response.error !== undefined) {
-          throw new Error(`ttscgraph: ${response.error}`);
+      const response = await this.request();
+      // Narrowing, not a lookup: `mode` is typed `"error"` exactly on the frames
+      // that carry one, so ruling failure out here is what makes the rest of
+      // this method unable to ask for a snapshot that was never produced.
+      if (response.mode === "error") {
+        throw new Error(`ttscgraph: ${response.error}`);
+      }
+      const mode: IBulkGraphSession.Mode = response.mode;
+      if (!response.changed) {
+        if (this.snapshot === undefined) {
+          throw new Error(
+            "ttscgraph: first response was unchanged without a snapshot",
+          );
         }
-        if (!response.changed) {
-          assertUnchanged(response);
-          if (this.snapshot === undefined) {
-            throw new Error("ttscgraph: first response was unchanged without a snapshot");
-          }
-          return {
-            changed: false,
-            generation: this.version,
-            mode: response.mode,
-            snapshot: this.snapshot,
-          };
-        }
-        if (response.dump === undefined) {
-          throw new Error("ttscgraph: changed response omitted its full dump");
-        }
-
-        // Parse and validate the complete response before publishing any part
-        // of it. A malformed full dump leaves both the previous snapshot and
-        // its generation untouched.
-        const adapted = adaptTtscGraphDump(response.dump, this.root);
-        const sources = new Map<string, string>();
-        for (const file of adapted.files) {
-          const text = readText(file);
-          if (text !== undefined) sources.set(file, text);
-        }
-
-        // Confirm the compiler session still owns this disk snapshot before
-        // exposing its source map. If another edit landed while the full dump
-        // was encoded, ttscgraph returns another full dump and this loop adapts
-        // that newer generation instead.
-        const confirmation = responseOf(await this.request());
-        if (confirmation.error !== undefined) {
-          throw new Error(`ttscgraph: ${confirmation.error}`);
-        }
-        if (confirmation.changed) {
-          response = confirmation;
-          continue;
-        }
-        assertUnchanged(confirmation);
-        const next: IBulkGraphSession.ISnapshot = {
-          language: "typescript",
-          nodes: adapted.nodes,
-          edges: adapted.edges,
-          sources,
-          warnings: [],
-        };
-        this.snapshot = next;
-        this.version += 1;
+        assertCapabilitiesMatch(
+          response.capabilities,
+          this.snapshot.provenance.capabilities,
+        );
         return {
-          changed: true,
+          changed: false,
           generation: this.version,
-          mode: response.mode,
-          snapshot: next,
+          mode,
+          snapshot: this.snapshot,
         };
       }
+
+      // Parse and validate the complete response before publishing any part of
+      // it. A malformed full dump leaves both the previous snapshot and its
+      // generation untouched.
+      const adapted = adaptTtscGraphDump(response.dump, this.root);
+      const provenance: IBulkGraphSession.IProvenance = {
+        ...adapted.provenance,
+        protocolVersion: response.protocolVersion,
+      };
+      assertCapabilitiesMatch(response.capabilities, provenance.capabilities);
+      // `incremental` means the resident program was reused, and a program can
+      // only be reused while the inputs that decide its file set hold still —
+      // that is what separates it from `reload` upstream. So the claim has
+      // independent evidence riding beside it, and checking costs one string
+      // compare. A producer whose universe moved under an `incremental` label
+      // is not a producer whose mode is cosmetically wrong: it is one that
+      // reused a program it should have reloaded, and every fact in the
+      // snapshot is suspect. Report `mode` honestly means refusing to report a
+      // `mode` the snapshot itself contradicts.
+      if (
+        mode === "incremental" &&
+        this.snapshot !== undefined &&
+        this.snapshot.provenance.universe !== provenance.universe
+      ) {
+        throw new Error(
+          "ttscgraph: incremental snapshot reports a build universe that moved since the last generation, so its program cannot have been reused",
+        );
+      }
+      const next: IBulkGraphSession.ISnapshot = {
+        language: "typescript",
+        nodes: adapted.nodes,
+        edges: adapted.edges,
+        diagnostics: adapted.diagnostics,
+        sources: adapted.sources,
+        provenance,
+        warnings: adapted.warnings,
+      };
+      this.snapshot = next;
+      this.version += 1;
+      return {
+        changed: true,
+        generation: this.version,
+        mode,
+        snapshot: next,
+      };
     });
   }
 
@@ -150,40 +182,40 @@ export class TtscGraphClient implements IBulkGraphSession {
     if (this.closing !== undefined) return this.closing;
     this.closed = true;
     this.closing = this.enqueue(async () => {
-      if (this.child.exitCode !== null || this.child.signalCode !== null) return;
+      // `waitForExit` owns both sides of the process-status race, including a
+      // child that exited before close began. Ending an already-closed writable
+      // is harmless and keeps that state transition in one place.
       this.child.stdin.end();
       if (await waitForExit(this.child, 2_000)) return;
       // This exact ChildProcess is owned by this client. No PID lookup or
       // process-tree operation is used, so an unrelated process cannot be hit.
       this.child.kill();
-      // A child that survives the SIGTERM we sent to our own process handle is
-      // an OS-level refusal to reap a killed process; it cannot be reproduced
-      // deterministically without leaking a real unkillable process.
-      /* c8 ignore next 3 */
+      /* c8 ignore start */
+      // A child can ignore SIGTERM on POSIX, while Windows terminates the same
+      // owned process unconditionally. No hermetic cross-platform fixture can
+      // reach this defensive failure without leaking that deliberately defiant
+      // process after the test.
       if (!(await waitForExit(this.child, 2_000))) {
         throw new Error("ttscgraph: owned process did not exit after close");
       }
+      /* c8 ignore stop */
     });
     return this.closing;
   }
 
-  private request(): Promise<unknown> {
+  private request(): Promise<ITtscGraphSnapshot> {
     const id = this.nextId++;
-    const response = new Promise<unknown>((resolve, reject) => {
+    const response = new Promise<ITtscGraphSnapshot>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
     });
     this.child.stdin.write(`${JSON.stringify({ id })}\n`, (error) => {
-      // A stdin write failure is an OS-level pipe boundary a deterministic fake
-      // cannot schedule, and the `?.` guards a race the failure can only lose:
-      // the write callback fires on a later tick, and `rejectPending` (on a
-      // process `error`/`exit` in that window) may have already cleared this id.
-      // Both arms are real; neither is reproducible without an unkillable pipe.
-      /* c8 ignore start */
       if (error === null || error === undefined) return;
       const pending = this.pending.get(id);
       this.pending.delete(id);
+      // The stdin error event may clear the same request before this write
+      // callback observes the pipe failure; their ordering belongs to libuv.
+      /* c8 ignore next */
       pending?.reject(error);
-      /* c8 ignore stop */
     });
     return response;
   }
@@ -206,29 +238,33 @@ export class TtscGraphClient implements IBulkGraphSession {
         value = JSON.parse(line);
       } catch (error) {
         this.rejectPending(
-          // `JSON.parse` only ever throws a `SyntaxError`.
           new Error(
-            `ttscgraph: invalid NDJSON response: ${(error as Error).message}`,
+            `ttscgraph: invalid NDJSON response: ${asError(error).message}`,
           ),
         );
         continue;
       }
-      if (typeof value !== "object" || value === null || Array.isArray(value)) {
-        this.rejectPending(new Error("ttscgraph: response must be an object"));
+      let response: ITtscGraphSnapshot;
+      try {
+        // The whole frame is validated here, before it is routed. A protocol
+        // mismatch or a malformed envelope is never one caller's bad luck — it
+        // is the wrong binary, or a producer this client cannot read at all, so
+        // every request outstanding against it is equally doomed and fails with
+        // that same reason rather than hanging until the process exits.
+        response = parseTtscGraphSnapshot(value);
+      } catch (error) {
+        this.rejectPending(asError(error));
         continue;
       }
-      const id = (value as { id?: unknown }).id;
-      if (!Number.isSafeInteger(id)) {
-        this.rejectPending(new Error("ttscgraph: response omitted a valid id"));
-        continue;
-      }
-      const pending = this.pending.get(id as number);
+      const pending = this.pending.get(response.id);
       if (pending === undefined) {
-        this.rejectPending(new Error(`ttscgraph: unexpected response id ${id}`));
+        this.rejectPending(
+          new Error(`ttscgraph: unexpected response id ${String(response.id)}`),
+        );
         continue;
       }
-      this.pending.delete(id as number);
-      pending.resolve(value);
+      this.pending.delete(response.id);
+      pending.resolve(response);
     }
   }
 
@@ -261,9 +297,7 @@ export class TtscGraphClient implements IBulkGraphSession {
         try {
           resolveResult(await task());
         } catch (error) {
-          // Every task rejection originates from an explicit `new Error` or from
-          // a child-stream error, both of which are `Error` instances.
-          rejectResult(error as Error);
+          rejectResult(asError(error));
         }
       });
     return result;
@@ -278,60 +312,55 @@ export namespace TtscGraphClient {
   }
 }
 
-interface IServeResponse {
-  changed: boolean;
-  dump?: unknown;
-  error?: string;
-  mode: string;
-}
-
-function responseOf(value: unknown): IServeResponse {
-  const response = value as Record<string, unknown>;
-  if (typeof response.changed !== "boolean") {
-    throw new Error("ttscgraph: response.changed must be boolean");
-  }
-  if (response.error !== undefined && typeof response.error !== "string") {
-    throw new Error("ttscgraph: response.error must be a string");
-  }
-  if (response.mode !== undefined && typeof response.mode !== "string") {
-    throw new Error("ttscgraph: response.mode must be a string");
-  }
-  return {
-    changed: response.changed,
-    ...(response.dump === undefined ? {} : { dump: response.dump }),
-    ...(response.error === undefined ? {} : { error: response.error }),
-    mode: (response.mode as string | undefined) ?? "",
-  };
-}
-
-function assertUnchanged(response: IServeResponse): void {
-  if (response.dump !== undefined) {
-    throw new Error("ttscgraph: unchanged response unexpectedly included a dump");
-  }
-}
-
 function waitForExit(
   child: ChildProcessWithoutNullStreams,
   timeoutMs: number,
 ): Promise<boolean> {
-  // Both call sites verify the child is still running immediately before calling
-  // this, with no intervening await, so an already-exited child never reaches
-  // here and the resolution below always waits for a live process.
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve(true);
+  }
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value: boolean): void => {
-      // `clearTimeout` and `child.off` below make a second call impossible unless
-      // the exit event and the timeout were already queued together — a race
-      // that cannot be forced deterministically.
-      /* c8 ignore next */
+      /* c8 ignore start */
+      // The first callback removes the exit listener and clears the timer. This
+      // guard only protects callbacks that libuv had already queued together.
       if (settled) return;
+      /* c8 ignore stop */
       settled = true;
       clearTimeout(timer);
       child.off("exit", exited);
+      child.off("close", exited);
       resolve(value);
     };
     const exited = (): void => finish(true);
     const timer = setTimeout(() => finish(false), timeoutMs);
     child.once("exit", exited);
+    // A command that cannot be spawned emits `error` and then `close`, but no
+    // `exit`. Waiting for both process terminal events lets close() retire that
+    // failed handle immediately instead of idling through its graceful timeout.
+    child.once("close", exited);
   });
+}
+
+function asError(error: unknown): Error {
+  // All current throw/rejection sites produce Error objects. The conversion is
+  // retained because JavaScript permits future callees to throw any value.
+  /* c8 ignore next */
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+function assertCapabilitiesMatch(
+  envelope: readonly string[],
+  dump: readonly string[],
+): void {
+  const compare = (left: string, right: string): number =>
+    left.localeCompare(right);
+  const left = JSON.stringify([...envelope].sort(compare));
+  const right = JSON.stringify([...dump].sort(compare));
+  if (left !== right) {
+    throw new Error(
+      "ttscgraph: response capabilities disagree with the snapshot provenance",
+    );
+  }
 }

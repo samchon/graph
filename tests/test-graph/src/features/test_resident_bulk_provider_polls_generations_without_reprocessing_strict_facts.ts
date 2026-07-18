@@ -1,17 +1,18 @@
 import { TestValidator } from "@nestia/e2e";
-import {
-  IBulkGraphSession,
-  IIndexerResult,
-  createResidentGraphSource,
-} from "@samchon/graph";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
-import { GraphPaths } from "../internal/GraphPaths";
+import { createResidentGraphSource } from "../../../../packages/graph/src/indexer/createResidentGraphSource";
+import { IIndexerResult } from "../../../../packages/graph/src/indexer/IIndexerResult";
+import { IBulkGraphSession } from "../../../../packages/graph/src/provider/IBulkGraphSession";
 
 export const test_resident_bulk_provider_polls_generations_without_reprocessing_strict_facts =
   async () => {
-    const root = GraphPaths.createTempDirectory("samchon-graph-resident-bulk-");
+    const root = fs.mkdtempSync(
+      path.join(os.tmpdir(), "samchon-graph-resident-bulk-"),
+    );
     const file = path.join(root, "a.ts");
     const text = "export const answer = 1;\n";
     fs.writeFileSync(file, text);
@@ -125,6 +126,7 @@ function snapshot(
   text: string,
   name: string,
 ): IBulkGraphSession.ISnapshot {
+  const digest = createHash("sha256").update(text).digest("hex");
   return {
     language: "typescript",
     nodes: [
@@ -141,7 +143,19 @@ function snapshot(
       },
     ],
     edges: [],
-    sources: new Map([[file, text]]),
+    diagnostics: [],
+    // A bulk snapshot names its files and the digest its checker read; it never
+    // carries their text, so a resident refresh has nothing to re-read either.
+    sources: new Map([[file, { checkerDigest: digest, diskDigest: digest }]]),
+    provenance: {
+      schemaVersion: 1,
+      tool: "ttscgraph",
+      toolVersion: "0.19.2",
+      compilerVersion: "5.9.0",
+      protocolVersion: 1,
+      universe: createHash("sha256").update("universe").digest("hex"),
+      capabilities: ["universe", "sourceDigests", "diskDigests", "diagnostics"],
+    },
     warnings: [],
   };
 }

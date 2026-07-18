@@ -6,55 +6,49 @@ import { TtscGraphClient } from "../../../../packages/graph/src/provider/ttscgra
 import { GraphPaths } from "../internal/GraphPaths";
 
 /**
- * The NDJSON serve protocol is untrusted input. Every malformed frame, invalid
- * response shape, and contradictory state transition must fail the refresh
- * loudly and leave the client with no snapshot and generation zero — never a
- * silently empty success.
+ * The faults a live serve stream can inflict that the envelope parser never
+ * sees.
+ *
+ * Every malformed *envelope* — a non-object, a missing id, a wrong-typed field,
+ * a changed frame with no dump — is now proved directly against the parser in
+ * `test_ttscgraph_serve_envelope_is_validated_before_it_is_routed`, which can
+ * feed it frames a fake server emitting one shape per process cannot. What only
+ * a live stream can produce, and so is proved here, is the client's own reaction
+ * to conditions the parser is never handed: a line that is not JSON at all, a
+ * well-formed frame routed to an id nobody awaits, and a first answer that
+ * claims an unchanged snapshot when none has been published yet. Each must fail
+ * the refresh loudly and leave the client with no snapshot and generation zero —
+ * never a silently empty success.
  */
 export const test_ttscgraph_provider_rejects_malformed_serve_responses =
   async () => {
     const root = GraphPaths.createTempDirectory("samchon-graph-ttscgraph-bad-");
 
-    // Stream-framing faults: the client parses NDJSON itself, so each of these
+    // A non-JSON serve line is a framing fault the client parses itself, so it
     // is surfaced as an error rather than resolving a request.
-    await assertRejected(root, "invalid-json", "a non-JSON serve line");
-    await assertRejected(root, "non-object", "a non-object JSON response");
-    await assertRejected(root, "missing-id", "a response without a valid id");
-    await assertRejected(root, "unknown-id", "a response with an unsolicited id");
-
-    // Response-shape faults: the discriminant and its metadata must be typed.
-    await assertRejected(root, "changed-not-boolean", "a non-boolean changed flag");
-    await assertRejected(root, "error-not-string", "a non-string error field");
-    await assertRejected(root, "mode-not-string", "a non-string mode field");
-
-    // State-transition faults: a first unchanged has nothing to reuse, a changed
-    // response must carry its dump, and an unchanged response must not carry one.
+    await assertRejected(root, "--nonjson", "a non-JSON serve line");
+    // A well-formed frame carrying an id no request is waiting on cannot be
+    // routed, and an unroutable frame fails every outstanding request rather
+    // than hanging until the process exits.
+    await assertRejected(root, "--unknown-id", "a response with an unsolicited id");
+    // A first unchanged response has no prior snapshot to reuse; the client
+    // refuses to publish one it never received.
     await assertRejected(
       root,
-      "unchanged-first",
+      "--first-unchanged",
       "a first unchanged response with no prior snapshot",
-    );
-    await assertRejected(
-      root,
-      "changed-no-dump",
-      "a changed response that omitted its dump",
-    );
-    await assertRejected(
-      root,
-      "unchanged-with-dump",
-      "an unchanged response that carried a dump",
     );
   };
 
 async function assertRejected(
   root: string,
-  serveCase: string,
+  serveFlag: string,
   label: string,
 ): Promise<void> {
   const client = new TtscGraphClient({
     root,
     command: process.execPath,
-    args: [GraphPaths.fakeTtscGraphServer, `--serve=${serveCase}`],
+    args: [GraphPaths.fakeTtscGraphServer, serveFlag],
   });
   try {
     let error: unknown;

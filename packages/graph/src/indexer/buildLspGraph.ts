@@ -15,6 +15,7 @@ import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { mergeGraphSlices } from "../provider/mergeGraphSlices";
 import { TtscGraphClient } from "../provider/ttscgraph/TtscGraphClient";
 import { resolveTtscGraphCommand } from "../provider/ttscgraph/resolveTtscGraphCommand";
+import { ttscGraphStrictRefusal } from "../provider/ttscgraph/ttscGraphStrictRefusal";
 import { appendAll } from "./appendAll";
 import { dedupeEdges } from "./dedupeEdges";
 import { dedupeNodes } from "./dedupeNodes";
@@ -52,6 +53,12 @@ export async function buildLspGraph(
   const staticFallbackLanguages: GraphLanguage[] = [];
   const sessions = new Map<GraphLanguage, ILspSession | IBulkGraphSession>();
   const sources = new Map<string, string>();
+  // Files a strict provider proved, held apart from `sources` because only
+  // `sources` carries text and a strict provider deliberately hands over none.
+  // Both sets name files the build indexed; only one of them can answer "what
+  // did this text say", and the freshness hashes that ask that question already
+  // skip every bulk language.
+  const strictFiles = new Set<string>();
   let lspNodeCount = 0;
   // Computed once (not per-language) since cpp and c share the same clangd
   // compilation database and root.
@@ -67,37 +74,47 @@ export async function buildLspGraph(
       maxFiles: options.maxFiles,
     });
     if (files.length === 0) continue;
-    if (
-      language === "typescript" &&
-      options.server === undefined &&
-      options.maxFiles === undefined &&
-      options.lspReferenceLimit === undefined
-    ) {
-      const resolved = dependencies.resolveTtscGraphCommand(root);
-      if (resolved !== undefined) {
-        try {
-          const { result, session } = await collectTtscGraph(
-            root,
-            resolved.command,
-            resolved.args,
-            options,
-          );
-          appendAll(strictNodes, result.nodes);
-          appendAll(strictEdges, result.edges);
-          appendSources(sources, result.sources);
-          appendAll(warnings, result.warnings);
-          lspNodeCount += result.nodes.length;
-          if (options.keepAlive) sessions.set(language, session);
-          continue;
-        } catch (error) {
+    if (language === "typescript") {
+      // The provider decides whether it can honour these options; this loop only
+      // reports what it decided. The condition used to live here, inline and
+      // without an `else`, which is how the experiment's caps came to disable
+      // the compiler-owned lane on every run without a word of explanation.
+      const refusal = ttscGraphStrictRefusal(options);
+      if (refusal !== undefined) {
+        warnings.push(refusal);
+      } else {
+        const resolved = dependencies.resolveTtscGraphCommand(root);
+        if (resolved !== undefined) {
+          try {
+            const { result, session } = await collectTtscGraph(
+              root,
+              resolved.command,
+              resolved.args,
+              options,
+            );
+            appendAll(strictNodes, result.nodes);
+            appendAll(strictEdges, result.edges);
+            appendAll(diagnostics, result.diagnostics);
+            appendAll(warnings, result.warnings);
+            // The manifest names the files, and the compiler owns the fact that
+            // it does. Nothing reads their text here: the strict lane's facts
+            // are already resolved, and the only thing the generic lane wanted
+            // text for — deriving export edges — is work this provider has
+            // already done against the real checker.
+            for (const file of result.sources.keys()) strictFiles.add(file);
+            lspNodeCount += result.nodes.length;
+            if (options.keepAlive) sessions.set(language, session);
+            continue;
+          } catch (error) {
+            warnings.push(
+              `typescript: ttscgraph bulk indexing failed; using ttscserver LSP: ${(error as Error).message}`,
+            );
+          }
+        } else {
           warnings.push(
-            `typescript: ttscgraph bulk indexing failed; using ttscserver LSP: ${(error as Error).message}`,
+            "typescript: ttscgraph bulk provider was not found; using ttscserver LSP.",
           );
         }
-      } else {
-        warnings.push(
-          "typescript: ttscgraph bulk provider was not found; using ttscserver LSP.",
-        );
       }
     }
     const spec = specOf(language);
@@ -201,7 +218,7 @@ export async function buildLspGraph(
 
   const finalized = mergeGraphSlices({
     root,
-    files: [...sources.keys()],
+    files: [...new Set([...sources.keys(), ...strictFiles])],
     genericNodes: nodes,
     genericEdges: edges,
     strictNodes,

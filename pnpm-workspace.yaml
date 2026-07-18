@@ -7,7 +7,7 @@ catalogs:
     typescript: ^7.0.2
   samchon:
     "@nestia/e2e": ^12.0.0
-    ttsc: &ttsc ^0.19.0
+    ttsc: &ttsc ^0.19.2
     "@ttsc/lint": *ttsc
     "@ttsc/unplugin": *ttsc
     typia: &typia ^13.1.1

@@ -66,7 +66,7 @@ export function createResidentGraphSource(
         hashes:
           result.sources === undefined
             ? snapshotSources(root, options, bulkLanguagesOf(sessions))
-            : hashSources(result.sources, bulkLanguagesOf(sessions)),
+            : hashSources(result.sources),
       };
     } catch (error) {
       // Once the build hands its sessions to this source, every later failure
@@ -93,6 +93,10 @@ export function createResidentGraphSource(
     const diagnostics: ISamchonGraphDiagnostic[] = [];
     const warnings: string[] = [];
     const sources = new Map<string, string>();
+    // Files a strict provider proved. Kept apart from `sources` for the same
+    // reason as in `buildLspGraph`: a bulk provider publishes a manifest of what
+    // its checker read, never the text, so there is no text to put here.
+    const strictFiles = new Set<string>();
     const generations = new Map(current.generations);
 
     for (const [language, session] of current.sessions) {
@@ -107,9 +111,13 @@ export function createResidentGraphSource(
         assertOpen();
         strictNodes.push(...refresh.snapshot.nodes);
         strictEdges.push(...refresh.snapshot.edges);
+        // Rebuilt from what the compiler says now, exactly like the nodes and
+        // the edges, and for the same reason the LSP lane stopped carrying them
+        // forward: a diagnostic belongs to the generation that produced it.
+        diagnostics.push(...refresh.snapshot.diagnostics);
         warnings.push(...refresh.snapshot.warnings);
-        for (const [file, text] of refresh.snapshot.sources) {
-          sources.set(file, text);
+        for (const file of refresh.snapshot.sources.keys()) {
+          strictFiles.add(file);
         }
         generations.set(language, refresh.generation);
         continue;
@@ -143,7 +151,7 @@ export function createResidentGraphSource(
 
     const finalized = mergeGraphSlices({
       root,
-      files: [...sources.keys()],
+      files: [...new Set([...sources.keys(), ...strictFiles])],
       genericNodes: nodes,
       genericEdges: edges,
       strictNodes,
@@ -157,7 +165,7 @@ export function createResidentGraphSource(
       warnings,
     };
     current.dump = dump;
-    current.hashes = hashSources(sources, bulkLanguagesOf(current.sessions));
+    current.hashes = hashSources(sources);
     current.generations = generations;
   }
 
@@ -387,11 +395,9 @@ function snapshotSources(
 /** Content hashes for the exact texts an index pass consumed. */
 function hashSources(
   sources: ReadonlyMap<string, string>,
-  excludedLanguages: ReadonlySet<GraphLanguage> = new Set(),
 ): Map<string, string> {
   const snapshot = new Map<string, string>();
   for (const [file, text] of sources) {
-    if (excludedLanguages.has(languageOf(file))) continue;
     snapshot.set(file, createHash("sha256").update(text).digest("hex"));
   }
   return snapshot;

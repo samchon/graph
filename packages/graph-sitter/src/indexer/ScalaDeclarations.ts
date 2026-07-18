@@ -469,8 +469,11 @@ export namespace ScalaDeclarations {
   function givenIdentity(
     declaration: string,
   ): { name: string } | undefined {
+    // The sole caller enters only after `/^given(?:\s|\[)/` matched a trimmed
+    // source, so a non-whitespace character always follows `given` and `rest` is
+    // never empty; an empty-`rest` guard would be unreachable (and the anonymous
+    // path below already answers `undefined` for it).
     let rest = declaration.slice("given".length).trimStart();
-    if (rest === "") return undefined;
     const named = new RegExp(`^(${IDENTIFIER})(?=\\s*[\\[(:])`).exec(rest);
     if (named !== null) {
       const after = rest.slice(named[0].length).trimStart();

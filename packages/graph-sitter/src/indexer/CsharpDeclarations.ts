@@ -304,7 +304,9 @@ export namespace CsharpDeclarations {
       /[=;{}]/.test(type)
     )
       return false;
-    const words = type.match(/[A-Za-z_$][\w$]*/g) ?? [];
+    // The guard above accepts only a non-empty string beginning with an
+    // identifier character, so at least one identifier always matches here.
+    const words = type.match(/[A-Za-z_$][\w$]*/g)!;
     return !words.some((word) => STATEMENT_WORDS.has(word));
   }
 

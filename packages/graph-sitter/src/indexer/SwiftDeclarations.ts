@@ -478,7 +478,9 @@ export namespace SwiftDeclarations {
       )
         ? { exported: true }
         : {}),
-      ...(modifiers.length > 0 ? { modifiers } : {}),
+      // `swiftGraphModifiersOf` always emits a visibility modifier, so the list
+      // is never empty and is attached unconditionally.
+      modifiers,
       ...(decorators.length > 0 ? { decorators } : {}),
     };
   }
@@ -518,7 +520,8 @@ export namespace SwiftDeclarations {
     source: string,
     start: number,
   ): { name: string; end: number } | undefined {
-    if (source[start] !== "@") return undefined;
+    // Every caller enters here only after matching `@` at `start`, so `start + 1`
+    // steps past it directly; a missing-`@` guard would be unreachable.
     let cursor = start + 1;
     const segments: string[] = [];
     for (;;) {

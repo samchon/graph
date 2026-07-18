@@ -69,6 +69,10 @@ function platformBinaryOf(ttscPackage: string): string | undefined {
   try {
     const resolver = createRequire(ttscPackage);
     const binary = resolver.resolve(`${packageName}/bin/${executable}`);
+    // Windows has no execute bit, so a resolved regular file is always spawnable
+    // there and the falsy arm — a non-executable platform binary, reached and
+    // rejected on POSIX — never runs, so the per-OS gate cannot count it there.
+    /* c8 ignore next -- falsy arm is a POSIX-only rejection; unreachable on Windows */
     return isSpawnableFile(binary) ? binary : undefined;
   } catch {
     return undefined;
@@ -167,9 +171,15 @@ function ttscPackagesBeside(server: string): string[] {
       candidates.push(path.join(current, "package.json"));
       if (path.dirname(current) === current) break;
     }
+    /* c8 ignore start -- realpath fails only on an OS canonicalization error */
   } catch {
-    // A command shim need not be a real symlink (Windows npm .cmd files are
-    // ordinary files); the deterministic sibling candidates above cover it.
+    // `fs.realpathSync` throws only when the OS cannot canonicalize a `server`
+    // the executable lookup already found present — a broken or looping symlink,
+    // a permission or not-a-directory error, or a TOCTOU removal. None can be
+    // produced deterministically and portably from a hermetic fixture, yet
+    // dropping the guard would turn that rare failure into a crash of the whole
+    // resolver, so resolution degrades to the deterministic candidates above.
   }
+  /* c8 ignore stop */
   return candidates;
 }

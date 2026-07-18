@@ -479,7 +479,9 @@ export namespace KotlinDeclarations {
   }
 
   function leadingWhitespace(source: string): number {
-    return /^\s*/.exec(source)?.[0].length ?? 0;
+    // `^\s*` matches at every position (the empty run included), so `exec`
+    // never returns null here.
+    return /^\s*/.exec(source)![0].length;
   }
 
   function nextCodeLine(

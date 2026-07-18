@@ -174,8 +174,11 @@ export namespace ZigDeclarations {
     start: number,
   ): number {
     const lexical = zigLexicalLines(lines);
-    const callable = startsFunction(lexical[start] ?? "");
-    const commaTerminated = startsCommaDeclaration(lexical[start] ?? "");
+    // Every caller passes a line index it is already iterating, so `lexical`
+    // (one entry per line) always has an entry at `start`.
+    const head = lexical[start]!;
+    const callable = startsFunction(head);
+    const commaTerminated = startsCommaDeclaration(head);
     let braces = 0;
     let typeBraces = 0;
     let sawBody = false;

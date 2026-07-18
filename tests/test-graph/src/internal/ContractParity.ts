@@ -181,10 +181,11 @@ export namespace ContractParity {
   /**
    * Product identity, applied to the whole reference before anything else.
    *
-   * This is the only broad substitution the gate allows, and it renames nothing
-   * but the product: a type's prefix, the MCP method. A field, union member,
-   * requiredness, or nesting change can never ride this list — those have to be
-   * spelled out one at a time in {@link DEVIATIONS}.
+   * This is the only broad structural substitution the gate allows, and it
+   * renames nothing but the product: a type's prefix, the MCP method. A field,
+   * union member, requiredness, or nesting change can never ride this list —
+   * those have to be spelled out one at a time in {@link DEVIATIONS}. Prose has
+   * its separate authority vocabulary in {@link PROSE_SUBSTITUTIONS}.
    */
   export const IDENTIFIERS: readonly IDeviation[] = [
     {
@@ -272,12 +273,13 @@ export namespace ContractParity {
   /**
    * Every reviewed difference beyond product identity, per contract.
    *
-   * A contract absent from this map must match the reference exactly once
-   * identity is substituted. Twelve of the eighteen do: the entire
-   * request/output contract is byte-identical, and the multi-language extensions
-   * live only in the dump envelope and the node/edge vocabulary. That is the
-   * invariant this campaign rests on, so it is worth stating where it is
-   * enforced rather than only where it is documented.
+   * A contract absent from this map must match both fidelities exactly once the
+   * blanket identity and authority substitutions are applied. At the structure
+   * layer, twelve of the eighteen contracts match exactly; four of those carry
+   * prose-only rules here. The structural multi-language extensions remain
+   * confined to the dump envelope and node/edge vocabulary. That is the invariant
+   * this campaign rests on, so it is worth stating where it is enforced rather
+   * than only where it is documented.
    */
   export const DEVIATIONS: Record<string, readonly IDeviation[]> = {
     // The tool's own instruction manual. Structurally the request/output shape is

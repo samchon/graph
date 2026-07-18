@@ -14,9 +14,9 @@ const sha = (text: string): string =>
 // capabilities — before it will adapt a single fact, because a slice of facts
 // with no program behind it is a slice nothing downstream may quote. Every
 // well-formed fixture below therefore rides a well-formed provenance whose
-// manifest names the one workspace file its nodes name (`src/a.ts`); the
-// malformed cases each corrupt a node, an edge, or a span, and so still fail at
-// the fact they target, long before this provenance is ever read.
+// manifest names the one workspace file its nodes name (`src/a.ts`). That keeps
+// the proof boundary satisfied so each malformed case can reach and fail at the
+// node, edge, or span it targets.
 const provenance = () => ({
   schemaVersion: 1,
   capabilities: ["universe", "sourceDigests", "diskDigests", "diagnostics"],
@@ -76,6 +76,26 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
 
   // Structural types.
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d as { nodes: unknown }).nodes = "x")), project), "a non-array nodes field");
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => (d.provenance.schemaVersion = 2)),
+        project,
+      ),
+    "a dump above the pinned schema",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate(
+          (d) =>
+            ((d.provenance as { schemaVersion?: number }).schemaVersion =
+              undefined),
+        ),
+        project,
+      ),
+    "a dump that omitted its schema",
+  );
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d.nodes[1] as { id: unknown }).id = 123)), project), "a non-string node id");
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d.nodes[1] as { external: unknown }).external = "no")), project), "a non-boolean external flag");
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d.nodes[1] as { kind: unknown }).kind = "banana")), project), "an unsupported node kind");

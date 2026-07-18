@@ -35,6 +35,9 @@ const splitFrame = args.includes("--split-frame");
 const nonJson = args.includes("--nonjson");
 const unknownId = args.includes("--unknown-id");
 const firstUnchanged = args.includes("--first-unchanged");
+const envelopeCapabilityMismatch = args.includes(
+  "--envelope-capability-mismatch",
+);
 let requests = 0;
 
 const CAPABILITIES = [
@@ -176,7 +179,9 @@ const graph = (name, options = {}) => ({
 const frame = (id, rest) => ({
   id,
   protocolVersion,
-  capabilities: CAPABILITIES,
+  capabilities: envelopeCapabilityMismatch
+    ? CAPABILITIES.filter((capability) => capability !== "diagnostics")
+    : CAPABILITIES,
   ...rest,
 });
 
@@ -299,6 +304,6 @@ input.on("close", () => {
   if (marker !== undefined) fs.writeFileSync(marker, "closed\n");
   // The count is the evidence that one refresh costs one request. The client
   // used to spend a second round-trip per changed snapshot asking whether the
-  // first one still held, so this number would read 5 where it now reads 3.
+  // first one still held, so four refreshes would have produced six requests.
   if (requestLog !== undefined) fs.writeFileSync(requestLog, `${requests}\n`);
 });

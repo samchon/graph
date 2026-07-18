@@ -119,6 +119,10 @@ export class TtscGraphClient implements IBulkGraphSession {
             "ttscgraph: first response was unchanged without a snapshot",
           );
         }
+        assertCapabilitiesMatch(
+          response.capabilities,
+          this.snapshot.provenance.capabilities,
+        );
         return {
           changed: false,
           generation: this.version,
@@ -135,6 +139,7 @@ export class TtscGraphClient implements IBulkGraphSession {
         ...adapted.provenance,
         protocolVersion: response.protocolVersion,
       };
+      assertCapabilitiesMatch(response.capabilities, provenance.capabilities);
       // `incremental` means the resident program was reused, and a program can
       // only be reused while the inputs that decide its file set hold still —
       // that is what separates it from `reload` upstream. So the claim has
@@ -325,11 +330,16 @@ function waitForExit(
       settled = true;
       clearTimeout(timer);
       child.off("exit", exited);
+      child.off("close", exited);
       resolve(value);
     };
     const exited = (): void => finish(true);
     const timer = setTimeout(() => finish(false), timeoutMs);
     child.once("exit", exited);
+    // A command that cannot be spawned emits `error` and then `close`, but no
+    // `exit`. Waiting for both process terminal events lets close() retire that
+    // failed handle immediately instead of idling through its graceful timeout.
+    child.once("close", exited);
   });
 }
 
@@ -338,4 +348,19 @@ function asError(error: unknown): Error {
   // retained because JavaScript permits future callees to throw any value.
   /* c8 ignore next */
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function assertCapabilitiesMatch(
+  envelope: readonly string[],
+  dump: readonly string[],
+): void {
+  const compare = (left: string, right: string): number =>
+    left.localeCompare(right);
+  const left = JSON.stringify([...envelope].sort(compare));
+  const right = JSON.stringify([...dump].sort(compare));
+  if (left !== right) {
+    throw new Error(
+      "ttscgraph: response capabilities disagree with the snapshot provenance",
+    );
+  }
 }

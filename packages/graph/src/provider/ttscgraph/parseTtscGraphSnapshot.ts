@@ -26,7 +26,7 @@ export function parseTtscGraphSnapshot(value: unknown): ITtscGraphSnapshot {
   const protocolVersion = raw.protocolVersion;
   if (
     !Number.isSafeInteger(protocolVersion) ||
-    (protocolVersion as number) < ITtscGraphSnapshot.PROTOCOL_VERSION
+    protocolVersion !== ITtscGraphSnapshot.PROTOCOL_VERSION
   ) {
     throw new Error(
       `ttscgraph: this client speaks serve protocol v${String(
@@ -35,9 +35,7 @@ export function parseTtscGraphSnapshot(value: unknown): ITtscGraphSnapshot {
         Number.isSafeInteger(protocolVersion)
           ? `v${String(protocolVersion)}`
           : "an unknown version"
-      }. Install a ttsc at or above the release that publishes v${String(
-        ITtscGraphSnapshot.PROTOCOL_VERSION,
-      )} (the binary resolves from the target project, or from TTSC_GRAPH_BINARY).`,
+      }. Install a matching ttsc (the binary resolves from the target project, or from TTSC_GRAPH_BINARY).`,
     );
   }
 
@@ -98,6 +96,12 @@ export function parseTtscGraphSnapshot(value: unknown): ITtscGraphSnapshot {
       throw new Error("ttscgraph: error response unexpectedly included a dump");
     }
     return { ...base, mode: "error", error: raw.error, changed: false };
+  }
+
+  if ((mode === "unchanged") !== !raw.changed) {
+    throw new Error(
+      `ttscgraph: response.mode ${mode} contradicts changed ${String(raw.changed)}`,
+    );
   }
 
   // `changed` decides whether a dump rides along; the producer stakes its whole

@@ -51,6 +51,19 @@ export function adaptTtscGraphDump(
   expectedRoot: string,
 ): IAdaptedDump {
   const dump = objectOf(input, "dump");
+  const rawProvenance = objectOf(dump.provenance, "dump.provenance");
+  const schemaVersion = rawProvenance.schemaVersion;
+  if (schemaVersion !== ITtscGraphSnapshot.DUMP_SCHEMA_VERSION) {
+    throw new Error(
+      `ttscgraph: dump is schema ${
+        Number.isSafeInteger(schemaVersion)
+          ? `v${String(schemaVersion)}`
+          : "unknown"
+      }, this client reads v${String(
+        ITtscGraphSnapshot.DUMP_SCHEMA_VERSION,
+      )}. Install a matching ttsc (the binary resolves from the target project, or from TTSC_GRAPH_BINARY).`,
+    );
+  }
   const project = stringOf(dump.project, "dump.project");
   if (!samePath(project, expectedRoot)) {
     throw new Error(
@@ -217,7 +230,11 @@ export function adaptTtscGraphDump(
     edges,
     diagnostics,
     sources,
-    provenance: provenanceOf(dump.provenance, capabilities),
+    provenance: provenanceOf(
+      dump.provenance,
+      schemaVersion as number,
+      capabilities,
+    ),
     warnings,
   };
 }
@@ -340,6 +357,7 @@ function universeOf(value: unknown): string {
 
 function provenanceOf(
   value: unknown,
+  schemaVersion: number,
   capabilities: string[],
 ): Omit<IBulkGraphSession.IProvenance, "protocolVersion"> {
   const provenance = objectOf(value, "dump.provenance");
@@ -353,6 +371,7 @@ function provenanceOf(
   }
   const producer = objectOf(provenance.producer, "dump.provenance.producer");
   return {
+    schemaVersion,
     tool: stringOf(producer.tool, "dump.provenance.producer.tool"),
     toolVersion: stringOf(producer.version, "dump.provenance.producer.version"),
     compilerVersion: stringOf(

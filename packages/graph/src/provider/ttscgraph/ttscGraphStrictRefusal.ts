@@ -7,9 +7,9 @@ import { IBuildGraphOptions } from "../../indexer/IBuildGraphOptions";
  * The strict lane used to be skipped by a condition folded into the indexer's
  * language loop — `server === undefined && maxFiles === undefined &&
  * lspReferenceLimit === undefined` — with no `else`. So a caller that passed any
- * of them got the generic `ttscserver` LSP lane, a dump reporting
- * `indexer: "lsp"`, and no warning: a *generic* success, indistinguishable from
- * the compiler-owned one it silently replaced. The real-language experiment
+ * of them fell through to the generic LSP/static lanes with no warning: a
+ * fallback success, indistinguishable from the compiler-owned result it
+ * silently replaced. The real-language experiment
  * passes `maxFiles` and `lspReferenceLimit` on every run, so the one place that
  * was supposed to prove this provider against a real project had never once
  * launched it, and reported success each time.
@@ -44,7 +44,7 @@ export function ttscGraphStrictRefusal(
   return (
     `typescript: ttscgraph bulk indexing is disabled by ${refused.join(", ")}; ` +
     `the compiler-owned provider publishes whole-program snapshots and has no bounded mode, ` +
-    `so the generic ttscserver LSP lane indexed this language instead. ` +
+    `so this language falls through to the generic ttscserver LSP lane (and static fallback if that lane cannot answer). ` +
     `These facts are not compiler-owned. Drop ${
       refused.length === 1 ? "that option" : "those options"
     } for a strict TypeScript index.`

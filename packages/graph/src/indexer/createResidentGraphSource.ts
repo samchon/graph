@@ -66,7 +66,7 @@ export function createResidentGraphSource(
         hashes:
           result.sources === undefined
             ? snapshotSources(root, options, bulkLanguagesOf(sessions))
-            : hashSources(result.sources, bulkLanguagesOf(sessions)),
+            : hashSources(result.sources),
       };
     } catch (error) {
       // Once the build hands its sessions to this source, every later failure
@@ -165,7 +165,7 @@ export function createResidentGraphSource(
       warnings,
     };
     current.dump = dump;
-    current.hashes = hashSources(sources, bulkLanguagesOf(current.sessions));
+    current.hashes = hashSources(sources);
     current.generations = generations;
   }
 
@@ -395,11 +395,9 @@ function snapshotSources(
 /** Content hashes for the exact texts an index pass consumed. */
 function hashSources(
   sources: ReadonlyMap<string, string>,
-  excludedLanguages: ReadonlySet<GraphLanguage> = new Set(),
 ): Map<string, string> {
   const snapshot = new Map<string, string>();
   for (const [file, text] of sources) {
-    if (excludedLanguages.has(languageOf(file))) continue;
     snapshot.set(file, createHash("sha256").update(text).digest("hex"));
   }
   return snapshot;

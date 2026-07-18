@@ -92,28 +92,29 @@ export const test_ttscgraph_serve_envelope_is_validated_before_it_is_routed =
     });
     // A version complaint names the versions, so the reader knows which half of
     // the pair to move rather than being told a field is wrong.
+    const protocolReason = reason({
+      ...base,
+      protocolVersion: 0,
+      mode: "unchanged",
+      changed: false,
+    });
     TestValidator.predicate(
       "the protocol error names both versions and how to fix the pair",
-      reason({ ...base, protocolVersion: 0, mode: "unchanged", changed: false })
-        .includes("this client speaks serve protocol v1") === true,
+      protocolReason.includes("this client speaks serve protocol v1") &&
+        protocolReason.includes("Install a matching ttsc"),
     );
 
-    // Additive forward compatibility is deliberate: the binary's version is the
-    // target project's choice, so pinning to exact equality would break every
-    // consumer the day ttsc adds a field. A v2 that redefined something instead
-    // fails later, by field name, from the adapter — never as a silent misread.
-    const newer = parseTtscGraphSnapshot({
+    // Upstream moves the protocol number for additions, removals, and semantic
+    // changes. A field validator cannot distinguish an additive v2 from a v2
+    // that kept the JSON type but changed its meaning, so both directions fail
+    // closed until this client deliberately adopts the new contract.
+    rejects("a producer above the pinned protocol", {
       ...base,
       protocolVersion: ITtscGraphSnapshot.PROTOCOL_VERSION + 1,
       mode: "unchanged",
       changed: false,
       somethingNew: true,
     });
-    TestValidator.equals(
-      "a newer producer that only added fields is still read",
-      newer.protocolVersion,
-      2,
-    );
 
     rejects("a frame with no id to route it back to its caller", {
       ...base,
@@ -192,6 +193,17 @@ export const test_ttscgraph_serve_envelope_is_validated_before_it_is_routed =
       mode: "unchanged",
       changed: false,
       dump: {},
+    });
+    rejects("an unchanged mode that claims the graph moved", {
+      ...base,
+      mode: "unchanged",
+      changed: true,
+      dump: {},
+    });
+    rejects("a rebuild mode that claims nothing moved", {
+      ...base,
+      mode: "rebuild",
+      changed: false,
     });
   };
 

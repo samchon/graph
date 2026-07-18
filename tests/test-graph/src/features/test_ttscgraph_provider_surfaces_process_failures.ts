@@ -9,8 +9,9 @@ import { GraphPaths } from "../internal/GraphPaths";
 
 /**
  * A resident strict session must always tell the truth about its child process:
- * a process that cannot start, crashes, or refuses to stop is surfaced as an
- * error and cleaned up, never hidden behind a silent empty graph.
+ * a process that cannot start or crashes is surfaced as an error, while one
+ * that refuses graceful shutdown is force-retired through the exact owned
+ * handle. None becomes a silent empty graph or a leaked child.
  */
 export const test_ttscgraph_provider_surfaces_process_failures = async () => {
   const root = GraphPaths.createTempDirectory("samchon-graph-ttscgraph-fail-");
@@ -29,6 +30,7 @@ export const test_ttscgraph_provider_surfaces_process_failures = async () => {
     "an unspawnable command publishes no snapshot",
     unspawnable.current === undefined && unspawnable.generation === 0,
   );
+  await unspawnable.close();
 
   // A process that writes diagnostics and then exits mid-request surfaces those
   // diagnostics verbatim, and a later refresh keeps reporting the dead process.

@@ -108,6 +108,9 @@ export namespace IBulkGraphSession {
    * reconstruction this contract exists to make unnecessary.
    */
   export interface IProvenance {
+    /** The version of the dump body contract the producer emitted. */
+    schemaVersion: number;
+
     /** The producing tool's name, such as `ttscgraph`. */
     tool: string;
 

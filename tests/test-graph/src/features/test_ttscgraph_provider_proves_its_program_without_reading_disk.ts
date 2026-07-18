@@ -25,7 +25,8 @@ import { GraphPaths } from "../internal/GraphPaths";
  * sources are never written to disk at all. Every earlier version of this client
  * would hand back an empty source map here, because every `readText` returns
  * undefined and the file is dropped. This one hands back the producer's
- * manifest, in full, because the producer is the only party that ever knew.
+ * workspace manifest entries intact, because the producer is the only party
+ * that ever knew.
  */
 export const test_ttscgraph_provider_proves_its_program_without_reading_disk =
   async () => {
@@ -86,6 +87,11 @@ export const test_ttscgraph_provider_proves_its_program_without_reading_disk =
       root,
       "--drop-capability=universe",
       "a producer that cannot state its build universe",
+    );
+    await assertRefused(
+      root,
+      "--envelope-capability-mismatch",
+      "an envelope and dump that disagree about their capabilities",
     );
     await assertUniverseDriftRefused(root);
     await assertUncollectedDiagnosticsAreDeclared(root);

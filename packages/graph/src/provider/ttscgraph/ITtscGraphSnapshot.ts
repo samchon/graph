@@ -88,22 +88,23 @@ export namespace ITtscGraphSnapshot {
    * now asks of it, and reading one would mean guessing at exactly the evidence
    * the pin exists to establish.
    *
-   * A producer at or above it is accepted. That is a deliberate divergence from
-   * `@ttsc/graph`'s own session, which demands exact equality on the grounds
-   * that a server on another version is entitled to another shape. The grounds
-   * are sound; the conclusion does not transfer, because the two clients do not
-   * read the wire the same way. `@ttsc/graph` asserts the whole envelope
-   * against one fixed shape, so a v2 that merely added a field fails its assert
-   * indistinguishably from a v2 that redefined one — it must reject both. This
-   * client validates only the fields it reads, one at a time, and every read
-   * that cannot be satisfied throws naming the field it failed on. So an
-   * additive v2 keeps working, which matters because the binary's version is
-   * the target project's choice and exact equality would break every consumer
-   * on the day ttsc adds a field; and an incompatible v2 fails on the field it
-   * broke, by name — the same diagnosis a version mismatch would have given,
-   * and never a silent misread.
+   * Equality is exact. Upstream moves this number when a field is added,
+   * removed, or given a new meaning; validating field types cannot detect a
+   * semantic change whose JSON shape stayed the same. The target project picks
+   * the binary independently of this package, so rejecting the mismatched pair
+   * is the only fail-closed reading.
    */
   export const PROTOCOL_VERSION = 1;
+
+  /**
+   * The version of the dump body this client adapts.
+   *
+   * Independent of {@link PROTOCOL_VERSION}: one versions the NDJSON envelope,
+   * the other the graph document inside a changed frame. Keep this equal to
+   * `DumpSchemaVersion` in ttsc's `internal/graph/provenance.go` for the pinned
+   * producer release.
+   */
+  export const DUMP_SCHEMA_VERSION = 1;
 
   /**
    * What the compiler did, as opposed to what the transport did.

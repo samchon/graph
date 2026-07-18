@@ -103,6 +103,11 @@ export const test_ttscgraph_bulk_provider_reuses_and_atomically_replaces_snapsho
       1,
     );
     TestValidator.equals(
+      "the snapshot reports the dump schema its facts obey",
+      initial.snapshot.provenance.schemaVersion,
+      1,
+    );
+    TestValidator.equals(
       "the first snapshot reports the compiler's own mode, not an inferred one",
       initial.mode,
       "initial",

@@ -802,10 +802,14 @@ function startsSlashLiteral(
     return true;
   const prefix = source.slice(Math.max(0, previous - 12), previous + 1);
   if (/\b(?:case|return|throw|yield)$/.test(prefix)) return true;
+  // Reaching here means `slashLiteralEnd` already found a closing slash after
+  // `start` (so `start + 1` is in range) and a non-whitespace char precedes
+  // `start` (so `previous >= 0`, hence `start - 1` is in range). Neither index
+  // is ever out of bounds, so a `?? ""` fallback here could never run.
   return (
     language === "ruby" &&
-    /\s/.test(source[start - 1] ?? "") &&
-    !/\s/.test(source[start + 1] ?? "")
+    /\s/.test(source[start - 1]!) &&
+    !/\s/.test(source[start + 1]!)
   );
 }
 

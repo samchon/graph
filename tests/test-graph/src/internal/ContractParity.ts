@@ -270,6 +270,139 @@ export namespace ContractParity {
     },
   ];
 
+  // The reference's dump now embeds proof for one TypeScript Program. This
+  // product already consumes that proof at the strict-provider boundary, but
+  // its public dump can combine several providers and cannot truthfully present
+  // one provider's universe as authority for all languages. Issue #66 owns the
+  // provider registry and the eventual multi-provider public provenance shape.
+  //
+  // These constants keep the temporary omission exact at both fidelities. The
+  // prose rule first reduces the reviewed comment-bearing block to the same
+  // code-only text the structure layer sees; the following ordinary rule then
+  // removes that exact text from both. Any upstream field or wording change
+  // makes one of the two replacements stale instead of broadening the omission.
+  const DUMP_METADATA_STRUCTURE: string = [
+    "provenance: ISamchonGraphDump.IProvenance;",
+    "diagnostics: ISamchonGraphDump.IDiagnostic[];",
+  ].join("\n").concat("\n");
+
+  const DUMP_METADATA_PROSE: string = [
+    "/** Evidence about the one program that produced everything below. */",
+    "provenance: ISamchonGraphDump.IProvenance;",
+    "/** The compiler's findings for the same generation that produced the facts. Empty means the program reported none. It does not mean they were not collected — `provenance.capabilities` is what says whether they were. */",
+    "diagnostics: ISamchonGraphDump.IDiagnostic[];",
+  ].join("\n").concat("\n");
+
+  const DUMP_PROVENANCE_STRUCTURE: string = [
+    "export interface IProvenance {",
+    "schemaVersion: number;",
+    "capabilities: string[];",
+    "producer: IProducer;",
+    "universe: IUniverse;",
+    "sources: ISourceDigest[];",
+    "}",
+    "export interface IProducer {",
+    "tool: string;",
+    "version: string;",
+    "typescript: string;",
+    "}",
+    "export interface IUniverse {",
+    "configs: IFileDigest[];",
+    "roots: IRootFile[];",
+    "}",
+    "export interface IRootFile {",
+    "config: string;",
+    "file: string;",
+    "}",
+    "export interface IFileDigest {",
+    "file: string;",
+    "digest: string;",
+    "}",
+    "export interface ISourceDigest {",
+    "file: string;",
+    "checkerDigest: string;",
+    "diskDigest: string;",
+    "}",
+    "export interface IDiagnostic {",
+    "file: string;",
+    "line: number;",
+    "column: number;",
+    "code: number;",
+    'category: "error" | "warning";',
+    "message: string;",
+    "}",
+  ].join("\n").concat("\n");
+
+  const DUMP_PROVENANCE_PROSE: string = [
+    "/** What a snapshot knows about its own origin. The graph's claim is that its nodes, edges, spans, and diagnostics all came from one `Program`. Without this the claim is unprovable from the response: a consumer could only re-read the disk afterwards and hope nothing moved, which is not sound — a write that lands and reverts in between is invisible to it, and a re-read proves what the disk says now, never what the index resolved against. This carries no source text. A digest is the opposite of inlining: it is what lets a consumer prove byte-identity against text it read itself, without the graph ever shipping that text. */",
+    "export interface IProvenance {",
+    "/** The dump body's schema version, moved when a field is added, removed, or redefined. Independent of the serve protocol's version: a dump written to a file has a schema but never rode the protocol. */",
+    "schemaVersion: number;",
+    "/** What this snapshot proves. A consumer degrades against this rather than guessing from a field's emptiness, because an empty list and an uncollected one look identical on the wire. The known members are `universe`, `sourceDigests`, `diskDigests`, and `diagnostics`. The type stays `string[]` rather than a union of those on purpose: a union would make `typia.assert` reject a newer producer for naming a capability this client has not heard of, turning \"proves more than you know about\" into a hard failure. An unknown capability is exactly the case a consumer should ignore. */",
+    "capabilities: string[];",
+    "/** What built the snapshot. */",
+    "producer: IProducer;",
+    "/** The inputs that decide which files are in the program at all. */",
+    "universe: IUniverse;",
+    "/** One entry per file the program loaded, ordered by file. */",
+    "sources: ISourceDigest[];",
+    "}",
+    "/** Identifies the binary and the checker behind the facts. `tool` and `version` are separate because more than one binary can produce a dump and they do not share a version line — the shipped `ttscgraph` is stamped at release, the internal viewer tool is not versioned at all — so folding the name in would hand a consumer that parses a version a tool name. */",
+    "export interface IProducer {",
+    "/** The producing binary's name, such as `ttscgraph`. */",
+    "tool: string;",
+    '/** The producing binary\'s build version, as its `--version` prints it. A local build reports the dev placeholder; a tool that carries no version reports `""`. */',
+    "version: string;",
+    "/** The __LANG__ version typescript-go implements. */",
+    "typescript: string;",
+    "}",
+    "/** The build universe: the inputs that decide which files the program contains, as opposed to what is inside them. A change to any of them can add or drop whole files, so a consumer reusing facts across snapshots must treat a universe change as invalidating everything. */",
+    "export interface IUniverse {",
+    "/** The tsconfig chain — the project's config and everything it extends. It stays an input regardless of what any source contains: compiler options change the meaning of code the checker resolves without any source file changing. */",
+    "configs: IFileDigest[];",
+    "/** The resolved root file set, one entry per (config, file) pair. A root a config names but that does not exist is still listed: its absence is part of the fingerprint, and creating it later changes the program. */",
+    "roots: IRootFile[];",
+    "}",
+    "/** A root file attributed to the config that named it. */",
+    "export interface IRootFile {",
+    "/** The tsconfig that named this root, project-relative. */",
+    "config: string;",
+    "/** The root file, project-relative. */",
+    "file: string;",
+    "}",
+    "/** A file and the hex-encoded SHA-256 of its on-disk bytes. */",
+    "export interface IFileDigest {",
+    "/** Project-relative. */",
+    "file: string;",
+    "/** Hex-encoded SHA-256. */",
+    "digest: string;",
+    "}",
+    '/** The manifest entry for one source file the program loaded. Two digests, because "the bytes the checker read" and "the bytes on disk" are not always the same string and a consumer needs to know which one it compares against. They diverge when a source-preamble plugin injects text ahead of the file before tsgo parses it, which a real plugin project does on every build. */',
+    "export interface ISourceDigest {",
+    "/** Project-relative. */",
+    "file: string;",
+    "/** Hex-encoded SHA-256 of the text the index resolved against — the ground truth for the facts. Every node, edge, and span attributed to this file was computed from these bytes. */",
+    "checkerDigest: string;",
+    '/** Hex-encoded SHA-256 of the file\'s on-disk bytes at snapshot time, or `""` when it could not be read: it vanished mid-load, or it is a virtual source with no on-disk identity. This is the one a consumer that opens the file itself can reproduce. When it equals `checkerDigest`, a matching read proves byte-identity with the facts. When it does not, the checker saw augmented text and that proof is simply not available for this file — which is a thing to report, not to paper over. Read it only when `provenance.capabilities` lists `diskDigests`. Without that claim every one of these is empty because the producer never hashed the disk, which is a different fact from a file that could not be read. */',
+    "diskDigest: string;",
+    "}",
+    "/** One compiler diagnostic from the generation that produced the facts. */",
+    "export interface IDiagnostic {",
+    "/** Project-relative. */",
+    "file: string;",
+    "/** 1-based line. */",
+    "line: number;",
+    "/** 1-based column. */",
+    "column: number;",
+    "/** The __LANG__ diagnostic code, such as 2322. */",
+    "code: number;",
+    "/** Whether the finding fails a build. */",
+    'category: "error" | "warning";',
+    "/** The diagnostic text, without the code prefix. */",
+    "message: string;",
+    "}",
+  ].join("\n").concat("\n");
+
   /**
    * Every reviewed difference beyond product identity, per contract.
    *
@@ -374,16 +507,9 @@ export namespace ContractParity {
       },
       {
         reason:
-          "Documents this product's real exact-operation `audit` string: trimmed wording, and it omits the reference's `bounded only where truncated says` because the product's audit does not say it.",
+          "The operation-aware audit says the same thing with the product's actual compact wording: a walk returns the held structure for its named handles, and details splits whole identity from sliced fan-out.",
         layer: "prose",
-        from: "For the exact operations (`trace`, `details`, `overview`) it reports the result as the structure the graph holds for the handles named, bounded only where `truncated` says.",
-        to: "For exact operations (`trace`, `details`, `overview`) it reports the structure held for the named handles.",
-      },
-      {
-        reason:
-          "The details rework split exact identity from bounded fan-out without changing the application shape: `trace` and `overview` remain bounded walks, while `details` returns the selected symbol whole and directs callers to `trace` for the rest of its relations.",
-        layer: "prose",
-        from: "For exact operations (`trace`, `details`, `overview`) it reports the structure held for the named handles.",
+        from: "For the walks from a named handle (`trace`, `overview`) it reports the result as the structure the graph holds, bounded where `truncated` says. For `details` it reports the two halves of a resolved symbol: its own shape returned whole, its fan-out returned as a slice with `trace` for the rest.",
         to: "For the walks from a named handle (`trace`, `overview`) it reports the structure held for the named handles, bounded where `truncated` says. For `details` it reports the two halves of a resolved symbol: its own shape returned whole, its fan-out returned as a slice with `trace` for the rest.",
       },
       {
@@ -397,30 +523,9 @@ export namespace ContractParity {
     Details: [
       {
         reason:
-          "The details rework defines this cap as a small orientation slice and directs exhaustive use questions to `trace`; the limit remains two.",
+          "The generic index extracts bounded source-form literals rather than claiming the compiler-resolved complete union that the TypeScript-only reference can provide.",
         layer: "prose",
-        from: "Maximum dependencies and dependents per side when `neighbors:true`. Above a few is usually overfetch; call `trace` for flow instead. @default 2",
-        to: "Dependencies and dependents per side when `neighbors:true`. A small orientation slice by default; what uses a symbol grows with its popularity, so `trace` answers the whole \"who uses this\". @default 2",
-      },
-      {
-        reason:
-          "Owned members are part of a symbol's identity, so the details rework returns the complete outline by default and caps it only when the caller supplies a number.",
-        layer: "prose",
-        from: "Maximum owned members for a container or object literal. @default 6",
-        to: "Owned members for a container or object literal. The complete outline by default — a class's members and an enum's are the symbol itself, so they are not sampled. Pass a number to cap.",
-      },
-      {
-        reason:
-          "Direct relations remain a bounded orientation slice; the details rework corrects the stale prose default from one to two, matching the existing implementation, and directs exhaustive fan-out to `trace`.",
-        layer: "prose",
-        from: "Maximum direct execution and type references per group. @default 1",
-        to: "Direct execution and type references per group. A small orientation slice by default; `trace` follows the whole fan-out. @default 2",
-      },
-      {
-        reason:
-          "String-literal values belong to the selected symbol's identity, so the details rework documents that they are returned whole rather than sampled with relation fan-out.",
-        layer: "prose",
-        from: "/** String literal values from the signature. */",
+        from: "/** The complete value set a type alias or enum admits, in __LANG__ source form (`\"a\"`, `1`, `true`, `null`) — the checker's resolved union members, not the quoted tokens that happened to fit in `signature`. Absent when the type has no enumerable value set. A `signature` is capped at the declaration head, so for a union or enum written across several lines this is the field that carries the members. */",
         to: "/** String-literal values found in the declaration signature, such as a union or enum's value set. Returned whole rather than sampled: a symbol's value set is part of its identity, not a slice of its fan-out. */",
       },
     ],
@@ -446,6 +551,19 @@ export namespace ContractParity {
       },
       {
         reason:
+          "The reference proves one TypeScript Program. The public multi-language dump cannot present one provider's proof as authority for every language; #66 owns the provider registry and its eventual public provenance shape. Reduce the reviewed prose block to its code before removing the same exact structure at both fidelities.",
+        layer: "prose",
+        from: DUMP_METADATA_PROSE,
+        to: DUMP_METADATA_STRUCTURE,
+      },
+      {
+        reason:
+          "The single-program provenance and its compiler-only diagnostic row are provider-boundary facts today, not claims of the combined public dump. #66 must replace this omission with a multi-provider registry rather than reusing the TypeScript shape.",
+        from: DUMP_METADATA_STRUCTURE,
+        to: "",
+      },
+      {
+        reason:
           "A language server has something to say about the source it indexed, and a build can hit non-fatal trouble worth reporting. The reference had neither channel.",
         from: [
           "edges: ISamchonGraphDump.IEdge[];",
@@ -459,6 +577,19 @@ export namespace ContractParity {
           "}",
           "export namespace ISamchonGraphDump {",
         ].join("\n"),
+      },
+      {
+        reason:
+          "The omitted top-level single-program proof leaves its TypeScript-only namespace unused. Reduce its exact reviewed prose to the structure text so the next rule removes the same block at both fidelities without hiding upstream drift.",
+        layer: "prose",
+        from: DUMP_PROVENANCE_PROSE,
+        to: DUMP_PROVENANCE_STRUCTURE,
+      },
+      {
+        reason:
+          "These helper types describe only the omitted one-Program provenance and diagnostics contract. #66 will define the product's non-empty provider-set provenance instead of exporting dead TypeScript-only helpers.",
+        from: DUMP_PROVENANCE_STRUCTURE,
+        to: "",
       },
       {
         reason:
@@ -483,6 +614,13 @@ export namespace ContractParity {
       },
       {
         reason:
+          "The reference's one Program can make one provenance claim for the entire dump. The combined public dump cannot make that claim until #66 represents every contributing provider and build universe.",
+        layer: "prose",
+        from: "every node and edge the build resolved, plus the `provenance` that says which program resolved them.",
+        to: "every node and edge the build resolved.",
+      },
+      {
+        reason:
           "The reference's snapshot is a native (Go) artifact; this product's is just the snapshot the indexer parses.",
         layer: "prose",
         from: "The server parses each changed native snapshot",
@@ -497,9 +635,9 @@ export namespace ContractParity {
       },
       {
         reason:
-          "Follows the structural rules above: the `tsconfig` path is gone and a `diagnostics` array is new, so the absolute/relative-path note names neither `tsconfig` nor omits `diagnostics`.",
+          "The product's public dump has no single TypeScript config or provenance manifest; it names only the project-relative graph and generic diagnostic paths shared by every indexing lane.",
         layer: "prose",
-        from: "Paths in `project` and `tsconfig` are absolute; `file` fields on nodes and edges are project-relative.",
+        from: "`project` is absolute. Every other path is relative to it — `tsconfig`, and the `file` fields on nodes, edges, diagnostics, and the provenance manifest. Two kinds of path fall outside the project and so cannot be relative to it: a dependency keeps its `node_modules/`-relative tail, which is what makes a dependency leaf readable, and anything else the compiler loaded keeps the identity the compiler gave it — a virtual lib stays `bundled:///…`.",
         to: "Paths in `project` are absolute; `file` fields on nodes, edges, and diagnostics are project-relative.",
       },
       {
@@ -605,6 +743,20 @@ export namespace ContractParity {
         from: "git-ignored generated code (Prisma client, codegen output)",
         to: "git-ignored generated code (a Prisma client, a codegen output)",
       },
+      {
+        reason:
+          "Enum members keep producer order, but the producer may be a compiler, language server, or static index rather than a TypeScript checker.",
+        layer: "prose",
+        from: "in checker order",
+        to: "in index order",
+      },
+      {
+        reason:
+          "The index is the product-wide authority that attempts constant folding; not every supported language uses a checker.",
+        layer: "prose",
+        from: "the checker could not fold",
+        to: "the index could not fold",
+      },
     ],
     NodeModifier: [
       {
@@ -672,15 +824,6 @@ export namespace ContractParity {
         layer: "prose",
         from: "`renders` is a JSX component use",
         to: "`renders` is a component use",
-      },
-    ],
-    Tour: [
-      {
-        reason:
-          "The tour implementation already defaults to five central entrypoints; the details rework corrected the stale prose value from four without changing the request shape.",
-        layer: "prose",
-        from: "Central entrypoints to seed the tour. Raise only when the question names several public paths that must all appear in one answer. @default 4",
-        to: "Central entrypoints to seed the tour. Raise only when the question names several public paths that must all appear in one answer. @default 5",
       },
     ],
     Span: [

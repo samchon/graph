@@ -41,6 +41,8 @@ const options = {
   unknownParent: false,
   changeSymbolsOnRefresh: false,
   overflowSymbols: false,
+  declarationSlices: false,
+  typeQueries: false,
 };
 const symbolCallCountByUri = new Map();
 let diagnosticSeverities = [2];
@@ -151,6 +153,10 @@ for (const arg of process.argv.slice(2)) {
     options.changeSymbolsOnRefresh = true;
   } else if (arg === "--overflow-symbols") {
     options.overflowSymbols = true;
+  } else if (arg === "--declaration-slices") {
+    options.declarationSlices = true;
+  } else if (arg === "--type-queries") {
+    options.typeQueries = true;
   } else if (arg.startsWith("--hang-method=")) {
     hangMethod = arg.slice("--hang-method=".length);
   } else if (arg.startsWith("--slow-first-references=")) {
@@ -334,6 +340,78 @@ function handle(message) {
         information("Api", 5, 0, 13, ""),
         information("gone()", 6, 500, 4, "Api"),
       ]);
+    }
+    if (options.declarationSlices) {
+      // Hierarchical DocumentSymbols that drive the per-language modifier reader
+      // through its three edge branches. `spanned` places the modifiers on the
+      // line ABOVE the identifier (its range spans two lines, so the reader
+      // slices both). `inverted` selects before its range starts (a server that
+      // inverts the two — the reader bails with no modifiers). `gone` starts
+      // past the end of the source (every read falls back to the empty string).
+      const languageId = languageByUri.get(uri);
+      const doc = (name, kind, rsL, rsC, reL, reC, ssL, ssC, seL, seC, children) => ({
+        name,
+        detail: "",
+        kind,
+        range: { start: { line: rsL, character: rsC }, end: { line: reL, character: reC } },
+        selectionRange: {
+          start: { line: ssL, character: ssC },
+          end: { line: seL, character: seC },
+        },
+        children: children ?? [],
+      });
+      if (languageId === "c") {
+        return respond(message.id, [
+          doc("spanned", 12, 0, 0, 1, 31, 1, 4, 1, 11),
+          doc("inverted", 12, 1, 0, 1, 10, 0, 0, 0, 6),
+          doc("gone", 12, 500, 0, 500, 10, 500, 0, 500, 6),
+        ]);
+      }
+      if (languageId === "csharp") {
+        return respond(message.id, [
+          doc("Holder", 5, 0, 0, 3, 1, 0, 6, 0, 12, [
+            doc("Spanned", 6, 1, 0, 2, 27, 2, 16, 2, 23),
+            doc("inverted", 6, 2, 0, 2, 10, 1, 0, 1, 6),
+            doc("gone", 6, 500, 0, 500, 10, 500, 0, 500, 6),
+          ]),
+        ]);
+      }
+      if (languageId === "php") {
+        return respond(message.id, [
+          doc("Holder", 5, 1, 0, 4, 1, 1, 6, 1, 12, [
+            doc("spanned", 6, 2, 0, 3, 24, 3, 13, 3, 20),
+            doc("inverted", 6, 3, 0, 3, 10, 2, 0, 2, 6),
+            doc("gone", 6, 500, 0, 500, 10, 500, 0, 500, 6),
+          ]),
+        ]);
+      }
+      return respond(message.id, [
+        doc("Holder", 5, 0, 0, 3, 1, 0, 6, 0, 12, [
+          doc("spanned", 6, 1, 0, 2, 28, 2, 16, 2, 23),
+          doc("inverted", 6, 2, 0, 2, 10, 1, 0, 1, 6),
+          doc("gone", 6, 500, 0, 500, 10, 500, 0, 500, 6),
+        ]),
+      ]);
+    }
+    if (options.typeQueries) {
+      // A single `Target` type per file; the reference handler points the query
+      // sites at the `typeof` contexts the reference classifier must read.
+      const languageId = languageByUri.get(uri);
+      const doc = (name, kind, rsL, rsC, reL, reC, ssL, ssC, seL, seC) => ({
+        name,
+        detail: "",
+        kind,
+        range: { start: { line: rsL, character: rsC }, end: { line: reL, character: reC } },
+        selectionRange: {
+          start: { line: ssL, character: ssC },
+          end: { line: seL, character: seC },
+        },
+        children: [],
+      });
+      if (languageId === "typescript") {
+        return respond(message.id, [doc("Target", 5, 0, 0, 0, 21, 0, 13, 0, 19)]);
+      }
+      return respond(message.id, [doc("Target", 5, 1, 0, 1, 20, 1, 5, 1, 11)]);
     }
     if (options.phpSymbols) {
       const leaf = (name, kind, line, character, endLine = line, children = []) => ({
@@ -1287,6 +1365,24 @@ function handle(message) {
       slowFirstReferencesMs = 0;
       setTimeout(() => handle(message), delay);
       return;
+    }
+    if (options.typeQueries) {
+      const uri = message.params.textDocument.uri;
+      const languageId = languageByUri.get(uri);
+      const at = (line, startChar, endChar) => ({
+        uri,
+        range: {
+          start: { line, character: startChar },
+          end: { line, character: endChar },
+        },
+      });
+      if (languageId === "typescript") {
+        // `type Alias = typeof Target` and `null as typeof Target`: a type-alias
+        // right-hand side and an `as` type assertion, both type queries.
+        return respond(message.id, [at(1, 20, 26), at(2, 25, 31)]);
+      }
+      // A non-TypeScript `typeof Target`: always a type reference.
+      return respond(message.id, [at(2, 15, 21)]);
     }
     if (options.classify) {
       const uri = message.params.textDocument.uri;

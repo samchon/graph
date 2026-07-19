@@ -193,6 +193,18 @@ for (const arg of process.argv.slice(2)) {
   }
 }
 if (options.ignoreTermination && process.platform !== "win32") {
+  // A signal-resistant server holds its own work: it does not exit when the
+  // client closes stdin, and it ignores SIGTERM, so the client must escalate to
+  // SIGKILL. `terminateOwnedProcess` destroys the client's stdin write end
+  // before it signals; without a ref'd handle the child's stdin EOF would drain
+  // the event loop and exit this process before the SIGTERM handler runs,
+  // leaving the SIGTERM-before-SIGKILL evidence unwritten on POSIX hosts. The
+  // keep-alive timer holds the loop open so SIGTERM is observed deterministically
+  // and only SIGKILL ends the process; a swallowed stdin error keeps a closed
+  // pipe from surfacing as an uncaught exit.
+  const keepAlive = setInterval(() => undefined, 1_000);
+  keepAlive.ref?.();
+  process.stdin.on("error", () => undefined);
   process.on("SIGTERM", () => {
     if (process.env.SAMCHON_GRAPH_FAKE_LSP_SIGTERM_FILE) {
       fs.writeFileSync(

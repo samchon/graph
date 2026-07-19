@@ -102,22 +102,23 @@ export namespace ITtscGraphSnapshot {
    * Independent of {@link PROTOCOL_VERSION}: one versions the NDJSON envelope,
    * the other the graph document inside a changed frame. Keep this equal to
    * `DumpSchemaVersion` in ttsc's `internal/graph/provenance.go` at canonical
-   * commit `2b724664e`. That schema is newer than the latest published ttsc at
-   * the time of this pin, so normal resolution fails closed and callers may
-   * provide that exact binary through `TTSC_GRAPH_BINARY` until it is released.
+   * commit `4c5e11eab`. That revision also makes `SourceTexts` cover every
+   * resident `TSProgram` source, including external declarations and virtual
+   * bundled libraries, so the schema's manifest can attest every emitted fact.
+   * Until that revision is released, callers may provide its exact binary
+   * through `TTSC_GRAPH_BINARY`; older resolved binaries fail closed.
    */
   export const DUMP_SCHEMA_VERSION = 5;
 
   /**
-   * Body schemas this adapter can read without inventing missing facts.
+   * Body schemas whose manifest proves every fact the adapter receives.
    *
-   * Schema 3 is the latest published producer's contract. It already carries
-   * the one-Program manifest, diagnostics, literals, and enum members, but
-   * predates checker-owned member relations and object-literal member facts.
-   * The adapter accepts it as an explicitly warned compatibility snapshot;
-   * schema 5 remains the complete canonical contract.
+   * Schema 3 can emit compiler and library facts whose files are absent from
+   * its source manifest, so accepting it would make the adapter choose between
+   * dropping semantic facts and trusting an unproved snapshot. Schema 5 makes
+   * the manifest complete and is therefore the minimum honest contract.
    */
-  export const SUPPORTED_DUMP_SCHEMA_VERSIONS: readonly number[] = [3, 5];
+  export const SUPPORTED_DUMP_SCHEMA_VERSIONS: readonly number[] = [5];
 
   /**
    * What the compiler did, as opposed to what the transport did.

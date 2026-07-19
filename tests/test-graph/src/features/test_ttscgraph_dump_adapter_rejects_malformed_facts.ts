@@ -104,92 +104,31 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
     "a well-formed dump adapts cleanly",
     adaptTtscGraphDump(good(), project).nodes.length === 2,
   );
-  const compatible = adaptTtscGraphDump(
-    mutate((d) => (d.provenance.schemaVersion = 3)),
-    project,
-  );
-  TestValidator.predicate(
-    "published schema 3 is accepted with its missing canonical facts stated",
-    compatible.warnings.some(
-      (warning) =>
-        warning.includes("schema v3 compatibility snapshot") &&
-      warning.includes("object-literal member facts"),
-    ),
-  );
   rejectsWithMessage(
     () =>
       adaptTtscGraphDump(
         mutate((d) => {
           d.provenance.schemaVersion = 3;
-          (d.nodes[1] as { objectMembers?: unknown }).objectMembers = [];
         }),
         project,
       ),
-    "schema 3 object members",
-    "objectMembers is not part of schema v3",
-  );
-  const compatibleHeritage = relationDump(3);
-  compatibleHeritage.edges.push({
-    from: "src/a.ts#Worker:class",
-    to: "src/a.ts#Contract:interface",
-    kind: "implements",
-  });
-  TestValidator.predicate(
-    "schema 3 retains container implements heritage",
-    adaptTtscGraphDump(compatibleHeritage, project).edges.some(
-      (edge) =>
-        edge.kind === "implements" &&
-        edge.from === "src/a.ts#Worker:class" &&
-        edge.to === "src/a.ts#Contract:interface",
-    ),
-  );
-  const compatibleAliasHeritage = relationDump(3);
-  compatibleAliasHeritage.nodes.push({
-    id: "src/a.ts#ContractAlias:type",
-    kind: "type",
-    name: "ContractAlias",
-    file: "src/a.ts",
-    external: false,
-  });
-  compatibleAliasHeritage.edges.push({
-    from: "src/a.ts#Worker:class",
-    to: "src/a.ts#ContractAlias:type",
-    kind: "implements",
-  });
-  TestValidator.predicate(
-    "schema 3 retains class-to-type-alias implements heritage",
-    adaptTtscGraphDump(compatibleAliasHeritage, project).edges.some(
-      (edge) =>
-        edge.kind === "implements" &&
-        edge.from === "src/a.ts#Worker:class" &&
-        edge.to === "src/a.ts#ContractAlias:type",
-    ),
+    "schema 3 snapshot",
+    "dump is schema v3, this client reads v5",
   );
   rejectsWithMessage(
     () => {
       const dump = relationDump(3);
-      dump.edges.push({
-        from: "src/a.ts#Worker.execute:method",
-        to: "src/a.ts#Contract.execute:method",
-        kind: "implements",
+      dump.nodes.push({
+        id: "vendor/typescript/lib/lib.es5.d.ts#Array:interface",
+        kind: "interface",
+        name: "Array",
+        file: "vendor/typescript/lib/lib.es5.d.ts",
+        external: true,
       });
       return adaptTtscGraphDump(dump, project);
     },
-    "schema 3 member implements",
-    "member implements is not part of schema v3",
-  );
-  rejectsWithMessage(
-    () => {
-      const dump = relationDump(3);
-      dump.edges.push({
-        from: "src/a.ts#Worker.execute:method",
-        to: "src/a.ts#Contract.execute:method",
-        kind: "overrides",
-      });
-      return adaptTtscGraphDump(dump, project);
-    },
-    "schema 3 overrides",
-    "overrides is not part of schema v3",
+    "schema 3 snapshot carrying an external fact absent from its manifest",
+    "dump is schema v3, this client reads v5",
   );
   const currentRelations = relationDump(5);
   currentRelations.edges.push(
@@ -242,6 +181,7 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   const bundledFile = "bundled:///libs/lib.es2015.collection.d.ts";
   const uncFile = "//server/share/types/external.d.ts";
   const posixFile = "/opt/types/external.d.ts";
+  const windowsFile = "C:/workspace/types/external.d.ts";
   const completeManifest = good();
   completeManifest.provenance.sources.push(
     {
@@ -264,6 +204,11 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
       checkerDigest: sha(`${posixFile}:checker`),
       diskDigest: sha(`${posixFile}:disk`),
     },
+    {
+      file: windowsFile,
+      checkerDigest: sha(`${windowsFile}:checker`),
+      diskDigest: sha(`${windowsFile}:disk`),
+    },
   );
   const completeSources = adaptTtscGraphDump(
     completeManifest,
@@ -275,7 +220,8 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
       completeSources.has(crossRootFile) &&
       completeSources.has(bundledFile) &&
       completeSources.has(uncFile) &&
-      completeSources.has(posixFile),
+      completeSources.has(posixFile) &&
+      completeSources.has(windowsFile),
   );
   TestValidator.equals(
     "a virtual bundled source keeps its checker digest",

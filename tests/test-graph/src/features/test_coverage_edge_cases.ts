@@ -1,5 +1,5 @@
 import { TestValidator } from "@nestia/e2e";
-import { SamchonGraphMemory, LANGUAGE_SPECS, SamchonGraphApplication, buildGraphDump, languageOf } from "@samchon/graph";
+import { SamchonGraphMemory, SamchonGraphSourceReader, LANGUAGE_SPECS, SamchonGraphApplication, buildGraphDump, languageOf } from "@samchon/graph";
 import type { ISamchonGraphDump, ISamchonGraphNode } from "@samchon/graph";
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -647,7 +647,10 @@ export const test_coverage_edge_cases = async () => {
       { from: plainId, to: exactId, kind: "references", evidence: branchEvidence("src/b.ts", 2) },
     ],
   };
-  const branchGraph = SamchonGraphMemory.from(branchDump);
+  const branchGraph = SamchonGraphMemory.from(
+    branchDump,
+    SamchonGraphSourceReader.live(branchRoot),
+  );
   TestValidator.equals("missing incoming edges default to empty", branchGraph.incoming("absent-node"), []);
 
   const branchApp = new SamchonGraphApplication(branchGraph);
@@ -890,22 +893,40 @@ export const test_coverage_edge_cases = async () => {
     // Windows without Developer Mode may deny symlink creation.
   }
   const { signatureOf } = await importLib<{
-    signatureOf: (project: string, node: { file: string; name: string; external: boolean; evidence?: { file: string; startLine: number; endLine?: number }; signature?: string }) => string | undefined;
+    signatureOf: (graph: SamchonGraphMemory, node: { file: string; name: string; external: boolean; evidence?: { file: string; startLine: number; endLine?: number }; signature?: string }) => string | undefined;
   }>("operations/signatureOf.js");
-  TestValidator.equals("blank explicit signature falls back to source span", signatureOf(path.dirname(signatureFile), {
+  const signatureGraph = SamchonGraphMemory.from(
+    {
+      project: path.dirname(signatureFile),
+      languages: ["typescript"],
+      indexer: "static",
+      nodes: [],
+      edges: [],
+    },
+    SamchonGraphSourceReader.live(path.dirname(signatureFile)),
+  );
+  TestValidator.equals("blank explicit signature falls back to source span", signatureOf(signatureGraph, {
     external: false,
     file: "sample.ts",
     name: "sample",
     signature: "   ",
     evidence: { file: "sample.ts", startLine: 1 },
   })?.includes("export function sample("), true);
-  TestValidator.equals("explicit signature endLine caps source span", signatureOf(path.dirname(signatureFile), {
+  TestValidator.equals("explicit signature endLine caps source span", signatureOf(signatureGraph, {
     external: false,
     file: "sample.ts",
     name: "sample",
     evidence: { file: "sample.ts", startLine: 1, endLine: 3 },
   })?.includes(") {"), true);
-  TestValidator.equals("missing signature source file returns undefined", signatureOf(path.dirname(signatureFile), {
+  const enumFile = path.join(path.dirname(signatureFile), "member.ts");
+  fs.writeFileSync(enumFile, ["VIEW,", "EDIT,", "OTHER,"].join("\n"));
+  TestValidator.equals("a comma-ended declaration cannot absorb neighboring members", signatureOf(signatureGraph, {
+    external: false,
+    file: "member.ts",
+    name: "VIEW",
+    evidence: { file: "member.ts", startLine: 1, endLine: 1 },
+  }), "VIEW,");
+  TestValidator.equals("missing signature source file returns undefined", signatureOf(signatureGraph, {
     external: false,
     file: "missing.ts",
     name: "missing",
@@ -913,13 +934,13 @@ export const test_coverage_edge_cases = async () => {
   }), undefined);
   const emptySignatureFile = path.join(path.dirname(signatureFile), "empty.ts");
   fs.writeFileSync(emptySignatureFile, "");
-  TestValidator.equals("empty signature source span returns undefined", signatureOf(path.dirname(signatureFile), {
+  TestValidator.equals("empty signature source span returns undefined", signatureOf(signatureGraph, {
     external: false,
     file: "empty.ts",
     name: "empty",
     evidence: { file: "empty.ts", startLine: 1 },
   }), undefined);
-  TestValidator.equals("missing signature evidence returns undefined", signatureOf(path.dirname(signatureFile), {
+  TestValidator.equals("missing signature evidence returns undefined", signatureOf(signatureGraph, {
     external: false,
     file: "",
     name: "missing",

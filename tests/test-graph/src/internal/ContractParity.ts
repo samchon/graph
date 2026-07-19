@@ -523,10 +523,19 @@ export namespace ContractParity {
     Details: [
       {
         reason:
-          "The generic index extracts bounded source-form literals rather than claiming the compiler-resolved complete union that the TypeScript-only reference can provide.",
+          "The multi-language product names the active provider rather than claiming every lane has TypeScript-checker authority; unproved enumerable sets remain absent.",
         layer: "prose",
         from: "/** The complete value set a type alias or enum admits, in __LANG__ source form (`\"a\"`, `1`, `true`, `null`) — the checker's resolved union members, not the quoted tokens that happened to fit in `signature`. Absent when the type has no enumerable value set. A `signature` is capped at the declaration head, so for a union or enum written across several lines this is the field that carries the members. */",
-        to: "/** String-literal values found in the declaration signature, such as a union or enum's value set. Returned whole rather than sampled: a symbol's value set is part of its identity, not a slice of its fan-out. */",
+        to: "/** The complete value set a type alias or enum admits, in __LANG__ source form (`\"a\"`, `1`, `true`, `null`) — the provider-resolved union members, not quoted tokens scraped from `signature`. Absent when the active index cannot prove an enumerable value set. */",
+      },
+    ],
+    Trace: [
+      {
+        reason:
+          "Path mode now reports bounded depth and dispatch-hub omissions instead of falsely proving that no connection exists, so truncation applies to both trace forms.",
+        layer: "prose",
+        from: "/** In an open trace, true when a bound omitted an eligible node or hop. */",
+        to: "/** True when a walk or path-search bound omitted an eligible node or hop. */",
       },
     ],
     Dump: [

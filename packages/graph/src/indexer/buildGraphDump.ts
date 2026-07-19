@@ -3,23 +3,29 @@ import typia from "typia";
 import { ISamchonGraphDump } from "../structures";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { buildLspGraph } from "./buildLspGraph";
-import { buildStaticGraph } from "./buildStaticGraph";
+import { buildStaticGraphResult } from "./buildStaticGraph";
+import { IIndexerResult } from "./IIndexerResult";
 
 export async function buildGraphDump(
   options: IBuildGraphOptions = {},
 ): Promise<ISamchonGraphDump> {
+  return (await buildGraphResult(options)).dump;
+}
+
+/** Internal one-shot result that keeps source evidence beside its dump. */
+export async function buildGraphResult(
+  options: IBuildGraphOptions = {},
+): Promise<IIndexerResult> {
   const normalized: IBuildGraphOptions = {
     ...options,
     cwd: path.resolve(options.cwd ?? process.cwd()),
     mode: options.mode ?? "auto",
   };
-  if (normalized.mode === "static") {
-    return validateDump(buildStaticGraph(normalized));
-  }
-  if (normalized.mode === "lsp") {
-    return validateDump((await buildLspGraph(normalized)).dump);
-  }
-  return validateDump((await buildLspGraph(normalized)).dump);
+  const result =
+    normalized.mode === "static"
+      ? buildStaticGraphResult(normalized)
+      : await buildLspGraph(normalized);
+  return { ...result, dump: validateDump(result.dump) };
 }
 
 function validateDump(dump: ISamchonGraphDump): ISamchonGraphDump {

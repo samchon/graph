@@ -1,5 +1,6 @@
 import { IResidentGraphSource } from "../indexer/IResidentGraphSource";
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
+import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import { ISamchonGraphDump } from "../structures";
 
 /**
@@ -24,7 +25,7 @@ export function createResidentGraphMemorySource(
     if (currentMemory === undefined || dump !== currentDump) {
       const replacement = SamchonGraphMemory.from(
         dump,
-        resident.source() ?? undefined,
+        resident.source?.() ?? SamchonGraphSourceReader.none(dump.project),
       );
       currentDump = dump;
       currentMemory = replacement;

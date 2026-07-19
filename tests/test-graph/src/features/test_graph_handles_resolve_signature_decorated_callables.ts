@@ -33,8 +33,8 @@ export const test_graph_handles_resolve_signature_decorated_callables =
       "an owner-qualified callable base returns every overload",
       (await trace("Gson.toJson")).candidates?.map((node) => node.id),
       [
-        "Gson.java#Gson.toJson(Object):method",
         "Gson.java#Gson.toJson(JsonElement):method",
+        "Gson.java#Gson.toJson(Object):method",
       ],
     );
     TestValidator.equals(

@@ -1,5 +1,6 @@
 import { TestValidator } from "@nestia/e2e";
 import { createHash } from "node:crypto";
+import path from "node:path";
 
 // `adaptTtscGraphDump` is internal to the package, so it is reached by path
 // rather than through the public barrel.
@@ -17,21 +18,23 @@ const sha = (text: string): string =>
 // manifest names the one workspace file its nodes name (`src/a.ts`). That keeps
 // the proof boundary satisfied so each malformed case can reach and fail at the
 // node, edge, or span it targets.
-const provenance = () => ({
+const provenance = (files: readonly string[] = ["src/a.ts"]) => ({
   schemaVersion: 5,
   capabilities: ["universe", "sourceDigests", "diskDigests", "diagnostics"],
-  producer: { tool: "ttscgraph", version: "0.19.2", typescript: "5.9.0" },
+  producer: {
+    tool: "ttscgraph",
+    version: "0.19.3-21-g2b724664e",
+    typescript: "5.9.0",
+  },
   universe: {
     configs: [{ file: "tsconfig.json", digest: sha("tsconfig.json") }],
-    roots: [{ config: "tsconfig.json", file: "src/a.ts" }],
+    roots: files.map((file) => ({ config: "tsconfig.json", file })),
   },
-  sources: [
-    {
-      file: "src/a.ts",
-      checkerDigest: sha("src/a.ts:checker"),
-      diskDigest: sha("src/a.ts:disk"),
-    },
-  ],
+  sources: files.map((file) => ({
+    file,
+    checkerDigest: sha(`${file}:checker`),
+    diskDigest: sha(`${file}:disk`),
+  })),
 });
 
 /**
@@ -66,6 +69,44 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
     "a well-formed dump adapts cleanly",
     adaptTtscGraphDump(good(), project).nodes.length === 2,
   );
+  const compatible = adaptTtscGraphDump(
+    mutate((d) => (d.provenance.schemaVersion = 3)),
+    project,
+  );
+  TestValidator.predicate(
+    "published schema 3 is accepted with its missing canonical facts stated",
+    compatible.warnings.some(
+      (warning) =>
+        warning.includes("schema v3 compatibility snapshot") &&
+        warning.includes("object-literal member facts"),
+    ),
+  );
+  const crossRootFile = path
+    .resolve(project, "..", "shared", "index.d.ts")
+    .replace(/\\/g, "/");
+  const crossRoot = good();
+  crossRoot.provenance.universe.roots.push({
+    config: "tsconfig.json",
+    file: crossRootFile,
+  });
+  crossRoot.provenance.sources.push({
+    file: crossRootFile,
+    checkerDigest: sha(`${crossRootFile}:checker`),
+    diskDigest: sha(`${crossRootFile}:disk`),
+  });
+  crossRoot.nodes.push({
+    id: `${crossRootFile}#Shared:interface`,
+    kind: "interface",
+    name: "Shared",
+    file: crossRootFile,
+    external: false,
+  });
+  TestValidator.predicate(
+    "a compiler-loaded sibling workspace file keeps its canonical absolute identity",
+    adaptTtscGraphDump(crossRoot, project).nodes.some(
+      (node) => node.file === crossRootFile,
+    ),
+  );
 
   // Identity and project scope.
   rejects(() => adaptTtscGraphDump("not-an-object", project), "a non-object dump");
@@ -83,6 +124,14 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
         project,
       ),
     "a dump above the pinned schema",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => (d.provenance.schemaVersion = 1)),
+        project,
+      ),
+    "a legacy dump below the one-Program provenance schema",
   );
   rejects(
     () =>
@@ -152,6 +201,36 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   rejects(
     () =>
       adaptTtscGraphDump(
+        mutate(
+          (d) =>
+            ((d.nodes[1] as { implementation: unknown }).implementation = {
+              file: "src/unloaded.ts",
+              startLine: 1,
+            }),
+        ),
+        project,
+      ),
+    "an implementation span whose file is absent from the manifest",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.nodes.push({
+            id: "vendor/ghost.d.ts#Ghost:interface",
+            kind: "interface",
+            name: "Ghost",
+            file: "vendor/ghost.d.ts",
+            external: true,
+          }),
+        ),
+        project,
+      ),
+    "an external fact whose file is absent from the manifest",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
         mutate((d) => ((d.nodes[1] as { decorators: unknown }).decorators = [{ name: "X", arguments: [{ literal: {} }] }])),
         project,
       ),
@@ -163,7 +242,7 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   const rich = adaptTtscGraphDump(
     {
       project,
-      provenance: provenance(),
+      provenance: provenance(["src/a.ts", "vendor/dep.ts"]),
       diagnostics: [],
       nodes: [
         { id: "src/a.ts#src/a.ts:module", kind: "module", name: "src/a.ts", file: "src/a.ts", external: false },
@@ -175,11 +254,36 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
           external: false,
           qualifiedName: "pkg.foo",
           modifiers: ["export", "async"],
+          decorators: [{ name: "Route", arguments: [{ literal: "path" }, {}] }],
+          evidence: { startLine: 1, startCol: 1, endLine: 1, endCol: 5 },
+          implementation: { startLine: 2 },
+        },
+        {
+          id: "src/a.ts#Status:type",
+          kind: "type",
+          name: "Status",
+          file: "src/a.ts",
+          external: false,
           literals: ['"ready"', '"done"'],
+        },
+        {
+          id: "src/a.ts#Phase:enum",
+          kind: "enum",
+          name: "Phase",
+          file: "src/a.ts",
+          external: false,
+          literals: ['"ready"'],
           enumMembers: [
             { name: "Ready", value: '"ready"' },
             { name: "Computed" },
           ],
+        },
+        {
+          id: "src/a.ts#options:variable",
+          kind: "variable",
+          name: "options",
+          file: "src/a.ts",
+          external: false,
           objectMembers: [
             {
               name: "execute",
@@ -188,9 +292,6 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
               signature: "execute(): void",
             },
           ],
-          decorators: [{ name: "Route", arguments: [{ literal: "path" }, {}] }],
-          evidence: { startLine: 1, startCol: 1, endLine: 1, endCol: 5 },
-          implementation: { startLine: 2 },
         },
         { id: "src/a.ts#bar:function", kind: "function", name: "bar", file: "src/a.ts", external: false },
         { id: "vendor/dep.ts#Dep:interface", kind: "interface", name: "Dep", file: "vendor/dep.ts", external: true },
@@ -203,16 +304,19 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
     project,
   );
   const foo = rich.nodes.find((node) => node.id === "src/a.ts#foo:function");
+  const status = rich.nodes.find((node) => node.id === "src/a.ts#Status:type");
+  const phase = rich.nodes.find((node) => node.id === "src/a.ts#Phase:enum");
+  const options = rich.nodes.find((node) => node.id === "src/a.ts#options:variable");
   TestValidator.equals("a qualified name is preserved", foo?.qualifiedName, "pkg.foo");
   TestValidator.equals("an implementation span is preserved", foo?.implementation?.startLine, 2);
   TestValidator.equals(
     "compiler-resolved literal values are preserved",
-    foo?.literals,
+    status?.literals,
     ['"ready"', '"done"'],
   );
   TestValidator.equals(
     "compiler-owned enum members are preserved",
-    foo?.enumMembers,
+    phase?.enumMembers,
     [
       { name: "Ready", value: '"ready"' },
       { name: "Computed" },
@@ -220,7 +324,7 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   );
   TestValidator.equals(
     "compiler-owned object members are preserved",
-    foo?.objectMembers,
+    options?.objectMembers,
     [
       {
         name: "execute",
@@ -248,10 +352,13 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   rejects(
     () =>
       adaptTtscGraphDump(
-        mutate(
-          (d) =>
-            ((d.nodes[1] as { literals?: unknown }).literals = ["ok", 1]),
-        ),
+        mutate((d) => {
+          const node = d.nodes[1] as { id: string; kind: string; literals?: unknown };
+          node.id = "src/a.ts#foo:type";
+          node.kind = "type";
+          node.literals = ["ok", 1];
+          (d.edges[0] as { to: string }).to = node.id;
+        }),
         project,
       ),
     "a non-string literal value",
@@ -259,12 +366,13 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   rejects(
     () =>
       adaptTtscGraphDump(
-        mutate(
-          (d) =>
-            ((d.nodes[1] as { enumMembers?: unknown }).enumMembers = [
-              { name: "Ready", value: false },
-            ]),
-        ),
+        mutate((d) => {
+          const node = d.nodes[1] as { id: string; kind: string; enumMembers?: unknown };
+          node.id = "src/a.ts#foo:enum";
+          node.kind = "enum";
+          node.enumMembers = [{ name: "Ready", value: false }];
+          (d.edges[0] as { to: string }).to = node.id;
+        }),
         project,
       ),
     "a non-string enum member value",
@@ -272,15 +380,44 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   rejects(
     () =>
       adaptTtscGraphDump(
-        mutate(
-          (d) =>
-            ((d.nodes[1] as { objectMembers?: unknown }).objectMembers = [
-              { name: "dynamic", kind: "computed" },
-            ]),
-        ),
+        mutate((d) => {
+          const node = d.nodes[1] as { id: string; kind: string; objectMembers?: unknown };
+          node.id = "src/a.ts#foo:variable";
+          node.kind = "variable";
+          node.objectMembers = [{ name: "dynamic", kind: "computed" }];
+          (d.edges[0] as { to: string }).to = node.id;
+        }),
         project,
       ),
     "an unsupported object member kind",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => ((d.nodes[1] as { literals?: unknown }).literals = [])),
+        project,
+      ),
+    "literal facts on a non-type node",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate(
+          (d) => ((d.nodes[1] as { enumMembers?: unknown }).enumMembers = []),
+        ),
+        project,
+      ),
+    "enum-member facts on a non-enum node",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate(
+          (d) => ((d.nodes[1] as { objectMembers?: unknown }).objectMembers = []),
+        ),
+        project,
+      ),
+    "object-member facts on a non-variable node",
   );
 };
 

@@ -235,12 +235,16 @@ function rank(
   candidateLimit: number,
 ): IResolvedGraphHandle {
   if (resolved.candidates === undefined) return resolved;
-  const ranked = [...resolved.candidates]
+  const ranked = resolved.candidates
+    .map((node) => ({ node, score: candidateScore(graph, node) }))
     .sort((a, b) => {
-      const score = candidateScore(graph, b) - candidateScore(graph, a);
-      return score === 0 ? compareIdentity(a.id, b.id) : score;
+      const score = b.score - a.score;
+      return score === 0
+        ? compareIdentity(a.node.id, b.node.id)
+        : score;
     })
-    .slice(0, candidateLimit);
+    .slice(0, candidateLimit)
+    .map(({ node }) => node);
   return { candidates: ranked };
 }
 

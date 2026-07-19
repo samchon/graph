@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { IDiagnostic, LspClient } from "../lsp";
+import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import {
   ISamchonGraphDiagnostic,
   ISamchonGraphDump,
@@ -59,6 +60,15 @@ export async function buildLspGraph(
   // did this text say", and the freshness hashes that ask that question already
   // skip every bulk language.
   const strictFiles = new Set<string>();
+  const strictDigests = new Map<
+    string,
+    IBulkGraphSession.ISourceDigest
+  >();
+  const snapshotSource = (): SamchonGraphSourceReader =>
+    new SamchonGraphSourceReader(root, {
+      texts: sources,
+      digests: strictDigests,
+    });
   let lspNodeCount = 0;
   // Computed once (not per-language) since cpp and c share the same clangd
   // compilation database and root.
@@ -101,11 +111,15 @@ export async function buildLspGraph(
             // are already resolved, and the only thing the generic lane wanted
             // text for — deriving export edges — is work this provider has
             // already done against the real checker.
-            for (const file of result.sources.keys()) strictFiles.add(file);
+            for (const [file, digest] of result.sources) {
+              strictFiles.add(file);
+              strictDigests.set(file, digest);
+            }
             lspNodeCount += result.nodes.length;
             if (options.keepAlive) sessions.set(language, session);
             continue;
           } catch (error) {
+            if (options.signal?.aborted) throw error;
             warnings.push(
               `typescript: ttscgraph bulk indexing failed; using ttscserver LSP: ${(error as Error).message}`,
             );
@@ -198,6 +212,7 @@ export async function buildLspGraph(
       return {
         dump: staticDump(fallback, warnings),
         warnings,
+        source: snapshotSource(),
         ...(options.keepAlive ? { sessions, sources } : {}),
       };
     }
@@ -212,6 +227,7 @@ export async function buildLspGraph(
     return {
       dump: staticDump(fallback, warnings),
       warnings,
+      source: snapshotSource(),
       ...(options.keepAlive ? { sessions, sources } : {}),
     };
   }
@@ -241,6 +257,7 @@ export async function buildLspGraph(
       warnings,
     },
     warnings,
+    source: snapshotSource(),
     ...(options.keepAlive ? { sessions, sources } : {}),
   };
 }
@@ -256,7 +273,7 @@ async function collectTtscGraph(
 }> {
   const session = new TtscGraphClient({ root, command, args });
   try {
-    const result = (await session.refresh()).snapshot;
+    const result = (await session.refresh({ signal: options.signal })).snapshot;
     if (!options.keepAlive) await session.close();
     return { result, session };
   } catch (error) {

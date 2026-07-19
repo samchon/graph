@@ -145,6 +145,34 @@ export const test_viewer_reduce_preserves_the_reference_contract = () => {
     ["file.ts", "file.ts"],
   );
 
+  const unc = reduce({
+    nodes: [
+      node("\\\\SERVER\\Share\\project\\src\\a.ts", "A", "class"),
+      node("//server/share/project/lib/b.ts", "B", "class"),
+    ],
+    edges: [
+      edge(
+        "\\\\SERVER\\Share\\project\\src\\a.ts",
+        "A",
+        "class",
+        "//server/share/project/lib/b.ts",
+        "B",
+        "class",
+        "calls",
+      ),
+    ],
+  });
+  TestValidator.equals(
+    "UNC roots are rerooted case-insensitively without losing subdirectories",
+    unc.nodes.map((entry) => entry.file),
+    ["src/a.ts", "lib/b.ts"],
+  );
+  TestValidator.equals(
+    "UNC-rooted node identities are rewritten with their files",
+    unc.nodes.map((entry) => entry.id.slice(0, entry.id.indexOf("#"))),
+    ["src/a.ts", "lib/b.ts"],
+  );
+
   const hashless = reduce({
     nodes: [
       { id: "plain-a", name: "A", kind: "class", file: "a.ts" },

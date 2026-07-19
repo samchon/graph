@@ -20,7 +20,9 @@ export interface IBulkGraphSession {
   readonly generation: number;
   readonly current: IBulkGraphSession.ISnapshot | undefined;
 
-  refresh(): Promise<IBulkGraphSession.IRefresh>;
+  refresh(options?: {
+    signal?: AbortSignal;
+  }): Promise<IBulkGraphSession.IRefresh>;
   close(): Promise<void>;
 }
 

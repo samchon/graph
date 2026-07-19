@@ -101,10 +101,23 @@ export namespace ITtscGraphSnapshot {
    *
    * Independent of {@link PROTOCOL_VERSION}: one versions the NDJSON envelope,
    * the other the graph document inside a changed frame. Keep this equal to
-   * `DumpSchemaVersion` in ttsc's `internal/graph/provenance.go` for the pinned
-   * producer release.
+   * `DumpSchemaVersion` in ttsc's `internal/graph/provenance.go` at canonical
+   * commit `2b724664e`. That schema is newer than the latest published ttsc at
+   * the time of this pin, so normal resolution fails closed and callers may
+   * provide that exact binary through `TTSC_GRAPH_BINARY` until it is released.
    */
   export const DUMP_SCHEMA_VERSION = 5;
+
+  /**
+   * Body schemas this adapter can read without inventing missing facts.
+   *
+   * Schema 3 is the latest published producer's contract. It already carries
+   * the one-Program manifest, diagnostics, literals, and enum members, but
+   * predates checker-owned member relations and object-literal member facts.
+   * The adapter accepts it as an explicitly warned compatibility snapshot;
+   * schema 5 remains the complete canonical contract.
+   */
+  export const SUPPORTED_DUMP_SCHEMA_VERSIONS: readonly number[] = [3, 5];
 
   /**
    * What the compiler did, as opposed to what the transport did.

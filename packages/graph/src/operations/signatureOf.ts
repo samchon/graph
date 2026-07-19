@@ -18,12 +18,12 @@ export function signatureOf(
     evidence === undefined ? undefined : graph.source.lines(evidence.file);
   if (lines === undefined || evidence === undefined) return undefined;
   const start = Math.max(0, evidence.startLine - 1);
+  const last =
+    evidence.endLine === undefined
+      ? lines.length - 1
+      : Math.min(lines.length - 1, evidence.endLine - 1);
   const out: string[] = [];
-  for (
-    let i = start;
-    i < lines.length && out.length < MAX_SIGNATURE_LINES;
-    i++
-  ) {
+  for (let i = start; i <= last && out.length < MAX_SIGNATURE_LINES; i++) {
     const line = lines[i];
     /* c8 ignore next */
     if (line === undefined) break;

@@ -27,7 +27,6 @@ import { appendAll } from "./appendAll";
 import { decoratorsAbove } from "./decoratorsAbove";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { ILspSession } from "./ILspSession";
-import { overrideEdges } from "./overrideEdges";
 import { resolveType } from "./resolveType";
 import { supertypesOf } from "./supertypesOf";
 
@@ -363,8 +362,6 @@ export async function scanSession(
       });
     }
   }
-  appendAll(edges, overrideEdges(nodes, edges));
-
   return {
     nodes,
     edges,

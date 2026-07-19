@@ -42,11 +42,81 @@ export const test_trace_reports_only_actual_omissions = async () => {
     (omitted.result as ISamchonGraphTrace).truncated,
     true,
   );
+
+  const boundedPath = await inspect({
+    type: "trace",
+    from: CHAIN[0]!,
+    to: CHAIN[13]!,
+    maxDepth: 12,
+  });
+  TestValidator.equals(
+    "a path beyond maxDepth is incomplete rather than nonexistent",
+    (boundedPath.result as ISamchonGraphTrace).truncated,
+    true,
+  );
+  TestValidator.equals(
+    "an incomplete bounded path asks for another inspection",
+    boundedPath.next.action,
+    "inspect",
+  );
+
+  const directDispatch = await inspect({
+    type: "trace",
+    from: DISPATCH_BASE,
+    to: DISPATCH_IMPLEMENTATIONS[12]!,
+  });
+  TestValidator.equals(
+    "an explicit dispatch target remains reachable through a suppressed hub",
+    (directDispatch.result as ISamchonGraphTrace).path?.map((entry) => entry.id),
+    [DISPATCH_BASE, DISPATCH_IMPLEMENTATIONS[12]!],
+  );
+
+  const boundedDispatch = await inspect({
+    type: "trace",
+    from: DISPATCH_BASE,
+    to: OUTSIDE,
+  });
+  TestValidator.equals(
+    "eligible dispatch-hub omissions make an unresolved path incomplete",
+    (boundedDispatch.result as ISamchonGraphTrace).truncated,
+    true,
+  );
+
+  const externalDispatch = await inspect({
+    type: "trace",
+    from: EXTERNAL_DISPATCH_BASE,
+    to: OUTSIDE,
+  });
+  TestValidator.equals(
+    "excluded external dispatch endpoints do not claim truncation",
+    (externalDispatch.result as ISamchonGraphTrace).truncated,
+    false,
+  );
+  TestValidator.equals(
+    "a fully searched disconnected path remains outside",
+    externalDispatch.next.action,
+    "outside",
+  );
 };
 
 const ROOT = "src/a.ts#root:function";
 const A = "src/a.ts#a:function";
 const LEAF = "src/a.ts#leaf:function";
+const CHAIN = Array.from(
+  { length: 14 },
+  (_, index) => `src/chain.ts#step${String(index)}:function`,
+);
+const DISPATCH_BASE = "src/dispatch.ts#Base.run:method";
+const DISPATCH_IMPLEMENTATIONS = Array.from(
+  { length: 13 },
+  (_, index) => `src/dispatch.ts#Impl${String(index)}.run:method`,
+);
+const EXTERNAL_DISPATCH_BASE = "src/dispatch.ts#ExternalBase.run:method";
+const EXTERNAL_IMPLEMENTATIONS = Array.from(
+  { length: 12 },
+  (_, index) => `vendor/dispatch.ts#External${String(index)}.run:method`,
+);
+const OUTSIDE = "src/outside.ts#outside:function";
 
 const dump = (): ISamchonGraphDump => ({
   project: "/trace-truth",
@@ -56,18 +126,48 @@ const dump = (): ISamchonGraphDump => ({
     node(ROOT, "root"),
     node(A, "a"),
     node(LEAF, "leaf"),
+    ...CHAIN.map((id, index) => node(id, `step${String(index)}`)),
+    node(DISPATCH_BASE, "Base.run", "method"),
+    ...DISPATCH_IMPLEMENTATIONS.flatMap((id, index) => [
+      node(id, `Impl${String(index)}.run`, "method"),
+      node(`${id}.body`, `body${String(index)}`),
+    ]),
+    node(EXTERNAL_DISPATCH_BASE, "ExternalBase.run", "method"),
+    ...EXTERNAL_IMPLEMENTATIONS.flatMap((id, index) => [
+      node(id, `External${String(index)}.run`, "method", true),
+      node(`${id}.body`, `externalBody${String(index)}`, "function", true),
+    ]),
+    node(OUTSIDE, "outside"),
   ],
   edges: [
     { from: ROOT, to: A, kind: "calls" },
     { from: A, to: LEAF, kind: "calls" },
+    ...CHAIN.slice(0, -1).map((id, index) => ({
+      from: id,
+      to: CHAIN[index + 1]!,
+      kind: "calls" as const,
+    })),
+    ...DISPATCH_IMPLEMENTATIONS.flatMap((id) => [
+      { from: id, to: DISPATCH_BASE, kind: "implements" as const },
+      { from: id, to: `${id}.body`, kind: "calls" as const },
+    ]),
+    ...EXTERNAL_IMPLEMENTATIONS.flatMap((id) => [
+      { from: id, to: EXTERNAL_DISPATCH_BASE, kind: "implements" as const },
+      { from: id, to: `${id}.body`, kind: "calls" as const },
+    ]),
   ],
 });
 
-const node = (id: string, name: string): ISamchonGraphDump.INode => ({
+const node = (
+  id: string,
+  name: string,
+  kind: ISamchonGraphDump.INode["kind"] = "function",
+  external = false,
+): ISamchonGraphDump.INode => ({
   id,
-  kind: "function",
+  kind,
   language: "typescript",
   name,
-  file: "src/a.ts",
-  external: false,
+  file: id.slice(0, id.indexOf("#")),
+  external,
 });

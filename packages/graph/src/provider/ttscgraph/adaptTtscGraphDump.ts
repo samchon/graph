@@ -53,15 +53,26 @@ export function adaptTtscGraphDump(
   const dump = objectOf(input, "dump");
   const rawProvenance = objectOf(dump.provenance, "dump.provenance");
   const schemaVersion = rawProvenance.schemaVersion;
-  if (schemaVersion !== ITtscGraphSnapshot.DUMP_SCHEMA_VERSION) {
+  if (
+    !Number.isSafeInteger(schemaVersion) ||
+    !ITtscGraphSnapshot.SUPPORTED_DUMP_SCHEMA_VERSIONS.includes(
+      schemaVersion as number,
+    )
+  ) {
     throw new Error(
       `ttscgraph: dump is schema ${
         Number.isSafeInteger(schemaVersion)
           ? `v${String(schemaVersion)}`
           : "unknown"
-      }, this client reads v${String(
-        ITtscGraphSnapshot.DUMP_SCHEMA_VERSION,
-      )}. Install a matching ttsc (the binary resolves from the target project, or from TTSC_GRAPH_BINARY).`,
+      }, this client reads ${ITtscGraphSnapshot.SUPPORTED_DUMP_SCHEMA_VERSIONS.map(
+        (version) => `v${String(version)}`,
+      ).join(" and ")}. Install a matching ttsc (the binary resolves from the target project, or from TTSC_GRAPH_BINARY).`,
+    );
+  }
+  const warnings: string[] = [];
+  if (schemaVersion !== ITtscGraphSnapshot.DUMP_SCHEMA_VERSION) {
+    warnings.push(
+      `typescript: ttscgraph schema v${String(schemaVersion)} compatibility snapshot predates checker-owned member implements/overrides and object-literal member facts; those facts are absent. Use a schema v${String(ITtscGraphSnapshot.DUMP_SCHEMA_VERSION)} producer through TTSC_GRAPH_BINARY for the complete canonical graph.`,
     );
   }
   const project = stringOf(dump.project, "dump.project");
@@ -77,6 +88,7 @@ export function adaptTtscGraphDump(
   const sourceFileById = new Map<string, string>();
   const nodes: ISamchonGraphNode[] = [];
   const files = new Set<string>();
+  const factFiles = new Set<string>();
 
   for (let index = 0; index < rawNodes.length; index++) {
     const raw = objectOf(rawNodes[index], `dump.nodes[${index}]`);
@@ -89,6 +101,7 @@ export function adaptTtscGraphDump(
     validateGraphFile(file, `dump.nodes[${index}].file`, external);
     validateNodeId(id, file, kind);
     sourceFileById.set(id, file);
+    factFiles.add(file);
     if (!external && file !== "") files.add(file);
     if (kind === "module") {
       // `validateGraphFile` above already rejects an empty file for every node,
@@ -123,12 +136,32 @@ export function adaptTtscGraphDump(
       );
     }
     if (raw.literals !== undefined) {
+      if (kind !== "type" && kind !== "enum") {
+        throw new Error(
+          `ttscgraph: ${id}.literals is only valid on type or enum nodes`,
+        );
+      }
       node.literals = stringArrayOf(raw.literals, `${id}.literals`);
     }
     if (raw.enumMembers !== undefined) {
+      if (kind !== "enum") {
+        throw new Error(
+          `ttscgraph: ${id}.enumMembers is only valid on enum nodes`,
+        );
+      }
       node.enumMembers = enumMembersOf(raw.enumMembers, id);
     }
     if (raw.objectMembers !== undefined) {
+      if (schemaVersion !== ITtscGraphSnapshot.DUMP_SCHEMA_VERSION) {
+        throw new Error(
+          `ttscgraph: ${id}.objectMembers is not part of schema v${String(schemaVersion)}`,
+        );
+      }
+      if (kind !== "variable") {
+        throw new Error(
+          `ttscgraph: ${id}.objectMembers is only valid on variable nodes`,
+        );
+      }
       node.objectMembers = objectMembersOf(raw.objectMembers, id);
     }
     if (raw.decorators !== undefined) {
@@ -136,6 +169,7 @@ export function adaptTtscGraphDump(
     }
     if (raw.evidence !== undefined) {
       node.evidence = evidenceOf(raw.evidence, file, `${id}.evidence`, true);
+      factFiles.add(node.evidence.file);
     }
     if (raw.implementation !== undefined) {
       node.implementation = evidenceOf(
@@ -143,6 +177,7 @@ export function adaptTtscGraphDump(
         file,
         `${id}.implementation`,
       );
+      factFiles.add(node.implementation.file);
     }
     nodes.push(node);
   }
@@ -199,12 +234,19 @@ export function adaptTtscGraphDump(
         `dump.edges[${index}].evidence`,
         true,
       );
+      factFiles.add(edge.evidence.file);
     }
     edges.push(edge);
   }
 
-  const warnings: string[] = [];
   const manifest = manifestOf(dump.provenance);
+  for (const file of [...factFiles].sort(compareText)) {
+    if (!manifest.has(file)) {
+      throw new Error(
+        `ttscgraph: dump declares facts for ${file}, which its own source manifest never loaded`,
+      );
+    }
+  }
   const sources = new Map<string, IBulkGraphSession.ISourceDigest>();
   // The workspace file set still comes from the nodes, exactly as before: the
   // manifest is every file the *program* loaded, which includes the bundled
@@ -212,15 +254,8 @@ export function adaptTtscGraphDump(
   // are not this project's sources. What the manifest changes is that the set
   // is now provable — each of these files must be one the same program loaded,
   // and it arrives with the digest of the text the checker actually read.
-  for (const file of [...files].sort((left, right) =>
-    left.localeCompare(right),
-  )) {
-    const digest = manifest.get(file);
-    if (digest === undefined) {
-      throw new Error(
-        `ttscgraph: dump declares facts for ${file}, which its own source manifest never loaded`,
-      );
-    }
+  for (const file of [...files].sort(compareText)) {
+    const digest = manifest.get(file)!;
     sources.set(path.resolve(expectedRoot, file), digest);
   }
 
@@ -714,11 +749,10 @@ function validateGraphFile(
   allowBundled = false,
 ): void {
   if (allowBundled && isNormalizedBundledFile(file)) return;
+  if (isNormalizedAbsoluteFile(file)) return;
   if (
     file === "" ||
     file.includes("\\") ||
-    path.posix.isAbsolute(file) ||
-    path.win32.isAbsolute(file) ||
     path.posix.normalize(file) !== file ||
     file.split("/").some((segment) =>
       segment === "" || segment === "." || segment === ".."
@@ -728,6 +762,30 @@ function validateGraphFile(
       `ttscgraph: ${label} must be a normalized project-relative file: ${file}`,
     );
   }
+}
+
+/**
+ * Canonical ttsc keeps the producer's normalized absolute identity for a file
+ * loaded outside the selected project root (for example a sibling workspace
+ * package declaration). It is a valid fact identity but not a display-source
+ * capability: {@link SamchonGraphSourceReader} separately confines reads to
+ * the project root.
+ */
+function isNormalizedAbsoluteFile(file: string): boolean {
+  if (file.includes("\\")) return false;
+  if (/^[A-Za-z]:\//.test(file)) {
+    return path.posix.normalize(file) === file;
+  }
+  if (file.startsWith("//")) {
+    const segments = file.slice(2).split("/");
+    return (
+      segments.length >= 3 &&
+      segments.every(
+        (segment) => segment !== "" && segment !== "." && segment !== "..",
+      )
+    );
+  }
+  return path.posix.isAbsolute(file) && path.posix.normalize(file) === file;
 }
 
 function isNormalizedBundledFile(file: string): boolean {
@@ -765,4 +823,8 @@ function samePath(left: string, right: string): boolean {
   return process.platform === "win32"
     ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
     : normalizedLeft === normalizedRight;
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }

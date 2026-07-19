@@ -17,7 +17,7 @@ export interface ISamchonGraphTrace {
   /** Unique nodes reached (excluding the start), each with its depth and roles. */
   reached: ISamchonGraphTrace.INode[];
 
-  /** In an open trace, true when a bound omitted an eligible node or hop. */
+  /** True when a walk or path-search bound omitted an eligible node or hop. */
   truncated: boolean;
 
   /** The resolved `to` target, when a path was requested. */

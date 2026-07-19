@@ -27,7 +27,7 @@ export interface IResidentGraphSource {
   load(): Promise<ISamchonGraphDump>;
 
   /** Source display reader belonging to the dump returned by the last load. */
-  source(): SamchonGraphSourceReader | undefined;
+  source?(): SamchonGraphSourceReader | undefined;
 
   /**
    * End every language-server connection this source opened. Safe to call on a

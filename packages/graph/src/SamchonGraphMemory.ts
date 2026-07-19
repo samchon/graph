@@ -77,12 +77,15 @@ export class SamchonGraphMemory {
     }
   }
 
-  /** Build a model from a parsed dump, synthesizing structural relationships. */
+  /**
+   * Build a model from a parsed dump, synthesizing structural relationships.
+   * A caller that has only a dump has no proof for current disk bytes, so
+   * source-derived display facts fail closed unless an explicit reader is
+   * supplied.
+   */
   public static from(
     dump: ISamchonGraphDump,
-    source: SamchonGraphSourceReader = SamchonGraphSourceReader.live(
-      dump.project,
-    ),
+    source: SamchonGraphSourceReader = SamchonGraphSourceReader.none(dump.project),
   ): SamchonGraphMemory {
     const { nodes, edges } = synthesize(dump);
     return new SamchonGraphMemory(dump, nodes, edges, source);

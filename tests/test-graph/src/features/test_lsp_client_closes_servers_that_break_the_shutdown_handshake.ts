@@ -103,6 +103,7 @@ export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
     await assertStubbornProcessTreeIsOwned(LspClient);
     await assertClosedInputRejectsRequests(LspClient);
     await assertSynchronousWriteFailureRejectsRequests(LspClient);
+    await assertStdinStreamErrorRejectsRequests(LspClient);
 
     // An already-cancelled request never enters the wire or waits for the
     // otherwise-unlimited default deadline. The client still owns its child and
@@ -265,6 +266,35 @@ const assertSynchronousWriteFailureRejectsRequests = async (
     await settleWithin(client.close(), 5_000, () => undefined);
   } finally {
     await Promise.allSettled([client.close()]);
+  }
+};
+
+/**
+ * A stream-level stdin error is the handle failure surface: destroying the
+ * write stream with an error emits it on every platform, whereas the real
+ * peer-close path only reaches the write callback on POSIX. Exercising it
+ * cross-platform keeps the client's stdin `error` listener honest everywhere.
+ */
+const assertStdinStreamErrorRejectsRequests = async (
+  LspClient: LspClientConstructor,
+): Promise<void> => {
+  const client = new LspClient(process.execPath, [
+    GraphPaths.fakeLspServer,
+    "--hang-method=workspace/symbol",
+  ]);
+  try {
+    await client.request("initialize", {});
+    const pending = client.request("workspace/symbol", {});
+    (client as unknown as ILspClientInternals).process.stdin.destroy(
+      new Error("synthetic stdin stream error"),
+    );
+    const rejection = await rejectionWithin(pending, 2_000);
+    TestValidator.predicate(
+      "a stdin stream error rejects pending requests",
+      rejection.message.includes("stdin"),
+    );
+  } finally {
+    await settleWithin(client.close(), 5_000, () => undefined);
   }
 };
 

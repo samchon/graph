@@ -257,9 +257,13 @@ export class LspClient {
       // Windows. Preserve the transport's forced-termination contract for
       // pending requests while the termination promise below still waits for
       // the exact owned process tree to disappear.
+      /* c8 ignore start -- Windows-only forced-termination contract: POSIX
+       * hosts short-circuit at `win32` and never fail here, while the Windows
+       * lifecycle integration test exercises this branch. */
       if (process.platform === "win32" && this.failure === undefined) {
         this.fail(new Error("Language server exited (null, SIGKILL)."));
       }
+      /* c8 ignore stop */
       this.termination = terminateOwnedProcess(this.process, this.exit);
     }
     return this.termination;

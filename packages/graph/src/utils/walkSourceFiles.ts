@@ -6,6 +6,7 @@ import { IWalkOptions } from "./IWalkOptions";
 export function walkSourceFiles(root: string, options: IWalkOptions): string[] {
   const out: string[] = [];
   const ignoreDirs = options.ignoreDirs ?? DEFAULT_IGNORES;
+  const allowNested = options.allowNestedRepositories ?? false;
   const visit = (dir: string): void => {
     if (options.maxFiles !== undefined && out.length >= options.maxFiles) return;
     let entries: fs.Dirent[];
@@ -19,7 +20,16 @@ export function walkSourceFiles(root: string, options: IWalkOptions): string[] {
       if (options.maxFiles !== undefined && out.length >= options.maxFiles) break;
       const abs = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (!ignoreDirs.has(entry.name)) visit(abs);
+        if (ignoreDirs.has(entry.name)) continue;
+        // A subdirectory that is itself a git repository or worktree root —
+        // marked by a `.git` directory (a clone) or a `.git` file (a linked
+        // worktree or a submodule) — belongs to a different checkout: a nested
+        // agent worktree, a vendored clone, a submodule. Merging its files into
+        // this graph would describe a foreign branch and lets an unrelated tree
+        // win a `maxFiles` cap before any real source is seen. Stop at that
+        // boundary unless the caller intentionally opts in.
+        if (!allowNested && isRepositoryRoot(abs)) continue;
+        visit(abs);
         continue;
       }
       /* c8 ignore next */
@@ -35,4 +45,14 @@ export function walkSourceFiles(root: string, options: IWalkOptions): string[] {
   };
   visit(path.resolve(root));
   return out;
+}
+
+/**
+ * A directory is a self-contained checkout when it carries a `.git` marker: a
+ * directory in an ordinary clone, or a file in a linked worktree or submodule.
+ * The requested root is walked directly and is never subjected to this test, so
+ * only nested checkouts below it are excluded.
+ */
+function isRepositoryRoot(dir: string): boolean {
+  return fs.existsSync(path.join(dir, ".git"));
 }

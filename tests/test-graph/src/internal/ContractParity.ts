@@ -528,14 +528,54 @@ export namespace ContractParity {
         from: "/** The complete value set a type alias or enum admits, in __LANG__ source form (`\"a\"`, `1`, `true`, `null`) — the checker's resolved union members, not the quoted tokens that happened to fit in `signature`. Absent when the type has no enumerable value set. A `signature` is capped at the declaration head, so for a union or enum written across several lines this is the field that carries the members. */",
         to: "/** The complete value set a type alias or enum admits, in __LANG__ source form (`\"a\"`, `1`, `true`, `null`) — the provider-resolved union members, not quoted tokens scraped from `signature`. Absent when the active index cannot prove an enumerable value set. */",
       },
-    ],
-    Trace: [
       {
         reason:
-          "Path mode now reports bounded depth and dispatch-hub omissions instead of falsely proving that no connection exists, so truncation applies to both trace forms.",
+          "Compiler-owned providers can retain canonical absolute or virtual identities for files loaded outside the project, so selected declarations must not promise every file is project-relative.",
         layer: "prose",
-        from: "/** In an open trace, true when a bound omitted an eligible node or hop. */",
-        to: "/** True when a walk or path-search bound omitted an eligible node or hop. */",
+        from: "/** Project-relative path of the file that declares this node. */",
+        to: "/** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */",
+        occurrences: 2,
+      },
+      {
+        reason:
+          "A dependency neighbor can be a compiler-loaded declaration outside the project and carries the same canonical identity as its graph node.",
+        layer: "prose",
+        from: "/** Project-relative declaration file for the neighbor. */",
+        to: "/** Neighbor identity: project-relative, normalized absolute, or `bundled:///`. */",
+      },
+    ],
+    Entrypoints: [
+      {
+        reason:
+          "An entrypoint candidate can name a compiler-loaded declaration outside the project, whose canonical identity is absolute or virtual.",
+        layer: "prose",
+        from: "/** Project-relative path of the declaration file. */",
+        to: "/** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */",
+      },
+      {
+        reason:
+          "An entrypoint dependency neighbor preserves the canonical identity of its graph node even when the compiler loaded it outside the project.",
+        layer: "prose",
+        from: "/** Project-relative declaration file for the neighbor. */",
+        to: "/** Neighbor identity: project-relative, normalized absolute, or `bundled:///`. */",
+      },
+    ],
+    Evidence: [
+      {
+        reason:
+          "Evidence cites the graph identity that produced the fact; strict compiler providers retain normalized absolute and virtual identities for out-of-root sources.",
+        layer: "prose",
+        from: "/** Project-relative path of the file the span lives in. */",
+        to: "/** Graph file identity of the span: normally project-relative, but normalized absolute for a compiler-loaded out-of-root file or `bundled:///` for a virtual library. */",
+      },
+    ],
+    Lookup: [
+      {
+        reason:
+          "A lookup result can select a compiler-loaded declaration outside the project and must describe its canonical absolute or virtual identity honestly.",
+        layer: "prose",
+        from: "/** Project-relative path of the declaration file. */",
+        to: "/** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */",
       },
     ],
     Dump: [
@@ -644,10 +684,10 @@ export namespace ContractParity {
       },
       {
         reason:
-          "The product's public dump has no single TypeScript config or provenance manifest; it names only the project-relative graph and generic diagnostic paths shared by every indexing lane.",
+          "The product's public dump has no single TypeScript config or provenance manifest, but a strict compiler provider can contribute out-of-root and virtual source identities that must remain canonical across every result surface.",
         layer: "prose",
         from: "`project` is absolute. Every other path is relative to it — `tsconfig`, and the `file` fields on nodes, edges, diagnostics, and the provenance manifest. Two kinds of path fall outside the project and so cannot be relative to it: a dependency keeps its `node_modules/`-relative tail, which is what makes a dependency leaf readable, and anything else the compiler loaded keeps the identity the compiler gave it — a virtual lib stays `bundled:///…`.",
-        to: "Paths in `project` are absolute; `file` fields on nodes, edges, and diagnostics are project-relative.",
+        to: "`project` is absolute. A graph file identity uses normalized forward slashes: a project-owned file is relative to `project`, a compiler-loaded file outside that root keeps its normalized absolute identity, and a virtual compiler library keeps its `bundled:///` identity. The same identity flows through a node's `file` and id prefix, reconstructed edge evidence, diagnostics, and operation results.",
       },
       {
         reason:
@@ -766,6 +806,29 @@ export namespace ContractParity {
         from: "the checker could not fold",
         to: "the index could not fold",
       },
+      {
+        reason:
+          "A node can represent an out-of-root source loaded by a strict compiler provider, so its canonical identity may be normalized absolute or virtual rather than project-relative.",
+        layer: "prose",
+        from: "/** Project-relative path of the file that declares this node. */",
+        to: "/** Graph file identity of the declaration. Project-owned files are project-relative; compiler-loaded files outside the root keep normalized absolute identities, and virtual libraries use `bundled:///`. */",
+      },
+    ],
+    Overview: [
+      {
+        reason:
+          "Overview layers can include a canonical out-of-root compiler directory, so the directory identity is not universally project-relative.",
+        layer: "prose",
+        from: "/** Directory, project-relative. */",
+        to: "/** Directory identity: project-relative or normalized absolute. */",
+      },
+      {
+        reason:
+          "Overview declarations preserve canonical compiler-loaded file identities across the public result boundary.",
+        layer: "prose",
+        from: "/** Project-relative path of the file that declares it. */",
+        to: "/** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */",
+      },
     ],
     NodeModifier: [
       {
@@ -842,6 +905,53 @@ export namespace ContractParity {
         layer: "prose",
         from: "This shape exists only between the Go builder and the loader.",
         to: "This shape exists only between the indexer and the loader.",
+      },
+      {
+        reason:
+          "An implementation can live in an out-of-root or virtual compiler source and keeps the same canonical graph identity as complete evidence.",
+        layer: "prose",
+        from: "/** Present only when it cannot be derived: an `implementation` can live in a different file from the declaration that owns it. */",
+        to: "/** Present only when it cannot be derived: an `implementation` can live in a different file from the declaration that owns it. Uses the same project-relative, normalized absolute, or `bundled:///` identity as a complete graph evidence span. */",
+      },
+    ],
+    Tour: [
+      {
+        reason:
+          "A tour candidate can cite a compiler-loaded declaration outside the project and preserves its canonical identity.",
+        layer: "prose",
+        from: "/** Project-relative declaration file. */",
+        to: "/** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */",
+      },
+      {
+        reason:
+          "Tour anchors preserve the graph file identity that backs their citation, including absolute and virtual compiler sources.",
+        layer: "prose",
+        from: "/** Project-relative file. */",
+        to: "/** Graph file identity: project-relative, normalized absolute, or `bundled:///`. */",
+        occurrences: 2,
+      },
+    ],
+    Trace: [
+      {
+        reason:
+          "Trace nodes preserve canonical compiler-loaded declaration identities across the public result boundary.",
+        layer: "prose",
+        from: "/** Project-relative path of the file that declares it. */",
+        to: "/** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */",
+      },
+      {
+        reason:
+          "Trace omissions name the same canonical declaration identity as the omitted graph node.",
+        layer: "prose",
+        from: "/** Project-relative path of the declaration file. */",
+        to: "/** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */",
+      },
+      {
+        reason:
+          "Path mode now reports bounded depth and dispatch-hub omissions instead of falsely proving that no connection exists, so truncation applies to both trace forms.",
+        layer: "prose",
+        from: "/** In an open trace, true when a bound omitted an eligible node or hop. */",
+        to: "/** True when a walk or path-search bound omitted an eligible node or hop. */",
       },
     ],
   };

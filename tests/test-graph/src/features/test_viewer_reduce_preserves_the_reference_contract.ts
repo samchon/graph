@@ -181,19 +181,19 @@ export const test_viewer_reduce_preserves_the_reference_contract = () => {
     ["A/a.ts", "a/b.ts"],
   );
 
-  const mixedPathForms = reduce({
-    nodes: [
-      node("/work/a.ts", "A", "class"),
-      node("bare.ts", "B", "class"),
-    ],
-    edges: [
-      edge("/work/a.ts", "A", "class", "bare.ts", "B", "class", "calls"),
-    ],
-  });
+  const mixedPathForms = mixedPathReduction(false);
   TestValidator.equals(
-    "mixed legacy paths fall back to portable basenames",
-    mixedPathForms.nodes.map((entry) => entry.file),
-    ["a.ts", "bare.ts"],
+    "a relative-first current dump preserves its project path and sanitizes its absolute sibling",
+    pathCoordinates(mixedPathForms),
+    [
+      ["Local", "src/local.ts", "src/local.ts"],
+      ["Sibling", "sibling.ts", "sibling.ts"],
+    ],
+  );
+  TestValidator.equals(
+    "mixed current path reduction is independent of node order",
+    pathCoordinates(mixedPathReduction(true)),
+    pathCoordinates(mixedPathForms),
   );
 
   const unc = reduce({
@@ -250,6 +250,40 @@ export const test_viewer_reduce_preserves_the_reference_contract = () => {
     2,
   );
 };
+
+const mixedPathReduction = (reversed: boolean) => {
+  const nodes = [
+    node("src/local.ts", "Local", "class"),
+    node("/workspace-sibling/sibling.ts", "Sibling", "class"),
+  ];
+  return reduce({
+    nodes: reversed ? nodes.reverse() : nodes,
+    edges: [
+      edge(
+        "src/local.ts",
+        "Local",
+        "class",
+        "/workspace-sibling/sibling.ts",
+        "Sibling",
+        "class",
+        "calls",
+      ),
+    ],
+  });
+};
+
+const pathCoordinates = (
+  payload: ReturnType<typeof reduce>,
+): Array<[string, string, string]> =>
+  payload.nodes
+    .map(
+      (entry): [string, string, string] => [
+        entry.name,
+        entry.file,
+        entry.id.slice(0, entry.id.indexOf("#")),
+      ],
+    )
+    .sort(([left], [right]) => left.localeCompare(right));
 
 const id = (file: string, name: string, kind: string) => `${file}#${name}:${kind}`;
 const node = (file: string, name: string, kind: string, external = false) => ({

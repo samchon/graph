@@ -33,7 +33,11 @@ export interface ISamchonGraphNode {
    */
   qualifiedName?: string;
 
-  /** Project-relative path of the file that declares this node. */
+  /**
+   * Graph file identity of the declaration. Project-owned files are
+   * project-relative; compiler-loaded files outside the root keep normalized
+   * absolute identities, and virtual libraries use `bundled:///`.
+   */
   file: string;
 
   /**

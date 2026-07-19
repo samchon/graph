@@ -51,7 +51,7 @@ export namespace ISamchonGraphLookup {
     /** Declaration kind (`class`, `method`, `function`, ...). */
     kind: string;
 
-    /** Project-relative path of the declaration file. */
+    /** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */
     file: string;
 
     /** 1-based declaration line, when known. */

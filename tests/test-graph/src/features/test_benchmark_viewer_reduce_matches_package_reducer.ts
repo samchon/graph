@@ -20,7 +20,10 @@ export const test_benchmark_viewer_reduce_matches_package_reducer = async () => 
     reduce: (
       dump: { nodes: unknown[]; edges: unknown[] },
       options?: { keepExternal?: boolean },
-    ) => { nodes: Array<{ id: string; file: string }>; links: Array<{ kind: string }> };
+    ) => {
+      nodes: Array<{ id: string; name: string; file: string }>;
+      links: Array<{ kind: string }>;
+    };
   };
   const sameFile = viewer.reduce({
     nodes: [
@@ -44,7 +47,62 @@ export const test_benchmark_viewer_reduce_matches_package_reducer = async () => 
     sameFile.links[0]?.kind,
     "heritage",
   );
+
+  const relativeFirst = mixedPathReduction(viewer.reduce, false);
+  const absoluteFirst = mixedPathReduction(viewer.reduce, true);
+  TestValidator.equals(
+    "the benchmark viewer sanitizes a sibling absolute identity beside a project-relative identity",
+    pathCoordinates(relativeFirst),
+    [
+      ["Local", "src/local.ts", "src/local.ts"],
+      ["Sibling", "sibling.ts", "sibling.ts"],
+    ],
+  );
+  TestValidator.equals(
+    "the benchmark viewer's mixed path reduction is independent of node order",
+    pathCoordinates(absoluteFirst),
+    pathCoordinates(relativeFirst),
+  );
 };
+
+type ViewerReduce = (
+  dump: { nodes: unknown[]; edges: unknown[] },
+) => { nodes: Array<{ id: string; name: string; file: string }> };
+
+const mixedPathReduction = (
+  reduce: ViewerReduce,
+  reversed: boolean,
+): ReturnType<ViewerReduce> => {
+  const nodes = [
+    node("src/local.ts", "Local"),
+    node("D:/sibling/sibling.ts", "Sibling"),
+  ];
+  return reduce({
+    nodes: reversed ? nodes.reverse() : nodes,
+    edges: [
+      edge(
+        "src/local.ts",
+        "Local",
+        "D:/sibling/sibling.ts",
+        "Sibling",
+        "calls",
+      ),
+    ],
+  });
+};
+
+const pathCoordinates = (
+  payload: ReturnType<ViewerReduce>,
+): Array<[string, string, string]> =>
+  payload.nodes
+    .map(
+      (entry): [string, string, string] => [
+        entry.name,
+        entry.file,
+        entry.id.slice(0, entry.id.indexOf("#")),
+      ],
+    )
+    .sort(([left], [right]) => left.localeCompare(right));
 
 const node = (file: string, name: string) => ({
   id: `${file}#${name}:method`,

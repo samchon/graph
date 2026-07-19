@@ -10,7 +10,11 @@
  * does, and it is cheaper to delete than to defend.
  */
 export interface ISamchonGraphDiagnostic {
-  /** Project-relative path of the file the diagnostic is reported in. */
+  /**
+   * Graph file identity the diagnostic names, or `""` for a global finding.
+   * Project files are relative; compiler-loaded out-of-root and virtual files
+   * retain normalized absolute or `bundled:///` identities.
+   */
   file: string;
 
   /** 1-based line of the diagnostic. */

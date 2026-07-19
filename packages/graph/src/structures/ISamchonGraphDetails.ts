@@ -102,7 +102,7 @@ export namespace ISamchonGraphDetails {
     /** Declaration kind (`class`, `method`, `function`, ...). */
     kind: string;
 
-    /** Project-relative path of the file that declares this node. */
+    /** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */
     file: string;
 
     /** 1-based declaration line, when known. */
@@ -120,7 +120,7 @@ export namespace ISamchonGraphDetails {
     /** Declaration kind (`class`, `method`, `function`, ...). */
     kind: string;
 
-    /** Project-relative path of the file that declares this node. */
+    /** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */
     file: string;
 
     /** 1-based declaration line, when known. */
@@ -200,7 +200,7 @@ export namespace ISamchonGraphDetails {
     /** Neighbor declaration kind. */
     kind: string;
 
-    /** Project-relative declaration file for the neighbor. */
+    /** Neighbor identity: project-relative, normalized absolute, or `bundled:///`. */
     file: string;
 
     /** 1-based declaration line, when known. */

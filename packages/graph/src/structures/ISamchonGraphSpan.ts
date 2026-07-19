@@ -15,7 +15,9 @@
 export interface ISamchonGraphSpan {
   /**
    * Present only when it cannot be derived: an `implementation` can live in a
-   * different file from the declaration that owns it.
+   * different file from the declaration that owns it. Uses the same
+   * project-relative, normalized absolute, or `bundled:///` identity as a
+   * complete graph evidence span.
    */
   file?: string;
 

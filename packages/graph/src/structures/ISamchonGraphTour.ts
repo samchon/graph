@@ -89,7 +89,7 @@ export namespace ISamchonGraphTour {
     /** Declaration kind (`class`, `method`, `function`, ...). */
     kind: string;
 
-    /** Project-relative declaration file. */
+    /** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */
     file: string;
 
     /** 1-based declaration line, when known. */
@@ -168,7 +168,7 @@ export namespace ISamchonGraphTour {
     /** Declaration kind, when this anchor belongs to a node. */
     kind?: string;
 
-    /** Project-relative file. */
+    /** Graph file identity: project-relative, normalized absolute, or `bundled:///`. */
     file: string;
 
     /** 1-based start line. */
@@ -180,7 +180,7 @@ export namespace ISamchonGraphTour {
 
   /** Source coordinates without source text. */
   export interface ISpan {
-    /** Project-relative file. */
+    /** Graph file identity: project-relative, normalized absolute, or `bundled:///`. */
     file: string;
 
     /** 1-based start line. */

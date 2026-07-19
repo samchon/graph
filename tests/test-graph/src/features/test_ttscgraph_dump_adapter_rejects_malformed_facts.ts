@@ -63,6 +63,41 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
     change(dump);
     return dump;
   };
+  const relationDump = (schemaVersion: number) => {
+    const dump = good();
+    dump.provenance.schemaVersion = schemaVersion;
+    dump.nodes.push(
+      {
+        id: "src/a.ts#Worker:class",
+        kind: "class",
+        name: "Worker",
+        file: "src/a.ts",
+        external: false,
+      },
+      {
+        id: "src/a.ts#Contract:interface",
+        kind: "interface",
+        name: "Contract",
+        file: "src/a.ts",
+        external: false,
+      },
+      {
+        id: "src/a.ts#Worker.execute:method",
+        kind: "method",
+        name: "execute",
+        file: "src/a.ts",
+        external: false,
+      },
+      {
+        id: "src/a.ts#Contract.execute:method",
+        kind: "method",
+        name: "execute",
+        file: "src/a.ts",
+        external: false,
+      },
+    );
+    return dump;
+  };
 
   // A healthy dump adapts without throwing (the negative twin of every case).
   TestValidator.predicate(
@@ -80,6 +115,69 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
         warning.includes("schema v3 compatibility snapshot") &&
         warning.includes("object-literal member facts"),
     ),
+  );
+  const compatibleHeritage = relationDump(3);
+  compatibleHeritage.edges.push({
+    from: "src/a.ts#Worker:class",
+    to: "src/a.ts#Contract:interface",
+    kind: "implements",
+  });
+  TestValidator.predicate(
+    "schema 3 retains container implements heritage",
+    adaptTtscGraphDump(compatibleHeritage, project).edges.some(
+      (edge) =>
+        edge.kind === "implements" &&
+        edge.from === "src/a.ts#Worker:class" &&
+        edge.to === "src/a.ts#Contract:interface",
+    ),
+  );
+  rejectsWithMessage(
+    () => {
+      const dump = relationDump(3);
+      dump.edges.push({
+        from: "src/a.ts#Worker.execute:method",
+        to: "src/a.ts#Contract.execute:method",
+        kind: "implements",
+      });
+      return adaptTtscGraphDump(dump, project);
+    },
+    "schema 3 member implements",
+    "member implements is not part of schema v3",
+  );
+  rejectsWithMessage(
+    () => {
+      const dump = relationDump(3);
+      dump.edges.push({
+        from: "src/a.ts#Worker.execute:method",
+        to: "src/a.ts#Contract.execute:method",
+        kind: "overrides",
+      });
+      return adaptTtscGraphDump(dump, project);
+    },
+    "schema 3 overrides",
+    "overrides is not part of schema v3",
+  );
+  const currentRelations = relationDump(5);
+  currentRelations.edges.push(
+    {
+      from: "src/a.ts#Worker.execute:method",
+      to: "src/a.ts#Contract.execute:method",
+      kind: "implements",
+    },
+    {
+      from: "src/a.ts#Worker.execute:method",
+      to: "src/a.ts#Contract.execute:method",
+      kind: "overrides",
+    },
+  );
+  const adaptedCurrentRelations = adaptTtscGraphDump(
+    currentRelations,
+    project,
+  );
+  TestValidator.predicate(
+    "schema 5 retains checker-owned member relations",
+    adaptedCurrentRelations.edges.some((edge) => edge.kind === "implements") &&
+      adaptedCurrentRelations.edges.some((edge) => edge.kind === "overrides"),
   );
   const crossRootFile = path
     .resolve(project, "..", "shared", "index.d.ts")
@@ -429,4 +527,21 @@ function rejects(task: () => unknown, label: string): void {
     error = caught;
   }
   TestValidator.predicate(`${label} is rejected`, error instanceof Error);
+}
+
+function rejectsWithMessage(
+  task: () => unknown,
+  label: string,
+  message: string,
+): void {
+  let error: unknown;
+  try {
+    task();
+  } catch (caught) {
+    error = caught;
+  }
+  TestValidator.predicate(
+    `${label} is rejected at its schema boundary`,
+    error instanceof Error && error.message.includes(message),
+  );
 }

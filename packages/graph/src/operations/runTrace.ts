@@ -211,10 +211,24 @@ export function runTrace(
   while (queue.length > 0) {
     const next: Array<{ id: string; depth: number }> = [];
     for (const { id, depth } of queue) {
-      const candidates = traceEdges(graph, id, reverse, focus);
+      const selected = traceEdges(graph, id, reverse, focus);
+      if (
+        selected.omitted.some(
+          (edge) =>
+            eligibleTraceEndpoint(
+              graph,
+              edge,
+              reverse,
+              focus,
+              includeExternal,
+            ) !== undefined,
+        )
+      ) {
+        truncated = true;
+      }
       if (depth >= maxDepth) {
         if (
-          candidates.some(
+          selected.edges.some(
             (edge) =>
               eligibleTraceEndpoint(
                 graph,
@@ -229,7 +243,7 @@ export function runTrace(
         }
         continue;
       }
-      const edges = orderedEdges(graph, candidates, direction, reverse);
+      const edges = orderedEdges(graph, selected.edges, direction, reverse);
       for (const edge of edges) {
         const endpoint = eligibleTraceEndpoint(
           graph,
@@ -302,10 +316,13 @@ function traceEdges(
   id: string,
   reverse: boolean,
   focus: ISamchonGraphTrace.IRequest["focus"],
-): readonly ISamchonGraphEdge[] {
-  return reverse
-    ? graph.incoming(id)
-    : [...graph.outgoing(id), ...dispatchEdges(graph, id, focus)];
+): { edges: ISamchonGraphEdge[]; omitted: ISamchonGraphEdge[] } {
+  if (reverse) return { edges: [...graph.incoming(id)], omitted: [] };
+  const ordinary = [...graph.outgoing(id)];
+  const dispatch = dispatchCandidates(graph, id, focus);
+  return dispatch.length >= DISPATCH_HUB
+    ? { edges: ordinary, omitted: dispatch }
+    : { edges: [...ordinary, ...dispatch], omitted: [] };
 }
 
 /** The endpoint an unbounded trace would represent, if any. */
@@ -710,15 +727,6 @@ function summary(
  * implementation — which is the fact, since the call site named the base and
  * the runtime lands in the override.
  */
-function dispatchEdges(
-  graph: SamchonGraphMemory,
-  id: string,
-  focus: ISamchonGraphTrace.IRequest["focus"],
-): ISamchonGraphEdge[] {
-  const out = dispatchCandidates(graph, id, focus);
-  return out.length >= DISPATCH_HUB ? [] : out;
-}
-
 function dispatchCandidates(
   graph: SamchonGraphMemory,
   id: string,

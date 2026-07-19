@@ -85,6 +85,7 @@ export function adaptTtscGraphDump(
   const rawEdges = arrayOf(dump.edges, "dump.edges");
   const moduleIds = new Map<string, string>();
   const rawIds = new Set<string>();
+  const nodeKindById = new Map<string, GraphNodeKind>();
   const sourceFileById = new Map<string, string>();
   const nodes: ISamchonGraphNode[] = [];
   const files = new Set<string>();
@@ -96,6 +97,7 @@ export function adaptTtscGraphDump(
     if (rawIds.has(id)) throw new Error(`ttscgraph: duplicate node id: ${id}`);
     rawIds.add(id);
     const kind = nodeKindOf(raw.kind, `dump.nodes[${index}].kind`);
+    nodeKindById.set(id, kind);
     const file = stringOf(raw.file, `dump.nodes[${index}].file`);
     const external = booleanOf(raw.external, `dump.nodes[${index}].external`);
     validateGraphFile(file, `dump.nodes[${index}].file`, external);
@@ -219,6 +221,13 @@ export function adaptTtscGraphDump(
     }
     const from = moduleIds.get(rawFrom) ?? rawFrom;
     const kind = edgeKindOf(raw.kind, `dump.edges[${index}].kind`);
+    validateEdgeSchema(
+      schemaVersion as number,
+      kind,
+      nodeKindById.get(rawFrom)!,
+      nodeKindById.get(rawTo)!,
+      `dump.edges[${index}]`,
+    );
     const key = `${kind}\0${from}\0${rawTo}`;
     if (edgeKeys.has(key)) {
       throw new Error(
@@ -586,6 +595,31 @@ function edgeKindOf(value: unknown, label: string): GraphEdgeKind {
     throw new Error(`ttscgraph: unsupported ${label}: ${kind}`);
   }
   return kind;
+}
+
+function validateEdgeSchema(
+  schemaVersion: number,
+  kind: GraphEdgeKind,
+  fromKind: GraphNodeKind,
+  toKind: GraphNodeKind,
+  label: string,
+): void {
+  if (schemaVersion === ITtscGraphSnapshot.DUMP_SCHEMA_VERSION) return;
+  // Schema v3 used `implements` only for class heritage. Schema v5 added the
+  // checker-owned member form and introduced `overrides` alongside it.
+  if (kind === "overrides") {
+    throw new Error(
+      `ttscgraph: ${label} overrides is not part of schema v${String(schemaVersion)}`,
+    );
+  }
+  const containerImplements =
+    fromKind === "class" &&
+    (toKind === "class" || toKind === "interface");
+  if (kind === "implements" && !containerImplements) {
+    throw new Error(
+      `ttscgraph: ${label} member implements is not part of schema v${String(schemaVersion)} (${fromKind} -> ${toKind})`,
+    );
+  }
 }
 
 function modifierOf(

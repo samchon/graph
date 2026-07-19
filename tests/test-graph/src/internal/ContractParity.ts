@@ -510,7 +510,7 @@ export namespace ContractParity {
           "The operation-aware audit says the same thing with the product's actual compact wording: a walk returns the held structure for its named handles, and details splits whole identity from sliced fan-out.",
         layer: "prose",
         from: "For the walks from a named handle (`trace`, `overview`) it reports the result as the structure the graph holds, bounded where `truncated` says. For `details` it reports the two halves of a resolved symbol: its own shape returned whole, its fan-out returned as a slice with `trace` for the rest.",
-        to: "For the walks from a named handle (`trace`, `overview`) it reports the structure held for the named handles, bounded where `truncated` says. For `details` it reports the two halves of a resolved symbol: its own shape returned whole, its fan-out returned as a slice with `trace` for the rest.",
+        to: "For the walks from a named handle (`trace`, `overview`) it reports the structure held for the named handles, bounded where `truncated` says. For `details` it reports the two halves of a resolved symbol: its own shape returned whole unless the caller explicitly capped members, and its fan-out returned as a slice with `trace` for the rest.",
       },
       {
         reason:

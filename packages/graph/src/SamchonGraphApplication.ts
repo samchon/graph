@@ -87,7 +87,7 @@ export class SamchonGraphApplication implements ISamchonGraphApplication {
       case "details": {
         const r = runDetails(graph, props.request);
         return {
-          audit: RESULT_AUDIT_DETAILS(graph.indexer),
+          audit: RESULT_AUDIT_DETAILS(graph.indexer, props.request.memberLimit),
           next: r.next,
           result: r.result,
         };

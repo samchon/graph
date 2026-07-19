@@ -3,6 +3,7 @@ import {
   buildGraphDump,
   SamchonGraphApplication,
   SamchonGraphMemory,
+  SamchonGraphSourceReader,
 } from "@samchon/graph";
 import type {
   ISamchonGraphDetails,
@@ -256,7 +257,10 @@ const scenario_a_tour_over_a_graph_that_is_missing_its_evidence = async () => {
     exportsOf("src/order/create.ts", "src/order/create.ts#persist:function"),
   ];
   const app = new SamchonGraphApplication(
-    SamchonGraphMemory.from(dumpOf(root, nodes, edges)),
+    SamchonGraphMemory.from(
+      dumpOf(root, nodes, edges),
+      SamchonGraphSourceReader.live(root),
+    ),
   );
   const tour = (
     await app.inspect_code_graph({

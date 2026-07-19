@@ -14,7 +14,7 @@ import { mergeGraphSlices } from "../provider/mergeGraphSlices";
 import { readText, walkSourceFiles } from "../utils/fs";
 import { allExtensions } from "./allExtensions";
 import { buildLspGraph } from "./buildLspGraph";
-import { buildStaticGraphResult } from "./buildStaticGraph";
+import { buildStaticGraphResult } from "./buildStaticGraphResult";
 import { staticGraphParts } from "./staticGraphParts";
 import { discoverLanguages } from "./discoverLanguages";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";

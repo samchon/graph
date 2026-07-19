@@ -1,5 +1,6 @@
 import { TestValidator } from "@nestia/e2e";
 import {
+  buildGraph,
   buildGraphDump,
   SamchonGraphApplication,
   SamchonGraphMemory,
@@ -260,9 +261,7 @@ const scenario_a_doc_comment_at_every_boundary = async () => {
     "export function tooLong(): void {}",
   ]);
   const app = new SamchonGraphApplication(
-    SamchonGraphMemory.from(
-      await buildGraphDump({ cwd: root, mode: "static", languages: ["typescript"] }),
-    ),
+    await buildGraph({ cwd: root, mode: "static", languages: ["typescript"] }),
   );
   const details = (
     await app.inspect_code_graph({

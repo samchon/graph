@@ -1,6 +1,6 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
-import { buildGraphResult } from "./buildGraphDump";
+import { buildGraphResult } from "./buildGraphResult";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 
 export async function buildGraph(

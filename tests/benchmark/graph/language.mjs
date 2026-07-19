@@ -32,13 +32,23 @@ if (fs.existsSync(toolsRoot)) {
     process.env.DOTNET_ROOT_X64 = dotnetRoot;
     process.env.DOTNET_HOST_PATH = dotnetHost;
   }
-  const extra = fs
+  const toolDirectories = fs
     .readdirSync(toolsRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
-    .map((entry) => {
-      const bin = path.join(toolsRoot, entry.name, "bin");
-      return fs.existsSync(bin) ? bin : path.join(toolsRoot, entry.name);
+    .flatMap((entry) => {
+      const root = path.join(toolsRoot, entry.name);
+      const children = fs
+        .readdirSync(root, { withFileTypes: true })
+        .filter((child) => child.isDirectory())
+        .map((child) => path.join(root, child.name, "bin"));
+      return [
+        root,
+        path.join(root, "bin"),
+        path.join(root, "server", "bin"),
+        ...children,
+      ];
     });
+  const extra = [...new Set(toolDirectories)].filter((dir) => fs.existsSync(dir));
   if (extra.length > 0) {
     process.env.PATH = `${extra.join(path.delimiter)}${path.delimiter}${process.env.PATH ?? ""}`;
   }
@@ -213,8 +223,13 @@ export function assertPreparedFixture(spec, repoDir) {
   }
   if (spec.language === "dart") {
     const missing = findFiles(repoDir, "pubspec.yaml").filter(
-      (dir) =>
-        !fs.existsSync(path.join(dir, ".dart_tool", "package_config.json")),
+      (dir) => {
+        const pubspec = fs.readFileSync(path.join(dir, "pubspec.yaml"), "utf8");
+        return (
+          !pubspecRequiresFlutter(pubspec) &&
+          !fs.existsSync(path.join(dir, ".dart_tool", "package_config.json"))
+        );
+      },
     );
     if (missing.length > 0) {
       throw new Error(`${spec.name} has ${missing.length} unresolved Dart package(s)`);
@@ -234,6 +249,11 @@ export function assertPreparedFixture(spec, repoDir) {
 
 function ensureDartPubDeps(root) {
   for (const pubspecDir of findFiles(root, "pubspec.yaml")) {
+    const pubspec = fs.readFileSync(path.join(pubspecDir, "pubspec.yaml"), "utf8");
+    if (pubspecRequiresFlutter(pubspec)) {
+      console.log(`Skipping Flutter-only Dart package in ${pubspecDir}.`);
+      continue;
+    }
     if (
       fs.existsSync(
         path.join(pubspecDir, ".dart_tool", "package_config.json"),
@@ -246,6 +266,11 @@ function ensureDartPubDeps(root) {
     run("dart", ["pub", "get"], { cwd: pubspecDir, stdio: "inherit" });
     if (!hadLockfile && fs.existsSync(lockfile)) fs.rmSync(lockfile);
   }
+}
+
+/** Whether a Dart package requires the separately provisioned Flutter SDK. */
+export function pubspecRequiresFlutter(text) {
+  return /^\s*sdk:\s*flutter\s*(?:#.*)?$/m.test(text);
 }
 
 function findFiles(root, name) {

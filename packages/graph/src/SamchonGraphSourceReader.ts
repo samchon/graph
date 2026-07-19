@@ -12,7 +12,6 @@ export class SamchonGraphSourceReader {
   private readonly project: string;
   private readonly texts: ReadonlyMap<string, string>;
   private readonly checkerDigests: ReadonlyMap<string, string>;
-  private readonly allowUnproven: boolean;
   private readonly read: ReadFile;
   private readonly cache = new Map<string, readonly string[] | undefined>();
 
@@ -22,17 +21,8 @@ export class SamchonGraphSourceReader {
   ) {
     this.project = path.resolve(project);
     this.texts = normalizeTexts(this.project, options.texts);
-    this.checkerDigests = normalizeDigests(
-      this.project,
-      options.digests,
-    );
-    this.allowUnproven = options.allowUnproven === true;
+    this.checkerDigests = normalizeDigests(this.project, options.digests);
     this.read = options.read ?? ((file) => fs.readFileSync(file));
-  }
-
-  /** A compatibility reader that freezes the first in-project disk read. */
-  public static live(project: string): SamchonGraphSourceReader {
-    return new SamchonGraphSourceReader(project, { allowUnproven: true });
   }
 
   /** A fail-closed reader for dumps that carry no source provenance. */
@@ -62,7 +52,7 @@ export class SamchonGraphSourceReader {
     }
 
     const expected = this.checkerDigests.get(key);
-    if (expected === undefined && !this.allowUnproven) {
+    if (expected === undefined) {
       this.cache.set(key, undefined);
       return undefined;
     }
@@ -73,7 +63,7 @@ export class SamchonGraphSourceReader {
       this.cache.set(key, undefined);
       return undefined;
     }
-    if (expected !== undefined && sha256(text) !== expected) {
+    if (sha256(text) !== expected) {
       this.cache.set(key, undefined);
       return undefined;
     }
@@ -93,8 +83,6 @@ export namespace SamchonGraphSourceReader {
     texts?: ReadonlyMap<string, string>;
     /** Compiler snapshot digests, keyed by any path form. */
     digests?: ReadonlyMap<string, IBulkGraphSession.ISourceDigest>;
-    /** Compatibility mode for direct in-memory API callers only. */
-    allowUnproven?: boolean;
     /** Test seam for deterministic read/failure/cache coverage. */
     read?: ReadFile;
   }

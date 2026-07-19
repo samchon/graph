@@ -649,7 +649,14 @@ export const test_coverage_edge_cases = async () => {
   };
   const branchGraph = SamchonGraphMemory.from(
     branchDump,
-    SamchonGraphSourceReader.live(branchRoot),
+    new SamchonGraphSourceReader(branchRoot, {
+      texts: new Map(
+        ["src/a.ts", "src/b.ts", "test/impact.spec.ts"].map((file) => [
+          file,
+          fs.readFileSync(path.join(branchRoot, file), "utf8"),
+        ]),
+      ),
+    }),
   );
   TestValidator.equals("missing incoming edges default to empty", branchGraph.incoming("absent-node"), []);
 
@@ -892,6 +899,10 @@ export const test_coverage_edge_cases = async () => {
   } catch {
     // Windows without Developer Mode may deny symlink creation.
   }
+  const enumFile = path.join(path.dirname(signatureFile), "member.ts");
+  fs.writeFileSync(enumFile, ["VIEW,", "EDIT,", "OTHER,"].join("\n"));
+  const emptySignatureFile = path.join(path.dirname(signatureFile), "empty.ts");
+  fs.writeFileSync(emptySignatureFile, "");
   const { signatureOf } = await importLib<{
     signatureOf: (graph: SamchonGraphMemory, node: { file: string; name: string; external: boolean; evidence?: { file: string; startLine: number; endLine?: number }; signature?: string }) => string | undefined;
   }>("operations/signatureOf.js");
@@ -903,7 +914,13 @@ export const test_coverage_edge_cases = async () => {
       nodes: [],
       edges: [],
     },
-    SamchonGraphSourceReader.live(path.dirname(signatureFile)),
+    new SamchonGraphSourceReader(path.dirname(signatureFile), {
+      texts: new Map([
+        ["sample.ts", fs.readFileSync(signatureFile, "utf8")],
+        ["member.ts", fs.readFileSync(enumFile, "utf8")],
+        ["empty.ts", ""],
+      ]),
+    }),
   );
   TestValidator.equals("blank explicit signature falls back to source span", signatureOf(signatureGraph, {
     external: false,
@@ -918,8 +935,6 @@ export const test_coverage_edge_cases = async () => {
     name: "sample",
     evidence: { file: "sample.ts", startLine: 1, endLine: 3 },
   })?.includes(") {"), true);
-  const enumFile = path.join(path.dirname(signatureFile), "member.ts");
-  fs.writeFileSync(enumFile, ["VIEW,", "EDIT,", "OTHER,"].join("\n"));
   TestValidator.equals("a comma-ended declaration cannot absorb neighboring members", signatureOf(signatureGraph, {
     external: false,
     file: "member.ts",
@@ -932,8 +947,6 @@ export const test_coverage_edge_cases = async () => {
     name: "missing",
     evidence: { file: "missing.ts", startLine: 1 },
   }), undefined);
-  const emptySignatureFile = path.join(path.dirname(signatureFile), "empty.ts");
-  fs.writeFileSync(emptySignatureFile, "");
   TestValidator.equals("empty signature source span returns undefined", signatureOf(signatureGraph, {
     external: false,
     file: "empty.ts",

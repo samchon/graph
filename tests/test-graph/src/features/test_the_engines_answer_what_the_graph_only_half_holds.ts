@@ -259,7 +259,14 @@ const scenario_a_tour_over_a_graph_that_is_missing_its_evidence = async () => {
   const app = new SamchonGraphApplication(
     SamchonGraphMemory.from(
       dumpOf(root, nodes, edges),
-      SamchonGraphSourceReader.live(root),
+      new SamchonGraphSourceReader(root, {
+        texts: new Map([
+          [
+            "src/order/create.ts",
+            fs.readFileSync(path.join(root, "src/order/create.ts"), "utf8"),
+          ],
+        ]),
+      }),
     ),
   );
   const tour = (

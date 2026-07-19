@@ -13,6 +13,8 @@ interface NativeChild {
   process: ChildProcessWithoutNullStreams;
   stdoutChunks: string[];
   stderr: string;
+  exit: Promise<void>;
+  termination?: Promise<void>;
 }
 
 interface Pending {
@@ -34,6 +36,7 @@ export class TtscGraphClient implements IBulkGraphSession {
   private readonly args: readonly string[];
   private readonly requestTimeoutMs: number;
   private child: NativeChild | undefined;
+  private readonly ownedChildren = new Set<NativeChild>();
   private readonly pending = new Map<number, Pending>();
   private nextId = 1;
   private queue: Promise<void> = Promise.resolve();
@@ -140,27 +143,17 @@ export class TtscGraphClient implements IBulkGraphSession {
     }, options.signal);
   }
 
-  /** Close immediately even when a serialized refresh is stalled. */
+  /** Begin shutdown immediately and settle after every owned child exits. */
   public close(): Promise<void> {
     if (this.closing !== undefined) return this.closing;
     this.closed = true;
     const error = new Error("ttscgraph: session is closed");
     const child = this.child;
-    if (child === undefined) {
-      this.failPending(error);
-      this.closing = Promise.resolve();
-      return this.closing;
-    }
-    this.failChild(child, error);
-    this.closing = (async () => {
-      if (await waitForExit(child.process, 2_000)) return;
-      terminateChild(child.process, true);
-      /* c8 ignore start */
-      if (!(await waitForExit(child.process, 2_000))) {
-        throw new Error("ttscgraph: owned process did not exit after close");
-      }
-      /* c8 ignore stop */
-    })();
+    if (child !== undefined) this.failChild(child, error);
+    this.failPending(error);
+    this.closing = Promise.all(
+      [...this.ownedChildren].map((owned) => this.terminate(owned)),
+    ).then(() => undefined);
     return this.closing;
   }
 
@@ -229,8 +222,11 @@ export class TtscGraphClient implements IBulkGraphSession {
       process: spawned,
       stdoutChunks: [],
       stderr: "",
+      exit: exitOf(spawned),
     };
     this.child = child;
+    this.ownedChildren.add(child);
+    void child.exit.then(() => this.ownedChildren.delete(child));
     spawned.stdout.setEncoding("utf8");
     spawned.stderr.setEncoding("utf8");
     spawned.stdout.on("data", (chunk: string) => this.consume(child, chunk));
@@ -318,7 +314,18 @@ export class TtscGraphClient implements IBulkGraphSession {
     this.child = undefined;
     this.snapshot = undefined;
     this.failPending(error, child);
-    if (terminate) terminateChild(child.process);
+    if (terminate) void this.terminate(child);
+  }
+
+  private terminate(child: NativeChild): Promise<void> {
+    if (child.termination === undefined) {
+      child.termination = terminateChild(child.process, child.exit);
+      // A protocol failure retires the child before a caller necessarily asks
+      // to close the client. Keep the rejection observed here while preserving
+      // the original promise for close() to report.
+      void child.termination.catch(() => undefined);
+    }
+    return child.termination;
   }
 
   private failPending(error: Error, child?: NativeChild): void {
@@ -409,28 +416,27 @@ export namespace TtscGraphClient {
 
 function terminateChild(
   child: ChildProcessWithoutNullStreams,
-  forceNow = false,
-): void {
+  exit: Promise<void>,
+): Promise<void> {
   if (!child.stdin.destroyed) child.stdin.destroy();
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  try {
-    child.kill(forceNow ? "SIGKILL" : undefined);
-  } catch {
-    return;
-  }
-  if (forceNow) return;
-  const force = setTimeout(() => terminateChild(child, true), TERMINATION_GRACE_MS);
-  force.unref();
-  child.once("exit", () => clearTimeout(force));
+  return (async () => {
+    signalChild(child);
+    if (await waitForExit(exit, TERMINATION_GRACE_MS)) return;
+    signalChild(child, "SIGKILL");
+    /* c8 ignore start */
+    if (!(await waitForExit(exit, 2_000))) {
+      throw new Error(
+        "ttscgraph: owned process did not exit after forced termination",
+      );
+    }
+    /* c8 ignore stop */
+  })();
 }
 
 function waitForExit(
-  child: ChildProcessWithoutNullStreams,
+  exit: Promise<void>,
   timeoutMs: number,
 ): Promise<boolean> {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return Promise.resolve(true);
-  }
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value: boolean): void => {
@@ -438,15 +444,35 @@ function waitForExit(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      child.off("exit", exited);
-      child.off("close", exited);
       resolve(value);
     };
-    const exited = (): void => finish(true);
     const timer = setTimeout(() => finish(false), timeoutMs);
+    timer.unref();
+    void exit.then(() => finish(true));
+  });
+}
+
+function exitOf(child: ChildProcessWithoutNullStreams): Promise<void> {
+  return new Promise((resolve) => {
+    const exited = (): void => {
+      child.off("exit", exited);
+      child.off("close", exited);
+      resolve();
+    };
     child.once("exit", exited);
     child.once("close", exited);
   });
+}
+
+function signalChild(
+  child: ChildProcessWithoutNullStreams,
+  signal?: NodeJS.Signals,
+): void {
+  try {
+    child.kill(signal);
+  } catch {
+    return;
+  }
 }
 
 function cancelledError(signal?: AbortSignal, child?: NativeChild): Error {

@@ -60,9 +60,10 @@ const CAPABILITIES = [
   "diagnostics",
 ].filter((capability) => capability !== dropped);
 
-// Every workspace file the fake program loaded. The manifest must cover every
-// file the nodes below name, because that is exactly what the client checks.
+// Every workspace and bundled file the fake program loaded. The manifest must
+// cover every file the nodes below name, because that is what the client checks.
 const WORKSPACE_FILES = ["src/index.ts", "src/core/order.ts", "src/empty.ts"];
+const BUNDLED_FILES = ["bundled:///libs/lib.es2015.collection.d.ts"];
 
 const digestOf = (text) =>
   crypto.createHash("sha256").update(text).digest("hex");
@@ -85,7 +86,14 @@ const readProjectFile = (rel) => {
  * read still has a perfectly well-defined digest here.
  */
 const manifest = (drift) =>
-  WORKSPACE_FILES.map((file) => {
+  [...WORKSPACE_FILES, ...BUNDLED_FILES].map((file) => {
+    if (BUNDLED_FILES.includes(file)) {
+      return {
+        file,
+        checkerDigest: digestOf(`${file}:checker${drift ?? ""}`),
+        diskDigest: "",
+      };
+    }
     const text = readProjectFile(file);
     return {
       file,

@@ -79,9 +79,11 @@ export const test_source_reader_enforces_snapshot_identity_once = () => {
   TestValidator.equals("a provenance-free reader omits live source", none.lines("src/a.ts"), undefined);
   TestValidator.equals(
     "a parent traversal cannot read outside the project",
-    SamchonGraphSourceReader.live(root).lines(
-      path.relative(root, outside).replace(/\\/g, "/"),
-    ),
+    new SamchonGraphSourceReader(root, {
+      digests: new Map([
+        [outside, { checkerDigest: sha("export const secret = 2;\n"), diskDigest: "" }],
+      ]),
+    }).lines(path.relative(root, outside).replace(/\\/g, "/")),
     undefined,
   );
 
@@ -90,7 +92,11 @@ export const test_source_reader_enforces_snapshot_identity_once = () => {
     fs.symlinkSync(outside, link, "file");
     TestValidator.equals(
       "a symlink escape cannot read outside the project",
-      SamchonGraphSourceReader.live(root).lines("src/linked.ts"),
+      new SamchonGraphSourceReader(root, {
+        digests: new Map([
+          [link, { checkerDigest: sha("export const secret = 2;\n"), diskDigest: "" }],
+        ]),
+      }).lines("src/linked.ts"),
       undefined,
     );
   } catch {

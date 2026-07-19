@@ -5,6 +5,8 @@ interface IRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout | undefined;
+  signal?: AbortSignal;
+  abort?: () => void;
 }
 
 export class LspClient {
@@ -49,25 +51,37 @@ export class LspClient {
     method: string,
     params: unknown,
     timeoutMs?: number,
+    signal?: AbortSignal,
   ): Promise<T> {
+    if (signal?.aborted) throw abortedError(method);
     // Requests are unlimited when neither the client nor this call specifies a
-    // deadline. Bounded callers can still prevent a non-answering server from
-    // holding an experiment forever.
+    // deadline or cancellation signal. Bounded callers can still prevent a
+    // non-answering server from holding an experiment or resident shutdown
+    // forever without changing the normal unlimited request contract.
     const id = this.nextId++;
     const payload = { jsonrpc: "2.0", id, method, params };
     const promise = new Promise<T>((resolve, reject) => {
       const effectiveTimeoutMs = timeoutMs ?? this.timeoutMs;
-      const timer = effectiveTimeoutMs === undefined
-        ? undefined
-        : setTimeout(() => {
-            this.pending.delete(id);
-            reject(new Error(`LSP request timed out: ${method}`));
-          }, effectiveTimeoutMs);
-      this.pending.set(id, {
+      const pending: IRequest = {
         resolve: (value) => resolve(value as T),
         reject,
-        timer,
-      });
+        timer: undefined,
+        signal,
+      };
+      this.pending.set(id, pending);
+      if (effectiveTimeoutMs !== undefined) {
+        pending.timer = setTimeout(() => {
+          this.deletePending(id, pending);
+          reject(new Error(`LSP request timed out: ${method}`));
+        }, effectiveTimeoutMs);
+      }
+      if (signal !== undefined) {
+        pending.abort = () => {
+          this.deletePending(id, pending);
+          reject(abortedError(method));
+        };
+        signal.addEventListener("abort", pending.abort, { once: true });
+      }
     });
     this.write(payload);
     return promise;
@@ -200,8 +214,7 @@ export class LspClient {
     if (message.id !== undefined) {
       const pending = this.pending.get(message.id);
       if (pending === undefined) return;
-      this.pending.delete(message.id);
-      if (pending.timer !== undefined) clearTimeout(pending.timer);
+      this.deletePending(message.id, pending);
       if (message.error !== undefined) {
         pending.reject(
           new Error(message.error.message ?? "LSP request failed."),
@@ -219,9 +232,22 @@ export class LspClient {
 
   private rejectAll(error: Error): void {
     for (const [id, request] of this.pending) {
-      this.pending.delete(id);
-      if (request.timer !== undefined) clearTimeout(request.timer);
+      this.deletePending(id, request);
       request.reject(error);
     }
   }
+
+  private deletePending(id: number, request: IRequest): void {
+    this.pending.delete(id);
+    if (request.timer !== undefined) clearTimeout(request.timer);
+    if (request.abort !== undefined) {
+      request.signal!.removeEventListener("abort", request.abort);
+    }
+  }
+}
+
+function abortedError(method: string): Error {
+  const error = new Error(`LSP request aborted: ${method}`);
+  error.name = "AbortError";
+  return error;
 }

@@ -177,12 +177,16 @@ export class TtscGraphClient implements IBulkGraphSession {
         signal,
       };
       pending.timer.unref();
+      // Own the request before installing the listener. Abort dispatch is
+      // synchronous, so a signal that aborts during registration must find and
+      // settle this pending entry instead of retiring the child around an
+      // orphaned promise.
+      this.pending.set(id, pending);
       if (signal !== undefined) {
         pending.abort = () =>
           this.failChild(child, cancelledError(signal, child));
         signal.addEventListener("abort", pending.abort, { once: true });
       }
-      this.pending.set(id, pending);
       if (signal?.aborted) {
         pending.abort!();
         return;
@@ -190,10 +194,14 @@ export class TtscGraphClient implements IBulkGraphSession {
       child.process.stdin.write(`${JSON.stringify({ id })}\n`, (error) => {
         if (error === null || error === undefined) return;
         if (this.pending.get(id) !== pending) return;
+        /* c8 ignore start -- Windows keeps the inherited named-pipe read
+         * handle until child exit. This callback-specific EPIPE path is
+         * POSIX-only and is exercised there. */
         this.failChild(
           child,
           new Error(`ttscgraph: could not request snapshot: ${error.message}`),
         );
+        /* c8 ignore stop */
       });
     });
   }
@@ -341,6 +349,7 @@ export class TtscGraphClient implements IBulkGraphSession {
     pending: Pending,
     result: ITtscGraphSnapshot | Error,
   ): void {
+    /* c8 ignore next -- callers retrieved this entry or are iterating it. */
     if (this.pending.get(id) !== pending) return;
     this.pending.delete(id);
     clearTimeout(pending.timer);
@@ -365,11 +374,13 @@ export class TtscGraphClient implements IBulkGraphSession {
     let settled = false;
     const result = new Promise<T>((resolve, reject) => {
       resolveResult = (value) => {
+        /* c8 ignore next -- cancelled queued tasks never call this resolver. */
         if (settled) return;
         settled = true;
         resolve(value);
       };
       rejectResult = (error) => {
+        /* c8 ignore next -- cancelled queued tasks never call this rejecter. */
         if (settled) return;
         settled = true;
         reject(error);
@@ -422,6 +433,7 @@ function terminateChild(
   return (async () => {
     signalChild(child);
     if (await waitForExit(exit, TERMINATION_GRACE_MS)) return;
+    /* c8 ignore next -- Windows exits on the first signal; POSIX tests this. */
     signalChild(child, "SIGKILL");
     /* c8 ignore start */
     if (!(await waitForExit(exit, 2_000))) {
@@ -468,11 +480,14 @@ function signalChild(
   child: ChildProcessWithoutNullStreams,
   signal?: NodeJS.Signals,
 ): void {
+  /* c8 ignore start -- an owned handle and fixed valid signals make throwing
+   * unreachable; kill reports failure as false or through child exit state. */
   try {
     child.kill(signal);
   } catch {
     return;
   }
+  /* c8 ignore stop */
 }
 
 function cancelledError(signal?: AbortSignal, child?: NativeChild): Error {

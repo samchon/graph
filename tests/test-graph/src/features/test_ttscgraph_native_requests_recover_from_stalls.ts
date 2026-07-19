@@ -42,14 +42,22 @@ export const test_ttscgraph_native_requests_recover_from_stalls = async () => {
     closeRequestLog,
   );
   const stalled = closeClient.refresh();
+  const queuedBehindStall = closeClient.refresh();
   await waitForFile(closeRequestLog);
   const closed = await Promise.race([
-    Promise.allSettled([stalled, closeClient.close()]),
+    Promise.allSettled([
+      stalled,
+      queuedBehindStall,
+      closeClient.close(),
+    ]),
     delay(1_000).then(() => "timeout" as const),
   ]);
   TestValidator.predicate(
-    "close settles without queueing behind a stalled refresh",
-    closed !== "timeout" && closed[0]?.status === "rejected",
+    "close rejects active and queued refreshes without waiting for the stall",
+    closed !== "timeout" &&
+      closed[0]?.status === "rejected" &&
+      closed[1]?.status === "rejected" &&
+      closed[2]?.status === "fulfilled",
   );
 
   /* c8 ignore next -- Windows terminates child processes unconditionally. */
@@ -84,6 +92,123 @@ export const test_ttscgraph_native_requests_recover_from_stalls = async () => {
     await abortClient.close();
   }
 
+  const queuedAbortRoot = fixture();
+  const queuedAbortLog = path.join(queuedAbortRoot, "queued-abort-request.txt");
+  const queuedAbortClient = create(
+    queuedAbortRoot,
+    path.join(queuedAbortRoot, "first-child.txt"),
+    5_000,
+    queuedAbortLog,
+  );
+  const active = queuedAbortClient.refresh();
+  try {
+    await waitForFile(queuedAbortLog);
+    const controller = new AbortController();
+    const queued = queuedAbortClient.refresh({ signal: controller.signal });
+    controller.abort(new Error("queued cancellation"));
+    const error = await rejectionOf(queued);
+    TestValidator.predicate(
+      "an aborted queued refresh settles before it owns a child",
+      error.name === "AbortError" && error.message.includes("queued cancellation"),
+    );
+    TestValidator.equals(
+      "queued cancellation writes no native request",
+      fs.readFileSync(queuedAbortLog, "utf8"),
+      "1\n",
+    );
+  } finally {
+    const closing = queuedAbortClient.close();
+    await rejectionOf(active);
+    await closing;
+  }
+
+  const immediateRoot = fixture();
+  const immediateMarker = path.join(immediateRoot, "pre-aborted-child.txt");
+  const immediate = create(immediateRoot, immediateMarker, 5_000);
+  const immediateController = new AbortController();
+  immediateController.abort({
+    toString: () => {
+      throw new Error("reason cannot be rendered");
+    },
+  });
+  const immediateError = await rejectionOf(
+    immediate.refresh({ signal: immediateController.signal }),
+  );
+  TestValidator.predicate(
+    "an already-aborted refresh fails without rendering a hostile reason",
+    immediateError.name === "AbortError" &&
+      immediateError.message === "ttscgraph: snapshot request cancelled",
+  );
+  await immediate.close();
+  TestValidator.equals(
+    "an already-aborted refresh spawns no child",
+    fs.existsSync(immediateMarker),
+    false,
+  );
+
+  const handoffRoot = fixture();
+  const handoffClient = new TtscGraphClient({
+    root: handoffRoot,
+    command: process.execPath,
+    args: [GraphPaths.fakeTtscGraphServer],
+  });
+  try {
+    const controller = new AbortController();
+    const error = await rejectionOf(
+      handoffClient.refresh({ signal: abortAtQueueHandoff(controller) }),
+    );
+    TestValidator.predicate(
+      "an abort at the queue-to-request handoff is observed before spawn",
+      error.name === "AbortError" && error.message.includes("handoff cancellation"),
+    );
+  } finally {
+    await handoffClient.close();
+  }
+
+  const registrationRoot = fixture();
+  const registrationClient = new TtscGraphClient({
+    root: registrationRoot,
+    command: process.execPath,
+    args: [GraphPaths.fakeTtscGraphServer],
+    requestTimeoutMs: 5_000,
+  });
+  try {
+    const controller = new AbortController();
+    const signal = abortDuringRequestRegistration(controller);
+    const error = await Promise.race([
+      rejectionOf(registrationClient.refresh({ signal })),
+      delay(1_000).then(() => {
+        throw new Error("post-registration abort left the refresh pending");
+      }),
+    ]);
+    TestValidator.predicate(
+      "an abort dispatched during request registration settles its owned request",
+      error.name === "AbortError" &&
+        error.message === "ttscgraph: snapshot request cancelled",
+    );
+  } finally {
+    await registrationClient.close();
+  }
+
+  const reorderedCapabilities = new TtscGraphClient({
+    root: fixture(),
+    command: process.execPath,
+    args: [
+      GraphPaths.fakeTtscGraphServer,
+      "--reverse-capabilities",
+      "--duplicate-capability",
+    ],
+  });
+  try {
+    TestValidator.equals(
+      "capability identity tolerates reordered repeated claims on both sides",
+      (await reorderedCapabilities.refresh()).generation,
+      1,
+    );
+  } finally {
+    await reorderedCapabilities.close();
+  }
+
   for (const value of [0, -1, 1.5, Number.NaN, 2_147_483_648]) {
     let error: unknown;
     try {
@@ -101,6 +226,50 @@ export const test_ttscgraph_native_requests_recover_from_stalls = async () => {
       error instanceof TypeError,
     );
   }
+};
+
+const abortAtQueueHandoff = (controller: AbortController): AbortSignal =>
+  new Proxy(controller.signal, {
+    get(target, property) {
+      if (property === "removeEventListener") {
+        return (
+          type: string,
+          listener: EventListenerOrEventListenerObject | null,
+          options?: boolean | EventListenerOptions,
+        ): void => {
+          target.removeEventListener(type, listener, options);
+          controller.abort("handoff cancellation");
+        };
+      }
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+
+const abortDuringRequestRegistration = (
+  controller: AbortController,
+): AbortSignal => {
+  let registrations = 0;
+  return new Proxy(controller.signal, {
+    get(target, property) {
+      if (property === "reason") return undefined;
+      if (property === "addEventListener") {
+        return (
+          type: string,
+          listener: EventListenerOrEventListenerObject | null,
+          options?: boolean | AddEventListenerOptions,
+        ): void => {
+          target.addEventListener(type, listener, options);
+          registrations += 1;
+          if (registrations === 2) {
+            controller.abort("registration cancellation");
+          }
+        };
+      }
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
 };
 
 const create = (

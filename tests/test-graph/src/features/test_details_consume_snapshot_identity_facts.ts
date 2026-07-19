@@ -45,6 +45,7 @@ export const test_details_consume_snapshot_identity_facts = async () => {
             signature: "execute(input: Input): Output",
           },
           { name: "label", kind: "property", line: 12 },
+          { name: "status", kind: "property", signature: "status: State" },
         ],
       },
     ],
@@ -75,6 +76,7 @@ export const test_details_consume_snapshot_identity_facts = async () => {
       signature: "execute(input: Input): Output",
     },
     { name: "label", kind: "property", line: 12 },
+    { name: "status", kind: "property", signature: "status: State" },
   ]);
   TestValidator.predicate(
     "details audit describes complete identity and sliced fan-out separately",

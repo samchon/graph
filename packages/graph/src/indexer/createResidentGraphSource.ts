@@ -116,10 +116,6 @@ export function createResidentGraphSource(
     const diagnostics: ISamchonGraphDiagnostic[] = [];
     const warnings: string[] = [];
     const sources = new Map<string, string>();
-    // Files a strict provider proved. Kept apart from `sources` for the same
-    // reason as in `buildLspGraph`: a bulk provider publishes a manifest of what
-    // its checker read, never the text, so there is no text to put here.
-    const strictFiles = new Set<string>();
     const generations = new Map(current.generations);
 
     for (const [language, session] of current.sessions) {
@@ -139,9 +135,6 @@ export function createResidentGraphSource(
         // forward: a diagnostic belongs to the generation that produced it.
         diagnostics.push(...refresh.snapshot.diagnostics);
         warnings.push(...refresh.snapshot.warnings);
-        for (const file of refresh.snapshot.sources.keys()) {
-          strictFiles.add(file);
-        }
         generations.set(language, refresh.generation);
         continue;
       }
@@ -174,7 +167,10 @@ export function createResidentGraphSource(
 
     const finalized = mergeGraphSlices({
       root,
-      files: [...new Set([...sources.keys(), ...strictFiles])],
+      // Bulk slices already contain compiler-resolved export edges. Reopening
+      // their manifest would break snapshot ownership and can target virtual or
+      // external identities; only generic source text belongs in this pass.
+      files: [...sources.keys()],
       genericNodes: nodes,
       genericEdges: edges,
       strictNodes,

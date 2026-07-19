@@ -116,6 +116,7 @@ export function graphSitterParts(
   }
 
   connectProjectWideCppOwners(declarationsByFile, edges);
+  connectProjectWideSwiftOwners(declarationsByFile, edges);
 
   for (const [rel, declarations] of declarationsByFile) {
     const abs = absolutePathByRelativePath.get(rel)!;
@@ -522,6 +523,8 @@ function declarationHeader(
   if (language === "kotlin")
     return KotlinDeclarations.kotlinDeclarationHeader(lines, start);
   if (language === "php") return PhpDeclarations.phpDeclarationHeader(lines, start);
+  if (language === "scala")
+    return ScalaDeclarations.scalaDeclarationHeader(lines, start);
   if (language === "swift")
     return SwiftDeclarations.swiftDeclarationHeader(lines, start);
   return lines[start]!;
@@ -644,6 +647,39 @@ function connectProjectWideCppOwners(
       exact.get(declaration.ownerName) ?? aliases.get(declaration.ownerName) ?? [],
     );
     if (owner === undefined) continue;
+    declaration.ownerId = owner.node.id;
+    edges.push({
+      from: owner.node.id,
+      to: declaration.node.id,
+      kind: "contains",
+      evidence: declaration.node.evidence,
+    });
+  }
+}
+
+/** Connect a Swift extension to its uniquely declared cross-file receiver. */
+function connectProjectWideSwiftOwners(
+  declarationsByFile: ReadonlyMap<string, IDeclaration[]>,
+  edges: ISamchonGraphEdge[],
+): void {
+  const declarations = [...declarationsByFile.values()]
+    .flat()
+    .filter((declaration) => declaration.node.language === "swift");
+  const types = new Map<string, IDeclaration[]>();
+  for (const declaration of declarations) {
+    if (!isSwiftExtendable(declaration.node.kind)) continue;
+    push(
+      types,
+      declaration.node.qualifiedName ?? declaration.node.name,
+      declaration,
+    );
+  }
+  for (const declaration of declarations) {
+    if (declaration.ownerId !== undefined || declaration.ownerName === undefined)
+      continue;
+    const candidates = types.get(declaration.ownerName);
+    if (candidates?.length !== 1) continue;
+    const owner = candidates[0]!;
     declaration.ownerId = owner.node.id;
     edges.push({
       from: owner.node.id,

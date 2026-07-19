@@ -48,6 +48,10 @@ const splitFrame = args.includes("--split-frame");
 const nonJson = args.includes("--nonjson");
 const unknownId = args.includes("--unknown-id");
 const firstUnchanged = args.includes("--first-unchanged");
+const closeStdinAfterFirst = args.includes("--close-stdin-after-first");
+const lateAfterNonJson = args.includes("--late-after-nonjson");
+const reverseCapabilities = args.includes("--reverse-capabilities");
+const duplicateCapability = args.includes("--duplicate-capability");
 const envelopeCapabilityMismatch = args.includes(
   "--envelope-capability-mismatch",
 );
@@ -59,6 +63,8 @@ const CAPABILITIES = [
   "diskDigests",
   "diagnostics",
 ].filter((capability) => capability !== dropped);
+if (reverseCapabilities) CAPABILITIES.reverse();
+if (duplicateCapability) CAPABILITIES.push(CAPABILITIES[0]);
 
 // Every workspace and bundled file the fake program loaded. The manifest must
 // cover every file the nodes below name, because that is what the client checks.
@@ -225,7 +231,9 @@ if (exitSilently) {
 // what has to survive it.
 const emit = (response) => {
   if (nonJson) {
-    process.stdout.write("this is not a ttscgraph frame\n");
+    process.stdout.write("this is not a ttscgraph frame\n", () => {
+      if (lateAfterNonJson) process.stdout.write("late retired output\n");
+    });
     return;
   }
   const routed = unknownId ? { ...response, id: response.id + 1000 } : response;
@@ -322,6 +330,12 @@ input.on("line", (line) => {
     });
   }
   emit(response);
+  if (closeStdinAfterFirst && requests === 1) {
+    input.close();
+    process.stdin.destroy();
+    fs.closeSync(0);
+    setInterval(() => undefined, 1_000);
+  }
 });
 input.on("close", () => {
   if (marker !== undefined) fs.writeFileSync(marker, "closed\n");

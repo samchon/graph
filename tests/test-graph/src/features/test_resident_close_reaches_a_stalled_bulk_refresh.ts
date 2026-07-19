@@ -96,4 +96,55 @@ export const test_resident_close_reaches_a_stalled_bulk_refresh = async () => {
     closeResult.status,
     "fulfilled",
   );
+
+  let failedCloseCalls = 0;
+  const unpublished: IBulkGraphSession = {
+    kind: "bulk",
+    language: "typescript",
+    root,
+    generation: 0,
+    current: undefined,
+    refresh: async () => {
+      throw new Error("unpublished session cannot refresh");
+    },
+    close: () => {
+      failedCloseCalls += 1;
+      return Promise.reject("synthetic close failure");
+    },
+  };
+  const failed = createResidentGraphSource(
+    { cwd: root, languages: ["typescript"] },
+    {
+      buildLspGraph: async () => ({
+        dump: {
+          project: root,
+          languages: ["typescript"],
+          indexer: "lsp",
+          nodes: [],
+          edges: [],
+        },
+        warnings: [],
+        sessions: new Map([["typescript", unpublished]]),
+        sources: new Map(),
+      }),
+    },
+  );
+  await failed.load();
+  const firstFailedClose = failed.close();
+  const repeatedFailedClose = failed.close();
+  let closeError: unknown;
+  try {
+    await firstFailedClose;
+  } catch (error) {
+    closeError = error;
+  }
+  TestValidator.predicate(
+    "resident close is idempotent even when the owned provider rejects",
+    firstFailedClose === repeatedFailedClose && failedCloseCalls === 1,
+  );
+  TestValidator.predicate(
+    "a non-Error provider close failure is normalized and reported",
+    closeError instanceof Error &&
+      closeError.message === "synthetic close failure",
+  );
 };

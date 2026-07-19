@@ -67,12 +67,6 @@ export async function buildLspGraph(
   const staticFallbackLanguages: GraphLanguage[] = [];
   const sessions = new Map<GraphLanguage, ILspSession | IBulkGraphSession>();
   const sources = new Map<string, string>();
-  // Files a strict provider proved, held apart from `sources` because only
-  // `sources` carries text and a strict provider deliberately hands over none.
-  // Both sets name files the build indexed; only one of them can answer "what
-  // did this text say", and the freshness hashes that ask that question already
-  // skip every bulk language.
-  const strictFiles = new Set<string>();
   const strictDigests = new Map<
     string,
     IBulkGraphSession.ISourceDigest
@@ -127,7 +121,6 @@ export async function buildLspGraph(
               // text for — deriving export edges — is work this provider has
               // already done against the real checker.
               for (const [file, digest] of result.sources) {
-                strictFiles.add(file);
                 strictDigests.set(file, digest);
               }
               lspNodeCount += result.nodes.length;
@@ -252,7 +245,10 @@ export async function buildLspGraph(
 
     const finalized = mergeGraphSlices({
       root,
-      files: [...new Set([...sources.keys(), ...strictFiles])],
+      // Only generic lanes need source-derived export edges. Strict providers
+      // already publish compiler-resolved exports, and their complete manifest
+      // can contain external or virtual identities that must never be reopened.
+      files: [...sources.keys()],
       genericNodes: nodes,
       genericEdges: edges,
       strictNodes,
@@ -458,19 +454,25 @@ async function openLanguageSession(
   });
 
   try {
-    await client.request("initialize", {
-      processId: process.pid,
-      rootUri: fileUri(root),
-      initializationOptions: options.initializationOptions,
-      capabilities: {
-        window: { workDoneProgress: true },
-        textDocument: {
-          documentSymbol: { hierarchicalDocumentSymbolSupport: true },
-          references: { dynamicRegistration: false },
+    await client.request(
+      "initialize",
+      {
+        processId: process.pid,
+        rootUri: fileUri(root),
+        initializationOptions: options.initializationOptions,
+        capabilities: {
+          window: { workDoneProgress: true },
+          textDocument: {
+            documentSymbol: { hierarchicalDocumentSymbolSupport: true },
+            references: { dynamicRegistration: false },
+          },
         },
+        workspaceFolders: [{ uri: fileUri(root), name: path.basename(root) }],
       },
-      workspaceFolders: [{ uri: fileUri(root), name: path.basename(root) }],
-    });
+      undefined,
+      options.signal,
+    );
+    throwIfAborted(options.signal, "initialization");
     client.notify("initialized", {});
 
     const quietMs = options.lspReadyQuietMs ?? 1_500;
@@ -491,6 +493,7 @@ async function openLanguageSession(
           () => activeProgress.size,
           quietMs,
           options.lspReadyTimeoutMs,
+          options.signal,
         ),
     };
     const didOpenFence = session.progressVersion!();
@@ -545,6 +548,7 @@ async function waitForIndexing(
   activeProgressCount: () => number,
   quietMs: number,
   timeoutMs: number | undefined,
+  signal: AbortSignal | undefined,
 ): Promise<void> {
   const start = Date.now();
   // A work-done `begin` remains active until its matching `end`, even when the
@@ -563,6 +567,7 @@ async function waitForIndexing(
   // A lazy reference request uses `allowStart=false`; it waits only if the
   // request advanced the generation, avoiding another unconditional delay.
   for (;;) {
+    throwIfAborted(signal, "indexing readiness");
     const now = Date.now();
     if (timeoutMs !== undefined && now - start >= timeoutMs) return;
     if (activeProgressCount() === 0) {
@@ -578,6 +583,16 @@ async function waitForIndexing(
       setTimeout(resolve, 50);
     });
   }
+}
+
+function throwIfAborted(
+  signal: AbortSignal | undefined,
+  phase: string,
+): void {
+  if (signal?.aborted !== true) return;
+  const error = new Error(`LSP request aborted: ${phase}`);
+  error.name = "AbortError";
+  throw error;
 }
 
 function convertDiagnostic(file: string, diagnostic: IDiagnostic): ISamchonGraphDiagnostic {

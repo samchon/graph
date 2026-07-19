@@ -5,7 +5,12 @@ import { pathToFileURL } from "node:url";
 import { GraphPaths } from "../internal/GraphPaths";
 
 interface ILspClient {
-  request<T>(method: string, params: unknown, timeoutMs?: number): Promise<T>;
+  request<T>(
+    method: string,
+    params: unknown,
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ): Promise<T>;
   close(): Promise<void>;
 }
 
@@ -80,4 +85,24 @@ export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
     // new handshake with a process that is gone.
     await abrupt.close();
     await stubborn.close();
+
+    // An already-cancelled request never enters the wire or waits for the
+    // otherwise-unlimited default deadline. The client still owns its child and
+    // closes it normally, which is the negative twin of aborting an in-flight
+    // request in the resident-source regression.
+    const cancelled = new LspClient(process.execPath, [
+      GraphPaths.fakeLspServer,
+    ]);
+    const controller = new AbortController();
+    controller.abort();
+    let cancellation: Error | undefined;
+    await cancelled
+      .request("initialize", {}, undefined, controller.signal)
+      .catch((error: Error) => void (cancellation = error));
+    TestValidator.equals(
+      "an already-cancelled unlimited request rejects as an abort",
+      cancellation?.name,
+      "AbortError",
+    );
+    await cancelled.close();
   };

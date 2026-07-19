@@ -4,6 +4,7 @@ import {
   buildGraphDump,
   SamchonGraphApplication,
   SamchonGraphMemory,
+  SamchonGraphSourceReader,
 } from "@samchon/graph";
 import type {
   ISamchonGraphDetails,
@@ -259,6 +260,9 @@ const scenario_a_doc_comment_at_every_boundary = async () => {
     ` * ${"a very long first sentence that runs well past what an index should carry ".repeat(4)}and then finally stops.`,
     " */",
     "export function tooLong(): void {}",
+    "",
+    "/** */",
+    "export function emptyDoc(): void {}",
   ]);
   const app = new SamchonGraphApplication(
     await buildGraph({ cwd: root, mode: "static", languages: ["typescript"] }),
@@ -268,7 +272,10 @@ const scenario_a_doc_comment_at_every_boundary = async () => {
       question: "what do these do",
       draft: { reason: "Details.", type: "details" },
       review: "Details.",
-      request: { type: "details", handles: ["first", "noPeriod", "tooLong"] },
+      request: {
+        type: "details",
+        handles: ["first", "noPeriod", "tooLong", "emptyDoc"],
+      },
     })
   ).result as ISamchonGraphDetails;
   const docOf = (name: string): string | undefined =>
@@ -288,6 +295,66 @@ const scenario_a_doc_comment_at_every_boundary = async () => {
   TestValidator.predicate(
     "and a sentence that runs away is cut, not carried",
     (docOf("tooLong")?.length ?? 0) <= 201 && docOf("tooLong")?.endsWith("…") === true,
+  );
+  TestValidator.equals(
+    "an empty doc block contributes no invented summary",
+    docOf("emptyDoc"),
+    undefined,
+  );
+
+  const malformed = new SamchonGraphApplication(
+    SamchonGraphMemory.from(
+      {
+        project: root,
+        languages: ["typescript"],
+        indexer: "lsp",
+        nodes: [
+          {
+            id: "src/orphaned.ts#orphanedClose:function",
+            kind: "function",
+            language: "typescript",
+            name: "orphanedClose",
+            file: "src/orphaned.ts",
+            external: false,
+            evidence: { startLine: 2 },
+          },
+          {
+            id: "src/stale.ts#stale:function",
+            kind: "function",
+            language: "typescript",
+            name: "stale",
+            file: "src/stale.ts",
+            external: false,
+            evidence: { startLine: 20 },
+          },
+        ],
+        edges: [],
+      },
+      new SamchonGraphSourceReader(root, {
+        texts: new Map([
+          ["src/orphaned.ts", "*/\nexport function orphanedClose(): void {}\n"],
+          [
+            "src/stale.ts",
+            "/** Documentation for the declaration actually in this file. */\nexport function actual(): void {}\n",
+          ],
+        ]),
+      }),
+    ),
+  );
+  const malformedDetails = (
+    await malformed.inspect_code_graph({
+      question: "do malformed spans carry documentation",
+      draft: { reason: "Details.", type: "details" },
+      review: "Details.",
+      request: {
+        type: "details",
+        handles: ["orphanedClose", "stale"],
+      },
+    })
+  ).result as ISamchonGraphDetails;
+  TestValidator.predicate(
+    "orphaned closers and stale spans cannot borrow unrelated documentation",
+    malformedDetails.nodes.every((node) => node.doc === undefined),
   );
 };
 

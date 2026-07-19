@@ -30,6 +30,7 @@ const options = {
   javaFlat: false,
   omitChildren: false,
   progress: false,
+  hangProgressLifecycle: false,
   progressLifecycle: false,
   referenceProgressLifecycle: false,
   rustImpls: false,
@@ -55,6 +56,9 @@ if (process.env.SAMCHON_GRAPH_FAKE_LSP_ARGS_FILE) {
 }
 if (process.env.SAMCHON_GRAPH_FAKE_LSP_CWD_FILE) {
   fs.writeFileSync(process.env.SAMCHON_GRAPH_FAKE_LSP_CWD_FILE, process.cwd());
+}
+if (process.env.SAMCHON_GRAPH_FAKE_LSP_PID_FILE) {
+  fs.writeFileSync(process.env.SAMCHON_GRAPH_FAKE_LSP_PID_FILE, String(process.pid));
 }
 // Delay only the FIRST textDocument/references response by this many ms, then
 // answer the rest immediately — models a server that builds its reference index
@@ -127,6 +131,8 @@ for (const arg of process.argv.slice(2)) {
     options.omitChildren = true;
   } else if (arg === "--progress") {
     options.progress = true;
+  } else if (arg === "--hang-progress-lifecycle") {
+    options.hangProgressLifecycle = true;
   } else if (arg === "--progress-lifecycle") {
     options.progressLifecycle = true;
   } else if (arg.startsWith("--late-progress-lifecycle=")) {
@@ -196,7 +202,15 @@ process.stdin.on("data", (chunk) => {
 });
 
 function handle(message) {
-  if (message.method === hangMethod) return;
+  if (message.method === hangMethod) {
+    if (process.env.SAMCHON_GRAPH_FAKE_LSP_HANG_FILE) {
+      fs.writeFileSync(
+        process.env.SAMCHON_GRAPH_FAKE_LSP_HANG_FILE,
+        message.method,
+      );
+    }
+    return;
+  }
   if (message.method === "initialize") {
     if (options.exitOnInitialize) process.exit(7);
     if (options.stderr) process.stderr.write("fake-lsp progress\n");
@@ -251,6 +265,20 @@ function handle(message) {
           value: { kind: "end" },
         });
       }, 500);
+    }
+    if (options.hangProgressLifecycle && !progressLifecycleStarted) {
+      progressLifecycleStarted = true;
+      request("window/workDoneProgress/create", { token: "stalled-index" });
+      notify("$/progress", {
+        token: "stalled-index",
+        value: { kind: "begin", title: "indexing forever" },
+      });
+      if (process.env.SAMCHON_GRAPH_FAKE_LSP_PROGRESS_FILE) {
+        fs.writeFileSync(
+          process.env.SAMCHON_GRAPH_FAKE_LSP_PROGRESS_FILE,
+          "started",
+        );
+      }
     }
     if (lateProgressLifecycleMs > 0 && !progressLifecycleStarted) {
       // csharp-ls may acknowledge didOpen, then begin solution loading well

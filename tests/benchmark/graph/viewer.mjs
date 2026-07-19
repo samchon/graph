@@ -30,7 +30,6 @@ const PUBLIC_GRAPH_DIR = path.join(REPO_ROOT, "tests", "benchmark", "results", "
 
 /** Longest shared prefix of POSIX-normalized directories. */
 function commonRoot(directories) {
-  if (directories.length === 0) return "";
   let parts = posix(directories[0]).split("/");
   const caseInsensitive = directories.every(isWindowsPath);
   for (const directory of directories.slice(1)) {

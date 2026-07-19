@@ -46,7 +46,7 @@ async function validateResolutionEvidence(): Promise<void> {
       "}",
       "class Caller {",
       "  misroute() { foreign(); }",
-      "  inherited() { super.foreign(); }",
+      "  inherited() { super.foreign(); base.foreign(); }",
       "}",
       "function unknownReceiver(client: unknown) { client.foreign(); }",
       "function topLevelCannotCallMethod() { foreign(); }",

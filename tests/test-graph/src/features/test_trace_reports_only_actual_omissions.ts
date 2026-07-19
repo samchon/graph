@@ -2,13 +2,19 @@ import { TestValidator } from "@nestia/e2e";
 import {
   SamchonGraphApplication,
   SamchonGraphMemory,
+  SamchonGraphSourceReader,
   type ISamchonGraphDump,
   type ISamchonGraphTrace,
 } from "@samchon/graph";
 
 /** Trace existence and completeness are separate facts. */
 export const test_trace_reports_only_actual_omissions = async () => {
-  const graph = SamchonGraphMemory.from(dump());
+  const graph = SamchonGraphMemory.from(
+    dump(),
+    new SamchonGraphSourceReader("/trace-truth", {
+      texts: new Map([["src/dispatch.ts", "run(): void;\n"]]),
+    }),
+  );
   const app = new SamchonGraphApplication(graph);
   const inspect = async (
     request: ISamchonGraphTrace.IRequest,
@@ -70,6 +76,11 @@ export const test_trace_reports_only_actual_omissions = async () => {
     (directDispatch.result as ISamchonGraphTrace).path?.map((entry) => entry.id),
     [DISPATCH_BASE, DISPATCH_IMPLEMENTATIONS[12]!],
   );
+  TestValidator.equals(
+    "a resolved path keeps the implementation signature held by the snapshot",
+    (directDispatch.result as ISamchonGraphTrace).path?.[1]?.signature,
+    "run(): void;",
+  );
 
   const boundedDispatch = await inspect({
     type: "trace",
@@ -129,7 +140,13 @@ const dump = (): ISamchonGraphDump => ({
     ...CHAIN.map((id, index) => node(id, `step${String(index)}`)),
     node(DISPATCH_BASE, "Base.run", "method"),
     ...DISPATCH_IMPLEMENTATIONS.flatMap((id, index) => [
-      node(id, `Impl${String(index)}.run`, "method"),
+      node(
+        id,
+        `Impl${String(index)}.run`,
+        "method",
+        false,
+        index === 12,
+      ),
       node(`${id}.body`, `body${String(index)}`),
     ]),
     node(EXTERNAL_DISPATCH_BASE, "ExternalBase.run", "method"),
@@ -163,6 +180,7 @@ const node = (
   name: string,
   kind: ISamchonGraphDump.INode["kind"] = "function",
   external = false,
+  withEvidence = false,
 ): ISamchonGraphDump.INode => ({
   id,
   kind,
@@ -170,4 +188,5 @@ const node = (
   name,
   file: id.slice(0, id.indexOf("#")),
   external,
+  ...(withEvidence ? { evidence: { startLine: 1, endLine: 1 } } : {}),
 });

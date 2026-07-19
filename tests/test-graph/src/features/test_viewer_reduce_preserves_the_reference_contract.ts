@@ -145,6 +145,57 @@ export const test_viewer_reduce_preserves_the_reference_contract = () => {
     ["file.ts", "file.ts"],
   );
 
+  const posixRoot = reduce({
+    nodes: [
+      node("/a.ts", "A", "class"),
+      node("/b.ts", "B", "class"),
+    ],
+    edges: [edge("/a.ts", "A", "class", "/b.ts", "B", "class", "calls")],
+  });
+  TestValidator.equals(
+    "files at the POSIX root retain their basenames",
+    posixRoot.nodes.map((entry) => entry.file),
+    ["a.ts", "b.ts"],
+  );
+
+  const caseSensitive = reduce({
+    nodes: [
+      node("/work/A/a.ts", "A", "class"),
+      node("/work/a/b.ts", "B", "class"),
+    ],
+    edges: [
+      edge(
+        "/work/A/a.ts",
+        "A",
+        "class",
+        "/work/a/b.ts",
+        "B",
+        "class",
+        "calls",
+      ),
+    ],
+  });
+  TestValidator.equals(
+    "POSIX common roots remain case-sensitive",
+    caseSensitive.nodes.map((entry) => entry.file),
+    ["A/a.ts", "a/b.ts"],
+  );
+
+  const mixedPathForms = reduce({
+    nodes: [
+      node("/work/a.ts", "A", "class"),
+      node("bare.ts", "B", "class"),
+    ],
+    edges: [
+      edge("/work/a.ts", "A", "class", "bare.ts", "B", "class", "calls"),
+    ],
+  });
+  TestValidator.equals(
+    "mixed legacy paths fall back to portable basenames",
+    mixedPathForms.nodes.map((entry) => entry.file),
+    ["a.ts", "bare.ts"],
+  );
+
   const unc = reduce({
     nodes: [
       node("\\\\SERVER\\Share\\project\\src\\a.ts", "A", "class"),

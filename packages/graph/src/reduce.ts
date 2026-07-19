@@ -73,7 +73,6 @@ function directoryOf(file: string): string {
 }
 
 function commonRoot(directories: string[]): string {
-  if (directories.length === 0) return "";
   let parts = posix(directories[0]!).split("/");
   const caseInsensitive = directories.every(isWindowsPath);
   for (const directory of directories.slice(1)) {

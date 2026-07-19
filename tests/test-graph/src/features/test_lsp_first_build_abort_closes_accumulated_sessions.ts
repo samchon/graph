@@ -50,7 +50,99 @@ export const test_lsp_first_build_abort_closes_accumulated_sessions = async () =
       failedClose.error.errors[1].message === bulkCloseFailure &&
       failedClose.error.errors[2] === genericCloseFailure,
   );
+
+  await assertStrictProviderCancellationBoundary();
 };
+
+async function assertStrictProviderCancellationBoundary(): Promise<void> {
+  const root = GraphPaths.createTempDirectory(
+    "samchon-graph-strict-provider-abort-",
+  );
+  fs.writeFileSync(path.join(root, "tsconfig.json"), "{}\n");
+  fs.writeFileSync(path.join(root, "index.ts"), "export const value = 1;\n");
+  installCommand(root, "ttscserver");
+
+  const session = {
+    client: { close: async () => undefined },
+    root,
+    language: "typescript",
+    opened: new Map(),
+    diagnostics: new Map(),
+  } as ILspSession;
+  const strictError = new Error("strict provider cancelled");
+  const cancelled = new AbortController();
+  let genericCalls = 0;
+  let error: unknown;
+  try {
+    await buildLspGraph(
+      {
+        cwd: root,
+        languages: ["typescript"],
+        signal: cancelled.signal,
+      },
+      {
+        resolveTtscGraphCommand: () => ({ command: process.execPath, args: [] }),
+        collectTtscGraph: async () => {
+          cancelled.abort("strict provider cancelled");
+          throw strictError;
+        },
+        collectLanguageGraph: async () => {
+          genericCalls += 1;
+          return {
+            result: {
+              nodes: [graphNode("typescript", "index.ts", "value", "variable")],
+              edges: [],
+              diagnostics: [],
+              warnings: [],
+            },
+            session,
+          };
+        },
+      },
+    );
+  } catch (caught) {
+    error = caught;
+  }
+  TestValidator.predicate(
+    "strict-provider cancellation is rethrown without generic fallback",
+    error === strictError && genericCalls === 0,
+  );
+
+  const live = new AbortController();
+  const fallbackError = new Error("strict provider unavailable");
+  const fallback = await buildLspGraph(
+    {
+      cwd: root,
+      languages: ["typescript"],
+      signal: live.signal,
+    },
+    {
+      resolveTtscGraphCommand: () => ({ command: process.execPath, args: [] }),
+      collectTtscGraph: async () => {
+        throw fallbackError;
+      },
+      collectLanguageGraph: async () => {
+        genericCalls += 1;
+        return {
+          result: {
+            nodes: [graphNode("typescript", "index.ts", "value", "variable")],
+            edges: [],
+            diagnostics: [],
+            warnings: [],
+          },
+          session,
+        };
+      },
+    },
+  );
+  TestValidator.predicate(
+    "a live signal still permits documented generic fallback",
+    genericCalls === 1 &&
+      fallback.warnings.some((warning) =>
+        warning.includes(fallbackError.message),
+      ),
+  );
+}
 
 async function runAbortedBuild(
   bulkCloseFailure?: unknown,

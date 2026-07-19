@@ -113,8 +113,20 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
     compatible.warnings.some(
       (warning) =>
         warning.includes("schema v3 compatibility snapshot") &&
-        warning.includes("object-literal member facts"),
+      warning.includes("object-literal member facts"),
     ),
+  );
+  rejectsWithMessage(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => {
+          d.provenance.schemaVersion = 3;
+          (d.nodes[1] as { objectMembers?: unknown }).objectMembers = [];
+        }),
+        project,
+      ),
+    "schema 3 object members",
+    "objectMembers is not part of schema v3",
   );
   const compatibleHeritage = relationDump(3);
   compatibleHeritage.edges.push({
@@ -129,6 +141,28 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
         edge.kind === "implements" &&
         edge.from === "src/a.ts#Worker:class" &&
         edge.to === "src/a.ts#Contract:interface",
+    ),
+  );
+  const compatibleAliasHeritage = relationDump(3);
+  compatibleAliasHeritage.nodes.push({
+    id: "src/a.ts#ContractAlias:type",
+    kind: "type",
+    name: "ContractAlias",
+    file: "src/a.ts",
+    external: false,
+  });
+  compatibleAliasHeritage.edges.push({
+    from: "src/a.ts#Worker:class",
+    to: "src/a.ts#ContractAlias:type",
+    kind: "implements",
+  });
+  TestValidator.predicate(
+    "schema 3 retains class-to-type-alias implements heritage",
+    adaptTtscGraphDump(compatibleAliasHeritage, project).edges.some(
+      (edge) =>
+        edge.kind === "implements" &&
+        edge.from === "src/a.ts#Worker:class" &&
+        edge.to === "src/a.ts#ContractAlias:type",
     ),
   );
   rejectsWithMessage(
@@ -205,12 +239,208 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
       (node) => node.file === crossRootFile,
     ),
   );
+  const bundledFile = "bundled:///libs/lib.es2015.collection.d.ts";
+  const uncFile = "//server/share/types/external.d.ts";
+  const posixFile = "/opt/types/external.d.ts";
+  const completeManifest = good();
+  completeManifest.provenance.sources.push(
+    {
+      file: crossRootFile,
+      checkerDigest: sha(`${crossRootFile}:checker`),
+      diskDigest: sha(`${crossRootFile}:disk`),
+    },
+    {
+      file: bundledFile,
+      checkerDigest: sha(`${bundledFile}:checker`),
+      diskDigest: "",
+    },
+    {
+      file: uncFile,
+      checkerDigest: sha(`${uncFile}:checker`),
+      diskDigest: sha(`${uncFile}:disk`),
+    },
+    {
+      file: posixFile,
+      checkerDigest: sha(`${posixFile}:checker`),
+      diskDigest: sha(`${posixFile}:disk`),
+    },
+  );
+  const completeSources = adaptTtscGraphDump(
+    completeManifest,
+    project,
+  ).sources;
+  TestValidator.predicate(
+    "the complete compiler manifest preserves every canonical file identity",
+    completeSources.has(path.resolve(project, "src/a.ts")) &&
+      completeSources.has(crossRootFile) &&
+      completeSources.has(bundledFile) &&
+      completeSources.has(uncFile) &&
+      completeSources.has(posixFile),
+  );
+  TestValidator.equals(
+    "a virtual bundled source keeps its checker digest",
+    completeSources.get(bundledFile),
+    {
+      checkerDigest: sha(`${bundledFile}:checker`),
+      diskDigest: "",
+    },
+  );
+
+  const globalDiagnostic = good();
+  globalDiagnostic.diagnostics.push({
+    file: "",
+    line: 0,
+    column: 0,
+    code: 18003,
+    category: "error",
+    message: "No inputs were found in config file",
+  });
+  TestValidator.equals(
+    "a canonical fileless compiler diagnostic is retained",
+    adaptTtscGraphDump(globalDiagnostic, project).diagnostics,
+    [
+      {
+        file: "",
+        line: 0,
+        column: 0,
+        code: 18003,
+        message: "No inputs were found in config file",
+        severity: "error",
+      },
+    ],
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.diagnostics.push({
+            file: "",
+            line: 1,
+            column: 0,
+            code: 18003,
+            category: "error",
+            message: "malformed global diagnostic",
+          }),
+        ),
+        project,
+      ),
+    "a fileless diagnostic with a nonzero line",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.diagnostics.push({
+            file: "",
+            line: 0,
+            column: 1,
+            code: 18003,
+            category: "error",
+            message: "malformed global diagnostic",
+          }),
+        ),
+        project,
+      ),
+    "a fileless diagnostic with a nonzero column",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.diagnostics.push({
+            file: "src/a.ts",
+            line: 0,
+            column: 1,
+            code: 2322,
+            category: "error",
+            message: "malformed file diagnostic",
+          }),
+        ),
+        project,
+      ),
+    "a file-backed diagnostic with a zero line",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.diagnostics.push({
+            file: "src/a.ts",
+            line: 1,
+            column: 0,
+            code: 2322,
+            category: "error",
+            message: "malformed file diagnostic",
+          }),
+        ),
+        project,
+      ),
+    "a file-backed diagnostic with a zero column",
+  );
+
+  const referencedProject = good();
+  referencedProject.provenance.universe.configs.push({
+    file: "tsconfig.reference.json",
+    digest: sha("tsconfig.reference.json"),
+  });
+  referencedProject.provenance.universe.roots.push({
+    config: "tsconfig.reference.json",
+    file: "src/a.ts",
+  });
+  TestValidator.predicate(
+    "two configs may canonically name the same root file",
+    adaptTtscGraphDump(referencedProject, project).provenance.universe !== "",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.provenance.universe.configs.push({
+            ...d.provenance.universe.configs[0]!,
+          }),
+        ),
+        project,
+      ),
+    "a duplicate config identity in the build universe",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => {
+          d.provenance.universe.roots[0]!.config = "tsconfig.missing.json";
+        }),
+        project,
+      ),
+    "a root attributed to an unknown config",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.provenance.universe.roots.push({
+            ...d.provenance.universe.roots[0]!,
+          }),
+        ),
+        project,
+      ),
+    "a duplicate config and root-file pair",
+  );
 
   // Identity and project scope.
   rejects(() => adaptTtscGraphDump("not-an-object", project), "a non-object dump");
   rejects(
     () => adaptTtscGraphDump(mutate((d) => (d.project = `${project}-other`)), project),
     "a dump whose project does not match the requested root",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => {
+          d.provenance.sources[0]!.file = "C:\\workspace\\src\\a.ts";
+        }),
+        project,
+      ),
+    "a source identity with non-canonical backslashes",
   );
 
   // Structural types.

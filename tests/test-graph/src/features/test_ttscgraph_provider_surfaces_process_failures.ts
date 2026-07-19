@@ -61,6 +61,11 @@ export const test_ttscgraph_provider_surfaces_process_failures = async () => {
   // The child already exited, so close resolves immediately without touching it.
   await dying.close();
 
+  // Windows named pipes retain the inherited read handle until process exit,
+  // so they surface this condition through the already-covered exit listener.
+  /* c8 ignore next */
+  if (process.platform !== "win32") await assertClosedRequestPipe(root);
+
   // A process that exits without diagnostics still rejects, and a later refresh
   // reports the process is gone without inventing an empty snapshot.
   const silent = new TtscGraphClient({
@@ -115,6 +120,53 @@ export const test_ttscgraph_provider_surfaces_process_failures = async () => {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForFile(file: string): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!fs.existsSync(file)) {
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${file}`);
+    await delay(10);
+  }
+}
+
+async function assertClosedRequestPipe(root: string): Promise<void> {
+  // A producer can remain alive after closing the request side of its pipe.
+  // The next refresh must reject the write failure and retire that generation
+  // instead of waiting for the snapshot timeout.
+  const stdinClosed = path.join(root, "stdin-closed.txt");
+  const client = new TtscGraphClient({
+    root,
+    command: process.execPath,
+    args: [
+      GraphPaths.fakeTtscGraphServer,
+      "--close-stdin-after-first",
+      `--marker=${stdinClosed}`,
+    ],
+    requestTimeoutMs: 5_000,
+  });
+  try {
+    await client.refresh();
+    await waitForFile(stdinClosed);
+    const writeFailure = await rejectionOf(client.refresh());
+    TestValidator.predicate(
+      "a closed native request pipe rejects before the snapshot timeout",
+      (writeFailure.message.includes("could not request snapshot") ||
+        writeFailure.message.includes("stdin failed")) &&
+        !writeFailure.message.includes("timed out"),
+    );
+  } finally {
+    await client.close();
+  }
+}
+
+async function rejectionOf(task: Promise<unknown>): Promise<Error> {
+  try {
+    await task;
+  } catch (error) {
+    if (error instanceof Error) return error;
+  }
+  throw new Error("expected promise to reject");
 }
 
 async function rejects(task: Promise<unknown>, label: string): Promise<void> {

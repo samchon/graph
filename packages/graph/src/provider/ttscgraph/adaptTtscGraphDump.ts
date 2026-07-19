@@ -88,7 +88,6 @@ export function adaptTtscGraphDump(
   const nodeKindById = new Map<string, GraphNodeKind>();
   const sourceFileById = new Map<string, string>();
   const nodes: ISamchonGraphNode[] = [];
-  const files = new Set<string>();
   const factFiles = new Set<string>();
 
   for (let index = 0; index < rawNodes.length; index++) {
@@ -104,7 +103,6 @@ export function adaptTtscGraphDump(
     validateNodeId(id, file, kind);
     sourceFileById.set(id, file);
     factFiles.add(file);
-    if (!external && file !== "") files.add(file);
     if (kind === "module") {
       // `validateGraphFile` above already rejects an empty file for every node,
       // so a module reaching here always names a file.
@@ -257,15 +255,14 @@ export function adaptTtscGraphDump(
     }
   }
   const sources = new Map<string, IBulkGraphSession.ISourceDigest>();
-  // The workspace file set still comes from the nodes, exactly as before: the
-  // manifest is every file the *program* loaded, which includes the bundled
-  // libs and every `node_modules` declaration the checker pulled in, and those
-  // are not this project's sources. What the manifest changes is that the set
-  // is now provable — each of these files must be one the same program loaded,
-  // and it arrives with the digest of the text the checker actually read.
-  for (const file of [...files].sort(compareText)) {
-    const digest = manifest.get(file)!;
-    sources.set(path.resolve(expectedRoot, file), digest);
+  // Preserve the complete compiler-owned manifest. Relative identities become
+  // absolute keys for the bulk-session contract; identities that are already
+  // absolute stay canonical, and bundled virtual identities must never pass
+  // through `path.resolve`, which would turn them into unrelated disk paths.
+  for (const [file, digest] of [...manifest].sort(([left], [right]) =>
+    compareText(left, right),
+  )) {
+    sources.set(sourceManifestKey(expectedRoot, file), digest);
   }
 
   const capabilities = stringArrayOf(
@@ -380,11 +377,18 @@ function universeOf(value: unknown): string {
     );
   }
   push("configs");
+  const configFiles = new Set<string>();
   for (let index = 0; index < configs.length; index++) {
     const label = `dump.provenance.universe.configs[${index}]`;
     const config = objectOf(configs[index], label);
     const file = stringOf(config.file, `${label}.file`);
     validateGraphFile(file, `${label}.file`);
+    if (configFiles.has(file)) {
+      throw new Error(
+        `ttscgraph: duplicate build-universe config identity: ${file}`,
+      );
+    }
+    configFiles.add(file);
     push(file);
     push(
       validateDigest(
@@ -395,13 +399,27 @@ function universeOf(value: unknown): string {
   }
   const roots = arrayOf(universe.roots, "dump.provenance.universe.roots");
   push("roots");
+  const rootsByConfig = new Map<string, Set<string>>();
   for (let index = 0; index < roots.length; index++) {
     const label = `dump.provenance.universe.roots[${index}]`;
     const root = objectOf(roots[index], label);
     const config = stringOf(root.config, `${label}.config`);
     validateGraphFile(config, `${label}.config`);
+    if (!configFiles.has(config)) {
+      throw new Error(
+        `ttscgraph: ${label}.config names an unknown build-universe config: ${config}`,
+      );
+    }
     const file = stringOf(root.file, `${label}.file`);
     validateGraphFile(file, `${label}.file`, true);
+    const configRoots = rootsByConfig.get(config);
+    if (configRoots?.has(file) === true) {
+      throw new Error(
+        `ttscgraph: duplicate build-universe root pair: ${config} -> ${file}`,
+      );
+    }
+    if (configRoots === undefined) rootsByConfig.set(config, new Set([file]));
+    else configRoots.add(file);
     push(config);
     push(file);
   }
@@ -447,14 +465,17 @@ function diagnosticsOf(
     const label = `dump.diagnostics[${index}]`;
     const entry = objectOf(item, label);
     const file = stringOf(entry.file, `${label}.file`);
-    validateGraphFile(file, `${label}.file`, true);
-    // The same one-program test the facts pass. A finding about a file the
-    // program never loaded did not come from this generation, and a checker
-    // that reports one is not describing the graph shipped beside it.
-    if (!manifest.has(file)) {
-      throw new Error(
-        `ttscgraph: ${label} reports ${file}, which the dump's own source manifest never loaded`,
-      );
+    const fileless = file === "";
+    if (!fileless) {
+      validateGraphFile(file, `${label}.file`, true);
+      // The same one-program test the facts pass. A finding about a file the
+      // program never loaded did not come from this generation, and a checker
+      // that reports one is not describing the graph shipped beside it.
+      if (!manifest.has(file)) {
+        throw new Error(
+          `ttscgraph: ${label} reports ${file}, which the dump's own source manifest never loaded`,
+        );
+      }
     }
     const severity = stringOf(entry.category, `${label}.category`);
     if (!DIAGNOSTIC_SEVERITIES.has(severity)) {
@@ -462,8 +483,12 @@ function diagnosticsOf(
     }
     return {
       file,
-      line: integerOf(entry.line, `${label}.line`),
-      column: integerOf(entry.column, `${label}.column`),
+      line: fileless
+        ? zeroOf(entry.line, `${label}.line`)
+        : integerOf(entry.line, `${label}.line`),
+      column: fileless
+        ? zeroOf(entry.column, `${label}.column`)
+        : integerOf(entry.column, `${label}.column`),
       code: integerOf(entry.code, `${label}.code`),
       message: stringOf(entry.message, `${label}.message`),
       severity: severity as ISamchonGraphDiagnostic["severity"],
@@ -581,6 +606,15 @@ function integerOf(value: unknown, label: string): number {
   return value as number;
 }
 
+function zeroOf(value: unknown, label: string): 0 {
+  if (value !== 0) {
+    throw new Error(
+      `ttscgraph: ${label} must be zero for a fileless diagnostic`,
+    );
+  }
+  return 0;
+}
+
 function nodeKindOf(value: unknown, label: string): GraphNodeKind {
   const kind = stringOf(value, label) as GraphNodeKind;
   if (!NODE_KINDS.has(kind)) {
@@ -614,7 +648,7 @@ function validateEdgeSchema(
   }
   const containerImplements =
     fromKind === "class" &&
-    (toKind === "class" || toKind === "interface");
+    (toKind === "class" || toKind === "interface" || toKind === "type");
   if (kind === "implements" && !containerImplements) {
     throw new Error(
       `ttscgraph: ${label} member implements is not part of schema v${String(schemaVersion)} (${fromKind} -> ${toKind})`,
@@ -836,6 +870,12 @@ function isNormalizedBundledFile(file: string): boolean {
   );
 }
 
+function sourceManifestKey(project: string, file: string): string {
+  return isNormalizedBundledFile(file) || isNormalizedAbsoluteFile(file)
+    ? file
+    : path.resolve(project, file);
+}
+
 function validateNodeId(id: string, file: string, kind: GraphNodeKind): void {
   const hash = id.indexOf("#");
   if (
@@ -860,5 +900,6 @@ function samePath(left: string, right: string): boolean {
 }
 
 function compareText(left: string, right: string): number {
+  /* c8 ignore next -- manifestOf rejects duplicate source identities. */
   return left < right ? -1 : left > right ? 1 : 0;
 }

@@ -55,12 +55,13 @@ export interface IBuildGraphOptions {
    */
   keepAlive?: boolean;
   /**
-   * Abort an in-flight compiler-owned bulk snapshot request.
+   * Abort an in-flight compiler-owned snapshot or generic LSP build.
    *
-   * Resident graph sources use this to make shutdown reach an owned native
-   * provider immediately instead of waiting behind its serialized refresh.
-   * Generic LSP settlement is tracked separately and does not yet consume this
-   * signal.
+   * Resident graph sources use this to make shutdown reach an owned provider
+   * immediately instead of waiting behind its serialized refresh. Generic LSP
+   * initialization, indexing readiness, and graph requests all consume it; an
+   * aborted build closes the unpublished language-server session before it
+   * rejects.
    */
   signal?: AbortSignal;
   /**

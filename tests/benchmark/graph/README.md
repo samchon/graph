@@ -12,14 +12,20 @@ adapter are the only intended differences.
    language and commit.
 3. The harness refuses a prompt hash mismatch and records prompt provenance on
    every report.
-4. A paid graph cell starts only after the package launcher exists. The measured
+4. Language tools stay under the benchmark's isolated `.work/tools` tree. The
+   launcher discovers packaged root, `bin`, `server/bin`, and one-level nested
+   `bin` layouts without depending on user-global `PATH` entries.
+5. Dart dependency preparation runs only for packages the provisioned Dart SDK
+   can resolve. A `pubspec.yaml` that declares `sdk: flutter` is left for a
+   separately provisioned Flutter SDK and is not misreported as a Dart failure.
+6. A paid graph cell starts only after the package launcher exists. The measured
    MCP process starts the full, uncapped LSP index inside the cell.
-5. Baseline and graph arms receive the same user utterance. Tool guidance comes
+7. Baseline and graph arms receive the same user utterance. Tool guidance comes
    from MCP instructions; `prompt.mjs` only supplies the reference grounding and
    tool-discovery nudge used by both upstream harnesses.
-6. Minimal per-arm MCP/Codex configuration prevents user-global instructions or
+8. Minimal per-arm MCP/Codex configuration prevents user-global instructions or
    unrelated MCP servers from leaking into a cell.
-7. Raw traces and answers remain available for `audit-codex-traces.mjs`; only
+9. Raw traces and answers remain available for `audit-codex-traces.mjs`; only
    zero-token infrastructure failures are retried away.
 
 ## Main commands

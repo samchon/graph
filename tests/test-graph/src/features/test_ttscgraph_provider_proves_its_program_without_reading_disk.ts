@@ -25,8 +25,9 @@ import { GraphPaths } from "../internal/GraphPaths";
  * sources are never written to disk at all. Every earlier version of this client
  * would hand back an empty source map here, because every `readText` returns
  * undefined and the file is dropped. This one hands back the producer's
- * workspace manifest entries intact, because the producer is the only party
- * that ever knew.
+ * complete program manifest intact, because the producer is the only party
+ * that ever knew. That includes virtual bundled libraries which deliberately
+ * have no disk path.
  */
 export const test_ttscgraph_provider_proves_its_program_without_reading_disk =
   async () => {
@@ -50,6 +51,7 @@ export const test_ttscgraph_provider_proves_its_program_without_reading_disk =
         "a snapshot whose files are absent from disk still names every one of them",
         [...initial.snapshot.sources.keys()].sort(),
         [
+          "bundled:///libs/lib.es2015.collection.d.ts",
           path.join(root, "src", "core", "order.ts"),
           path.join(root, "src", "empty.ts"),
           path.join(root, "src", "index.ts"),
@@ -157,8 +159,8 @@ async function assertUniverseDriftRefused(root: string): Promise<void> {
       error instanceof Error,
     );
     TestValidator.predicate(
-      "the last provable generation survives a contradicted mode",
-      client.current === initial.snapshot && client.generation === 1,
+      "a contradicted mode clears the untrusted child generation",
+      client.current === undefined && client.generation === 1,
     );
   } finally {
     await client.close();

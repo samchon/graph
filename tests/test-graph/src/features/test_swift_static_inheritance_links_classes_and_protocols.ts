@@ -22,6 +22,7 @@ export const test_swift_static_inheritance_links_classes_and_protocols =
         "class Base {}",
         "protocol Runner {}",
         "class Child: Base, Runner {}",
+        "enum Outcome: Runner { case ready }",
       ].join("\n"),
     );
     const dump = await buildGraphDump({
@@ -37,6 +38,9 @@ export const test_swift_static_inheritance_links_classes_and_protocols =
       (node) => node.name === "Base" && node.kind === "class",
     );
     const runner = dump.nodes.find((node) => node.name === "Runner");
+    const outcome = dump.nodes.find(
+      (node) => node.name === "Outcome" && node.kind === "enum",
+    );
 
     TestValidator.predicate(
       "a swift class extends the class in its inheritance list",
@@ -53,6 +57,15 @@ export const test_swift_static_inheritance_links_classes_and_protocols =
         (edge) =>
           edge.kind === "implements" &&
           edge.from === child?.id &&
+          edge.to === runner?.id,
+      ),
+    );
+    TestValidator.predicate(
+      "a swift enum preserves its protocol conformance",
+      dump.edges.some(
+        (edge) =>
+          edge.kind === "implements" &&
+          edge.from === outcome?.id &&
           edge.to === runner?.id,
       ),
     );

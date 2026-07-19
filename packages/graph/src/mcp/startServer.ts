@@ -7,6 +7,7 @@ import { discoverLanguages } from "../indexer/discoverLanguages";
 import { IBuildGraphOptions } from "../indexer/IBuildGraphOptions";
 import { IResidentGraphSource } from "../indexer/IResidentGraphSource";
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
+import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import { ISamchonGraphDump } from "../structures";
 import { GraphLanguage } from "../typings";
 import { createResidentCloseHandler } from "./createResidentCloseHandler";
@@ -51,7 +52,9 @@ export async function startServer(
       fs.readFileSync(options.graphFile, "utf8"),
     ) as ISamchonGraphDump;
     languages = dump.languages;
-    source = once(() => SamchonGraphMemory.from(dump));
+    source = once(() =>
+      SamchonGraphMemory.from(dump, SamchonGraphSourceReader.none(dump.project)),
+    );
   } else {
     const root = path.resolve(options.cwd ?? process.cwd());
     languages = options.languages ?? discoverLanguages(root, options);

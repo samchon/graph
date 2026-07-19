@@ -6,7 +6,11 @@
  * as coordinates, so read the file yourself when you truly need source text.
  */
 export interface ISamchonGraphEvidence {
-  /** Project-relative path of the file the span lives in. */
+  /**
+   * Graph file identity of the span: normally project-relative, but normalized
+   * absolute for a compiler-loaded out-of-root file or `bundled:///` for a
+   * virtual library.
+   */
   file: string;
 
   /** 1-based line where the span starts. */

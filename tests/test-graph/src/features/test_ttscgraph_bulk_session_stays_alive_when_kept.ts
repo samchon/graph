@@ -28,18 +28,43 @@ export const test_ttscgraph_bulk_session_stays_alive_when_kept = async () => {
   // reuses the same warm compiler process instead of paying a full reindex
   // again. The marker proves the retained session is the one this build owns.
   const marker = path.join(root, "closed.txt");
-  const result = await buildLspGraph(
-    {
-      cwd: root,
-      languages: ["typescript"],
-      keepAlive: true,
-    },
-    {
-      resolveTtscGraphCommand: () => ({
-        command: process.execPath,
-        args: [GraphPaths.fakeTtscGraphServer, `--marker=${marker}`],
-      }),
-    },
+  const strictFiles = new Set([
+    path.join(root, "src", "index.ts"),
+    path.join(root, "src", "core", "order.ts"),
+    path.join(root, "src", "empty.ts"),
+  ]);
+  const originalReadFileSync = fs.readFileSync;
+  const reopened: string[] = [];
+  fs.readFileSync = ((...args: unknown[]) => {
+    const file = String(args[0]);
+    if (strictFiles.has(file) || file.startsWith("bundled:///")) {
+      reopened.push(file);
+    }
+    return Reflect.apply(originalReadFileSync, fs, args);
+  }) as typeof fs.readFileSync;
+  let result: Awaited<ReturnType<typeof buildLspGraph>>;
+  try {
+    result = await buildLspGraph(
+      {
+        cwd: root,
+        languages: ["typescript"],
+        keepAlive: true,
+      },
+      {
+        resolveTtscGraphCommand: () => ({
+          command: process.execPath,
+          args: [GraphPaths.fakeTtscGraphServer, `--marker=${marker}`],
+        }),
+      },
+    );
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+  }
+
+  TestValidator.equals(
+    "strict source identities are not reopened after the compiler publishes them",
+    reopened,
+    [],
   );
 
   TestValidator.equals(
@@ -62,8 +87,8 @@ export const test_ttscgraph_bulk_session_stays_alive_when_kept = async () => {
   // bulk provider, which the assertion above already proved this is).
   if (session !== undefined && "close" in session) await session.close();
   TestValidator.equals(
-    "closing the retained session shuts down the process it owns",
-    fs.readFileSync(marker, "utf8"),
-    "closed\n",
+    "closing does not trust the owned process to acknowledge termination",
+    fs.existsSync(marker),
+    false,
   );
 };

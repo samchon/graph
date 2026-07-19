@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { CORPUS, PROJECTS, projectDir } from "../graph/corpus.mjs";
 import {
   analyzePreflightDump,
+  pubspecRequiresFlutter,
   assertPinnedCheckout,
 } from "../graph/language.mjs";
 import { assertPublicationCandidates } from "../graph/publication-gate.mjs";
@@ -306,6 +307,14 @@ function testFixtureAndPreflightIntegrity() {
   assert.equal(structuralOnly.ok, false);
   assert.match(structuralOnly.failures.join("; "), /fatal warning/);
   assert.match(structuralOnly.failures.join("; "), /semantic edges/);
+  assert.equal(
+    pubspecRequiresFlutter("dependencies:\n  flutter:\n    sdk: flutter\n"),
+    true,
+  );
+  assert.equal(
+    pubspecRequiresFlutter("environment:\n  sdk: ^3.4.0\n"),
+    false,
+  );
   fs.rmSync(root, { recursive: true, force: true });
 }
 

@@ -42,11 +42,12 @@ export const test_static_indexes_inheritance_and_containment = async () => {
     ),
   );
 
-  // A subclass method with the same name as a supertype method overrides it.
-  TestValidator.predicate("override across files", has("overrides", "Service.run:method", "Base.run:method"));
+  // A syntax-only index cannot prove checker-owned member relationships from a
+  // shared name. Visibility, overloads, accessors, and incompatible signatures
+  // all admit negative twins, so only a semantic provider may emit them.
   TestValidator.predicate(
-    "non-matching subclass method does not override",
-    dump.edges.every((edge) => edge.kind !== "overrides" || !edge.from.includes("Service.extra")),
+    "static same-name members are not promoted to overrides",
+    dump.edges.every((edge) => edge.kind !== "overrides"),
   );
 
   // A decorator directly above a declaration links to the decorator symbol.

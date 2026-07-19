@@ -1,5 +1,6 @@
 import { ISamchonGraphDump } from "../structures";
 import { GraphLanguage } from "../typings";
+import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { ILspSession } from "./ILspSession";
 
@@ -23,4 +24,7 @@ export interface IIndexerResult {
    * set the graph is finalized against comes from the session's manifest.
    */
   sources?: Map<string, string>;
+
+  /** Immutable source-display evidence captured with this exact dump. */
+  source?: SamchonGraphSourceReader;
 }

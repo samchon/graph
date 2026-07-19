@@ -30,7 +30,11 @@ export interface ILspSession {
    * is used after `didOpen`, while lazy reference warmups use `false` and only
    * wait when that request actually triggered progress.
    */
-  waitForReady?(since: number, allowStart: boolean): Promise<void>;
+  waitForReady?(
+    since: number,
+    allowStart: boolean,
+    signal?: AbortSignal,
+  ): Promise<void>;
 
   /**
    * What the server currently says about each open document, keyed by

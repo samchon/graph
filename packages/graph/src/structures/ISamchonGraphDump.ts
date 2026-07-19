@@ -18,8 +18,12 @@ import { ISamchonGraphSpan } from "./ISamchonGraphSpan";
  * here records when it was built — a timestamp would move under an unchanged
  * source, which is exactly the property a cache and a diff depend on.
  *
- * Paths in `project` are absolute; `file` fields on nodes, edges, and
- * diagnostics are project-relative.
+ * `project` is absolute. A graph file identity uses normalized forward slashes:
+ * a project-owned file is relative to `project`, a compiler-loaded file outside
+ * that root keeps its normalized absolute identity, and a virtual compiler
+ * library keeps its `bundled:///` identity. The same identity flows through a
+ * node's `file` and id prefix, reconstructed edge evidence, diagnostics, and
+ * operation results.
  */
 export interface ISamchonGraphDump {
   /** Absolute path of the project root the graph was built for. */

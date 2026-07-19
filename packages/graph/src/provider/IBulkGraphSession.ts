@@ -20,7 +20,9 @@ export interface IBulkGraphSession {
   readonly generation: number;
   readonly current: IBulkGraphSession.ISnapshot | undefined;
 
-  refresh(): Promise<IBulkGraphSession.IRefresh>;
+  refresh(options?: {
+    signal?: AbortSignal;
+  }): Promise<IBulkGraphSession.IRefresh>;
   close(): Promise<void>;
 }
 
@@ -42,8 +44,10 @@ export namespace IBulkGraphSession {
     diagnostics: ISamchonGraphDiagnostic[];
 
     /**
-     * The manifest of files this snapshot's facts were computed from, keyed by
-     * absolute path.
+     * The complete manifest of files this snapshot's facts were computed from.
+     * Project-relative identities are resolved to absolute paths; already
+     * absolute external identities and virtual `bundled:///` identities retain
+     * the producer's canonical spelling.
      *
      * This used to be the files' text, read off the disk by the client after
      * the compiler had answered. That is what a bulk provider must not do: the

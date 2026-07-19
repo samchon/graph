@@ -8,14 +8,16 @@ import {
 } from "./structures";
 import { GraphLanguage } from "./typings";
 import { basename } from "./utils/path";
+import { SamchonGraphSourceReader } from "./SamchonGraphSourceReader";
 
 /**
  * The in-memory resident graph the MCP tools answer from.
  *
  * It loads one dump — the indexer-resolved fact graph — then synthesizes the
  * structural layer the dump deliberately leaves to this layer: `file` container
- * nodes and the `contains` ownership tree, plus member implementation edges and
- * class-member property refinement. Every tool call is then a lookup or a
+ * nodes and the `contains` ownership tree, plus class-member property
+ * refinement. Export and member implementation relationships are producer
+ * facts already present in the dump. Every tool call is then a lookup or a
  * traversal over the indexes built here; nothing re-indexes.
  */
 export class SamchonGraphMemory {
@@ -32,17 +34,20 @@ export class SamchonGraphMemory {
   public readonly indexer: ISamchonGraphDump["indexer"];
   /** Every node, raw plus synthesized (file containers). */
   public readonly nodes: readonly ISamchonGraphNode[];
-  /** Every edge, raw plus synthesized (contains and member relations). */
+  /** Every edge, raw plus synthesized containment. */
   public readonly edges: readonly ISamchonGraphEdge[];
   /** Fused compiler and plugin diagnostics, when the build collected any. */
   public readonly diagnostics: readonly ISamchonGraphDiagnostic[];
   /** Non-fatal problems encountered while building the graph. */
   public readonly warnings: readonly string[];
+  /** Provenance-gated source display facts owned by this exact snapshot. */
+  public readonly source: SamchonGraphSourceReader;
 
   private constructor(
     dump: ISamchonGraphDump,
     nodes: ISamchonGraphNode[],
     edges: ISamchonGraphEdge[],
+    source: SamchonGraphSourceReader,
   ) {
     this.project = dump.project;
     this.languages = dump.languages;
@@ -51,6 +56,7 @@ export class SamchonGraphMemory {
     this.edges = edges;
     this.diagnostics = dump.diagnostics ?? [];
     this.warnings = dump.warnings ?? [];
+    this.source = source;
 
     this.byId = new Map(nodes.map((node) => [node.id, node]));
     this.outEdges = new Map();
@@ -71,10 +77,18 @@ export class SamchonGraphMemory {
     }
   }
 
-  /** Build a model from a parsed dump, synthesizing structural relationships. */
-  public static from(dump: ISamchonGraphDump): SamchonGraphMemory {
+  /**
+   * Build a model from a parsed dump, synthesizing structural relationships.
+   * A caller that has only a dump has no proof for current disk bytes, so
+   * source-derived display facts fail closed unless an explicit reader is
+   * supplied.
+   */
+  public static from(
+    dump: ISamchonGraphDump,
+    source: SamchonGraphSourceReader = SamchonGraphSourceReader.none(dump.project),
+  ): SamchonGraphMemory {
     const { nodes, edges } = synthesize(dump);
-    return new SamchonGraphMemory(dump, nodes, edges);
+    return new SamchonGraphMemory(dump, nodes, edges, source);
   }
 
   /** The node with this id, or undefined. */
@@ -147,7 +161,7 @@ function fileOfNodeId(id: string): string {
  * Derive the structural layer from a dump's faithful facts: refine class-member
  * variables to properties, put back the file the indexer left out of every
  * span, add a `file` node per workspace source, and connect the `contains`
- * ownership tree and member implementation relations.
+ * ownership tree.
  *
  * `exports` edges are not synthesized here. The indexer resolves them from the
  * project's own export syntax and follows them through its barrels (§4k), so
@@ -249,11 +263,9 @@ function synthesize(dump: ISamchonGraphDump): {
     edges.map((edge) => `${edge.kind}\0${edge.from}\0${edge.to}`),
   );
   const structural: ISamchonGraphEdge[] = [];
-  const membersByOwner = new Map<string, ISamchonGraphNode[]>();
   for (const node of nodes) {
     if (node.external || node.file === "" || node.kind === "file") continue;
     const parent = owner(node);
-    if (parent !== undefined) push(membersByOwner, parent.id, node);
     const container = parent?.id ?? node.file;
     const key = `contains\0${container}\0${node.id}`;
     if (edgeKeys.has(key)) continue;
@@ -265,48 +277,8 @@ function synthesize(dump: ISamchonGraphDump): {
     });
   }
 
-  const synthesized = [...edges, ...structural];
-  for (const edge of edges) {
-    const kind: ISamchonGraphEdge["kind"] | undefined =
-      edge.kind === "implements"
-        ? "implements"
-        : edge.kind === "extends"
-          ? "overrides"
-          : undefined;
-    if (kind === undefined) continue;
-    const derived = byId.get(edge.from);
-    const base = byId.get(edge.to);
-    if (derived === undefined || base === undefined) continue;
-    const derivedMembers = membersByOwner.get(derived.id) ?? [];
-    const baseMembers = membersByOwner.get(base.id) ?? [];
-    for (const baseMember of baseMembers) {
-      const derivedMember = derivedMembers.find(
-        (member) =>
-          member.name === baseMember.name &&
-          IMPLEMENTATION_MEMBER_KINDS.has(member.kind) &&
-          IMPLEMENTATION_MEMBER_KINDS.has(baseMember.kind),
-      );
-      if (derivedMember === undefined) continue;
-      const key = `${kind}\0${derivedMember.id}\0${baseMember.id}`;
-      if (edgeKeys.has(key)) continue;
-      edgeKeys.add(key);
-      synthesized.push({
-        from: derivedMember.id,
-        to: baseMember.id,
-        kind,
-        evidence: derivedMember.implementation ?? derivedMember.evidence,
-      });
-    }
-  }
-
   return {
     nodes: [...nodes, ...files.values()],
-    edges: synthesized,
+    edges: [...edges, ...structural],
   };
 }
-
-// Canonical ttsc emits methods and refines class-owned variables to properties.
-// Other supported language servers may already distinguish a field, which has
-// the same member-satisfaction semantics. Constructors are intentionally absent:
-// declaring a subclass constructor does not override its base constructor.
-const IMPLEMENTATION_MEMBER_KINDS = new Set(["method", "property", "field"]);

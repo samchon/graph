@@ -1,10 +1,15 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
-import { buildGraphDump } from "./buildGraphDump";
+import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
+import { buildGraphResult } from "./buildGraphResult";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 
 export async function buildGraph(
   options: IBuildGraphOptions = {},
 ): Promise<SamchonGraphMemory> {
-  const dump = await buildGraphDump(options);
-  return SamchonGraphMemory.from(dump);
+  const result = await buildGraphResult(options);
+  return SamchonGraphMemory.from(
+    result.dump,
+    /* c8 ignore next -- both concrete indexer result builders attach a reader. */
+    result.source ?? SamchonGraphSourceReader.none(result.dump.project),
+  );
 }

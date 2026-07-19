@@ -13,7 +13,6 @@ import { projectRelative, readText, walkSourceFiles } from "../utils/fs";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IStaticGraphParts } from "./IStaticGraphParts";
 import { allExtensions, languageOf } from "./languages";
-import { overrideEdges } from "./overrideEdges";
 
 /**
  * Discover a project snapshot and delegate its best-effort syntax extraction to
@@ -50,7 +49,6 @@ export function staticGraphParts(
     });
   }
   const parts = graphSitterParts({ root, files });
-  parts.edges.push(...overrideEdges(parts.nodes, parts.edges));
   return parts;
 }
 

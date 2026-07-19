@@ -317,23 +317,34 @@ const scenario_details_edges = async () => {
     `export const labels = ["dup", "dup", "${"x".repeat(41)}", "()", ${fillers}];\n`,
   );
   const nodes = [
-    node("src/obj.ts#opts:variable", "variable", "opts", "src/obj.ts", 1, 4),
-    node("src/literals.ts#labels:variable", "variable", "labels", "src/literals.ts", 1, 1),
-    // object-literal variable whose file does not exist → fileLines catch
+    {
+      ...node("src/obj.ts#opts:variable", "variable", "opts", "src/obj.ts", 1, 4),
+      objectMembers: [
+        { name: "host", kind: "property", line: 2, signature: 'host: "h"' },
+        { name: "connect", kind: "method", line: 3, signature: "connect()" },
+      ],
+    },
+    {
+      ...node("src/literals.ts#labels:variable", "variable", "labels", "src/literals.ts", 1, 1),
+      literals: Array.from({ length: 20 }, (_, i) =>
+        i === 0 ? '"dup"' : `"f${i - 1}"`,
+      ),
+    },
+    // Variables without provider-owned member facts remain selectable.
     node("src/gone.ts#ghost:variable", "variable", "ghost", "src/gone.ts", 1, 3),
-    // variable whose evidence file is empty → fileLines file==="" guard
+    // Empty evidence paths remain valid for detail selection.
     (() => {
       const n = node("noFile#blank:variable", "variable", "blank", "", 1, 3);
       n.evidence = { file: "", startLine: 1, startCol: 1, endLine: 3, endCol: 1 };
       return n;
     })(),
-    // variable with no endLine → objectLiteralMembers early return
+    // Missing end coordinates do not affect provider-owned details.
     (() => {
       const n = node("src/n.ts#noEnd:variable", "variable", "noEnd", "src/n.ts", 1, 1);
       n.evidence = { file: "src/n.ts", startLine: 1, startCol: 1, endLine: undefined as unknown as number, endCol: 1 };
       return n;
     })(),
-    // oversized span → objectLiteralMembers size guard
+    // Large source spans do not trigger live-source parsing.
     node("src/big.ts#huge:variable", "variable", "huge", "src/big.ts", 1, 5000),
     // container with a dangling contained member
     node("src/c.ts#Box:class", "class", "Box", "src/c.ts", 1, 10),
@@ -344,14 +355,12 @@ const scenario_details_edges = async () => {
   TestValidator.predicate("details resolves the selected nodes", details.nodes.length >= 1);
   const literalsDetails = (await call(app, { type: "details", handles: ["labels"] })).result;
   const literals = literalsDetails.nodes.find((n) => n.name === "labels")?.literals ?? [];
-  // #742 makes a union or enum's value set identity — returned whole, not
-  // sampled — so detail.literals is no longer sliced to 6. It now exposes the
-  // whole extracted set, bounded only by literalSummaries' internal 20-item
-  // safety cap (graph scrapes the signature text rather than reading a
-  // checker-resolved list, so the parse stays bounded).
-  TestValidator.equals("literals return whole, bounded by the extraction cap", literals.length, 20);
-  TestValidator.predicate("literal summaries dedupe repeats", literals.filter((l) => l === "dup").length === 1);
-  TestValidator.predicate("literal summaries drop overlong and punctuation-only tokens", !literals.includes("()") && !literals.some((l) => l.length > 40));
+  // The snapshot already carries the provider-resolved literal identity set.
+  TestValidator.equals("provider-owned literals return whole", literals.length, 20);
+  TestValidator.predicate(
+    "provider-owned literals preserve source spelling",
+    literals[0] === '"dup"' && !literals.includes("()"),
+  );
   // memberLimit=1 breaks after the first object-literal member.
   const capped = (await call(app, { type: "details", handles: ["opts"], memberLimit: 1 })).result;
   TestValidator.equals("object-literal members respect the limit", capped.nodes.find((n) => n.name === "opts")?.members?.length ?? 0, 1);

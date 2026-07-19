@@ -27,6 +27,11 @@ export const test_ttscgraph_provider_rejects_malformed_serve_responses =
     // A non-JSON serve line is a framing fault the client parses itself, so it
     // is surfaced as an error rather than resolving a request.
     await assertRejected(root, "--nonjson", "a non-JSON serve line");
+    await assertRejected(
+      root,
+      ["--nonjson", "--late-after-nonjson"],
+      "late output from a retired protocol generation",
+    );
     // A well-formed frame carrying an id no request is waiting on cannot be
     // routed, and an unroutable frame fails every outstanding request rather
     // than hanging until the process exits.
@@ -42,13 +47,16 @@ export const test_ttscgraph_provider_rejects_malformed_serve_responses =
 
 async function assertRejected(
   root: string,
-  serveFlag: string,
+  serveFlag: string | readonly string[],
   label: string,
 ): Promise<void> {
   const client = new TtscGraphClient({
     root,
     command: process.execPath,
-    args: [GraphPaths.fakeTtscGraphServer, serveFlag],
+    args: [
+      GraphPaths.fakeTtscGraphServer,
+      ...(typeof serveFlag === "string" ? [serveFlag] : serveFlag),
+    ],
   });
   try {
     let error: unknown;

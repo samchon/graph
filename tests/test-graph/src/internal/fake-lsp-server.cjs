@@ -8,6 +8,7 @@ const options = {
   badHeader: false,
   badJson: false,
   emptySymbols: false,
+  closeInputAfterInitialize: false,
   exitOnInitialize: false,
   exitOnShutdown: false,
   messageLessError: false,
@@ -30,6 +31,9 @@ const options = {
   javaFlat: false,
   omitChildren: false,
   progress: false,
+  hangProgressLifecycle: false,
+  hangRefreshReadiness: false,
+  ignoreTermination: false,
   progressLifecycle: false,
   referenceProgressLifecycle: false,
   rustImpls: false,
@@ -47,6 +51,7 @@ const options = {
 const symbolCallCountByUri = new Map();
 let diagnosticSeverities = [2];
 let hangMethod;
+let hangRefreshMethod;
 if (process.env.SAMCHON_GRAPH_FAKE_LSP_ARGS_FILE) {
   fs.writeFileSync(
     process.env.SAMCHON_GRAPH_FAKE_LSP_ARGS_FILE,
@@ -56,6 +61,9 @@ if (process.env.SAMCHON_GRAPH_FAKE_LSP_ARGS_FILE) {
 if (process.env.SAMCHON_GRAPH_FAKE_LSP_CWD_FILE) {
   fs.writeFileSync(process.env.SAMCHON_GRAPH_FAKE_LSP_CWD_FILE, process.cwd());
 }
+if (process.env.SAMCHON_GRAPH_FAKE_LSP_PID_FILE) {
+  fs.writeFileSync(process.env.SAMCHON_GRAPH_FAKE_LSP_PID_FILE, String(process.pid));
+}
 // Delay only the FIRST textDocument/references response by this many ms, then
 // answer the rest immediately — models a server that builds its reference index
 // lazily on the first call and serves the rest from cache.
@@ -63,6 +71,8 @@ let slowFirstReferencesMs = 0;
 let referenceCallCount = 0;
 let progressLifecycleStarted = false;
 let progressLifecycleReady = false;
+let refreshStarted = false;
+let refreshProgressStarted = false;
 let lateProgressLifecycleMs = 0;
 let referenceProgressLifecycleStarted = false;
 let referenceProgressLifecycleReady = false;
@@ -83,6 +93,8 @@ for (const arg of process.argv.slice(2)) {
     options.badJson = true;
   } else if (arg === "--empty-symbols") {
     options.emptySymbols = true;
+  } else if (arg === "--close-input-after-initialize") {
+    options.closeInputAfterInitialize = true;
   } else if (arg === "--exit-on-initialize") {
     options.exitOnInitialize = true;
   } else if (arg === "--exit-on-shutdown") {
@@ -127,6 +139,12 @@ for (const arg of process.argv.slice(2)) {
     options.omitChildren = true;
   } else if (arg === "--progress") {
     options.progress = true;
+  } else if (arg === "--hang-progress-lifecycle") {
+    options.hangProgressLifecycle = true;
+  } else if (arg === "--hang-refresh-readiness") {
+    options.hangRefreshReadiness = true;
+  } else if (arg === "--ignore-termination") {
+    options.ignoreTermination = true;
   } else if (arg === "--progress-lifecycle") {
     options.progressLifecycle = true;
   } else if (arg.startsWith("--late-progress-lifecycle=")) {
@@ -159,6 +177,8 @@ for (const arg of process.argv.slice(2)) {
     options.typeQueries = true;
   } else if (arg.startsWith("--hang-method=")) {
     hangMethod = arg.slice("--hang-method=".length);
+  } else if (arg.startsWith("--hang-refresh-method=")) {
+    hangRefreshMethod = arg.slice("--hang-refresh-method=".length);
   } else if (arg.startsWith("--slow-first-references=")) {
     slowFirstReferencesMs = Number(arg.slice("--slow-first-references=".length));
   } else if (arg.startsWith("--hang-references-after=")) {
@@ -171,6 +191,28 @@ for (const arg of process.argv.slice(2)) {
       .split(",")
       .map((value) => Number(value));
   }
+}
+if (options.ignoreTermination && process.platform !== "win32") {
+  // A signal-resistant server holds its own work: it does not exit when the
+  // client closes stdin, and it ignores SIGTERM, so the client must escalate to
+  // SIGKILL. `terminateOwnedProcess` destroys the client's stdin write end
+  // before it signals; without a ref'd handle the child's stdin EOF would drain
+  // the event loop and exit this process before the SIGTERM handler runs,
+  // leaving the SIGTERM-before-SIGKILL evidence unwritten on POSIX hosts. The
+  // keep-alive timer holds the loop open so SIGTERM is observed deterministically
+  // and only SIGKILL ends the process; a swallowed stdin error keeps a closed
+  // pipe from surfacing as an uncaught exit.
+  const keepAlive = setInterval(() => undefined, 1_000);
+  keepAlive.ref?.();
+  process.stdin.on("error", () => undefined);
+  process.on("SIGTERM", () => {
+    if (process.env.SAMCHON_GRAPH_FAKE_LSP_SIGTERM_FILE) {
+      fs.writeFileSync(
+        process.env.SAMCHON_GRAPH_FAKE_LSP_SIGTERM_FILE,
+        "received",
+      );
+    }
+  });
 }
 writeDocumentVersionLog();
 
@@ -196,7 +238,18 @@ process.stdin.on("data", (chunk) => {
 });
 
 function handle(message) {
-  if (message.method === hangMethod) return;
+  if (
+    message.method === hangMethod ||
+    (refreshStarted && message.method === hangRefreshMethod)
+  ) {
+    if (process.env.SAMCHON_GRAPH_FAKE_LSP_HANG_FILE) {
+      fs.writeFileSync(
+        process.env.SAMCHON_GRAPH_FAKE_LSP_HANG_FILE,
+        message.method,
+      );
+    }
+    return;
+  }
   if (message.method === "initialize") {
     if (options.exitOnInitialize) process.exit(7);
     if (options.stderr) process.stderr.write("fake-lsp progress\n");
@@ -206,7 +259,7 @@ function handle(message) {
       process.stdout.write(`Content-Length: ${Buffer.byteLength(bad)}\r\n\r\n${bad}`);
     }
     if (options.unknownResponse) respond(999999, { ignored: true });
-    return respond(message.id, {
+    respond(message.id, {
       capabilities: {
         textDocumentSync: 1,
         documentSymbolProvider: true,
@@ -214,6 +267,20 @@ function handle(message) {
       },
       serverInfo: { name: "fake-lsp", version: "0.0.0" },
     });
+    if (options.closeInputAfterInitialize) {
+      process.stdin.removeAllListeners("data");
+      process.stdin.on("error", () => undefined);
+      process.stdin.destroy();
+      fs.closeSync(0);
+      if (process.env.SAMCHON_GRAPH_FAKE_LSP_INPUT_CLOSED_FILE) {
+        fs.writeFileSync(
+          process.env.SAMCHON_GRAPH_FAKE_LSP_INPUT_CLOSED_FILE,
+          "closed",
+        );
+      }
+      setInterval(() => undefined, 1_000);
+    }
+    return;
   }
   if (message.method === "initialized") return;
   if (message.method === "textDocument/didOpen") {
@@ -251,6 +318,20 @@ function handle(message) {
           value: { kind: "end" },
         });
       }, 500);
+    }
+    if (options.hangProgressLifecycle && !progressLifecycleStarted) {
+      progressLifecycleStarted = true;
+      request("window/workDoneProgress/create", { token: "stalled-index" });
+      notify("$/progress", {
+        token: "stalled-index",
+        value: { kind: "begin", title: "indexing forever" },
+      });
+      if (process.env.SAMCHON_GRAPH_FAKE_LSP_PROGRESS_FILE) {
+        fs.writeFileSync(
+          process.env.SAMCHON_GRAPH_FAKE_LSP_PROGRESS_FILE,
+          "started",
+        );
+      }
     }
     if (lateProgressLifecycleMs > 0 && !progressLifecycleStarted) {
       // csharp-ls may acknowledge didOpen, then begin solution loading well
@@ -291,6 +372,21 @@ function handle(message) {
   }
   if (message.method === "textDocument/didChange") {
     recordDocumentVersion(message.method, message.params.textDocument);
+    refreshStarted = true;
+    if (options.hangRefreshReadiness && !refreshProgressStarted) {
+      refreshProgressStarted = true;
+      request("window/workDoneProgress/create", { token: "refresh-index" });
+      notify("$/progress", {
+        token: "refresh-index",
+        value: { kind: "begin", title: "refresh indexing forever" },
+      });
+      if (process.env.SAMCHON_GRAPH_FAKE_LSP_HANG_FILE) {
+        fs.writeFileSync(
+          process.env.SAMCHON_GRAPH_FAKE_LSP_HANG_FILE,
+          "indexing readiness",
+        );
+      }
+    }
     return;
   }
   if (message.method === "textDocument/didClose") {
@@ -1561,7 +1657,10 @@ function handle(message) {
     if (options.shutdownError) return respondError(message.id, "shutdown failed");
     return respond(message.id, null);
   }
-  if (message.method === "exit") process.exit(0);
+  if (message.method === "exit") {
+    if (!options.ignoreTermination) process.exit(0);
+    return;
+  }
   if (message.id !== undefined) respond(message.id, null);
 }
 

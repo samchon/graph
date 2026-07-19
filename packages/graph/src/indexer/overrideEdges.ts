@@ -19,9 +19,11 @@ const IMPLEMENTATION_MEMBER_KINDS = new Set<string>([
  * that `implements` an interface *implements* its members, one that `extends` a
  * base *overrides* them. That distinction is what `details` reports back under
  * `implementedBy`, and together the two kinds are what a forward trace
- * dispatches through when a call lands on a declaration with no body (§3a) — an
- * abstract base and an interface are the same dead end to a walk that follows
- * what executes.
+ * dispatches through when a call lands on a declaration with no body.
+ *
+ * @deprecated This heuristic is retained only for compatibility with the
+ * released root API. Core indexing uses compiler- or language-server-owned
+ * override facts and must not add the result of this function automatically.
  */
 export function overrideEdges(
   nodes: readonly ISamchonGraphNode[],

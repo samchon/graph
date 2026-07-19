@@ -94,8 +94,14 @@ export const test_ttscgraph_provider_surfaces_process_failures = async () => {
     "a refresh after close reports the session is closed",
   );
 
-  // A process that ignores its stdin closing is force-killed after the graceful
-  // window, and only that exact owned child is ended.
+  // Windows named pipes retain the inherited read handle until process exit,
+  // so they surface this condition through the already-covered exit listener.
+  // Keep this platform-specific transport probe after the independent closed
+  // session assertions so a pipe failure cannot hide their coverage.
+  /* c8 ignore next */
+  if (process.platform !== "win32") await assertClosedRequestPipe(root);
+
+  // Closing before the first request must not spawn a process merely to stop it.
   const marker = path.join(root, "stubborn-closed.txt");
   const stubborn = new TtscGraphClient({
     root,
@@ -108,14 +114,61 @@ export const test_ttscgraph_provider_surfaces_process_failures = async () => {
   });
   await stubborn.close();
   TestValidator.equals(
-    "closing a stubborn child still ends the exact owned process",
-    fs.readFileSync(marker, "utf8"),
-    "closed\n",
+    "pre-start close creates no owned process",
+    fs.existsSync(marker),
+    false,
   );
 };
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForFile(file: string): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!fs.existsSync(file)) {
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${file}`);
+    await delay(10);
+  }
+}
+
+async function assertClosedRequestPipe(root: string): Promise<void> {
+  // A producer can remain alive after closing the request side of its pipe.
+  // The next refresh must reject the write failure and retire that generation
+  // instead of waiting for the snapshot timeout.
+  const stdinClosed = path.join(root, "stdin-closed.txt");
+  const client = new TtscGraphClient({
+    root,
+    command: process.execPath,
+    args: [
+      GraphPaths.fakeTtscGraphServer,
+      "--close-stdin-after-first",
+      `--stdin-closed-marker=${stdinClosed}`,
+    ],
+    requestTimeoutMs: 5_000,
+  });
+  try {
+    await client.refresh();
+    await waitForFile(stdinClosed);
+    const writeFailure = await rejectionOf(client.refresh());
+    TestValidator.predicate(
+      "a closed native request pipe rejects before the snapshot timeout",
+      (writeFailure.message.includes("could not request snapshot") ||
+        writeFailure.message.includes("stdin failed")) &&
+        !writeFailure.message.includes("timed out"),
+    );
+  } finally {
+    await client.close();
+  }
+}
+
+async function rejectionOf(task: Promise<unknown>): Promise<Error> {
+  try {
+    await task;
+  } catch (error) {
+    if (error instanceof Error) return error;
+  }
+  throw new Error("expected promise to reject");
 }
 
 async function rejects(task: Promise<unknown>, label: string): Promise<void> {

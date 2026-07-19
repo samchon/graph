@@ -102,7 +102,7 @@ export namespace ISamchonGraphDetails {
     /** Declaration kind (`class`, `method`, `function`, ...). */
     kind: string;
 
-    /** Project-relative path of the file that declares this node. */
+    /** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */
     file: string;
 
     /** 1-based declaration line, when known. */
@@ -120,7 +120,7 @@ export namespace ISamchonGraphDetails {
     /** Declaration kind (`class`, `method`, `function`, ...). */
     kind: string;
 
-    /** Project-relative path of the file that declares this node. */
+    /** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */
     file: string;
 
     /** 1-based declaration line, when known. */
@@ -148,9 +148,10 @@ export namespace ISamchonGraphDetails {
     implementedBy?: IReference[];
 
     /**
-     * String-literal values found in the declaration signature, such as a union
-     * or enum's value set. Returned whole rather than sampled: a symbol's value
-     * set is part of its identity, not a slice of its fan-out.
+     * The complete value set a type alias or enum admits, in __LANG__ source
+     * form (`"a"`, `1`, `true`, `null`) — the provider-resolved union members,
+     * not quoted tokens scraped from `signature`. Absent when the active index
+     * cannot prove an enumerable value set.
      */
     literals?: string[];
 
@@ -199,7 +200,7 @@ export namespace ISamchonGraphDetails {
     /** Neighbor declaration kind. */
     kind: string;
 
-    /** Project-relative declaration file for the neighbor. */
+    /** Neighbor identity: project-relative, normalized absolute, or `bundled:///`. */
     file: string;
 
     /** 1-based declaration line, when known. */

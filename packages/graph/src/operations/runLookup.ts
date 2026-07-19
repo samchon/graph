@@ -96,7 +96,7 @@ export function runLookup(
     // Every hit's id came from a node in this same graph just above.
     /* c8 ignore next */
     if (node === undefined) continue;
-    const sig = signatureOf(graph.project, node);
+    const sig = signatureOf(graph, node);
     if (sig !== undefined) hit.signature = sig;
   }
   return {

@@ -1,11 +1,6 @@
 import { ISamchonGraphDump } from "../structures";
-import { dedupeEdges } from "./dedupeEdges";
-import { dedupeNodes } from "./dedupeNodes";
-import { finalizeGraph } from "./finalizeGraph";
+import { buildStaticGraphResult } from "./buildStaticGraphResult";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
-import { staticGraphParts } from "./staticGraphParts";
-import { wireEdges } from "./wireEdges";
-import { wireNodes } from "./wireNodes";
 
 /**
  * The static graph as a dump: parse, derive the facts §4k asks of an indexer
@@ -16,19 +11,5 @@ import { wireNodes } from "./wireNodes";
 export function buildStaticGraph(
   options: IBuildGraphOptions = {},
 ): ISamchonGraphDump {
-  const parts = staticGraphParts(options);
-  const finalized = finalizeGraph(
-    parts.root,
-    [...parts.sources.keys()],
-    parts.nodes,
-    parts.edges,
-  );
-  return {
-    project: parts.root,
-    languages: parts.languages,
-    indexer: "static",
-    nodes: wireNodes(dedupeNodes(finalized.nodes)),
-    edges: wireEdges(dedupeEdges(finalized.edges)),
-    warnings: parts.warnings,
-  };
+  return buildStaticGraphResult(options).dump;
 }

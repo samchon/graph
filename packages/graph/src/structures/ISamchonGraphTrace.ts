@@ -17,7 +17,7 @@ export interface ISamchonGraphTrace {
   /** Unique nodes reached (excluding the start), each with its depth and roles. */
   reached: ISamchonGraphTrace.INode[];
 
-  /** True when the trace hit its node or depth cap; the returned flow stands. */
+  /** True when a walk or path-search bound omitted an eligible node or hop. */
   truncated: boolean;
 
   /** The resolved `to` target, when a path was requested. */
@@ -63,7 +63,7 @@ export namespace ISamchonGraphTrace {
     /** Declaration kind (`variable`, `method`, `class`, ...). */
     kind: string;
 
-    /** Project-relative path of the file that declares it. */
+    /** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */
     file: string;
 
     /** 1-based declaration line, when known. */
@@ -187,7 +187,7 @@ export namespace ISamchonGraphTrace {
     /** Declaration kind (`class`, `method`, `function`, ...). */
     kind: string;
 
-    /** Project-relative path of the declaration file. */
+    /** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */
     file: string;
 
     /** 1-based declaration line, when known. */

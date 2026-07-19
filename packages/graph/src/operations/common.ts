@@ -3,7 +3,6 @@ export * from "./decoratorsOf";
 export * from "./docOf";
 export * from "./edgeEvidenceOf";
 export * from "./exportFanIn";
-export * from "./fileLines";
 export * from "./IResolvedGraphHandle";
 export * from "./IRunnerOutput";
 export * from "./isExecution";

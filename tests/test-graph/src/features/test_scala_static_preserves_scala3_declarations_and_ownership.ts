@@ -48,7 +48,8 @@ export const test_scala_static_preserves_scala3_declarations_and_ownership =
         "end Api",
         "",
         "abstract class Repository",
-        "final class DefaultRepository extends Repository:",
+        "final class DefaultRepository extends",
+        "  Repository:",
         "  def load(): String = Api.invoke()",
         "",
         "opaque type Token = String",
@@ -207,19 +208,22 @@ export const test_scala_static_preserves_scala3_declarations_and_ownership =
       ),
     );
     TestValidator.predicate(
-      "Scala inheritance and qualified calls resolve against their real owners",
+      "a multiline Scala extends clause emits the canonical inheritance edge",
       dump.edges.some(
         (edge) =>
           edge.kind === "extends" &&
           edge.from === named("DefaultRepository")?.id &&
           edge.to === named("Repository")?.id,
+      ),
+    );
+    TestValidator.predicate(
+      "Scala qualified calls resolve against their real owners",
+      dump.edges.some(
+        (edge) =>
+          edge.kind === "calls" &&
+          edge.from === named("Main")?.id &&
+          edge.to === named("Api.invoke")?.id,
       ) &&
-        dump.edges.some(
-          (edge) =>
-            edge.kind === "calls" &&
-            edge.from === named("Main")?.id &&
-            edge.to === named("Api.invoke")?.id,
-        ) &&
         dump.edges.some(
           (edge) =>
             edge.kind === "calls" &&

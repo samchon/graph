@@ -41,7 +41,7 @@ A language server improves the graph with semantically resolved edges. Install t
 
 | Language | Server | Install |
 |---|---|---|
-| TypeScript | `ttscserver` (0.18+) | `npm i -D ttsc typescript` |
+| TypeScript | `ttscgraph` / `ttscserver` | `npm i -D ttsc@^0.19.4 typescript` |
 | Python | `pyright-langserver` | `npm i -D pyright` |
 | Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
 | Rust | `rust-analyzer` | `rustup component add rust-analyzer` |
@@ -58,6 +58,8 @@ A language server improves the graph with semantically resolved edges. Install t
 | Dart | `dart` | ships with the Dart SDK |
 
 Each server must be on `PATH`. If none is present for a file's language, that language falls back to the static indexer automatically.
+
+TypeScript uses the compiler-owned `ttscgraph` snapshot first. The binary is resolved from the target project's `ttsc` installation; `TTSC_GRAPH_BINARY` can point to an exact absolute binary for development or release verification. If the binary is unavailable, its schema/provenance cannot be trusted, or the requested build is deliberately capped, indexing states the reason and falls back to `ttscserver`, then to the static indexer when no server is available. `ttscgraph` schema 5 is the complete contract; older schema 3 producers are accepted only as an explicitly warned compatibility snapshot and do not carry the newer member-relation and object-member facts.
 
 JavaScript is intentionally not indexed. In an arbitrary repository, `.js`/`.jsx`/`.mjs`/`.cjs` files are as often build output or vendored bundles as handwritten source, and the graph cannot tell which without project-specific provenance.
 
@@ -131,7 +133,7 @@ One-time cost per repository. The server re-scans only changed files after that 
 
 kotlin-language-server, jdtls, and csharp-ls are particularly slow: each resolves the whole project before answering anything.
 
-Closing that gap needs what `@ttsc/graph` already does for TypeScript: a compiler-native indexer instead of a generic LSP server. Not done here.
+TypeScript already closes that gap through the compiler-owned `ttscgraph` snapshot. The remaining languages use their listed language servers until their compiler-owned bulk providers land.
 
 ### Reproduction
 
@@ -318,8 +320,9 @@ export namespace ISamchonGraphApplication {
      * The audit is operation-aware. For the walks from a named handle (`trace`,
      * `overview`) it reports the structure held for the named handles, bounded
      * where `truncated` says. For `details` it reports the two halves of a
-     * resolved symbol: its own shape returned whole, its fan-out returned as a
-     * slice with `trace` for the rest. For ranked operations (`lookup`,
+     * resolved symbol: its own shape returned whole unless the caller explicitly
+     * capped members, and its fan-out returned as a slice with `trace` for the
+     * rest. For ranked operations (`lookup`,
      * `entrypoints`, `tour`) it additionally says that selection was matched,
      * scored, ranked, and limited against the question, so the facts are checked
      * but shortlist coverage is yours to judge.

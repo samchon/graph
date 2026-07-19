@@ -55,41 +55,78 @@ function posix(p: string): string {
   return p.replace(/\\/g, "/");
 }
 
-/** An absolute path (POSIX or Windows drive); relative dumps skip rerooting. */
+/** Absolute POSIX, Windows drive, or UNC path; relative dumps skip rerooting. */
 function isAbsolute(p: string): boolean {
   return /^(?:[A-Za-z]:)?\//.test(posix(p));
 }
 
-function commonRoot(files: string[]): string {
-  // `reduce()` guards this helper with `projectFiles.length > 0`.
-  /* c8 ignore next */
-  if (files.length === 0) return "";
-  let parts = posix(files[0]!).split("/");
-  for (const file of files.slice(1)) {
-    const other = posix(file).split("/");
+function isWindowsPath(p: string): boolean {
+  const normalized = posix(p);
+  return /^[A-Za-z]:(?:\/|$)/.test(normalized) || normalized.startsWith("//");
+}
+
+function directoryOf(file: string): string {
+  const normalized = posix(file).replace(/\/+$/, "");
+  const slash = normalized.lastIndexOf("/");
+  /* c8 ignore next -- callers pass absolute file identities, never a slashless value. */
+  if (slash < 0) return "";
+  return slash === 0 ? "/" : normalized.slice(0, slash);
+}
+
+function commonRoot(directories: string[]): string {
+  let parts = posix(directories[0]!).split("/");
+  const caseInsensitive = directories.every(isWindowsPath);
+  for (const directory of directories.slice(1)) {
+    const other = posix(directory).split("/");
     let i = 0;
-    while (i < parts.length && i < other.length && parts[i] === other[i]) i++;
+    while (
+      i < parts.length &&
+      i < other.length &&
+      (caseInsensitive
+        ? parts[i]!.toLowerCase() === other[i]!.toLowerCase()
+        : parts[i] === other[i])
+    )
+      i++;
     parts = parts.slice(0, i);
     if (parts.length === 0) break;
   }
   return parts.join("/");
 }
 
-// An empty root means the dump's paths are already project-relative (the
-// current `samchon-graph dump` contract); they pass through structure-intact.
-function relativize(abs: string, root: string): string {
-  const a = posix(abs);
-  const r = posix(root).replace(/\/+$/, "");
-  if (!r) return a;
-  if (a === r || a.startsWith(r + "/"))
-    return a.slice(r.length).replace(/^\/+/, "");
-  const nm = a.lastIndexOf("node_modules/");
-  if (nm >= 0) return a.slice(nm);
-  const slash = a.lastIndexOf("/");
-  return slash >= 0 ? a.slice(slash + 1) : a;
+// A null root means at least one project identity is already relative. Preserve
+// those current identities, while still sanitizing an absolute compiler-loaded
+// sibling through the same outside-root policy as a legacy dump.
+function relativize(file: string, root: string | null): string {
+  const normalized = posix(file);
+  if (root === null)
+    return isAbsolute(normalized)
+      ? outsideRootPath(normalized)
+      : normalized;
+  const normalizedRoot = posix(root);
+  const r = normalizedRoot === "/" ? "/" : normalizedRoot.replace(/\/+$/, "");
+  const caseInsensitive = isWindowsPath(normalized) && isWindowsPath(r);
+  const comparedPath = caseInsensitive
+    ? normalized.toLowerCase()
+    : normalized;
+  const comparedRoot = caseInsensitive ? r.toLowerCase() : r;
+  if (
+    comparedRoot &&
+    (comparedRoot === "/" ||
+      comparedPath === comparedRoot ||
+      comparedPath.startsWith(comparedRoot + "/"))
+  )
+    return normalized.slice(r.length).replace(/^\/+/, "");
+  return outsideRootPath(normalized);
 }
 
-function rewriteId(id: string, root: string): string {
+function outsideRootPath(file: string): string {
+  const nodeModules = file.lastIndexOf("node_modules/");
+  if (nodeModules >= 0) return file.slice(nodeModules);
+  const slash = file.lastIndexOf("/");
+  return slash >= 0 ? file.slice(slash + 1) : file;
+}
+
+function rewriteId(id: string, root: string | null): string {
   const hash = id.indexOf("#");
   if (hash < 0) return id;
   return relativize(id.slice(0, hash), root) + id.slice(hash);
@@ -121,6 +158,7 @@ const DISPLAY_KIND: Record<string, string> = {
   type_ref: "type-ref",
   extends: "heritage",
   implements: "heritage",
+  overrides: "heritage",
 };
 
 function displayKind(kind: string): string {
@@ -135,13 +173,14 @@ export function reduce(
   }: { maxNodes?: number; keepExternal?: boolean } = {},
 ): ViewerPayload {
   const keptByExternal = raw.nodes.filter((n) => keepExternal || !n.external);
-  // Reroot only absolute paths (the legacy dump contract); a current dump's
-  // paths are already project-relative and keep their structure as-is.
+  // Reroot only when every authored identity is absolute (the legacy dump
+  // contract). A current dump can mix relative project files with canonical
+  // absolute compiler-loaded siblings; that form is handled per file below.
   const projectFiles = raw.nodes.filter((n) => !n.external).map((n) => n.file);
   const root =
-    projectFiles.length > 0 && isAbsolute(projectFiles[0]!)
-      ? commonRoot(projectFiles)
-      : "";
+    projectFiles.length > 0 && projectFiles.every(isAbsolute)
+      ? commonRoot(projectFiles.map(directoryOf))
+      : null;
 
   const liveIds = new Set(keptByExternal.map((n) => n.id));
   const liveEdges = raw.edges.filter(

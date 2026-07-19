@@ -27,7 +27,6 @@ import { appendAll } from "./appendAll";
 import { decoratorsAbove } from "./decoratorsAbove";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { ILspSession } from "./ILspSession";
-import { overrideEdges } from "./overrideEdges";
 import { resolveType } from "./resolveType";
 import { supertypesOf } from "./supertypesOf";
 
@@ -58,6 +57,8 @@ export async function scanSession(
     const symbols = await client.request<DocumentSymbolResult>(
       "textDocument/documentSymbol",
       { textDocument: { uri: fileUri(openedFile.abs) } },
+      undefined,
+      options.signal,
     );
     const converted = convertSymbols(
       language,
@@ -125,6 +126,7 @@ export async function scanSession(
       client,
       referenceParams(referenceTargets[0]!),
       options.lspWarmupTimeoutMs,
+      options.signal,
     );
     if (
       progressFence !== undefined &&
@@ -135,11 +137,12 @@ export async function scanSession(
       // query. The first answer can be a valid-but-incomplete empty array while
       // that query starts a work-done lifecycle. Wait for its end and ask once
       // more; the second answer is from the completed index.
-      await session.waitForReady(progressFence, false);
+      await session.waitForReady(progressFence, false, options.signal);
       warm = await safeReferences(
         client,
         referenceParams(referenceTargets[0]!),
         options.lspWarmupTimeoutMs,
+        options.signal,
       );
     }
     if (warm === "timeout") referencesUnavailable = true;
@@ -150,7 +153,12 @@ export async function scanSession(
       referenceTargets.slice(1),
       options.lspConcurrency ?? 16,
       async (target) => {
-        const refs = await safeReferences(client, referenceParams(target));
+        const refs = await safeReferences(
+          client,
+          referenceParams(target),
+          undefined,
+          options.signal,
+        );
         return refs === "timeout" ? null : refs;
       },
     );
@@ -363,8 +371,6 @@ export async function scanSession(
       });
     }
   }
-  appendAll(edges, overrideEdges(nodes, edges));
-
   return {
     nodes,
     edges,
@@ -685,6 +691,7 @@ async function safeReferences(
   client: LspClient,
   params: unknown,
   timeoutMs?: number,
+  signal?: AbortSignal,
 ): Promise<ILocation[] | null | "timeout"> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -692,8 +699,10 @@ async function safeReferences(
         "textDocument/references",
         params,
         timeoutMs,
+        signal,
       );
     } catch (error) {
+      if ((error as Error).name === "AbortError") throw error;
       if ((error as Error).message.startsWith("LSP request timed out")) {
         return "timeout";
       }

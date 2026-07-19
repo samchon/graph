@@ -55,6 +55,16 @@ export interface IBuildGraphOptions {
    */
   keepAlive?: boolean;
   /**
+   * Abort an in-flight compiler-owned snapshot or generic LSP build.
+   *
+   * Resident graph sources use this to make shutdown reach an owned provider
+   * immediately instead of waiting behind its serialized refresh. Generic LSP
+   * initialization, indexing readiness, and graph requests all consume it; an
+   * aborted build closes the unpublished language-server session before it
+   * rejects.
+   */
+  signal?: AbortSignal;
+  /**
    * Command (and any leading arguments) used to bootstrap a missing
    * `compile_commands.json` for cpp/c projects that configure CMake.
    * Defaults to `["cmake"]`; overridable so tests can substitute a fake

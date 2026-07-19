@@ -148,9 +148,9 @@ function snapshot(
     // carries their text, so a resident refresh has nothing to re-read either.
     sources: new Map([[file, { checkerDigest: digest, diskDigest: digest }]]),
     provenance: {
-      schemaVersion: 1,
+      schemaVersion: 5,
       tool: "ttscgraph",
-      toolVersion: "0.19.2",
+      toolVersion: "0.19.3-21-g2b724664e",
       compilerVersion: "5.9.0",
       protocolVersion: 1,
       universe: createHash("sha256").update("universe").digest("hex"),

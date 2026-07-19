@@ -1,6 +1,7 @@
 import { TestValidator } from "@nestia/e2e";
 import {
   RESULT_AUDIT,
+  RESULT_AUDIT_DETAILS,
   RESULT_AUDIT_ESCAPE,
   RESULT_AUDIT_SELECTION,
 } from "@samchon/graph";
@@ -74,13 +75,29 @@ export const test_result_audits_before_the_facts = async () => {
     type: "details",
     handles: ["Root.Service.run"],
   });
-  for (const output of [trace, details, overview]) {
+  for (const output of [trace, overview]) {
     TestValidator.equals(
       `${output.result.type} reports exact graph structure for named handles`,
       output.audit,
       RESULT_AUDIT("static"),
     );
   }
+  TestValidator.equals(
+    "details reports its identity and fan-out completeness separately",
+    details.audit,
+    RESULT_AUDIT_DETAILS("static"),
+  );
+  const cappedDetails = await ContractGraph.call(app, {
+    type: "details",
+    handles: ["Root.Service"],
+    memberLimit: 1,
+  });
+  TestValidator.predicate(
+    "an explicit member cap makes the audit deny whole-member coverage",
+    cappedDetails.audit === RESULT_AUDIT_DETAILS("static", 1) &&
+      cappedDetails.audit.includes("explicit cap") &&
+      !cappedDetails.audit.includes("members, values, and signature — is returned whole"),
+  );
 
   // The audit states its evidence before it instructs, and the instruction it
   // does give hands the stop rule to `next` rather than claiming it.

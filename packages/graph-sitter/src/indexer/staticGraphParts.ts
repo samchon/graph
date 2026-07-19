@@ -39,6 +39,13 @@ interface IDeclaration {
   ownerName?: string;
 }
 
+interface ISwiftExtension {
+  file: string;
+  receiverName: string;
+  header: string;
+  evidence: ISamchonGraphEvidence;
+}
+
 interface IParsedDeclaration {
   kind: GraphNodeKind;
   name: string;
@@ -71,6 +78,7 @@ export function graphSitterParts(
   const edges: ISamchonGraphEdge[] = [];
   const sources = new Map<string, string>();
   const declarationsByFile = new Map<string, IDeclaration[]>();
+  const swiftExtensions: ISwiftExtension[] = [];
   const byName = new Map<string, ISamchonGraphNode[]>();
   const externalNodes = new Map<string, ISamchonGraphNode>();
   const absolutePathByRelativePath = new Map(
@@ -88,7 +96,12 @@ export function graphSitterParts(
     const lines = text.split(/\r?\n/);
     const rel = input.relativePath;
     const language = input.language;
-    const declarations = declarationsOf(rel, language, lines);
+    const declarations = declarationsOf(
+      rel,
+      language,
+      lines,
+      swiftExtensions,
+    );
     declarationsByFile.set(rel, declarations);
     for (const declaration of declarations) {
       nodes.push(declaration.node);
@@ -116,6 +129,12 @@ export function graphSitterParts(
   }
 
   connectProjectWideCppOwners(declarationsByFile, edges);
+  connectProjectWideSwiftOwners(
+    declarationsByFile,
+    swiftExtensions,
+    byName,
+    edges,
+  );
 
   for (const [rel, declarations] of declarationsByFile) {
     const abs = absolutePathByRelativePath.get(rel)!;
@@ -248,6 +267,7 @@ function declarationsOf(
   file: string,
   language: GraphLanguage,
   lines: readonly string[],
+  swiftExtensions: ISwiftExtension[],
 ): IDeclaration[] {
   const declarations: IDeclaration[] = [];
   // Owners that a whole-file scan names rather than nests, indexed by the
@@ -325,6 +345,17 @@ function declarationsOf(
       // `impl` block does, resolved below once the file has been scanned.
       if (parsed.extensionOwner !== undefined) {
         const endIndex = declarationEndIndexOf(language, lexicalLines, i);
+        swiftExtensions.push({
+          file,
+          receiverName: parsed.extensionOwner,
+          header: header.trim(),
+          evidence: {
+            file,
+            startLine: i + 1,
+            startCol: Math.max(1, line.indexOf(parsed.extensionOwner) + 1),
+            endLine: i + 1,
+          },
+        });
         if (endIndex > i) {
           const owner = swiftTypes.get(parsed.extensionOwner);
           ownerStack.push({
@@ -522,6 +553,8 @@ function declarationHeader(
   if (language === "kotlin")
     return KotlinDeclarations.kotlinDeclarationHeader(lines, start);
   if (language === "php") return PhpDeclarations.phpDeclarationHeader(lines, start);
+  if (language === "scala")
+    return ScalaDeclarations.scalaDeclarationHeader(lines, start);
   if (language === "swift")
     return SwiftDeclarations.swiftDeclarationHeader(lines, start);
   return lines[start]!;
@@ -651,6 +684,66 @@ function connectProjectWideCppOwners(
       kind: "contains",
       evidence: declaration.node.evidence,
     });
+  }
+}
+
+/**
+ * Connect Swift extension members and conformance headers to one resolved
+ * receiver. A same-file declaration is authoritative when unique there;
+ * otherwise the qualified receiver must be unique across the project.
+ */
+function connectProjectWideSwiftOwners(
+  declarationsByFile: ReadonlyMap<string, IDeclaration[]>,
+  extensions: readonly ISwiftExtension[],
+  byName: Map<string, ISamchonGraphNode[]>,
+  edges: ISamchonGraphEdge[],
+): void {
+  const declarations = [...declarationsByFile.values()]
+    .flat()
+    .filter((declaration) => declaration.node.language === "swift");
+  const types = new Map<string, IDeclaration[]>();
+  for (const declaration of declarations) {
+    if (!isSwiftExtendable(declaration.node.kind)) continue;
+    push(
+      types,
+      declaration.node.qualifiedName ?? declaration.node.name,
+      declaration,
+    );
+  }
+  for (const declaration of declarations) {
+    if (declaration.ownerId !== undefined || declaration.ownerName === undefined)
+      continue;
+    const candidates = types.get(declaration.ownerName);
+    if (candidates?.length !== 1) continue;
+    const owner = candidates[0]!;
+    declaration.ownerId = owner.node.id;
+    edges.push({
+      from: owner.node.id,
+      to: declaration.node.id,
+      kind: "contains",
+      evidence: declaration.node.evidence,
+    });
+  }
+  for (const extension of extensions) {
+    const candidates = types.get(extension.receiverName) ?? [];
+    const local = candidates.filter(
+      (candidate) => candidate.node.file === extension.file,
+    );
+    const owner =
+      local.length === 1
+        ? local[0]
+        : local.length === 0 && candidates.length === 1
+          ? candidates[0]
+          : undefined;
+    if (owner === undefined) continue;
+    edges.push(
+      ...inheritanceEdges(
+        owner.node,
+        extension.header,
+        byName,
+        extension.evidence,
+      ),
+    );
   }
 }
 
@@ -1269,8 +1362,14 @@ function inheritanceEdges(
   source: ISamchonGraphNode,
   header: string,
   byName: Map<string, ISamchonGraphNode[]>,
+  evidence: ISamchonGraphEvidence | undefined = source.evidence,
 ): ISamchonGraphEdge[] {
-  if (source.kind !== "class" && source.kind !== "interface") return [];
+  if (
+    source.kind !== "class" &&
+    source.kind !== "interface" &&
+    !(source.language === "swift" && source.kind === "enum")
+  )
+    return [];
   const out: ISamchonGraphEdge[] = [];
   const seen = new Set<string>();
   for (const supertype of source.language === "swift"
@@ -1295,7 +1394,7 @@ function inheritanceEdges(
       from: source.id,
       to: target.id,
       kind: relation,
-      evidence: source.evidence,
+      evidence,
     });
   }
   return out;

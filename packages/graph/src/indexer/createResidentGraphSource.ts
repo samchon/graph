@@ -7,12 +7,14 @@ import {
   ISamchonGraphNode,
 } from "../structures";
 import { GraphLanguage } from "../typings";
+import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { isBulkGraphSession } from "../provider/isBulkGraphSession";
 import { mergeGraphSlices } from "../provider/mergeGraphSlices";
 import { readText, walkSourceFiles } from "../utils/fs";
 import { allExtensions } from "./allExtensions";
 import { buildLspGraph } from "./buildLspGraph";
+import { buildStaticGraphResult } from "./buildStaticGraphResult";
 import { staticGraphParts } from "./staticGraphParts";
 import { discoverLanguages } from "./discoverLanguages";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
@@ -30,10 +32,17 @@ interface IResidentState {
   staticLanguages: GraphLanguage[];
   languages: GraphLanguage[];
   hashes: Map<string, string>;
+  source: SamchonGraphSourceReader;
 }
 
-const DEFAULT_DEPENDENCIES = {
+interface IResidentDependencies {
+  buildLspGraph: typeof buildLspGraph;
+  buildStaticGraphResult?: typeof buildStaticGraphResult;
+}
+
+const DEFAULT_DEPENDENCIES: IResidentDependencies = {
   buildLspGraph,
+  buildStaticGraphResult,
 };
 
 // Languages that fell back to static parsing (no LSP session to hold) are
@@ -41,22 +50,35 @@ const DEFAULT_DEPENDENCIES = {
 // warm state to lose, so there is nothing to reuse there.
 export function createResidentGraphSource(
   options: IBuildGraphOptions = {},
-  dependencies: typeof DEFAULT_DEPENDENCIES = DEFAULT_DEPENDENCIES,
+  dependencies: IResidentDependencies = DEFAULT_DEPENDENCIES,
 ): IResidentGraphSource {
   const root = path.resolve(options.cwd ?? process.cwd());
   let state: IResidentState | undefined;
   let queue: Promise<void> = Promise.resolve();
   let closed = false;
+  let activeAbort: AbortController | undefined;
+  let closing: Promise<void> | undefined;
+  const sessionClosures = new WeakMap<
+    ILspSession | IBulkGraphSession,
+    Promise<void>
+  >();
 
-  async function buildFresh(): Promise<IResidentState> {
+  async function buildFresh(signal: AbortSignal): Promise<IResidentState> {
     // `keepAlive: true` above guarantees `buildLspGraph` always returns a
     // sessions map, even an empty one.
-    const result = await dependencies.buildLspGraph({
-      ...options,
-      keepAlive: true,
-    });
+    const result =
+      options.mode === "static"
+        ? (dependencies.buildStaticGraphResult ?? buildStaticGraphResult)(
+            options,
+          )
+        : await dependencies.buildLspGraph({
+            ...options,
+            keepAlive: true,
+            signal,
+          });
     const sessions = result.sessions ?? new Map();
     try {
+      const texts = result.sources ?? new Map<string, string>();
       return {
         dump: result.dump,
         sessions,
@@ -67,11 +89,12 @@ export function createResidentGraphSource(
           result.sources === undefined
             ? snapshotSources(root, options, bulkLanguagesOf(sessions))
             : hashSources(result.sources),
+        source: result.source ?? sourceReaderOf(root, texts, sessions),
       };
     } catch (error) {
       // Once the build hands its sessions to this source, every later failure
       // on the path to publishing the state belongs to us to clean up.
-      await closeSessions(sessions);
+      await closeSessions(sessions, sessionClosures);
       throw error;
     }
   }
@@ -79,6 +102,7 @@ export function createResidentGraphSource(
   async function refreshStale(
     current: IResidentState,
     prefetched: ReadonlyMap<GraphLanguage, IBulkGraphSession.IRefresh>,
+    signal: AbortSignal,
   ): Promise<void> {
     const nodes: ISamchonGraphNode[] = [];
     const edges: ISamchonGraphEdge[] = [];
@@ -93,10 +117,6 @@ export function createResidentGraphSource(
     const diagnostics: ISamchonGraphDiagnostic[] = [];
     const warnings: string[] = [];
     const sources = new Map<string, string>();
-    // Files a strict provider proved. Kept apart from `sources` for the same
-    // reason as in `buildLspGraph`: a bulk provider publishes a manifest of what
-    // its checker read, never the text, so there is no text to put here.
-    const strictFiles = new Set<string>();
     const generations = new Map(current.generations);
 
     for (const [language, session] of current.sessions) {
@@ -116,9 +136,6 @@ export function createResidentGraphSource(
         // forward: a diagnostic belongs to the generation that produced it.
         diagnostics.push(...refresh.snapshot.diagnostics);
         warnings.push(...refresh.snapshot.warnings);
-        for (const file of refresh.snapshot.sources.keys()) {
-          strictFiles.add(file);
-        }
         generations.set(language, refresh.generation);
         continue;
       }
@@ -126,7 +143,12 @@ export function createResidentGraphSource(
         extensions: allExtensions([language]),
         maxFiles: options.maxFiles,
       });
-      const result = await refreshLanguageSession(session, files, options);
+      const result = await refreshLanguageSession(
+        session,
+        files,
+        options,
+        signal,
+      );
       assertOpen();
       nodes.push(...result.nodes);
       edges.push(...result.edges);
@@ -151,7 +173,10 @@ export function createResidentGraphSource(
 
     const finalized = mergeGraphSlices({
       root,
-      files: [...new Set([...sources.keys(), ...strictFiles])],
+      // Bulk slices already contain compiler-resolved export edges. Reopening
+      // their manifest would break snapshot ownership and can target virtual or
+      // external identities; only generic source text belongs in this pass.
+      files: [...sources.keys()],
       genericNodes: nodes,
       genericEdges: edges,
       strictNodes,
@@ -167,69 +192,108 @@ export function createResidentGraphSource(
     current.dump = dump;
     current.hashes = hashSources(sources);
     current.generations = generations;
+    current.source = sourceReaderOf(root, sources, current.sessions);
   }
 
-  async function replaceLanguages(current: IResidentState): Promise<void> {
-    const fresh = await buildFresh();
+  async function replaceLanguages(
+    current: IResidentState,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const fresh = await buildFresh(signal);
     if (closed) {
-      await closeSessions(fresh.sessions);
+      await closeSessions(fresh.sessions, sessionClosures);
       throw closedError();
     }
     // Publish the complete replacement atomically before retiring the old
     // sessions. A failed fresh build leaves `current` untouched; a failed old
     // shutdown leaves the newly built state usable on the next call.
     state = fresh;
-    await closeSessions(current.sessions);
+    await closeSessions(current.sessions, sessionClosures);
   }
 
   return {
     load(): Promise<ISamchonGraphDump> {
       return enqueue(async () => {
         assertOpen();
-        if (state === undefined) {
-          const fresh = await buildFresh();
-          if (closed) {
-            await closeSessions(fresh.sessions);
-            throw closedError();
-          }
-          state = fresh;
-        } else {
-          const prefetched = await refreshBulkSessions(state.sessions);
-          const bulkChanged = [...prefetched].some(
-            ([language, refresh]) =>
-              state!.generations.get(language) !== refresh.generation,
-          );
-          if (
-            bulkChanged ||
-            isStale(
-              state.hashes,
-              root,
-              options,
-              bulkLanguagesOf(state.sessions),
-            )
-          ) {
-            const discovered = discoverLanguages(root, options);
-            if (sameLanguages(state.languages, discovered)) {
-              await refreshStale(state, prefetched);
-            } else {
-              await replaceLanguages(state);
+        const controller = new AbortController();
+        activeAbort = controller;
+        try {
+          if (state === undefined) {
+            const fresh = await buildFresh(controller.signal);
+            if (closed) {
+              await closeSessions(fresh.sessions, sessionClosures);
+              throw closedError();
+            }
+            state = fresh;
+          } else {
+            const prefetched = await refreshBulkSessions(
+              state.sessions,
+              controller.signal,
+            );
+            const bulkChanged = [...prefetched].some(
+              ([language, refresh]) =>
+                state!.generations.get(language) !== refresh.generation,
+            );
+            if (
+              bulkChanged ||
+              isStale(
+                state.hashes,
+                root,
+                options,
+                bulkLanguagesOf(state.sessions),
+              )
+            ) {
+              const discovered = discoverLanguages(root, options);
+              if (sameLanguages(state.languages, discovered)) {
+                await refreshStale(state, prefetched, controller.signal);
+              } else {
+                await replaceLanguages(state, controller.signal);
+              }
             }
           }
+          assertOpen();
+          return state.dump;
+        } finally {
+          if (activeAbort === controller) activeAbort = undefined;
         }
-        assertOpen();
-        return state.dump;
       });
     },
+    source(): SamchonGraphSourceReader | undefined {
+      return state?.source;
+    },
     close(): Promise<void> {
+      if (closing !== undefined) return closing;
       // Flip the bit synchronously. A load already inside an await observes it
       // before publishing a newly-built/refreshed graph, while calls queued
       // behind this point never start another language server.
       closed = true;
-      return enqueue(async () => {
-        const current = state;
-        state = undefined;
-        if (current !== undefined) await closeSessions(current.sessions);
-      });
+      activeAbort?.abort();
+      const current = state;
+      const immediateBulkClose =
+        current === undefined
+          ? Promise.resolve()
+          : closeSessions(current.sessions, sessionClosures, true);
+      closing = (async () => {
+        let failure: Error | undefined;
+        try {
+          await immediateBulkClose;
+        } catch (error) {
+          failure = asError(error);
+        }
+        try {
+          await enqueue(async () => {
+            const final = state;
+            state = undefined;
+            if (final !== undefined) {
+              await closeSessions(final.sessions, sessionClosures);
+            }
+          });
+        } catch (error) {
+          failure ??= asError(error);
+        }
+        if (failure !== undefined) throw failure;
+      })();
+      return closing;
     },
   };
 
@@ -256,6 +320,21 @@ export function createResidentGraphSource(
   function assertOpen(): void {
     if (closed) throw closedError();
   }
+}
+
+function sourceReaderOf(
+  root: string,
+  texts: ReadonlyMap<string, string>,
+  sessions: ReadonlyMap<GraphLanguage, ILspSession | IBulkGraphSession>,
+): SamchonGraphSourceReader {
+  const digests = new Map<string, IBulkGraphSession.ISourceDigest>();
+  for (const session of sessions.values()) {
+    if (!isBulkGraphSession(session)) continue;
+    for (const [file, digest] of session.current?.sources ?? []) {
+      digests.set(file, digest);
+    }
+  }
+  return new SamchonGraphSourceReader(root, { texts, digests });
 }
 
 function languagesOf(
@@ -291,12 +370,21 @@ function closedError(): Error {
 
 async function closeSessions(
   sessions: Map<GraphLanguage, ILspSession | IBulkGraphSession>,
+  closures: WeakMap<ILspSession | IBulkGraphSession, Promise<void>>,
+  bulkOnly = false,
 ): Promise<void> {
   let failure: Error | undefined;
   for (const session of sessions.values()) {
+    if (bulkOnly && !isBulkGraphSession(session)) continue;
     try {
-      if (isBulkGraphSession(session)) await session.close();
-      else await session.client.close();
+      let closure = closures.get(session);
+      if (closure === undefined) {
+        closure = isBulkGraphSession(session)
+          ? session.close()
+          : session.client.close();
+        closures.set(session, closure);
+      }
+      await closure;
     } catch (error) {
       // Close every resident process even when one shutdown handshake fails.
       failure ??= asError(error);
@@ -335,11 +423,12 @@ function bulkGenerationsOf(
 
 async function refreshBulkSessions(
   sessions: ReadonlyMap<GraphLanguage, ILspSession | IBulkGraphSession>,
+  signal?: AbortSignal,
 ): Promise<Map<GraphLanguage, IBulkGraphSession.IRefresh>> {
   const refreshed = new Map<GraphLanguage, IBulkGraphSession.IRefresh>();
   for (const [language, session] of sessions) {
     if (isBulkGraphSession(session)) {
-      refreshed.set(language, await session.refresh());
+      refreshed.set(language, await session.refresh({ signal }));
     }
   }
   return refreshed;

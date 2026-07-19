@@ -101,10 +101,24 @@ export namespace ITtscGraphSnapshot {
    *
    * Independent of {@link PROTOCOL_VERSION}: one versions the NDJSON envelope,
    * the other the graph document inside a changed frame. Keep this equal to
-   * `DumpSchemaVersion` in ttsc's `internal/graph/provenance.go` for the pinned
-   * producer release.
+   * `DumpSchemaVersion` in ttsc's `internal/graph/provenance.go` at canonical
+   * commit `4c5e11eab`. That revision also makes `SourceTexts` cover every
+   * resident `TSProgram` source, including external declarations and virtual
+   * bundled libraries, so the schema's manifest can attest every emitted fact.
+   * Until that revision is released, callers may provide its exact binary
+   * through `TTSC_GRAPH_BINARY`; older resolved binaries fail closed.
    */
-  export const DUMP_SCHEMA_VERSION = 1;
+  export const DUMP_SCHEMA_VERSION = 5;
+
+  /**
+   * Body schemas whose manifest proves every fact the adapter receives.
+   *
+   * Schema 3 can emit compiler and library facts whose files are absent from
+   * its source manifest, so accepting it would make the adapter choose between
+   * dropping semantic facts and trusting an unproved snapshot. Schema 5 makes
+   * the manifest complete and is therefore the minimum honest contract.
+   */
+  export const SUPPORTED_DUMP_SCHEMA_VERSIONS: readonly number[] = [5];
 
   /**
    * What the compiler did, as opposed to what the transport did.

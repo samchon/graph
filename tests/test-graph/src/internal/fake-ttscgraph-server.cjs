@@ -9,6 +9,12 @@ const project = cwdIndex === -1 ? process.cwd() : path.resolve(args[cwdIndex + 1
 const invalidMode = args.find((arg) => arg.startsWith("--invalid"));
 const markerArg = args.find((arg) => arg.startsWith("--marker="));
 const marker = markerArg?.slice("--marker=".length);
+const stdinClosedMarkerArg = args.find((arg) =>
+  arg.startsWith("--stdin-closed-marker="),
+);
+const stdinClosedMarker = stdinClosedMarkerArg?.slice(
+  "--stdin-closed-marker=".length,
+);
 const requestLogArg = args.find((arg) => arg.startsWith("--request-log="));
 const requestLog = requestLogArg?.slice("--request-log=".length);
 // Stands in for a producer that speaks a protocol this client refuses, so the
@@ -29,12 +35,29 @@ const universeDrift = args.includes("--universe-drift");
 // snapshot still holds when there is none yet to reuse.
 const stderrExit = args.includes("--stderr-exit");
 const exitSilently = args.includes("--exit-silently");
-const ignoreStdin = args.includes("--ignore-stdin");
+const ignoreFirstArg = args.find((arg) =>
+  arg.startsWith("--ignore-first-process="),
+);
+const ignoreFirstMarker = ignoreFirstArg?.slice(
+  "--ignore-first-process=".length,
+);
+const ignoreThisProcess =
+  ignoreFirstMarker !== undefined && !fs.existsSync(ignoreFirstMarker);
+if (ignoreThisProcess) {
+  fs.mkdirSync(path.dirname(ignoreFirstMarker), { recursive: true });
+  fs.writeFileSync(ignoreFirstMarker, String(process.pid));
+}
+const ignoreStdin = args.includes("--ignore-stdin") || ignoreThisProcess;
+const hangRequests = args.includes("--hang-requests") || ignoreThisProcess;
 const blankLine = args.includes("--blank-line");
 const splitFrame = args.includes("--split-frame");
 const nonJson = args.includes("--nonjson");
 const unknownId = args.includes("--unknown-id");
 const firstUnchanged = args.includes("--first-unchanged");
+const closeStdinAfterFirst = args.includes("--close-stdin-after-first");
+const lateAfterNonJson = args.includes("--late-after-nonjson");
+const reverseCapabilities = args.includes("--reverse-capabilities");
+const duplicateCapability = args.includes("--duplicate-capability");
 const envelopeCapabilityMismatch = args.includes(
   "--envelope-capability-mismatch",
 );
@@ -46,10 +69,13 @@ const CAPABILITIES = [
   "diskDigests",
   "diagnostics",
 ].filter((capability) => capability !== dropped);
+if (reverseCapabilities) CAPABILITIES.reverse();
+if (duplicateCapability) CAPABILITIES.push(CAPABILITIES[0]);
 
-// Every workspace file the fake program loaded. The manifest must cover every
-// file the nodes below name, because that is exactly what the client checks.
+// Every workspace and bundled file the fake program loaded. The manifest must
+// cover every file the nodes below name, because that is what the client checks.
 const WORKSPACE_FILES = ["src/index.ts", "src/core/order.ts", "src/empty.ts"];
+const BUNDLED_FILES = ["bundled:///libs/lib.es2015.collection.d.ts"];
 
 const digestOf = (text) =>
   crypto.createHash("sha256").update(text).digest("hex");
@@ -72,7 +98,14 @@ const readProjectFile = (rel) => {
  * read still has a perfectly well-defined digest here.
  */
 const manifest = (drift) =>
-  WORKSPACE_FILES.map((file) => {
+  [...WORKSPACE_FILES, ...BUNDLED_FILES].map((file) => {
+    if (BUNDLED_FILES.includes(file)) {
+      return {
+        file,
+        checkerDigest: digestOf(`${file}:checker${drift ?? ""}`),
+        diskDigest: "",
+      };
+    }
     const text = readProjectFile(file);
     return {
       file,
@@ -93,7 +126,7 @@ const universe = (drift) => ({
 });
 
 const provenance = (drift) => ({
-  schemaVersion: 1,
+  schemaVersion: 5,
   capabilities: CAPABILITIES,
   producer: {
     tool: "ttscgraph",
@@ -204,7 +237,9 @@ if (exitSilently) {
 // what has to survive it.
 const emit = (response) => {
   if (nonJson) {
-    process.stdout.write("this is not a ttscgraph frame\n");
+    process.stdout.write("this is not a ttscgraph frame\n", () => {
+      if (lateAfterNonJson) process.stdout.write("late retired output\n");
+    });
     return;
   }
   const routed = unknownId ? { ...response, id: response.id + 1000 } : response;
@@ -230,6 +265,8 @@ if (ignoreStdin) {
 input.on("line", (line) => {
   const request = JSON.parse(line);
   requests += 1;
+  if (requestLog !== undefined) fs.writeFileSync(requestLog, `${requests}\n`);
+  if (hangRequests) return;
   let response;
   if (firstUnchanged) {
     // A first answer that reuses a snapshot that does not exist yet.
@@ -299,6 +336,18 @@ input.on("line", (line) => {
     });
   }
   emit(response);
+  if (closeStdinAfterFirst && requests === 1) {
+    input.close();
+    process.stdin.destroy();
+    fs.closeSync(0);
+    // This marker is a transport fence, not a readline lifecycle hint: publish
+    // it only after descriptor 0 is actually closed so the client's next write
+    // cannot race the fake's teardown.
+    if (stdinClosedMarker !== undefined) {
+      fs.writeFileSync(stdinClosedMarker, "closed\n");
+    }
+    setInterval(() => undefined, 1_000);
+  }
 });
 input.on("close", () => {
   if (marker !== undefined) fs.writeFileSync(marker, "closed\n");

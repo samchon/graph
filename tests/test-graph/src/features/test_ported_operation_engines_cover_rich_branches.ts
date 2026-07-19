@@ -20,8 +20,8 @@ const call = (
     request,
   });
 
-// A real source tree so runDetails.objectLiteralMembers can read the object
-// literal back from disk, plus nodes named for the tour damping buckets
+// A source-shaped fixture whose producer-owned object member facts match its
+// snapshot, plus nodes named for the tour damping buckets
 // (error / config / serialization) and an internal/ path for the public-API
 // noise filter.
 const createRichFixture = () => {
@@ -70,7 +70,12 @@ const createRichFixture = () => {
   });
 
   const nodes = [
-    node(`${richFile}#settings:variable`, "variable", "settings", richFile, 1, 7),
+    node(`${richFile}#settings:variable`, "variable", "settings", richFile, 1, 7, {
+      objectMembers: [
+        { name: "host", kind: "property", line: 2, signature: 'host: "localhost"' },
+        { name: "connect", kind: "method", line: 4, signature: "connect()" },
+      ],
+    }),
     node(`${richFile}#ErrorReporter:class`, "class", "ErrorReporter", richFile, 9, 9),
     node(`${richFile}#connectionConfig:variable`, "variable", "connectionConfig", richFile, 11, 11),
     node(`${richFile}#serializeState:function`, "function", "serializeState", richFile, 13, 13),
@@ -112,8 +117,7 @@ export const test_ported_operation_engines_cover_rich_branches = async () => {
   const { dump } = createRichFixture();
   const app = new SamchonGraphApplication(SamchonGraphMemory.from(dump));
 
-  // runDetails.objectLiteralMembers: the `settings` variable's object literal is
-  // parsed from disk into a property (host) and a method (connect).
+  // The `settings` variable's snapshot facts expose a property and a method.
   const details = (await call(app, { type: "details", handles: ["settings"] })).result;
   const settingsNode = details.nodes.find((node) => node.name === "settings");
   TestValidator.predicate("object-literal property parsed", settingsNode?.members?.some((m) => m.name === "host" && m.kind === "property") === true);

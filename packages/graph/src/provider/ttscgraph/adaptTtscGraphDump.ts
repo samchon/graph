@@ -53,17 +53,23 @@ export function adaptTtscGraphDump(
   const dump = objectOf(input, "dump");
   const rawProvenance = objectOf(dump.provenance, "dump.provenance");
   const schemaVersion = rawProvenance.schemaVersion;
-  if (schemaVersion !== ITtscGraphSnapshot.DUMP_SCHEMA_VERSION) {
+  if (
+    !Number.isSafeInteger(schemaVersion) ||
+    !ITtscGraphSnapshot.SUPPORTED_DUMP_SCHEMA_VERSIONS.includes(
+      schemaVersion as number,
+    )
+  ) {
     throw new Error(
       `ttscgraph: dump is schema ${
         Number.isSafeInteger(schemaVersion)
           ? `v${String(schemaVersion)}`
           : "unknown"
-      }, this client reads v${String(
-        ITtscGraphSnapshot.DUMP_SCHEMA_VERSION,
-      )}. Install a matching ttsc (the binary resolves from the target project, or from TTSC_GRAPH_BINARY).`,
+      }, this client reads ${ITtscGraphSnapshot.SUPPORTED_DUMP_SCHEMA_VERSIONS.map(
+        (version) => `v${String(version)}`,
+      ).join(" and ")}. Install a matching ttsc (the binary resolves from the target project, or from TTSC_GRAPH_BINARY).`,
     );
   }
+  const warnings: string[] = [];
   const project = stringOf(dump.project, "dump.project");
   if (!samePath(project, expectedRoot)) {
     throw new Error(
@@ -76,7 +82,7 @@ export function adaptTtscGraphDump(
   const rawIds = new Set<string>();
   const sourceFileById = new Map<string, string>();
   const nodes: ISamchonGraphNode[] = [];
-  const files = new Set<string>();
+  const factFiles = new Set<string>();
 
   for (let index = 0; index < rawNodes.length; index++) {
     const raw = objectOf(rawNodes[index], `dump.nodes[${index}]`);
@@ -89,7 +95,7 @@ export function adaptTtscGraphDump(
     validateGraphFile(file, `dump.nodes[${index}].file`, external);
     validateNodeId(id, file, kind);
     sourceFileById.set(id, file);
-    if (!external && file !== "") files.add(file);
+    factFiles.add(file);
     if (kind === "module") {
       // `validateGraphFile` above already rejects an empty file for every node,
       // so a module reaching here always names a file.
@@ -122,11 +128,36 @@ export function adaptTtscGraphDump(
           modifierOf(value, `${id}.modifiers[${modifierIndex}]`),
       );
     }
+    if (raw.literals !== undefined) {
+      if (kind !== "type" && kind !== "enum") {
+        throw new Error(
+          `ttscgraph: ${id}.literals is only valid on type or enum nodes`,
+        );
+      }
+      node.literals = stringArrayOf(raw.literals, `${id}.literals`);
+    }
+    if (raw.enumMembers !== undefined) {
+      if (kind !== "enum") {
+        throw new Error(
+          `ttscgraph: ${id}.enumMembers is only valid on enum nodes`,
+        );
+      }
+      node.enumMembers = enumMembersOf(raw.enumMembers, id);
+    }
+    if (raw.objectMembers !== undefined) {
+      if (kind !== "variable") {
+        throw new Error(
+          `ttscgraph: ${id}.objectMembers is only valid on variable nodes`,
+        );
+      }
+      node.objectMembers = objectMembersOf(raw.objectMembers, id);
+    }
     if (raw.decorators !== undefined) {
       node.decorators = decoratorsOf(raw.decorators, id);
     }
     if (raw.evidence !== undefined) {
       node.evidence = evidenceOf(raw.evidence, file, `${id}.evidence`, true);
+      factFiles.add(node.evidence.file);
     }
     if (raw.implementation !== undefined) {
       node.implementation = evidenceOf(
@@ -134,6 +165,7 @@ export function adaptTtscGraphDump(
         file,
         `${id}.implementation`,
       );
+      factFiles.add(node.implementation.file);
     }
     nodes.push(node);
   }
@@ -190,29 +222,28 @@ export function adaptTtscGraphDump(
         `dump.edges[${index}].evidence`,
         true,
       );
+      factFiles.add(edge.evidence.file);
     }
     edges.push(edge);
   }
 
-  const warnings: string[] = [];
   const manifest = manifestOf(dump.provenance);
-  const sources = new Map<string, IBulkGraphSession.ISourceDigest>();
-  // The workspace file set still comes from the nodes, exactly as before: the
-  // manifest is every file the *program* loaded, which includes the bundled
-  // libs and every `node_modules` declaration the checker pulled in, and those
-  // are not this project's sources. What the manifest changes is that the set
-  // is now provable — each of these files must be one the same program loaded,
-  // and it arrives with the digest of the text the checker actually read.
-  for (const file of [...files].sort((left, right) =>
-    left.localeCompare(right),
-  )) {
-    const digest = manifest.get(file);
-    if (digest === undefined) {
+  for (const file of [...factFiles].sort(compareText)) {
+    if (!manifest.has(file)) {
       throw new Error(
         `ttscgraph: dump declares facts for ${file}, which its own source manifest never loaded`,
       );
     }
-    sources.set(path.resolve(expectedRoot, file), digest);
+  }
+  const sources = new Map<string, IBulkGraphSession.ISourceDigest>();
+  // Preserve the complete compiler-owned manifest. Relative identities become
+  // absolute keys for the bulk-session contract; identities that are already
+  // absolute stay canonical, and bundled virtual identities must never pass
+  // through `path.resolve`, which would turn them into unrelated disk paths.
+  for (const [file, digest] of [...manifest].sort(([left], [right]) =>
+    compareText(left, right),
+  )) {
+    sources.set(sourceManifestKey(expectedRoot, file), digest);
   }
 
   const capabilities = stringArrayOf(
@@ -327,11 +358,18 @@ function universeOf(value: unknown): string {
     );
   }
   push("configs");
+  const configFiles = new Set<string>();
   for (let index = 0; index < configs.length; index++) {
     const label = `dump.provenance.universe.configs[${index}]`;
     const config = objectOf(configs[index], label);
     const file = stringOf(config.file, `${label}.file`);
     validateGraphFile(file, `${label}.file`);
+    if (configFiles.has(file)) {
+      throw new Error(
+        `ttscgraph: duplicate build-universe config identity: ${file}`,
+      );
+    }
+    configFiles.add(file);
     push(file);
     push(
       validateDigest(
@@ -342,13 +380,27 @@ function universeOf(value: unknown): string {
   }
   const roots = arrayOf(universe.roots, "dump.provenance.universe.roots");
   push("roots");
+  const rootsByConfig = new Map<string, Set<string>>();
   for (let index = 0; index < roots.length; index++) {
     const label = `dump.provenance.universe.roots[${index}]`;
     const root = objectOf(roots[index], label);
     const config = stringOf(root.config, `${label}.config`);
     validateGraphFile(config, `${label}.config`);
+    if (!configFiles.has(config)) {
+      throw new Error(
+        `ttscgraph: ${label}.config names an unknown build-universe config: ${config}`,
+      );
+    }
     const file = stringOf(root.file, `${label}.file`);
     validateGraphFile(file, `${label}.file`, true);
+    const configRoots = rootsByConfig.get(config);
+    if (configRoots?.has(file) === true) {
+      throw new Error(
+        `ttscgraph: duplicate build-universe root pair: ${config} -> ${file}`,
+      );
+    }
+    if (configRoots === undefined) rootsByConfig.set(config, new Set([file]));
+    else configRoots.add(file);
     push(config);
     push(file);
   }
@@ -394,14 +446,17 @@ function diagnosticsOf(
     const label = `dump.diagnostics[${index}]`;
     const entry = objectOf(item, label);
     const file = stringOf(entry.file, `${label}.file`);
-    validateGraphFile(file, `${label}.file`, true);
-    // The same one-program test the facts pass. A finding about a file the
-    // program never loaded did not come from this generation, and a checker
-    // that reports one is not describing the graph shipped beside it.
-    if (!manifest.has(file)) {
-      throw new Error(
-        `ttscgraph: ${label} reports ${file}, which the dump's own source manifest never loaded`,
-      );
+    const fileless = file === "";
+    if (!fileless) {
+      validateGraphFile(file, `${label}.file`, true);
+      // The same one-program test the facts pass. A finding about a file the
+      // program never loaded did not come from this generation, and a checker
+      // that reports one is not describing the graph shipped beside it.
+      if (!manifest.has(file)) {
+        throw new Error(
+          `ttscgraph: ${label} reports ${file}, which the dump's own source manifest never loaded`,
+        );
+      }
     }
     const severity = stringOf(entry.category, `${label}.category`);
     if (!DIAGNOSTIC_SEVERITIES.has(severity)) {
@@ -409,8 +464,12 @@ function diagnosticsOf(
     }
     return {
       file,
-      line: integerOf(entry.line, `${label}.line`),
-      column: integerOf(entry.column, `${label}.column`),
+      line: fileless
+        ? zeroOf(entry.line, `${label}.line`)
+        : integerOf(entry.line, `${label}.line`),
+      column: fileless
+        ? zeroOf(entry.column, `${label}.column`)
+        : integerOf(entry.column, `${label}.column`),
       code: integerOf(entry.code, `${label}.code`),
       message: stringOf(entry.message, `${label}.message`),
       severity: severity as ISamchonGraphDiagnostic["severity"],
@@ -474,6 +533,7 @@ const EDGE_KINDS = new Set<GraphEdgeKind>([
   "type_ref",
   "extends",
   "implements",
+  "overrides",
   "renders",
 ]);
 const MODIFIERS = new Set<NonNullable<ISamchonGraphNode["modifiers"]>[number]>([
@@ -525,6 +585,15 @@ function integerOf(value: unknown, label: string): number {
     throw new Error(`ttscgraph: ${label} must be a positive integer`);
   }
   return value as number;
+}
+
+function zeroOf(value: unknown, label: string): 0 {
+  if (value !== 0) {
+    throw new Error(
+      `ttscgraph: ${label} must be zero for a fileless diagnostic`,
+    );
+  }
+  return 0;
 }
 
 function nodeKindOf(value: unknown, label: string): GraphNodeKind {
@@ -638,6 +707,48 @@ function decoratorsOf(value: unknown, id: string): ISamchonGraphDecorator[] {
   });
 }
 
+function enumMembersOf(
+  value: unknown,
+  id: string,
+): ISamchonGraphNode.IEnumMember[] {
+  return arrayOf(value, `${id}.enumMembers`).map((item, index) => {
+    const label = `${id}.enumMembers[${index}]`;
+    const raw = objectOf(item, label);
+    const member: ISamchonGraphNode.IEnumMember = {
+      name: stringOf(raw.name, `${label}.name`),
+    };
+    optionalString(raw.value, `${label}.value`, (entry) => {
+      member.value = entry;
+    });
+    return member;
+  });
+}
+
+function objectMembersOf(
+  value: unknown,
+  id: string,
+): ISamchonGraphNode.IObjectMember[] {
+  return arrayOf(value, `${id}.objectMembers`).map((item, index) => {
+    const label = `${id}.objectMembers[${index}]`;
+    const raw = objectOf(item, label);
+    const kind = stringOf(raw.kind, `${label}.kind`);
+    if (kind !== "property" && kind !== "method") {
+      throw new Error(`ttscgraph: unsupported ${label}.kind: ${kind}`);
+    }
+    const member: ISamchonGraphNode.IObjectMember = {
+      name: stringOf(raw.name, `${label}.name`),
+      kind,
+    };
+    if (raw.line !== undefined) {
+      member.line = integerOf(raw.line, `${label}.line`);
+    }
+    optionalString(raw.signature, `${label}.signature`, (entry) => {
+      member.signature = entry;
+    });
+    return member;
+  });
+}
+
 function optionalString(
   value: unknown,
   label: string,
@@ -662,11 +773,10 @@ function validateGraphFile(
   allowBundled = false,
 ): void {
   if (allowBundled && isNormalizedBundledFile(file)) return;
+  if (isNormalizedAbsoluteFile(file)) return;
   if (
     file === "" ||
     file.includes("\\") ||
-    path.posix.isAbsolute(file) ||
-    path.win32.isAbsolute(file) ||
     path.posix.normalize(file) !== file ||
     file.split("/").some((segment) =>
       segment === "" || segment === "." || segment === ".."
@@ -676,6 +786,30 @@ function validateGraphFile(
       `ttscgraph: ${label} must be a normalized project-relative file: ${file}`,
     );
   }
+}
+
+/**
+ * Canonical ttsc keeps the producer's normalized absolute identity for a file
+ * loaded outside the selected project root (for example a sibling workspace
+ * package declaration). It is a valid fact identity but not a display-source
+ * capability: {@link SamchonGraphSourceReader} separately confines reads to
+ * the project root.
+ */
+function isNormalizedAbsoluteFile(file: string): boolean {
+  if (file.includes("\\")) return false;
+  if (/^[A-Za-z]:\//.test(file)) {
+    return path.posix.normalize(file) === file;
+  }
+  if (file.startsWith("//")) {
+    const segments = file.slice(2).split("/");
+    return (
+      segments.length >= 3 &&
+      segments.every(
+        (segment) => segment !== "" && segment !== "." && segment !== "..",
+      )
+    );
+  }
+  return path.posix.isAbsolute(file) && path.posix.normalize(file) === file;
 }
 
 function isNormalizedBundledFile(file: string): boolean {
@@ -690,6 +824,12 @@ function isNormalizedBundledFile(file: string): boolean {
       .split("/")
       .every((segment) => segment !== "" && segment !== "." && segment !== "..")
   );
+}
+
+function sourceManifestKey(project: string, file: string): string {
+  return isNormalizedBundledFile(file) || isNormalizedAbsoluteFile(file)
+    ? file
+    : path.resolve(project, file);
 }
 
 function validateNodeId(id: string, file: string, kind: GraphNodeKind): void {
@@ -713,4 +853,9 @@ function samePath(left: string, right: string): boolean {
   return process.platform === "win32"
     ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
     : normalizedLeft === normalizedRight;
+}
+
+function compareText(left: string, right: string): number {
+  /* c8 ignore next -- manifestOf rejects duplicate source identities. */
+  return left < right ? -1 : left > right ? 1 : 0;
 }

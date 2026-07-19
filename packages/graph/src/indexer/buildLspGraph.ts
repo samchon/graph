@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { IDiagnostic, LspClient } from "../lsp";
+import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import {
   ISamchonGraphDiagnostic,
   ISamchonGraphDump,
@@ -12,6 +13,7 @@ import { GraphLanguage } from "../typings";
 import { projectRelative, readText, walkSourceFiles } from "../utils/fs";
 import { fileFromUri, fileUri, isSubPath } from "../utils/path";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
+import { isBulkGraphSession } from "../provider/isBulkGraphSession";
 import { mergeGraphSlices } from "../provider/mergeGraphSlices";
 import { TtscGraphClient } from "../provider/ttscgraph/TtscGraphClient";
 import { resolveTtscGraphCommand } from "../provider/ttscgraph/resolveTtscGraphCommand";
@@ -34,14 +36,26 @@ import { staticGraphParts } from "./staticGraphParts";
 import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
 
-const DEFAULT_DEPENDENCIES = {
+interface IBuildLspGraphDependencies {
+  resolveTtscGraphCommand: typeof resolveTtscGraphCommand;
+  collectTtscGraph: typeof collectTtscGraph;
+  collectLanguageGraph: typeof collectLanguageGraph;
+}
+
+const DEFAULT_DEPENDENCIES: IBuildLspGraphDependencies = {
   resolveTtscGraphCommand,
+  collectTtscGraph,
+  collectLanguageGraph,
 };
 
 export async function buildLspGraph(
   options: IBuildGraphOptions = {},
-  dependencies: typeof DEFAULT_DEPENDENCIES = DEFAULT_DEPENDENCIES,
+  dependencies: Partial<IBuildLspGraphDependencies> = {},
 ): Promise<IIndexerResult> {
+  const resolvedDependencies: IBuildLspGraphDependencies = {
+    ...DEFAULT_DEPENDENCIES,
+    ...dependencies,
+  };
   const root = path.resolve(options.cwd ?? process.cwd());
   const languages = options.languages ?? discoverLanguages(root, options);
   const nodes: ISamchonGraphNode[] = [];
@@ -53,196 +67,238 @@ export async function buildLspGraph(
   const staticFallbackLanguages: GraphLanguage[] = [];
   const sessions = new Map<GraphLanguage, ILspSession | IBulkGraphSession>();
   const sources = new Map<string, string>();
-  // Files a strict provider proved, held apart from `sources` because only
-  // `sources` carries text and a strict provider deliberately hands over none.
-  // Both sets name files the build indexed; only one of them can answer "what
-  // did this text say", and the freshness hashes that ask that question already
-  // skip every bulk language.
-  const strictFiles = new Set<string>();
-  let lspNodeCount = 0;
-  // Computed once (not per-language) since cpp and c share the same clangd
-  // compilation database and root.
-  const compileCommandsDir =
-    languages.includes("cpp") || languages.includes("c")
-      ? ensureCompileCommands(root, options.cmakeCommand)
-      : undefined;
-  if (languages.includes("dart")) ensurePubDeps(root, options.pubCommand);
-
-  for (const language of languages) {
-    const files = walkSourceFiles(root, {
-      extensions: allExtensions([language]),
-      maxFiles: options.maxFiles,
+  const strictDigests = new Map<
+    string,
+    IBulkGraphSession.ISourceDigest
+  >();
+  const snapshotSource = (): SamchonGraphSourceReader =>
+    new SamchonGraphSourceReader(root, {
+      texts: sources,
+      digests: strictDigests,
     });
-    if (files.length === 0) continue;
-    if (language === "typescript") {
-      // The provider decides whether it can honour these options; this loop only
-      // reports what it decided. The condition used to live here, inline and
-      // without an `else`, which is how the experiment's caps came to disable
-      // the compiler-owned lane on every run without a word of explanation.
-      const refusal = ttscGraphStrictRefusal(options);
-      if (refusal !== undefined) {
-        warnings.push(refusal);
-      } else {
-        const resolved = dependencies.resolveTtscGraphCommand(root);
-        if (resolved !== undefined) {
-          try {
-            const { result, session } = await collectTtscGraph(
-              root,
-              resolved.command,
-              resolved.args,
-              options,
-            );
-            appendAll(strictNodes, result.nodes);
-            appendAll(strictEdges, result.edges);
-            appendAll(diagnostics, result.diagnostics);
-            appendAll(warnings, result.warnings);
-            // The manifest names the files, and the compiler owns the fact that
-            // it does. Nothing reads their text here: the strict lane's facts
-            // are already resolved, and the only thing the generic lane wanted
-            // text for — deriving export edges — is work this provider has
-            // already done against the real checker.
-            for (const file of result.sources.keys()) strictFiles.add(file);
-            lspNodeCount += result.nodes.length;
-            if (options.keepAlive) sessions.set(language, session);
-            continue;
-          } catch (error) {
+  let lspNodeCount = 0;
+  try {
+    // Computed once (not per-language) since cpp and c share the same clangd
+    // compilation database and root.
+    const compileCommandsDir =
+      languages.includes("cpp") || languages.includes("c")
+        ? ensureCompileCommands(root, options.cmakeCommand)
+        : undefined;
+    if (languages.includes("dart")) ensurePubDeps(root, options.pubCommand);
+
+    for (const language of languages) {
+      const files = walkSourceFiles(root, {
+        extensions: allExtensions([language]),
+        maxFiles: options.maxFiles,
+      });
+      if (files.length === 0) continue;
+      if (language === "typescript") {
+        // The provider decides whether it can honour these options; this loop only
+        // reports what it decided. The condition used to live here, inline and
+        // without an `else`, which is how the experiment's caps came to disable
+        // the compiler-owned lane on every run without a word of explanation.
+        const refusal = ttscGraphStrictRefusal(options);
+        if (refusal !== undefined) {
+          warnings.push(refusal);
+        } else {
+          const resolved = resolvedDependencies.resolveTtscGraphCommand(root);
+          if (resolved !== undefined) {
+            try {
+              const { result, session } =
+                await resolvedDependencies.collectTtscGraph(
+                  root,
+                  resolved.command,
+                  resolved.args,
+                  options,
+                );
+              appendAll(strictNodes, result.nodes);
+              appendAll(strictEdges, result.edges);
+              appendAll(diagnostics, result.diagnostics);
+              appendAll(warnings, result.warnings);
+              // The manifest names the files, and the compiler owns the fact that
+              // it does. Nothing reads their text here: the strict lane's facts
+              // are already resolved, and the only thing the generic lane wanted
+              // text for — deriving export edges — is work this provider has
+              // already done against the real checker.
+              for (const [file, digest] of result.sources) {
+                strictDigests.set(file, digest);
+              }
+              lspNodeCount += result.nodes.length;
+              if (options.keepAlive) sessions.set(language, session);
+              continue;
+            } catch (error) {
+              if (options.signal?.aborted) throw error;
+              warnings.push(
+                `typescript: ttscgraph bulk indexing failed; using ttscserver LSP: ${(error as Error).message}`,
+              );
+            }
+          } else {
             warnings.push(
-              `typescript: ttscgraph bulk indexing failed; using ttscserver LSP: ${(error as Error).message}`,
+              "typescript: ttscgraph bulk provider was not found; using ttscserver LSP.",
             );
           }
-        } else {
-          warnings.push(
-            "typescript: ttscgraph bulk provider was not found; using ttscserver LSP.",
-          );
         }
       }
-    }
-    const spec = specOf(language);
-    if (spec?.lsp === undefined) {
-      warnings.push(`${language}: no built-in LSP server is configured.`);
-      staticFallbackLanguages.push(language);
-      continue;
-    }
-    const command = options.server ?? spec.lsp.command;
-    const baseArgs =
-      options.serverArgs ??
-      (isTtscserverCommand(command)
-        ? [...spec.lsp.args, "--cwd", root]
-        : spec.lsp.args);
-    // Appended regardless of a custom serverArgs override — which binary to
-    // run and which compilation database to hint at are orthogonal, and a
-    // test/user overriding serverArgs to swap the server binary should not
-    // also have to know to re-specify this.
-    const args =
-      (language === "cpp" || language === "c") && compileCommandsDir !== undefined
-        ? [...baseArgs, `--compile-commands-dir=${compileCommandsDir}`]
-        : baseArgs;
-    const resolved = resolveCommand(command, root);
-    if (resolved === undefined) {
-      warnings.push(`${language}: LSP server not found on PATH: ${command}`);
-      staticFallbackLanguages.push(language);
-      continue;
-    }
-    // npm installs Windows servers as .cmd shims, which CreateProcess cannot
-    // spawn directly; run those through cmd.exe so ttscserver,
-    // pyright-langserver, and friends work from a plain package install.
-    const spawnable = /\.(cmd|bat)$/i.test(resolved)
-      ? { command: "cmd.exe", args: ["/d", "/s", "/c", resolved, ...args] }
-      : { command: resolved, args: [...args] };
-    try {
-      const { result, session } = await collectLanguageGraph(
-        root,
-        language,
-        spawnable.command,
-        spawnable.args,
-        files,
-        options,
-      );
-      if (result.nodes.length === 0) {
+      const spec = specOf(language);
+      if (spec?.lsp === undefined) {
+        warnings.push(`${language}: no built-in LSP server is configured.`);
+        staticFallbackLanguages.push(language);
+        continue;
+      }
+      const command = options.server ?? spec.lsp.command;
+      const baseArgs =
+        options.serverArgs ??
+        (isTtscserverCommand(command)
+          ? [...spec.lsp.args, "--cwd", root]
+          : spec.lsp.args);
+      // Appended regardless of a custom serverArgs override — which binary to
+      // run and which compilation database to hint at are orthogonal, and a
+      // test/user overriding serverArgs to swap the server binary should not
+      // also have to know to re-specify this.
+      const args =
+        (language === "cpp" || language === "c") &&
+        compileCommandsDir !== undefined
+          ? [...baseArgs, `--compile-commands-dir=${compileCommandsDir}`]
+          : baseArgs;
+      const resolved = resolveCommand(command, root);
+      if (resolved === undefined) {
+        warnings.push(`${language}: LSP server not found on PATH: ${command}`);
+        staticFallbackLanguages.push(language);
+        continue;
+      }
+      // npm installs Windows servers as .cmd shims, which CreateProcess cannot
+      // spawn directly; run those through cmd.exe so ttscserver,
+      // pyright-langserver, and friends work from a plain package install.
+      const spawnable = /\.(cmd|bat)$/i.test(resolved)
+        ? { command: "cmd.exe", args: ["/d", "/s", "/c", resolved, ...args] }
+        : { command: resolved, args: [...args] };
+      try {
+        const { result, session } =
+          await resolvedDependencies.collectLanguageGraph(
+            root,
+            language,
+            spawnable.command,
+            spawnable.args,
+            files,
+            options,
+          );
+        if (result.nodes.length === 0) {
+          warnings.push(
+            `${language}: LSP returned no symbols; using static fallback.`,
+          );
+          staticFallbackLanguages.push(language);
+          if (options.keepAlive) await session.client.close();
+        } else {
+          for (const opened of session.opened.values()) {
+            sources.set(opened.abs, opened.text);
+          }
+          appendAll(nodes, result.nodes);
+          appendAll(edges, result.edges);
+          appendAll(diagnostics, result.diagnostics);
+          appendAll(warnings, result.warnings);
+          lspNodeCount += result.nodes.length;
+          if (options.keepAlive) sessions.set(language, session);
+        }
+      } catch (error) {
+        if (options.signal?.aborted) throw error;
         warnings.push(
-          `${language}: LSP returned no symbols; using static fallback.`,
+          `${language}: LSP indexing failed: ${(error as Error).message}`,
         );
         staticFallbackLanguages.push(language);
-        if (options.keepAlive) await session.client.close();
-      } else {
-        for (const opened of session.opened.values()) {
-          sources.set(opened.abs, opened.text);
-        }
-        appendAll(nodes, result.nodes);
-        appendAll(edges, result.edges);
-        appendAll(diagnostics, result.diagnostics);
-        appendAll(warnings, result.warnings);
-        lspNodeCount += result.nodes.length;
-        if (options.keepAlive) sessions.set(language, session);
       }
-    } catch (error) {
-      warnings.push(
-        `${language}: LSP indexing failed: ${(error as Error).message}`,
-      );
-      staticFallbackLanguages.push(language);
     }
-  }
 
-  // The static lane is merged before the graph is finalized, not after: the
-  // export surface is followed once across the whole project, so a barrel in one
-  // lane can still publish a symbol declared in the other.
-  if (staticFallbackLanguages.length > 0) {
-    const fallback = staticGraphParts({
-      ...options,
-      cwd: root,
-      mode: "static",
-      languages: staticFallbackLanguages,
-    });
-    appendSources(sources, fallback.sources);
-    if (lspNodeCount === 0) {
+    // The static lane is merged before the graph is finalized, not after: the
+    // export surface is followed once across the whole project, so a barrel in one
+    // lane can still publish a symbol declared in the other.
+    if (staticFallbackLanguages.length > 0) {
+      const fallback = staticGraphParts({
+        ...options,
+        cwd: root,
+        mode: "static",
+        languages: staticFallbackLanguages,
+      });
+      appendSources(sources, fallback.sources);
+      if (lspNodeCount === 0) {
+        return {
+          dump: staticDump(fallback, warnings),
+          warnings,
+          source: snapshotSource(),
+          ...(options.keepAlive ? { sessions, sources } : {}),
+        };
+      }
+      appendAll(nodes, fallback.nodes);
+      appendAll(edges, fallback.edges);
+      appendAll(warnings, fallback.warnings);
+    }
+
+    if (nodes.length === 0 && strictNodes.length === 0) {
+      const fallback = staticGraphParts(options);
+      appendSources(sources, fallback.sources);
       return {
         dump: staticDump(fallback, warnings),
         warnings,
+        source: snapshotSource(),
         ...(options.keepAlive ? { sessions, sources } : {}),
       };
     }
-    appendAll(nodes, fallback.nodes);
-    appendAll(edges, fallback.edges);
-    appendAll(warnings, fallback.warnings);
-  }
 
-  if (nodes.length === 0 && strictNodes.length === 0) {
-    const fallback = staticGraphParts(options);
-    appendSources(sources, fallback.sources);
+    const finalized = mergeGraphSlices({
+      root,
+      // Only generic lanes need source-derived export edges. Strict providers
+      // already publish compiler-resolved exports, and their complete manifest
+      // can contain external or virtual identities that must never be reopened.
+      files: [...sources.keys()],
+      genericNodes: nodes,
+      genericEdges: edges,
+      strictNodes,
+      strictEdges,
+    });
     return {
-      dump: staticDump(fallback, warnings),
+      dump: {
+        project: root,
+        languages: [
+          ...new Set(
+            [...strictNodes, ...nodes].map((node) => node.language),
+          ),
+        ],
+        // Only a static fallback makes the graph a hybrid; a benign warning (e.g.
+        // the reference cap) on a pure-LSP run must not relabel it.
+        indexer: staticFallbackLanguages.length > 0 ? "hybrid" : "lsp",
+        nodes: wireNodes(finalized.nodes),
+        edges: wireEdges(finalized.edges),
+        diagnostics,
+        warnings,
+      },
       warnings,
+      source: snapshotSource(),
       ...(options.keepAlive ? { sessions, sources } : {}),
     };
+  } catch (error) {
+    const closeErrors = await closeKeptSessions(sessions);
+    if (closeErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...closeErrors],
+        "@samchon/graph: indexing failed and accumulated sessions could not all close",
+      );
+    }
+    throw error;
   }
+}
 
-  const finalized = mergeGraphSlices({
-    root,
-    files: [...new Set([...sources.keys(), ...strictFiles])],
-    genericNodes: nodes,
-    genericEdges: edges,
-    strictNodes,
-    strictEdges,
-  });
-  return {
-    dump: {
-      project: root,
-      languages: [
-        ...new Set(
-          [...strictNodes, ...nodes].map((node) => node.language),
-        ),
-      ],
-      // Only a static fallback makes the graph a hybrid; a benign warning (e.g.
-      // the reference cap) on a pure-LSP run must not relabel it.
-      indexer: staticFallbackLanguages.length > 0 ? "hybrid" : "lsp",
-      nodes: wireNodes(finalized.nodes),
-      edges: wireEdges(finalized.edges),
-      diagnostics,
-      warnings,
-    },
-    warnings,
-    ...(options.keepAlive ? { sessions, sources } : {}),
-  };
+async function closeKeptSessions(
+  sessions: ReadonlyMap<GraphLanguage, ILspSession | IBulkGraphSession>,
+): Promise<Error[]> {
+  const failures: Error[] = [];
+  for (const session of new Set(sessions.values())) {
+    try {
+      if (isBulkGraphSession(session)) await session.close();
+      else await session.client.close();
+    } catch (error) {
+      failures.push(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+  return failures;
 }
 
 async function collectTtscGraph(
@@ -252,11 +308,11 @@ async function collectTtscGraph(
   options: IBuildGraphOptions,
 ): Promise<{
   result: IBulkGraphSession.ISnapshot;
-  session: TtscGraphClient;
+  session: IBulkGraphSession;
 }> {
   const session = new TtscGraphClient({ root, command, args });
   try {
-    const result = (await session.refresh()).snapshot;
+    const result = (await session.refresh({ signal: options.signal })).snapshot;
     if (!options.keepAlive) await session.close();
     return { result, session };
   } catch (error) {
@@ -398,19 +454,25 @@ async function openLanguageSession(
   });
 
   try {
-    await client.request("initialize", {
-      processId: process.pid,
-      rootUri: fileUri(root),
-      initializationOptions: options.initializationOptions,
-      capabilities: {
-        window: { workDoneProgress: true },
-        textDocument: {
-          documentSymbol: { hierarchicalDocumentSymbolSupport: true },
-          references: { dynamicRegistration: false },
+    await client.request(
+      "initialize",
+      {
+        processId: process.pid,
+        rootUri: fileUri(root),
+        initializationOptions: options.initializationOptions,
+        capabilities: {
+          window: { workDoneProgress: true },
+          textDocument: {
+            documentSymbol: { hierarchicalDocumentSymbolSupport: true },
+            references: { dynamicRegistration: false },
+          },
         },
+        workspaceFolders: [{ uri: fileUri(root), name: path.basename(root) }],
       },
-      workspaceFolders: [{ uri: fileUri(root), name: path.basename(root) }],
-    });
+      undefined,
+      options.signal,
+    );
+    throwIfAborted(options.signal, "initialization");
     client.notify("initialized", {});
 
     const quietMs = options.lspReadyQuietMs ?? 1_500;
@@ -421,7 +483,7 @@ async function openLanguageSession(
       opened: new Map(),
       diagnostics,
       progressVersion: () => progressVersion,
-      waitForReady: (since, allowStart) =>
+      waitForReady: (since, allowStart, signal) =>
         waitForIndexing(
           since,
           allowStart,
@@ -431,6 +493,7 @@ async function openLanguageSession(
           () => activeProgress.size,
           quietMs,
           options.lspReadyTimeoutMs,
+          signal,
         ),
     };
     const didOpenFence = session.progressVersion!();
@@ -444,7 +507,7 @@ async function openLanguageSession(
     //
     // The wait ends once progress goes quiet for `lspReadyQuietMs`. Its overall
     // ceiling is optional, so normal callers still wait as long as needed.
-    await session.waitForReady!(didOpenFence, true);
+    await session.waitForReady!(didOpenFence, true, options.signal);
     return session;
   } catch (error) {
     // A server that never answers `initialize` (or fails before the session
@@ -485,6 +548,7 @@ async function waitForIndexing(
   activeProgressCount: () => number,
   quietMs: number,
   timeoutMs: number | undefined,
+  signal: AbortSignal | undefined,
 ): Promise<void> {
   const start = Date.now();
   // A work-done `begin` remains active until its matching `end`, even when the
@@ -503,6 +567,7 @@ async function waitForIndexing(
   // A lazy reference request uses `allowStart=false`; it waits only if the
   // request advanced the generation, avoiding another unconditional delay.
   for (;;) {
+    throwIfAborted(signal, "indexing readiness");
     const now = Date.now();
     if (timeoutMs !== undefined && now - start >= timeoutMs) return;
     if (activeProgressCount() === 0) {
@@ -518,6 +583,16 @@ async function waitForIndexing(
       setTimeout(resolve, 50);
     });
   }
+}
+
+function throwIfAborted(
+  signal: AbortSignal | undefined,
+  phase: string,
+): void {
+  if (signal?.aborted !== true) return;
+  const error = new Error(`LSP request aborted: ${phase}`);
+  error.name = "AbortError";
+  throw error;
 }
 
 function convertDiagnostic(file: string, diagnostic: IDiagnostic): ISamchonGraphDiagnostic {

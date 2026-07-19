@@ -33,7 +33,11 @@ export interface ISamchonGraphNode {
    */
   qualifiedName?: string;
 
-  /** Project-relative path of the file that declares this node. */
+  /**
+   * Graph file identity of the declaration. Project-owned files are
+   * project-relative; compiler-loaded files outside the root keep normalized
+   * absolute identities, and virtual libraries use `bundled:///`.
+   */
   file: string;
 
   /**
@@ -94,6 +98,17 @@ export interface ISamchonGraphNode {
   enumMembers?: ISamchonGraphNode.IEnumMember[];
 
   /**
+   * Direct, statically named members when this variable is initialized with an
+   * object literal, in declaration order.
+   *
+   * The native builder takes identity from the compiler AST and renders the
+   * compact signature from the same Program-owned source snapshot. A spread or
+   * dynamic computed name has no declaration name it can report soundly, so it
+   * contributes no fabricated member.
+   */
+  objectMembers?: ISamchonGraphNode.IObjectMember[];
+
+  /**
    * Decorators written on this declaration, in source order: raw facts
    * (`@Controller`, `@Get`) a consumer interprets without re-parsing source.
    */
@@ -121,5 +136,20 @@ export namespace ISamchonGraphNode {
      * stands.
      */
     value?: string;
+  }
+
+  /** One direct, statically named member of an object-literal variable. */
+  export interface IObjectMember {
+    /** The source-visible static property name. */
+    name: string;
+
+    /** Whether the declaration is a data property or callable/accessor member. */
+    kind: "property" | "method";
+
+    /** 1-based declaration line in the node's file, when source was available. */
+    line?: number;
+
+    /** Compact declaration outline rendered from the compiler source snapshot. */
+    signature?: string;
   }
 }

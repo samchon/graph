@@ -1,5 +1,6 @@
 import { TestValidator } from "@nestia/e2e";
 import { createHash } from "node:crypto";
+import path from "node:path";
 
 // `adaptTtscGraphDump` is internal to the package, so it is reached by path
 // rather than through the public barrel.
@@ -17,21 +18,23 @@ const sha = (text: string): string =>
 // manifest names the one workspace file its nodes name (`src/a.ts`). That keeps
 // the proof boundary satisfied so each malformed case can reach and fail at the
 // node, edge, or span it targets.
-const provenance = () => ({
-  schemaVersion: 1,
+const provenance = (files: readonly string[] = ["src/a.ts"]) => ({
+  schemaVersion: 5,
   capabilities: ["universe", "sourceDigests", "diskDigests", "diagnostics"],
-  producer: { tool: "ttscgraph", version: "0.19.2", typescript: "5.9.0" },
+  producer: {
+    tool: "ttscgraph",
+    version: "0.19.3-21-g2b724664e",
+    typescript: "5.9.0",
+  },
   universe: {
     configs: [{ file: "tsconfig.json", digest: sha("tsconfig.json") }],
-    roots: [{ config: "tsconfig.json", file: "src/a.ts" }],
+    roots: files.map((file) => ({ config: "tsconfig.json", file })),
   },
-  sources: [
-    {
-      file: "src/a.ts",
-      checkerDigest: sha("src/a.ts:checker"),
-      diskDigest: sha("src/a.ts:disk"),
-    },
-  ],
+  sources: files.map((file) => ({
+    file,
+    checkerDigest: sha(`${file}:checker`),
+    diskDigest: sha(`${file}:disk`),
+  })),
 });
 
 /**
@@ -60,11 +63,313 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
     change(dump);
     return dump;
   };
+  const relationDump = (schemaVersion: number) => {
+    const dump = good();
+    dump.provenance.schemaVersion = schemaVersion;
+    dump.nodes.push(
+      {
+        id: "src/a.ts#Worker:class",
+        kind: "class",
+        name: "Worker",
+        file: "src/a.ts",
+        external: false,
+      },
+      {
+        id: "src/a.ts#Contract:interface",
+        kind: "interface",
+        name: "Contract",
+        file: "src/a.ts",
+        external: false,
+      },
+      {
+        id: "src/a.ts#Worker.execute:method",
+        kind: "method",
+        name: "execute",
+        file: "src/a.ts",
+        external: false,
+      },
+      {
+        id: "src/a.ts#Contract.execute:method",
+        kind: "method",
+        name: "execute",
+        file: "src/a.ts",
+        external: false,
+      },
+    );
+    return dump;
+  };
 
   // A healthy dump adapts without throwing (the negative twin of every case).
   TestValidator.predicate(
     "a well-formed dump adapts cleanly",
     adaptTtscGraphDump(good(), project).nodes.length === 2,
+  );
+  rejectsWithMessage(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => {
+          d.provenance.schemaVersion = 3;
+        }),
+        project,
+      ),
+    "schema 3 snapshot",
+    "dump is schema v3, this client reads v5",
+  );
+  rejectsWithMessage(
+    () => {
+      const dump = relationDump(3);
+      dump.nodes.push({
+        id: "vendor/typescript/lib/lib.es5.d.ts#Array:interface",
+        kind: "interface",
+        name: "Array",
+        file: "vendor/typescript/lib/lib.es5.d.ts",
+        external: true,
+      });
+      return adaptTtscGraphDump(dump, project);
+    },
+    "schema 3 snapshot carrying an external fact absent from its manifest",
+    "dump is schema v3, this client reads v5",
+  );
+  const currentRelations = relationDump(5);
+  currentRelations.edges.push(
+    {
+      from: "src/a.ts#Worker.execute:method",
+      to: "src/a.ts#Contract.execute:method",
+      kind: "implements",
+    },
+    {
+      from: "src/a.ts#Worker.execute:method",
+      to: "src/a.ts#Contract.execute:method",
+      kind: "overrides",
+    },
+  );
+  const adaptedCurrentRelations = adaptTtscGraphDump(
+    currentRelations,
+    project,
+  );
+  TestValidator.predicate(
+    "schema 5 retains checker-owned member relations",
+    adaptedCurrentRelations.edges.some((edge) => edge.kind === "implements") &&
+      adaptedCurrentRelations.edges.some((edge) => edge.kind === "overrides"),
+  );
+  const crossRootFile = path
+    .resolve(project, "..", "shared", "index.d.ts")
+    .replace(/\\/g, "/");
+  const crossRoot = good();
+  crossRoot.provenance.universe.roots.push({
+    config: "tsconfig.json",
+    file: crossRootFile,
+  });
+  crossRoot.provenance.sources.push({
+    file: crossRootFile,
+    checkerDigest: sha(`${crossRootFile}:checker`),
+    diskDigest: sha(`${crossRootFile}:disk`),
+  });
+  crossRoot.nodes.push({
+    id: `${crossRootFile}#Shared:interface`,
+    kind: "interface",
+    name: "Shared",
+    file: crossRootFile,
+    external: false,
+  });
+  TestValidator.predicate(
+    "a compiler-loaded sibling workspace file keeps its canonical absolute identity",
+    adaptTtscGraphDump(crossRoot, project).nodes.some(
+      (node) => node.file === crossRootFile,
+    ),
+  );
+  const bundledFile = "bundled:///libs/lib.es2015.collection.d.ts";
+  const uncFile = "//server/share/types/external.d.ts";
+  const posixFile = "/opt/types/external.d.ts";
+  const windowsFile = "C:/workspace/types/external.d.ts";
+  const completeManifest = good();
+  completeManifest.provenance.sources.push(
+    {
+      file: crossRootFile,
+      checkerDigest: sha(`${crossRootFile}:checker`),
+      diskDigest: sha(`${crossRootFile}:disk`),
+    },
+    {
+      file: bundledFile,
+      checkerDigest: sha(`${bundledFile}:checker`),
+      diskDigest: "",
+    },
+    {
+      file: uncFile,
+      checkerDigest: sha(`${uncFile}:checker`),
+      diskDigest: sha(`${uncFile}:disk`),
+    },
+    {
+      file: posixFile,
+      checkerDigest: sha(`${posixFile}:checker`),
+      diskDigest: sha(`${posixFile}:disk`),
+    },
+    {
+      file: windowsFile,
+      checkerDigest: sha(`${windowsFile}:checker`),
+      diskDigest: sha(`${windowsFile}:disk`),
+    },
+  );
+  const completeSources = adaptTtscGraphDump(
+    completeManifest,
+    project,
+  ).sources;
+  TestValidator.predicate(
+    "the complete compiler manifest preserves every canonical file identity",
+    completeSources.has(path.resolve(project, "src/a.ts")) &&
+      completeSources.has(crossRootFile) &&
+      completeSources.has(bundledFile) &&
+      completeSources.has(uncFile) &&
+      completeSources.has(posixFile) &&
+      completeSources.has(windowsFile),
+  );
+  TestValidator.equals(
+    "a virtual bundled source keeps its checker digest",
+    completeSources.get(bundledFile),
+    {
+      checkerDigest: sha(`${bundledFile}:checker`),
+      diskDigest: "",
+    },
+  );
+
+  const globalDiagnostic = good();
+  globalDiagnostic.diagnostics.push({
+    file: "",
+    line: 0,
+    column: 0,
+    code: 18003,
+    category: "error",
+    message: "No inputs were found in config file",
+  });
+  TestValidator.equals(
+    "a canonical fileless compiler diagnostic is retained",
+    adaptTtscGraphDump(globalDiagnostic, project).diagnostics,
+    [
+      {
+        file: "",
+        line: 0,
+        column: 0,
+        code: 18003,
+        message: "No inputs were found in config file",
+        severity: "error",
+      },
+    ],
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.diagnostics.push({
+            file: "",
+            line: 1,
+            column: 0,
+            code: 18003,
+            category: "error",
+            message: "malformed global diagnostic",
+          }),
+        ),
+        project,
+      ),
+    "a fileless diagnostic with a nonzero line",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.diagnostics.push({
+            file: "",
+            line: 0,
+            column: 1,
+            code: 18003,
+            category: "error",
+            message: "malformed global diagnostic",
+          }),
+        ),
+        project,
+      ),
+    "a fileless diagnostic with a nonzero column",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.diagnostics.push({
+            file: "src/a.ts",
+            line: 0,
+            column: 1,
+            code: 2322,
+            category: "error",
+            message: "malformed file diagnostic",
+          }),
+        ),
+        project,
+      ),
+    "a file-backed diagnostic with a zero line",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.diagnostics.push({
+            file: "src/a.ts",
+            line: 1,
+            column: 0,
+            code: 2322,
+            category: "error",
+            message: "malformed file diagnostic",
+          }),
+        ),
+        project,
+      ),
+    "a file-backed diagnostic with a zero column",
+  );
+
+  const referencedProject = good();
+  referencedProject.provenance.universe.configs.push({
+    file: "tsconfig.reference.json",
+    digest: sha("tsconfig.reference.json"),
+  });
+  referencedProject.provenance.universe.roots.push({
+    config: "tsconfig.reference.json",
+    file: "src/a.ts",
+  });
+  TestValidator.predicate(
+    "two configs may canonically name the same root file",
+    adaptTtscGraphDump(referencedProject, project).provenance.universe !== "",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.provenance.universe.configs.push({
+            ...d.provenance.universe.configs[0]!,
+          }),
+        ),
+        project,
+      ),
+    "a duplicate config identity in the build universe",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => {
+          d.provenance.universe.roots[0]!.config = "tsconfig.missing.json";
+        }),
+        project,
+      ),
+    "a root attributed to an unknown config",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.provenance.universe.roots.push({
+            ...d.provenance.universe.roots[0]!,
+          }),
+        ),
+        project,
+      ),
+    "a duplicate config and root-file pair",
   );
 
   // Identity and project scope.
@@ -73,16 +378,34 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
     () => adaptTtscGraphDump(mutate((d) => (d.project = `${project}-other`)), project),
     "a dump whose project does not match the requested root",
   );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => {
+          d.provenance.sources[0]!.file = "C:\\workspace\\src\\a.ts";
+        }),
+        project,
+      ),
+    "a source identity with non-canonical backslashes",
+  );
 
   // Structural types.
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d as { nodes: unknown }).nodes = "x")), project), "a non-array nodes field");
   rejects(
     () =>
       adaptTtscGraphDump(
-        mutate((d) => (d.provenance.schemaVersion = 2)),
+        mutate((d) => (d.provenance.schemaVersion = 6)),
         project,
       ),
     "a dump above the pinned schema",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => (d.provenance.schemaVersion = 1)),
+        project,
+      ),
+    "a legacy dump below the one-Program provenance schema",
   );
   rejects(
     () =>
@@ -152,6 +475,36 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   rejects(
     () =>
       adaptTtscGraphDump(
+        mutate(
+          (d) =>
+            ((d.nodes[1] as { implementation: unknown }).implementation = {
+              file: "src/unloaded.ts",
+              startLine: 1,
+            }),
+        ),
+        project,
+      ),
+    "an implementation span whose file is absent from the manifest",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.nodes.push({
+            id: "vendor/ghost.d.ts#Ghost:interface",
+            kind: "interface",
+            name: "Ghost",
+            file: "vendor/ghost.d.ts",
+            external: true,
+          }),
+        ),
+        project,
+      ),
+    "an external fact whose file is absent from the manifest",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
         mutate((d) => ((d.nodes[1] as { decorators: unknown }).decorators = [{ name: "X", arguments: [{ literal: {} }] }])),
         project,
       ),
@@ -163,7 +516,7 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   const rich = adaptTtscGraphDump(
     {
       project,
-      provenance: provenance(),
+      provenance: provenance(["src/a.ts", "vendor/dep.ts"]),
       diagnostics: [],
       nodes: [
         { id: "src/a.ts#src/a.ts:module", kind: "module", name: "src/a.ts", file: "src/a.ts", external: false },
@@ -179,6 +532,41 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
           evidence: { startLine: 1, startCol: 1, endLine: 1, endCol: 5 },
           implementation: { startLine: 2 },
         },
+        {
+          id: "src/a.ts#Status:type",
+          kind: "type",
+          name: "Status",
+          file: "src/a.ts",
+          external: false,
+          literals: ['"ready"', '"done"'],
+        },
+        {
+          id: "src/a.ts#Phase:enum",
+          kind: "enum",
+          name: "Phase",
+          file: "src/a.ts",
+          external: false,
+          literals: ['"ready"'],
+          enumMembers: [
+            { name: "Ready", value: '"ready"' },
+            { name: "Computed" },
+          ],
+        },
+        {
+          id: "src/a.ts#options:variable",
+          kind: "variable",
+          name: "options",
+          file: "src/a.ts",
+          external: false,
+          objectMembers: [
+            {
+              name: "execute",
+              kind: "method",
+              line: 3,
+              signature: "execute(): void",
+            },
+          ],
+        },
         { id: "src/a.ts#bar:function", kind: "function", name: "bar", file: "src/a.ts", external: false },
         { id: "vendor/dep.ts#Dep:interface", kind: "interface", name: "Dep", file: "vendor/dep.ts", external: true },
       ],
@@ -190,8 +578,36 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
     project,
   );
   const foo = rich.nodes.find((node) => node.id === "src/a.ts#foo:function");
+  const status = rich.nodes.find((node) => node.id === "src/a.ts#Status:type");
+  const phase = rich.nodes.find((node) => node.id === "src/a.ts#Phase:enum");
+  const options = rich.nodes.find((node) => node.id === "src/a.ts#options:variable");
   TestValidator.equals("a qualified name is preserved", foo?.qualifiedName, "pkg.foo");
   TestValidator.equals("an implementation span is preserved", foo?.implementation?.startLine, 2);
+  TestValidator.equals(
+    "compiler-resolved literal values are preserved",
+    status?.literals,
+    ['"ready"', '"done"'],
+  );
+  TestValidator.equals(
+    "compiler-owned enum members are preserved",
+    phase?.enumMembers,
+    [
+      { name: "Ready", value: '"ready"' },
+      { name: "Computed" },
+    ],
+  );
+  TestValidator.equals(
+    "compiler-owned object members are preserved",
+    options?.objectMembers,
+    [
+      {
+        name: "execute",
+        kind: "method",
+        line: 3,
+        signature: "execute(): void",
+      },
+    ],
+  );
   TestValidator.equals(
     "a decorator keeps its scalar and its empty argument",
     foo?.decorators?.[0]?.arguments,
@@ -206,6 +622,77 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
     "an external non-bundled dependency remains an external fact",
     rich.nodes.some((node) => node.id === "vendor/dep.ts#Dep:interface" && node.external),
   );
+
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => {
+          const node = d.nodes[1] as { id: string; kind: string; literals?: unknown };
+          node.id = "src/a.ts#foo:type";
+          node.kind = "type";
+          node.literals = ["ok", 1];
+          (d.edges[0] as { to: string }).to = node.id;
+        }),
+        project,
+      ),
+    "a non-string literal value",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => {
+          const node = d.nodes[1] as { id: string; kind: string; enumMembers?: unknown };
+          node.id = "src/a.ts#foo:enum";
+          node.kind = "enum";
+          node.enumMembers = [{ name: "Ready", value: false }];
+          (d.edges[0] as { to: string }).to = node.id;
+        }),
+        project,
+      ),
+    "a non-string enum member value",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => {
+          const node = d.nodes[1] as { id: string; kind: string; objectMembers?: unknown };
+          node.id = "src/a.ts#foo:variable";
+          node.kind = "variable";
+          node.objectMembers = [{ name: "dynamic", kind: "computed" }];
+          (d.edges[0] as { to: string }).to = node.id;
+        }),
+        project,
+      ),
+    "an unsupported object member kind",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) => ((d.nodes[1] as { literals?: unknown }).literals = [])),
+        project,
+      ),
+    "literal facts on a non-type node",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate(
+          (d) => ((d.nodes[1] as { enumMembers?: unknown }).enumMembers = []),
+        ),
+        project,
+      ),
+    "enum-member facts on a non-enum node",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate(
+          (d) => ((d.nodes[1] as { objectMembers?: unknown }).objectMembers = []),
+        ),
+        project,
+      ),
+    "object-member facts on a non-variable node",
+  );
 };
 
 function rejects(task: () => unknown, label: string): void {
@@ -216,4 +703,21 @@ function rejects(task: () => unknown, label: string): void {
     error = caught;
   }
   TestValidator.predicate(`${label} is rejected`, error instanceof Error);
+}
+
+function rejectsWithMessage(
+  task: () => unknown,
+  label: string,
+  message: string,
+): void {
+  let error: unknown;
+  try {
+    task();
+  } catch (caught) {
+    error = caught;
+  }
+  TestValidator.predicate(
+    `${label} is rejected at its schema boundary`,
+    error instanceof Error && error.message.includes(message),
+  );
 }

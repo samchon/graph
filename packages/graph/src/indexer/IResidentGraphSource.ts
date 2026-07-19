@@ -1,4 +1,5 @@
 import { ISamchonGraphDump } from "../structures";
+import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 
 /**
  * A resident indexer: builds once, keeps every language's LSP connection open,
@@ -24,6 +25,9 @@ export interface IResidentGraphSource {
    * retrying. Rejects after {@link close} begins.
    */
   load(): Promise<ISamchonGraphDump>;
+
+  /** Source display reader belonging to the dump returned by the last load. */
+  source?(): SamchonGraphSourceReader | undefined;
 
   /**
    * End every language-server connection this source opened. Safe to call on a

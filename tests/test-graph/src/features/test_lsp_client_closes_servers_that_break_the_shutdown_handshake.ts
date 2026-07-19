@@ -1,13 +1,37 @@
 import { TestValidator } from "@nestia/e2e";
+import { ChildProcess, spawn } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { GraphPaths } from "../internal/GraphPaths";
 
 interface ILspClient {
-  request<T>(method: string, params: unknown, timeoutMs?: number): Promise<T>;
+  request<T>(
+    method: string,
+    params: unknown,
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ): Promise<T>;
+  notify(method: string, params: unknown): void;
   close(): Promise<void>;
 }
+
+interface ILspClientInternals {
+  process: {
+    stdin: {
+      destroy(error?: Error): void;
+      write: (...args: unknown[]) => boolean;
+    };
+  };
+}
+
+type LspClientConstructor = new (
+  command: string,
+  args: readonly string[],
+  timeoutMs?: number,
+  cwd?: string,
+) => ILspClient;
 
 /** `LspClient` is internal transport, reached through the shipped artifact. */
 const importLib = <T>(relative: string): Promise<T> =>
@@ -18,12 +42,7 @@ const importLib = <T>(relative: string): Promise<T> =>
 export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
   async () => {
     const { LspClient } = await importLib<{
-      LspClient: new (
-        command: string,
-        args: readonly string[],
-        timeoutMs?: number,
-        cwd?: string,
-      ) => ILspClient;
+      LspClient: LspClientConstructor;
     }>("lsp/LspClient.js");
 
     // A language server that acknowledges `shutdown` and then ignores `exit` is
@@ -80,4 +99,281 @@ export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
     // new handshake with a process that is gone.
     await abrupt.close();
     await stubborn.close();
+
+    await assertStubbornProcessTreeIsOwned(LspClient);
+    await assertClosedInputRejectsRequests(LspClient);
+    await assertSynchronousWriteFailureRejectsRequests(LspClient);
+    await assertStdinStreamErrorRejectsRequests(LspClient);
+
+    // An already-cancelled request never enters the wire or waits for the
+    // otherwise-unlimited default deadline. The client still owns its child and
+    // closes it normally, which is the negative twin of aborting an in-flight
+    // request in the resident-source regression.
+    const cancelled = new LspClient(process.execPath, [
+      GraphPaths.fakeLspServer,
+    ]);
+    const controller = new AbortController();
+    controller.abort();
+    let cancellation: Error | undefined;
+    await cancelled
+      .request("initialize", {}, undefined, controller.signal)
+      .catch((error: Error) => void (cancellation = error));
+    TestValidator.equals(
+      "an already-cancelled unlimited request rejects as an abort",
+      cancellation?.name,
+      "AbortError",
+    );
+    await cancelled.close();
   };
+
+const assertStubbornProcessTreeIsOwned = async (
+  LspClient: LspClientConstructor,
+): Promise<void> => {
+  const root = GraphPaths.createTempDirectory("samchon-graph-stubborn-lsp-");
+  const pidFile = path.join(root, "stubborn.pid");
+  const sigtermFile = path.join(root, "stubborn.sigterm");
+  const previousPidFile = process.env.SAMCHON_GRAPH_FAKE_LSP_PID_FILE;
+  const previousSigtermFile =
+    process.env.SAMCHON_GRAPH_FAKE_LSP_SIGTERM_FILE;
+  process.env.SAMCHON_GRAPH_FAKE_LSP_PID_FILE = pidFile;
+  process.env.SAMCHON_GRAPH_FAKE_LSP_SIGTERM_FILE = sigtermFile;
+  const fakeArgs = [GraphPaths.fakeLspServer, "--ignore-termination"];
+  const wrapper = path.join(root, "stubborn-lsp.cmd");
+  if (process.platform === "win32") {
+    fs.writeFileSync(
+      wrapper,
+      `@echo off\r\n"${process.execPath}" "${fakeArgs[0]}" ${fakeArgs[1]}\r\n`,
+    );
+  }
+  const command = process.platform === "win32" ? "cmd.exe" : process.execPath;
+  const args =
+    process.platform === "win32"
+      ? ["/d", "/s", "/c", wrapper]
+      : fakeArgs;
+  const client = new LspClient(command, args);
+  const unrelated = spawn(
+    process.execPath,
+    ["-e", "setInterval(() => undefined, 1_000)"],
+    { stdio: "ignore", windowsHide: true },
+  );
+  let pid: number | undefined;
+  try {
+    await client.request("initialize", {});
+    await waitForFile(pidFile);
+    pid = Number(fs.readFileSync(pidFile, "utf8"));
+    await settleWithin(client.close(), 5_000, () => terminate(pid!));
+    TestValidator.equals(
+      "close returns only after a signal-resistant LSP child exits",
+      isProcessAlive(pid),
+      false,
+    );
+    TestValidator.equals(
+      "closing one LSP process tree preserves an unrelated process",
+      isProcessAlive(unrelated.pid!),
+      true,
+    );
+    if (process.platform !== "win32") {
+      TestValidator.equals(
+        "POSIX shutdown escalates through SIGTERM before SIGKILL",
+        fs.existsSync(sigtermFile),
+        true,
+      );
+    }
+  } finally {
+    if (pid !== undefined) terminate(pid);
+    await Promise.allSettled([client.close(), stop(unrelated)]);
+    restoreEnv("SAMCHON_GRAPH_FAKE_LSP_PID_FILE", previousPidFile);
+    restoreEnv("SAMCHON_GRAPH_FAKE_LSP_SIGTERM_FILE", previousSigtermFile);
+  }
+};
+
+const assertClosedInputRejectsRequests = async (
+  LspClient: LspClientConstructor,
+): Promise<void> => {
+  const root = GraphPaths.createTempDirectory("samchon-graph-closed-lsp-input-");
+  const marker = path.join(root, "input.closed");
+  const previousMarker =
+    process.env.SAMCHON_GRAPH_FAKE_LSP_INPUT_CLOSED_FILE;
+  if (process.platform !== "win32") {
+    process.env.SAMCHON_GRAPH_FAKE_LSP_INPUT_CLOSED_FILE = marker;
+  }
+  const client = new LspClient(process.execPath, [
+    GraphPaths.fakeLspServer,
+    process.platform === "win32"
+      ? "--hang-method=workspace/symbol"
+      : "--close-input-after-initialize",
+  ]);
+  try {
+    await client.request("initialize", {});
+    if (process.platform !== "win32") await waitForFile(marker);
+    const pending = client.request("workspace/symbol", {});
+    if (process.platform === "win32") {
+      // Windows keeps the child-side inherited named-pipe handle alive until
+      // process exit even after fd 0 is closed. Destroy the exact client stream
+      // with the error that the OS defers, while the real peer-close path above
+      // remains exercised on POSIX.
+      (client as unknown as ILspClientInternals).process.stdin.destroy(
+        new Error("synthetic closed request pipe"),
+      );
+    }
+    const rejection = await rejectionWithin(
+      pending,
+      2_000,
+    );
+    TestValidator.predicate(
+      "a closed LSP input rejects pending requests without an unhandled stream error",
+      rejection.message.includes("stdin") ||
+        rejection.message.includes("write"),
+    );
+    const later = await rejectionWithin(
+      client.request("workspace/symbol", {}),
+      100,
+    );
+    TestValidator.equals(
+      "transport failure rejects later requests before they enter the wire",
+      later.message,
+      rejection.message,
+    );
+    client.notify("workspace/didChangeConfiguration", {});
+    await settleWithin(client.close(), 5_000, () => undefined);
+  } finally {
+    await Promise.allSettled([client.close()]);
+    restoreEnv("SAMCHON_GRAPH_FAKE_LSP_INPUT_CLOSED_FILE", previousMarker);
+  }
+};
+
+const assertSynchronousWriteFailureRejectsRequests = async (
+  LspClient: LspClientConstructor,
+): Promise<void> => {
+  const client = new LspClient(process.execPath, [
+    GraphPaths.fakeLspServer,
+    "--hang-method=workspace/symbol",
+  ]);
+  try {
+    await client.request("initialize", {});
+    (client as unknown as ILspClientInternals).process.stdin.write = () => {
+      throw "synthetic synchronous write failure";
+    };
+    const rejection = await rejectionWithin(
+      client.request("workspace/symbol", {}),
+      2_000,
+    );
+    TestValidator.predicate(
+      "a synchronous non-Error stdin failure rejects the request",
+      rejection.message.includes("stdin") &&
+        rejection.message.includes("synthetic synchronous write failure"),
+    );
+    await settleWithin(client.close(), 5_000, () => undefined);
+  } finally {
+    await Promise.allSettled([client.close()]);
+  }
+};
+
+/**
+ * A stream-level stdin error is the handle failure surface: destroying the
+ * write stream with an error emits it on every platform, whereas the real
+ * peer-close path only reaches the write callback on POSIX. Exercising it
+ * cross-platform keeps the client's stdin `error` listener honest everywhere.
+ */
+const assertStdinStreamErrorRejectsRequests = async (
+  LspClient: LspClientConstructor,
+): Promise<void> => {
+  const client = new LspClient(process.execPath, [
+    GraphPaths.fakeLspServer,
+    "--hang-method=workspace/symbol",
+  ]);
+  try {
+    await client.request("initialize", {});
+    const pending = client.request("workspace/symbol", {});
+    (client as unknown as ILspClientInternals).process.stdin.destroy(
+      new Error("synthetic stdin stream error"),
+    );
+    const rejection = await rejectionWithin(pending, 2_000);
+    TestValidator.predicate(
+      "a stdin stream error rejects pending requests",
+      rejection.message.includes("stdin"),
+    );
+  } finally {
+    await settleWithin(client.close(), 5_000, () => undefined);
+  }
+};
+
+const rejectionWithin = async (
+  task: Promise<unknown>,
+  timeoutMs: number,
+): Promise<Error> => {
+  const result = await settleWithin(
+    task.then(
+      () => ({ error: undefined }),
+      (error: unknown) => ({
+        error: error instanceof Error ? error : new Error(String(error)),
+      }),
+    ),
+    timeoutMs,
+    () => undefined,
+  );
+  if (result.error !== undefined) return result.error;
+  throw new Error("expected LSP request to reject");
+};
+
+const settleWithin = async <T>(
+  task: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => void,
+): Promise<T> => {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      onTimeout();
+      reject(new Error(`LSP lifecycle exceeded ${String(timeoutMs)} ms`));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([task, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+};
+
+const waitForFile = async (file: string): Promise<void> => {
+  const deadline = Date.now() + 5_000;
+  while (!fs.existsSync(file)) {
+    if (Date.now() >= deadline) throw new Error(`fake LSP did not announce ${file}`);
+    await delay(10);
+  }
+};
+
+const isProcessAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const terminate = (pid: number): void => {
+  if (!isProcessAlive(pid)) return;
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    return;
+  }
+};
+
+const stop = async (child: ChildProcess): Promise<void> => {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise<void>((resolve) => {
+    child.once("exit", () => resolve());
+  });
+  child.kill("SIGKILL");
+  await exited;
+};
+
+const restoreEnv = (name: string, value: string | undefined): void => {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+};
+
+const delay = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));

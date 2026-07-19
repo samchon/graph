@@ -16,12 +16,15 @@ export async function refreshLanguageSession(
   session: ILspSession,
   files: readonly string[],
   options: IBuildGraphOptions,
+  signal?: AbortSignal,
 ): Promise<{
   nodes: ISamchonGraphNode[];
   edges: ISamchonGraphEdge[];
   diagnostics: ISamchonGraphDiagnostic[];
   warnings: string[];
 }> {
+  const refreshOptions =
+    signal === undefined ? options : { ...options, signal };
   // The session's diagnostics are not cleared: `publishDiagnostics` replaces a
   // document's findings, and a server republishes only what it re-analysed, so
   // what it said about an untouched file still stands. What it said about a file
@@ -34,9 +37,9 @@ export async function refreshLanguageSession(
     progressFence !== undefined &&
     session.waitForReady !== undefined
   ) {
-    await session.waitForReady(progressFence, true);
+    await session.waitForReady(progressFence, true, refreshOptions.signal);
   }
-  return scanSession(session, options);
+  return scanSession(session, refreshOptions);
 }
 
 // Reconciles the session's open files against what is on disk right now:

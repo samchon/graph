@@ -75,13 +75,13 @@ export const test_viewer_reduce_preserves_the_reference_contract = () => {
     ],
   }, { keepExternal: true });
   TestValidator.equals(
-    "a disjoint absolute set keeps safe drive-qualified paths",
+    "a disjoint absolute set falls back to portable basenames",
     splitRoots.nodes.map((entry) => entry.file),
     [
-      "C:/one/a.ts",
-      "D:/two/b.ts",
-      "C:/one/node_modules/pkg/x.d.ts",
-      "E:/outside/y.ts",
+      "a.ts",
+      "b.ts",
+      "node_modules/pkg/x.d.ts",
+      "y.ts",
     ],
   );
   TestValidator.predicate(
@@ -134,9 +134,94 @@ export const test_viewer_reduce_preserves_the_reference_contract = () => {
     ],
     edges: [edge("C:/only/file.ts", "A", "class", "C:/only/file.ts", "B", "class", "calls")],
   });
-  TestValidator.predicate(
-    "a one-file absolute root strips the whole file prefix",
-    sameFile.nodes.every((entry) => entry.file === ""),
+  TestValidator.equals(
+    "a one-file absolute root retains the source filename",
+    sameFile.nodes.map((entry) => entry.file),
+    ["file.ts", "file.ts"],
+  );
+  TestValidator.equals(
+    "a one-file absolute root retains filename-based node identity",
+    sameFile.nodes.map((entry) => entry.id.slice(0, entry.id.indexOf("#"))),
+    ["file.ts", "file.ts"],
+  );
+
+  const posixRoot = reduce({
+    nodes: [
+      node("/a.ts", "A", "class"),
+      node("/b.ts", "B", "class"),
+    ],
+    edges: [edge("/a.ts", "A", "class", "/b.ts", "B", "class", "calls")],
+  });
+  TestValidator.equals(
+    "files at the POSIX root retain their basenames",
+    posixRoot.nodes.map((entry) => entry.file),
+    ["a.ts", "b.ts"],
+  );
+
+  const caseSensitive = reduce({
+    nodes: [
+      node("/work/A/a.ts", "A", "class"),
+      node("/work/a/b.ts", "B", "class"),
+    ],
+    edges: [
+      edge(
+        "/work/A/a.ts",
+        "A",
+        "class",
+        "/work/a/b.ts",
+        "B",
+        "class",
+        "calls",
+      ),
+    ],
+  });
+  TestValidator.equals(
+    "POSIX common roots remain case-sensitive",
+    caseSensitive.nodes.map((entry) => entry.file),
+    ["A/a.ts", "a/b.ts"],
+  );
+
+  const mixedPathForms = mixedPathReduction(false);
+  TestValidator.equals(
+    "a relative-first current dump preserves its project path and sanitizes its absolute sibling",
+    pathCoordinates(mixedPathForms),
+    [
+      ["Local", "src/local.ts", "src/local.ts"],
+      ["Sibling", "sibling.ts", "sibling.ts"],
+    ],
+  );
+  TestValidator.equals(
+    "mixed current path reduction is independent of node order",
+    pathCoordinates(mixedPathReduction(true)),
+    pathCoordinates(mixedPathForms),
+  );
+
+  const unc = reduce({
+    nodes: [
+      node("\\\\SERVER\\Share\\project\\src\\a.ts", "A", "class"),
+      node("//server/share/project/lib/b.ts", "B", "class"),
+    ],
+    edges: [
+      edge(
+        "\\\\SERVER\\Share\\project\\src\\a.ts",
+        "A",
+        "class",
+        "//server/share/project/lib/b.ts",
+        "B",
+        "class",
+        "calls",
+      ),
+    ],
+  });
+  TestValidator.equals(
+    "UNC roots are rerooted case-insensitively without losing subdirectories",
+    unc.nodes.map((entry) => entry.file),
+    ["src/a.ts", "lib/b.ts"],
+  );
+  TestValidator.equals(
+    "UNC-rooted node identities are rewritten with their files",
+    unc.nodes.map((entry) => entry.id.slice(0, entry.id.indexOf("#"))),
+    ["src/a.ts", "lib/b.ts"],
   );
 
   const hashless = reduce({
@@ -165,6 +250,40 @@ export const test_viewer_reduce_preserves_the_reference_contract = () => {
     2,
   );
 };
+
+const mixedPathReduction = (reversed: boolean) => {
+  const nodes = [
+    node("src/local.ts", "Local", "class"),
+    node("/workspace-sibling/sibling.ts", "Sibling", "class"),
+  ];
+  return reduce({
+    nodes: reversed ? nodes.reverse() : nodes,
+    edges: [
+      edge(
+        "src/local.ts",
+        "Local",
+        "class",
+        "/workspace-sibling/sibling.ts",
+        "Sibling",
+        "class",
+        "calls",
+      ),
+    ],
+  });
+};
+
+const pathCoordinates = (
+  payload: ReturnType<typeof reduce>,
+): Array<[string, string, string]> =>
+  payload.nodes
+    .map(
+      (entry): [string, string, string] => [
+        entry.name,
+        entry.file,
+        entry.id.slice(0, entry.id.indexOf("#")),
+      ],
+    )
+    .sort(([left], [right]) => left.localeCompare(right));
 
 const id = (file: string, name: string, kind: string) => `${file}#${name}:${kind}`;
 const node = (file: string, name: string, kind: string, external = false) => ({

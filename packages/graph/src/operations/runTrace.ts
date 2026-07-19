@@ -153,15 +153,16 @@ export function runTrace(
       focus,
       includeExternal,
     );
-    const path = found?.path ?? [];
-    const hops = found?.hops ?? [];
-    const junctions =
-      hops.length > 0
-        ? []
-        : junctionsBetween(graph, start.node.id, target.node.id, focus);
+    const hasPath = found.path !== null;
+    const path = found.path ?? [];
+    const hops = found.hops;
+    const junctions = hasPath || found.truncated
+      ? []
+      : junctionsBetween(graph, start.node.id, target.node.id, focus);
     return {
       result: {
         ...base,
+        truncated: found.truncated,
         start: summary(graph, start.node),
         target: summary(graph, target.node),
         hops,
@@ -178,10 +179,15 @@ export function runTrace(
       // callers of the target are the way across, and the graph has them, so
       // say which call to make instead of handing back an empty result dressed
       // as the answer. Excalidraw's tour spent eleven calls finding this out.
-      next:
-        hops.length > 0
-          ? pathNext
-          : junctions.length > 0
+      next: hasPath
+        ? pathNext
+        : found.truncated
+          ? resultNext(
+              "inspect",
+              "The bounded path search omitted eligible continuations before it could prove reachability. Increase maxDepth when possible, or trace an intermediate handle instead of treating this as no connection.",
+              "trace",
+            )
+        : junctions.length > 0
             ? resultNext(
                 "inspect",
                 "No call path runs between the two ends — a callback stands between them (an event emitter, a subscription, a lifecycle hook), and no call edge crosses one. `junctions` names the symbols both ends touch, which is the seam: trace the junction to see who registers on it and who fires it.",
@@ -205,24 +211,49 @@ export function runTrace(
   while (queue.length > 0) {
     const next: Array<{ id: string; depth: number }> = [];
     for (const { id, depth } of queue) {
-      if (depth >= maxDepth) {
+      const selected = traceEdges(graph, id, reverse, focus);
+      if (
+        selected.omitted.some(
+          (edge) =>
+            eligibleTraceEndpoint(
+              graph,
+              edge,
+              reverse,
+              focus,
+              includeExternal,
+            ) !== undefined,
+        )
+      ) {
         truncated = true;
+      }
+      if (depth >= maxDepth) {
+        if (
+          selected.edges.some(
+            (edge) =>
+              eligibleTraceEndpoint(
+                graph,
+                edge,
+                reverse,
+                focus,
+                includeExternal,
+              ) !== undefined,
+          )
+        ) {
+          truncated = true;
+        }
         continue;
       }
-      const edges = orderedEdges(
-        graph,
-        reverse
-          ? graph.incoming(id)
-          : [...graph.outgoing(id), ...dispatchEdges(graph, id, focus)],
-        direction,
-        reverse,
-      );
+      const edges = orderedEdges(graph, selected.edges, direction, reverse);
       for (const edge of edges) {
-        if (!traversable(edge.kind, focus)) continue;
-        const otherId = reverse ? edge.from : edge.to;
-        const other = graph.node(otherId);
-        if (other === undefined || other.kind === "file") continue;
-        if (!includeExternal && isExternalNode(other)) continue;
+        const endpoint = eligibleTraceEndpoint(
+          graph,
+          edge,
+          reverse,
+          focus,
+          includeExternal,
+        );
+        if (endpoint === undefined) continue;
+        const { otherId, other } = endpoint;
         const hop: ISamchonGraphTrace.IHop = {
           from: edge.from,
           to: edge.to,
@@ -272,6 +303,42 @@ export function runTrace(
       "Steps, hops, reached nodes, and evidence ranges are the flow the graph holds from this start.",
     ),
   };
+}
+
+interface ITraceEndpoint {
+  otherId: string;
+  other: ISamchonGraphNode;
+}
+
+/** Candidate edges in the selected direction before focus and node policy. */
+function traceEdges(
+  graph: SamchonGraphMemory,
+  id: string,
+  reverse: boolean,
+  focus: ISamchonGraphTrace.IRequest["focus"],
+): { edges: ISamchonGraphEdge[]; omitted: ISamchonGraphEdge[] } {
+  if (reverse) return { edges: [...graph.incoming(id)], omitted: [] };
+  const ordinary = [...graph.outgoing(id)];
+  const dispatch = dispatchCandidates(graph, id, focus);
+  return dispatch.length >= DISPATCH_HUB
+    ? { edges: ordinary, omitted: dispatch }
+    : { edges: [...ordinary, ...dispatch], omitted: [] };
+}
+
+/** The endpoint an unbounded trace would represent, if any. */
+function eligibleTraceEndpoint(
+  graph: SamchonGraphMemory,
+  edge: ISamchonGraphEdge,
+  reverse: boolean,
+  focus: ISamchonGraphTrace.IRequest["focus"],
+  includeExternal: boolean,
+): ITraceEndpoint | undefined {
+  if (!traversable(edge.kind, focus)) return undefined;
+  const otherId = reverse ? edge.from : edge.to;
+  const other = graph.node(otherId);
+  if (other === undefined || other.kind === "file") return undefined;
+  if (!includeExternal && isExternalNode(other)) return undefined;
+  return { otherId, other };
 }
 
 function traceSteps(
@@ -401,12 +468,17 @@ function findPath(
   maxDepth: number,
   focus: ISamchonGraphTrace.IRequest["focus"],
   includeExternal: boolean,
-): { path: ISamchonGraphNode[]; hops: ISamchonGraphTrace.IHop[] } | null {
+): {
+  path: ISamchonGraphNode[] | null;
+  hops: ISamchonGraphTrace.IHop[];
+  truncated: boolean;
+} {
   const startNode = graph.node(startId);
   // The caller already resolved startId to a real node in this same graph.
   /* c8 ignore next */
-  if (startNode === undefined) return null;
-  if (startId === targetId) return { path: [startNode], hops: [] };
+  if (startNode === undefined) return { path: null, hops: [], truncated: false };
+  if (startId === targetId)
+    return { path: [startNode], hops: [], truncated: false };
   const parent = new Map<
     string,
     {
@@ -417,20 +489,30 @@ function findPath(
   >();
   const visited = new Set<string>([startId]);
   let queue: Array<{ id: string; depth: number }> = [{ id: startId, depth: 0 }];
+  const omitted = new Set<string>();
   while (queue.length > 0) {
     const next: Array<{ id: string; depth: number }> = [];
     for (const { id, depth } of queue) {
-      if (depth >= maxDepth) continue;
-      for (const edge of [
-        ...graph.outgoing(id),
-        ...dispatchEdges(graph, id, focus),
-      ]) {
-        if (!traversable(edge.kind, focus)) continue;
-        const otherId = edge.to;
-        if (visited.has(otherId)) continue;
-        const other = graph.node(otherId);
-        if (other === undefined || other.kind === "file") continue;
-        if (!includeExternal && isExternalNode(other)) continue;
+      const candidates = pathEdges(graph, id, targetId, focus);
+      for (const edge of candidates.omitted) {
+        const endpoint = pathEndpoint(graph, edge, focus, includeExternal);
+        if (endpoint !== undefined && !visited.has(endpoint.otherId)) {
+          omitted.add(endpoint.otherId);
+        }
+      }
+      if (depth >= maxDepth) {
+        for (const edge of candidates.edges) {
+          const endpoint = pathEndpoint(graph, edge, focus, includeExternal);
+          if (endpoint !== undefined && !visited.has(endpoint.otherId)) {
+            omitted.add(endpoint.otherId);
+          }
+        }
+        continue;
+      }
+      for (const edge of candidates.edges) {
+        const endpoint = pathEndpoint(graph, edge, focus, includeExternal);
+        if (endpoint === undefined || visited.has(endpoint.otherId)) continue;
+        const { otherId, other } = endpoint;
         visited.add(otherId);
         const evidence = edgeEvidenceOf(edge);
         parent.set(otherId, {
@@ -468,14 +550,49 @@ function findPath(
               hop.evidence = parentEdge.evidence;
             hops.push(hop);
           }
-          return { path, hops };
+          return { path, hops, truncated: false };
         }
         next.push({ id: otherId, depth: depth + 1 });
       }
     }
     queue = next;
   }
-  return null;
+  return {
+    path: null,
+    hops: [],
+    truncated: [...omitted].some((id) => !visited.has(id)),
+  };
+}
+
+function pathEdges(
+  graph: SamchonGraphMemory,
+  id: string,
+  targetId: string,
+  focus: ISamchonGraphTrace.IRequest["focus"],
+): { edges: ISamchonGraphEdge[]; omitted: ISamchonGraphEdge[] } {
+  const ordinary = [...graph.outgoing(id)];
+  const dispatch = dispatchCandidates(graph, id, focus);
+  if (dispatch.length < DISPATCH_HUB) {
+    return { edges: [...ordinary, ...dispatch], omitted: [] };
+  }
+  const target = dispatch.filter((edge) => edge.to === targetId);
+  return {
+    edges: [...ordinary, ...target],
+    omitted: dispatch.filter((edge) => edge.to !== targetId),
+  };
+}
+
+function pathEndpoint(
+  graph: SamchonGraphMemory,
+  edge: ISamchonGraphEdge,
+  focus: ISamchonGraphTrace.IRequest["focus"],
+  includeExternal: boolean,
+): ITraceEndpoint | undefined {
+  if (!traversable(edge.kind, focus)) return undefined;
+  const other = graph.node(edge.to);
+  if (other === undefined || other.kind === "file") return undefined;
+  if (!includeExternal && isExternalNode(other)) return undefined;
+  return { otherId: edge.to, other };
 }
 
 function orderedEdges(
@@ -578,7 +695,7 @@ function summary(
   }
   if (depth !== undefined) out.depth = depth;
   if (withSignature) {
-    const sig = signatureOf(graph.project, node);
+    const sig = signatureOf(graph, node);
     if (sig !== undefined) out.signature = sig;
   }
   if (withRoles) {
@@ -610,7 +727,7 @@ function summary(
  * implementation — which is the fact, since the call site named the base and
  * the runtime lands in the override.
  */
-function dispatchEdges(
+function dispatchCandidates(
   graph: SamchonGraphMemory,
   id: string,
   focus: ISamchonGraphTrace.IRequest["focus"],
@@ -629,7 +746,7 @@ function dispatchEdges(
       ...(edge.evidence !== undefined ? { evidence: edge.evidence } : {}),
     });
   }
-  return out.length >= DISPATCH_HUB ? [] : out;
+  return out;
 }
 
 /** Whether the declaration has a body: something it calls, reads, or renders. */

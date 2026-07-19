@@ -1,46 +1,44 @@
 import { ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+
 import { IBulkGraphSession } from "../IBulkGraphSession";
 import { adaptTtscGraphDump } from "./adaptTtscGraphDump";
 import { ITtscGraphSnapshot } from "./ITtscGraphSnapshot";
 import { parseTtscGraphSnapshot } from "./parseTtscGraphSnapshot";
 
-/**
- * Resident NDJSON client for `ttscgraph serve`.
- *
- * One request per refresh, and no disk read. Both of those used to be false and
- * were the same defect: this client adapted the dump, then `readText`-ed every
- * file the dump named — off the disk, outside the compiler's program, at a
- * later instant — and then issued a *second* `{id}` round-trip purely to ask
- * whether anything had moved in between, looping if it had.
- *
- * That protocol narrowed the race without closing it, and could not close it. A
- * write that lands and reverts between the dump and the confirmation is
- * invisible to both. And a clean confirmation only ever proved that the *server*
- * saw no change — never that the bytes this process read are the bytes the
- * checker resolved against, which is the only thing the sources were wanted for.
- * Under a source-preamble plugin the two are not even supposed to match.
- *
- * The manifest ends the question by answering it at the source: the producer
- * publishes the digest of the text its checker read, in the same envelope as
- * the facts. There is nothing left to confirm, so there is no second request,
- * and nothing left to read, so there is no disk access.
- */
+const DEFAULT_REQUEST_TIMEOUT_MS = 300_000;
+const MAX_TIMER_MS = 2_147_483_647;
+const TERMINATION_GRACE_MS = 1_000;
+
+interface NativeChild {
+  process: ChildProcessWithoutNullStreams;
+  stdoutChunks: string[];
+  stderr: string;
+  exit: Promise<void>;
+  termination?: Promise<void>;
+}
+
+interface Pending {
+  child: NativeChild;
+  resolve: (value: ITtscGraphSnapshot) => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
+  signal?: AbortSignal;
+  abort?: () => void;
+}
+
+/** Resident, restartable NDJSON client for `ttscgraph serve`. */
 export class TtscGraphClient implements IBulkGraphSession {
   public readonly kind = "bulk" as const;
   public readonly language = "typescript" as const;
   public readonly root: string;
 
-  private readonly child: ChildProcessWithoutNullStreams;
-  private readonly pending = new Map<
-    number,
-    {
-      resolve: (value: ITtscGraphSnapshot) => void;
-      reject: (error: Error) => void;
-    }
-  >();
+  private readonly command: string;
+  private readonly args: readonly string[];
+  private readonly requestTimeoutMs: number;
+  private child: NativeChild | undefined;
+  private readonly ownedChildren = new Set<NativeChild>();
+  private readonly pending = new Map<number, Pending>();
   private nextId = 1;
-  private readonly stdoutChunks: string[] = [];
-  private stderr = "";
   private queue: Promise<void> = Promise.resolve();
   private closed = false;
   private closing: Promise<void> | undefined;
@@ -48,50 +46,21 @@ export class TtscGraphClient implements IBulkGraphSession {
   private version = 0;
 
   public constructor(options: TtscGraphClient.IOptions) {
-    this.root = options.root;
-    this.child = spawn(
-      options.command,
-      [...(options.args ?? []), "serve", "--cwd", options.root],
-      {
-        cwd: options.root,
-        env: process.env,
-        shell: false,
-        stdio: ["pipe", "pipe", "pipe"],
-        windowsHide: true,
-      },
-    );
-    this.child.stdout.setEncoding("utf8");
-    this.child.stderr.setEncoding("utf8");
-    this.child.stdout.on("data", (chunk: string) => {
-      this.consume(chunk);
-    });
-    this.child.stderr.on("data", (chunk: string) => {
-      this.stderr = (this.stderr + chunk).slice(-64 * 1024);
-    });
-    this.child.on("error", (error) => {
-      this.rejectPending(error);
-    });
-    /* c8 ignore start */
-    this.child.stdin.on("error", (error) => {
-      // Even a child that explicitly destroys its stdin can leave the parent's
-      // pipe writable on Windows. Delivery of this Writable error is a libuv
-      // boundary, not a state a hermetic fake child can induce portably.
-      this.rejectPending(error);
-    });
-    /* c8 ignore stop */
-    this.child.on("exit", (code, signal) => {
-      // Node supplies a signal for termination or a code for normal exit. The
-      // callback types are nullable because they distinguish those two cases,
-      // not because an exit can have neither.
-      const status = signal ?? code;
-      this.rejectPending(
-        new Error(
-          `ttscgraph: process exited (${status})${
-            this.stderr.trim() === "" ? "" : `: ${this.stderr.trim()}`
-          }`,
-        ),
+    const requestTimeoutMs =
+      options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    if (
+      !Number.isSafeInteger(requestTimeoutMs) ||
+      requestTimeoutMs <= 0 ||
+      requestTimeoutMs > MAX_TIMER_MS
+    ) {
+      throw new TypeError(
+        `ttscgraph: requestTimeoutMs must be an integer between 1 and ${String(MAX_TIMER_MS)}`,
       );
-    });
+    }
+    this.root = options.root;
+    this.command = options.command;
+    this.args = options.args ?? [];
+    this.requestTimeoutMs = requestTimeoutMs;
   }
 
   public get generation(): number {
@@ -102,198 +71,335 @@ export class TtscGraphClient implements IBulkGraphSession {
     return this.snapshot;
   }
 
-  public refresh(): Promise<IBulkGraphSession.IRefresh> {
+  public refresh(
+    options: TtscGraphClient.IRefreshOptions = {},
+  ): Promise<IBulkGraphSession.IRefresh> {
+    if (this.closed) {
+      return Promise.reject(new Error("ttscgraph: session is closed"));
+    }
     return this.enqueue(async () => {
       this.assertOpen();
-      const response = await this.request();
-      // Narrowing, not a lookup: `mode` is typed `"error"` exactly on the frames
-      // that carry one, so ruling failure out here is what makes the rest of
-      // this method unable to ask for a snapshot that was never produced.
-      if (response.mode === "error") {
-        throw new Error(`ttscgraph: ${response.error}`);
-      }
-      const mode: IBulkGraphSession.Mode = response.mode;
-      if (!response.changed) {
-        if (this.snapshot === undefined) {
+      try {
+        const response = await this.request(options.signal);
+        if (response.mode === "error") {
+          throw new Error(`ttscgraph: ${response.error}`);
+        }
+        const mode: IBulkGraphSession.Mode = response.mode;
+        if (!response.changed) {
+          if (this.snapshot === undefined) {
+            throw new Error(
+              "ttscgraph: first response was unchanged without a snapshot",
+            );
+          }
+          assertCapabilitiesMatch(
+            response.capabilities,
+            this.snapshot.provenance.capabilities,
+          );
+          return {
+            changed: false,
+            generation: this.version,
+            mode,
+            snapshot: this.snapshot,
+          };
+        }
+
+        const adapted = adaptTtscGraphDump(response.dump, this.root);
+        const provenance: IBulkGraphSession.IProvenance = {
+          ...adapted.provenance,
+          protocolVersion: response.protocolVersion,
+        };
+        assertCapabilitiesMatch(response.capabilities, provenance.capabilities);
+        if (
+          mode === "incremental" &&
+          this.snapshot !== undefined &&
+          this.snapshot.provenance.universe !== provenance.universe
+        ) {
           throw new Error(
-            "ttscgraph: first response was unchanged without a snapshot",
+            "ttscgraph: incremental snapshot reports a build universe that moved since the last generation, so its program cannot have been reused",
           );
         }
-        assertCapabilitiesMatch(
-          response.capabilities,
-          this.snapshot.provenance.capabilities,
-        );
+        const next: IBulkGraphSession.ISnapshot = {
+          language: "typescript",
+          nodes: adapted.nodes,
+          edges: adapted.edges,
+          diagnostics: adapted.diagnostics,
+          sources: adapted.sources,
+          provenance,
+          warnings: adapted.warnings,
+        };
+        this.snapshot = next;
+        this.version += 1;
         return {
-          changed: false,
+          changed: true,
           generation: this.version,
           mode,
-          snapshot: this.snapshot,
+          snapshot: next,
         };
+      } catch (error) {
+        const child = this.child;
+        if (child !== undefined) this.failChild(child, asError(error));
+        throw error;
       }
-
-      // Parse and validate the complete response before publishing any part of
-      // it. A malformed full dump leaves both the previous snapshot and its
-      // generation untouched.
-      const adapted = adaptTtscGraphDump(response.dump, this.root);
-      const provenance: IBulkGraphSession.IProvenance = {
-        ...adapted.provenance,
-        protocolVersion: response.protocolVersion,
-      };
-      assertCapabilitiesMatch(response.capabilities, provenance.capabilities);
-      // `incremental` means the resident program was reused, and a program can
-      // only be reused while the inputs that decide its file set hold still —
-      // that is what separates it from `reload` upstream. So the claim has
-      // independent evidence riding beside it, and checking costs one string
-      // compare. A producer whose universe moved under an `incremental` label
-      // is not a producer whose mode is cosmetically wrong: it is one that
-      // reused a program it should have reloaded, and every fact in the
-      // snapshot is suspect. Report `mode` honestly means refusing to report a
-      // `mode` the snapshot itself contradicts.
-      if (
-        mode === "incremental" &&
-        this.snapshot !== undefined &&
-        this.snapshot.provenance.universe !== provenance.universe
-      ) {
-        throw new Error(
-          "ttscgraph: incremental snapshot reports a build universe that moved since the last generation, so its program cannot have been reused",
-        );
-      }
-      const next: IBulkGraphSession.ISnapshot = {
-        language: "typescript",
-        nodes: adapted.nodes,
-        edges: adapted.edges,
-        diagnostics: adapted.diagnostics,
-        sources: adapted.sources,
-        provenance,
-        warnings: adapted.warnings,
-      };
-      this.snapshot = next;
-      this.version += 1;
-      return {
-        changed: true,
-        generation: this.version,
-        mode,
-        snapshot: next,
-      };
-    });
+    }, options.signal);
   }
 
+  /** Begin shutdown immediately and settle after every owned child exits. */
   public close(): Promise<void> {
     if (this.closing !== undefined) return this.closing;
     this.closed = true;
-    this.closing = this.enqueue(async () => {
-      // `waitForExit` owns both sides of the process-status race, including a
-      // child that exited before close began. Ending an already-closed writable
-      // is harmless and keeps that state transition in one place.
-      this.child.stdin.end();
-      if (await waitForExit(this.child, 2_000)) return;
-      // This exact ChildProcess is owned by this client. No PID lookup or
-      // process-tree operation is used, so an unrelated process cannot be hit.
-      this.child.kill();
-      /* c8 ignore start */
-      // A child can ignore SIGTERM on POSIX, while Windows terminates the same
-      // owned process unconditionally. No hermetic cross-platform fixture can
-      // reach this defensive failure without leaking that deliberately defiant
-      // process after the test.
-      if (!(await waitForExit(this.child, 2_000))) {
-        throw new Error("ttscgraph: owned process did not exit after close");
-      }
-      /* c8 ignore stop */
-    });
+    const error = new Error("ttscgraph: session is closed");
+    const child = this.child;
+    if (child !== undefined) this.failChild(child, error);
+    this.failPending(error);
+    this.closing = Promise.all(
+      [...this.ownedChildren].map((owned) => this.terminate(owned)),
+    ).then(() => undefined);
     return this.closing;
   }
 
-  private request(): Promise<ITtscGraphSnapshot> {
+  private request(signal?: AbortSignal): Promise<ITtscGraphSnapshot> {
+    if (signal?.aborted) throw cancelledError(signal);
+    const child = this.ensureChild();
     const id = this.nextId++;
-    const response = new Promise<ITtscGraphSnapshot>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+    return new Promise<ITtscGraphSnapshot>((resolve, reject) => {
+      const pending: Pending = {
+        child,
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          this.failChild(
+            child,
+            new Error(
+              `ttscgraph: snapshot request timed out after ${String(this.requestTimeoutMs)} ms${stderrSuffix(child)}`,
+            ),
+          );
+        }, this.requestTimeoutMs),
+        signal,
+      };
+      pending.timer.unref();
+      // Own the request before installing the listener. Abort dispatch is
+      // synchronous, so a signal that aborts during registration must find and
+      // settle this pending entry instead of retiring the child around an
+      // orphaned promise.
+      this.pending.set(id, pending);
+      if (signal !== undefined) {
+        pending.abort = () =>
+          this.failChild(child, cancelledError(signal, child));
+        signal.addEventListener("abort", pending.abort, { once: true });
+      }
+      if (signal?.aborted) {
+        pending.abort!();
+        return;
+      }
+      child.process.stdin.write(`${JSON.stringify({ id })}\n`, (error) => {
+        if (error === null || error === undefined) return;
+        if (this.pending.get(id) !== pending) return;
+        /* c8 ignore start -- Windows keeps the inherited named-pipe read
+         * handle until child exit. This callback-specific EPIPE path is
+         * POSIX-only and is exercised there. */
+        this.failChild(
+          child,
+          new Error(`ttscgraph: could not request snapshot: ${error.message}`),
+        );
+        /* c8 ignore stop */
+      });
     });
-    this.child.stdin.write(`${JSON.stringify({ id })}\n`, (error) => {
-      if (error === null || error === undefined) return;
-      const pending = this.pending.get(id);
-      this.pending.delete(id);
-      // The stdin error event may clear the same request before this write
-      // callback observes the pipe failure; their ordering belongs to libuv.
-      /* c8 ignore next */
-      pending?.reject(error);
-    });
-    return response;
   }
 
-  private consume(chunk: string): void {
+  private ensureChild(): NativeChild {
+    this.assertOpen();
+    if (
+      this.child !== undefined &&
+      this.child.process.exitCode === null &&
+      this.child.process.signalCode === null
+    ) {
+      return this.child;
+    }
+    const spawned = spawn(
+      this.command,
+      [...this.args, "serve", "--cwd", this.root],
+      {
+        cwd: this.root,
+        env: process.env,
+        shell: false,
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+      },
+    );
+    const child: NativeChild = {
+      process: spawned,
+      stdoutChunks: [],
+      stderr: "",
+      exit: exitOf(spawned),
+    };
+    this.child = child;
+    this.ownedChildren.add(child);
+    void child.exit.then(() => this.ownedChildren.delete(child));
+    spawned.stdout.setEncoding("utf8");
+    spawned.stderr.setEncoding("utf8");
+    spawned.stdout.on("data", (chunk: string) => this.consume(child, chunk));
+    spawned.stderr.on("data", (chunk: string) => {
+      child.stderr = (child.stderr + chunk).slice(-64 * 1024);
+    });
+    spawned.on("error", (error) =>
+      this.failChild(
+        child,
+        new Error(`ttscgraph: process failed: ${error.message}`),
+      ),
+    );
+    /* c8 ignore start */
+    spawned.stdin.on("error", (error) =>
+      this.failChild(
+        child,
+        new Error(`ttscgraph: stdin failed: ${error.message}`),
+      ),
+    );
+    /* c8 ignore stop */
+    spawned.on("exit", (code, signal) => {
+      const status = signal ?? code;
+      this.failChild(
+        child,
+        new Error(
+          `ttscgraph: process exited (${status})${stderrSuffix(child)}`,
+        ),
+        false,
+      );
+    });
+    return child;
+  }
+
+  private consume(child: NativeChild, chunk: string): void {
+    if (this.child !== child) return;
     let start = 0;
     for (;;) {
       const newline = chunk.indexOf("\n", start);
       if (newline === -1) {
-        if (start < chunk.length) this.stdoutChunks.push(chunk.slice(start));
+        if (start < chunk.length) child.stdoutChunks.push(chunk.slice(start));
         return;
       }
-      this.stdoutChunks.push(chunk.slice(start, newline));
-      const line = this.stdoutChunks.join("").trim();
-      this.stdoutChunks.length = 0;
+      child.stdoutChunks.push(chunk.slice(start, newline));
+      const line = child.stdoutChunks.join("").trim();
+      child.stdoutChunks.length = 0;
       start = newline + 1;
       if (line === "") continue;
       let value: unknown;
       try {
         value = JSON.parse(line);
       } catch (error) {
-        this.rejectPending(
+        this.failChild(
+          child,
           new Error(
             `ttscgraph: invalid NDJSON response: ${asError(error).message}`,
           ),
         );
-        continue;
+        return;
       }
       let response: ITtscGraphSnapshot;
       try {
-        // The whole frame is validated here, before it is routed. A protocol
-        // mismatch or a malformed envelope is never one caller's bad luck — it
-        // is the wrong binary, or a producer this client cannot read at all, so
-        // every request outstanding against it is equally doomed and fails with
-        // that same reason rather than hanging until the process exits.
         response = parseTtscGraphSnapshot(value);
       } catch (error) {
-        this.rejectPending(asError(error));
-        continue;
+        this.failChild(child, asError(error));
+        return;
       }
       const pending = this.pending.get(response.id);
-      if (pending === undefined) {
-        this.rejectPending(
+      if (pending === undefined || pending.child !== child) {
+        this.failChild(
+          child,
           new Error(`ttscgraph: unexpected response id ${String(response.id)}`),
         );
-        continue;
+        return;
       }
-      this.pending.delete(response.id);
-      pending.resolve(response);
+      this.settlePending(response.id, pending, response);
     }
   }
 
-  private rejectPending(error: Error): void {
-    for (const pending of this.pending.values()) pending.reject(error);
-    this.pending.clear();
+  private failChild(
+    child: NativeChild,
+    error: Error,
+    terminate = true,
+  ): void {
+    if (this.child !== child) return;
+    this.child = undefined;
+    this.snapshot = undefined;
+    this.failPending(error, child);
+    if (terminate) void this.terminate(child);
+  }
+
+  private terminate(child: NativeChild): Promise<void> {
+    if (child.termination === undefined) {
+      child.termination = terminateChild(child.process, child.exit);
+      // A protocol failure retires the child before a caller necessarily asks
+      // to close the client. Keep the rejection observed here while preserving
+      // the original promise for close() to report.
+      void child.termination.catch(() => undefined);
+    }
+    return child.termination;
+  }
+
+  private failPending(error: Error, child?: NativeChild): void {
+    for (const [id, pending] of this.pending) {
+      if (child === undefined || pending.child === child) {
+        this.settlePending(id, pending, error);
+      }
+    }
+  }
+
+  private settlePending(
+    id: number,
+    pending: Pending,
+    result: ITtscGraphSnapshot | Error,
+  ): void {
+    /* c8 ignore next -- callers retrieved this entry or are iterating it. */
+    if (this.pending.get(id) !== pending) return;
+    this.pending.delete(id);
+    clearTimeout(pending.timer);
+    if (pending.signal !== undefined && pending.abort !== undefined) {
+      pending.signal.removeEventListener("abort", pending.abort);
+    }
+    if (result instanceof Error) pending.reject(result);
+    else pending.resolve(result);
   }
 
   private assertOpen(): void {
     if (this.closed) throw new Error("ttscgraph: session is closed");
-    if (this.child.exitCode !== null || this.child.signalCode !== null) {
-      throw new Error(
-        `ttscgraph: process is not running${
-          this.stderr.trim() === "" ? "" : `: ${this.stderr.trim()}`
-        }`,
-      );
-    }
   }
 
-  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+  private enqueue<T>(
+    task: () => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
     let resolveResult!: (value: T) => void;
     let rejectResult!: (error: Error) => void;
+    let started = false;
+    let settled = false;
     const result = new Promise<T>((resolve, reject) => {
-      resolveResult = resolve;
-      rejectResult = reject;
+      resolveResult = (value) => {
+        /* c8 ignore next -- cancelled queued tasks never call this resolver. */
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      rejectResult = (error) => {
+        /* c8 ignore next -- cancelled queued tasks never call this rejecter. */
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
     });
+    const cancelQueued = (): void => {
+      if (!started) rejectResult(cancelledError(signal));
+    };
+    if (signal?.aborted) {
+      rejectResult(cancelledError(signal));
+      return result;
+    }
+    signal?.addEventListener("abort", cancelQueued, { once: true });
     this.queue = this.queue
       .catch(() => undefined)
       .then(async () => {
+        started = true;
+        signal?.removeEventListener("abort", cancelQueued);
+        if (settled) return;
         try {
           resolveResult(await task());
         } catch (error) {
@@ -309,43 +415,107 @@ export namespace TtscGraphClient {
     root: string;
     command: string;
     args?: readonly string[];
+    /** Maximum time for one native snapshot response. */
+    requestTimeoutMs?: number;
+  }
+
+  export interface IRefreshOptions {
+    /** Cancel this refresh and retire the native child generation it owns. */
+    signal?: AbortSignal;
   }
 }
 
-function waitForExit(
+function terminateChild(
   child: ChildProcessWithoutNullStreams,
+  exit: Promise<void>,
+): Promise<void> {
+  if (!child.stdin.destroyed) child.stdin.destroy();
+  return (async () => {
+    signalChild(child);
+    if (await waitForExit(exit, TERMINATION_GRACE_MS)) return;
+    /* c8 ignore next -- Windows exits on the first signal; POSIX tests this. */
+    signalChild(child, "SIGKILL");
+    /* c8 ignore start */
+    if (!(await waitForExit(exit, 2_000))) {
+      throw new Error(
+        "ttscgraph: owned process did not exit after forced termination",
+      );
+    }
+    /* c8 ignore stop */
+  })();
+}
+
+function waitForExit(
+  exit: Promise<void>,
   timeoutMs: number,
 ): Promise<boolean> {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return Promise.resolve(true);
-  }
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value: boolean): void => {
-      /* c8 ignore start */
-      // The first callback removes the exit listener and clears the timer. This
-      // guard only protects callbacks that libuv had already queued together.
+      /* c8 ignore next */
       if (settled) return;
-      /* c8 ignore stop */
       settled = true;
       clearTimeout(timer);
-      child.off("exit", exited);
-      child.off("close", exited);
       resolve(value);
     };
-    const exited = (): void => finish(true);
     const timer = setTimeout(() => finish(false), timeoutMs);
+    timer.unref();
+    void exit.then(() => finish(true));
+  });
+}
+
+function exitOf(child: ChildProcessWithoutNullStreams): Promise<void> {
+  return new Promise((resolve) => {
+    const exited = (): void => {
+      child.off("exit", exited);
+      child.off("close", exited);
+      resolve();
+    };
     child.once("exit", exited);
-    // A command that cannot be spawned emits `error` and then `close`, but no
-    // `exit`. Waiting for both process terminal events lets close() retire that
-    // failed handle immediately instead of idling through its graceful timeout.
     child.once("close", exited);
   });
 }
 
+function signalChild(
+  child: ChildProcessWithoutNullStreams,
+  signal?: NodeJS.Signals,
+): void {
+  /* c8 ignore start -- an owned handle and fixed valid signals make throwing
+   * unreachable; kill reports failure as false or through child exit state. */
+  try {
+    child.kill(signal);
+  } catch {
+    return;
+  }
+  /* c8 ignore stop */
+}
+
+function cancelledError(signal?: AbortSignal, child?: NativeChild): Error {
+  const error = new Error(
+    `ttscgraph: snapshot request cancelled${abortDetail(signal)}${
+      child === undefined ? "" : stderrSuffix(child)
+    }`,
+  );
+  error.name = "AbortError";
+  return error;
+}
+
+function abortDetail(signal?: AbortSignal): string {
+  const reason = signal?.reason;
+  if (reason === undefined) return "";
+  try {
+    return `: ${reason instanceof Error ? reason.message : String(reason)}`;
+  } catch {
+    return "";
+  }
+}
+
+function stderrSuffix(child: NativeChild): string {
+  const stderr = child.stderr.trim();
+  return stderr === "" ? "" : `: ${stderr}`;
+}
+
 function asError(error: unknown): Error {
-  // All current throw/rejection sites produce Error objects. The conversion is
-  // retained because JavaScript permits future callees to throw any value.
   /* c8 ignore next */
   return error instanceof Error ? error : new Error(String(error));
 }
@@ -355,7 +525,7 @@ function assertCapabilitiesMatch(
   dump: readonly string[],
 ): void {
   const compare = (left: string, right: string): number =>
-    left.localeCompare(right);
+    left < right ? -1 : left > right ? 1 : 0;
   const left = JSON.stringify([...envelope].sort(compare));
   const right = JSON.stringify([...dump].sort(compare));
   if (left !== right) {

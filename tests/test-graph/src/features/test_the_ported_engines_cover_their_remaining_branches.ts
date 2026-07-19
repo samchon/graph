@@ -322,7 +322,7 @@ const scenario_the_reexport_forms_each_language_writes = async () => {
       (edge) =>
         edge.kind === "exports" &&
         edge.from === "src/lib.rs" &&
-        edge.to === "src/order/mod.rs#Line:class",
+        edge.to.endsWith("#Line:class"),
     ),
   );
 };

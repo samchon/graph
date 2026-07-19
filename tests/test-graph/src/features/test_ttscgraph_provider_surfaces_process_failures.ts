@@ -94,8 +94,7 @@ export const test_ttscgraph_provider_surfaces_process_failures = async () => {
     "a refresh after close reports the session is closed",
   );
 
-  // A process that ignores its stdin closing is force-killed after the graceful
-  // window, and only that exact owned child is ended.
+  // Closing before the first request must not spawn a process merely to stop it.
   const marker = path.join(root, "stubborn-closed.txt");
   const stubborn = new TtscGraphClient({
     root,
@@ -108,9 +107,9 @@ export const test_ttscgraph_provider_surfaces_process_failures = async () => {
   });
   await stubborn.close();
   TestValidator.equals(
-    "closing a stubborn child still ends the exact owned process",
-    fs.readFileSync(marker, "utf8"),
-    "closed\n",
+    "pre-start close creates no owned process",
+    fs.existsSync(marker),
+    false,
   );
 };
 

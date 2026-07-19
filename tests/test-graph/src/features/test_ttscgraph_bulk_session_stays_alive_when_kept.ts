@@ -62,8 +62,8 @@ export const test_ttscgraph_bulk_session_stays_alive_when_kept = async () => {
   // bulk provider, which the assertion above already proved this is).
   if (session !== undefined && "close" in session) await session.close();
   TestValidator.equals(
-    "closing the retained session shuts down the process it owns",
-    fs.readFileSync(marker, "utf8"),
-    "closed\n",
+    "closing does not trust the owned process to acknowledge termination",
+    fs.existsSync(marker),
+    false,
   );
 };

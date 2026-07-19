@@ -1,5 +1,6 @@
 import { AsyncSamchonGraphSource } from "./AsyncSamchonGraphSource";
 import { RESULT_AUDIT } from "./operations/RESULT_AUDIT";
+import { RESULT_AUDIT_DETAILS } from "./operations/RESULT_AUDIT_DETAILS";
 import { RESULT_AUDIT_SELECTION } from "./operations/RESULT_AUDIT_SELECTION";
 import { RESULT_AUDIT_ESCAPE } from "./operations/RESULT_AUDIT_ESCAPE";
 import { resultNext } from "./operations/resultNext";
@@ -86,7 +87,7 @@ export class SamchonGraphApplication implements ISamchonGraphApplication {
       case "details": {
         const r = runDetails(graph, props.request);
         return {
-          audit: RESULT_AUDIT(graph.indexer),
+          audit: RESULT_AUDIT_DETAILS(graph.indexer),
           next: r.next,
           result: r.result,
         };

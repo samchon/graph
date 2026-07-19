@@ -1,5 +1,5 @@
+import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import { ISamchonGraphNode } from "../structures";
-import { fileLines } from "./fileLines";
 
 // A doc summary is one sentence; the rest of the comment is the file's to keep.
 const MAX_DOC_CHARS = 200;
@@ -17,12 +17,12 @@ const MAX_DOC_CHARS = 200;
  * symbol with what it is for is doing an index's job.
  */
 export function docOf(
-  project: string,
+  graph: SamchonGraphMemory,
   node: ISamchonGraphNode,
 ): string | undefined {
   const evidence = node.evidence;
   const lines =
-    evidence === undefined ? undefined : fileLines(project, evidence.file);
+    evidence === undefined ? undefined : graph.source.lines(evidence.file);
   if (lines === undefined || evidence === undefined) return undefined;
   // The lines above the declaration, walked up past the blanks. A span that
   // points past the end of its file names lines the file does not have; those

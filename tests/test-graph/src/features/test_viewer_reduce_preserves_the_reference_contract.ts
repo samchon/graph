@@ -75,13 +75,13 @@ export const test_viewer_reduce_preserves_the_reference_contract = () => {
     ],
   }, { keepExternal: true });
   TestValidator.equals(
-    "a disjoint absolute set keeps safe drive-qualified paths",
+    "a disjoint absolute set falls back to portable basenames",
     splitRoots.nodes.map((entry) => entry.file),
     [
-      "C:/one/a.ts",
-      "D:/two/b.ts",
-      "C:/one/node_modules/pkg/x.d.ts",
-      "E:/outside/y.ts",
+      "a.ts",
+      "b.ts",
+      "node_modules/pkg/x.d.ts",
+      "y.ts",
     ],
   );
   TestValidator.predicate(
@@ -134,9 +134,15 @@ export const test_viewer_reduce_preserves_the_reference_contract = () => {
     ],
     edges: [edge("C:/only/file.ts", "A", "class", "C:/only/file.ts", "B", "class", "calls")],
   });
-  TestValidator.predicate(
-    "a one-file absolute root strips the whole file prefix",
-    sameFile.nodes.every((entry) => entry.file === ""),
+  TestValidator.equals(
+    "a one-file absolute root retains the source filename",
+    sameFile.nodes.map((entry) => entry.file),
+    ["file.ts", "file.ts"],
+  );
+  TestValidator.equals(
+    "a one-file absolute root retains filename-based node identity",
+    sameFile.nodes.map((entry) => entry.id.slice(0, entry.id.indexOf("#"))),
+    ["file.ts", "file.ts"],
   );
 
   const hashless = reduce({

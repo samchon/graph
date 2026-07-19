@@ -153,12 +153,12 @@ export function runTrace(
       focus,
       includeExternal,
     );
+    const hasPath = found !== null;
     const path = found?.path ?? [];
     const hops = found?.hops ?? [];
-    const junctions =
-      hops.length > 0
-        ? []
-        : junctionsBetween(graph, start.node.id, target.node.id, focus);
+    const junctions = hasPath
+      ? []
+      : junctionsBetween(graph, start.node.id, target.node.id, focus);
     return {
       result: {
         ...base,
@@ -178,10 +178,9 @@ export function runTrace(
       // callers of the target are the way across, and the graph has them, so
       // say which call to make instead of handing back an empty result dressed
       // as the answer. Excalidraw's tour spent eleven calls finding this out.
-      next:
-        hops.length > 0
-          ? pathNext
-          : junctions.length > 0
+      next: hasPath
+        ? pathNext
+        : junctions.length > 0
             ? resultNext(
                 "inspect",
                 "No call path runs between the two ends — a callback stands between them (an event emitter, a subscription, a lifecycle hook), and no call edge crosses one. `junctions` names the symbols both ends touch, which is the seam: trace the junction to see who registers on it and who fires it.",
@@ -205,24 +204,35 @@ export function runTrace(
   while (queue.length > 0) {
     const next: Array<{ id: string; depth: number }> = [];
     for (const { id, depth } of queue) {
+      const candidates = traceEdges(graph, id, reverse, focus);
       if (depth >= maxDepth) {
-        truncated = true;
+        if (
+          candidates.some(
+            (edge) =>
+              eligibleTraceEndpoint(
+                graph,
+                edge,
+                reverse,
+                focus,
+                includeExternal,
+              ) !== undefined,
+          )
+        ) {
+          truncated = true;
+        }
         continue;
       }
-      const edges = orderedEdges(
-        graph,
-        reverse
-          ? graph.incoming(id)
-          : [...graph.outgoing(id), ...dispatchEdges(graph, id, focus)],
-        direction,
-        reverse,
-      );
+      const edges = orderedEdges(graph, candidates, direction, reverse);
       for (const edge of edges) {
-        if (!traversable(edge.kind, focus)) continue;
-        const otherId = reverse ? edge.from : edge.to;
-        const other = graph.node(otherId);
-        if (other === undefined || other.kind === "file") continue;
-        if (!includeExternal && isExternalNode(other)) continue;
+        const endpoint = eligibleTraceEndpoint(
+          graph,
+          edge,
+          reverse,
+          focus,
+          includeExternal,
+        );
+        if (endpoint === undefined) continue;
+        const { otherId, other } = endpoint;
         const hop: ISamchonGraphTrace.IHop = {
           from: edge.from,
           to: edge.to,
@@ -272,6 +282,39 @@ export function runTrace(
       "Steps, hops, reached nodes, and evidence ranges are the flow the graph holds from this start.",
     ),
   };
+}
+
+interface ITraceEndpoint {
+  otherId: string;
+  other: ISamchonGraphNode;
+}
+
+/** Candidate edges in the selected direction before focus and node policy. */
+function traceEdges(
+  graph: SamchonGraphMemory,
+  id: string,
+  reverse: boolean,
+  focus: ISamchonGraphTrace.IRequest["focus"],
+): readonly ISamchonGraphEdge[] {
+  return reverse
+    ? graph.incoming(id)
+    : [...graph.outgoing(id), ...dispatchEdges(graph, id, focus)];
+}
+
+/** The endpoint an unbounded trace would represent, if any. */
+function eligibleTraceEndpoint(
+  graph: SamchonGraphMemory,
+  edge: ISamchonGraphEdge,
+  reverse: boolean,
+  focus: ISamchonGraphTrace.IRequest["focus"],
+  includeExternal: boolean,
+): ITraceEndpoint | undefined {
+  if (!traversable(edge.kind, focus)) return undefined;
+  const otherId = reverse ? edge.from : edge.to;
+  const other = graph.node(otherId);
+  if (other === undefined || other.kind === "file") return undefined;
+  if (!includeExternal && isExternalNode(other)) return undefined;
+  return { otherId, other };
 }
 
 function traceSteps(
@@ -578,7 +621,7 @@ function summary(
   }
   if (depth !== undefined) out.depth = depth;
   if (withSignature) {
-    const sig = signatureOf(graph.project, node);
+    const sig = signatureOf(graph, node);
     if (sig !== undefined) out.signature = sig;
   }
   if (withRoles) {

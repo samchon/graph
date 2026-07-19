@@ -29,7 +29,20 @@ const universeDrift = args.includes("--universe-drift");
 // snapshot still holds when there is none yet to reuse.
 const stderrExit = args.includes("--stderr-exit");
 const exitSilently = args.includes("--exit-silently");
-const ignoreStdin = args.includes("--ignore-stdin");
+const ignoreFirstArg = args.find((arg) =>
+  arg.startsWith("--ignore-first-process="),
+);
+const ignoreFirstMarker = ignoreFirstArg?.slice(
+  "--ignore-first-process=".length,
+);
+const ignoreThisProcess =
+  ignoreFirstMarker !== undefined && !fs.existsSync(ignoreFirstMarker);
+if (ignoreThisProcess) {
+  fs.mkdirSync(path.dirname(ignoreFirstMarker), { recursive: true });
+  fs.writeFileSync(ignoreFirstMarker, String(process.pid));
+}
+const ignoreStdin = args.includes("--ignore-stdin") || ignoreThisProcess;
+const hangRequests = args.includes("--hang-requests") || ignoreThisProcess;
 const blankLine = args.includes("--blank-line");
 const splitFrame = args.includes("--split-frame");
 const nonJson = args.includes("--nonjson");
@@ -93,7 +106,7 @@ const universe = (drift) => ({
 });
 
 const provenance = (drift) => ({
-  schemaVersion: 1,
+  schemaVersion: 5,
   capabilities: CAPABILITIES,
   producer: {
     tool: "ttscgraph",
@@ -230,6 +243,8 @@ if (ignoreStdin) {
 input.on("line", (line) => {
   const request = JSON.parse(line);
   requests += 1;
+  if (requestLog !== undefined) fs.writeFileSync(requestLog, `${requests}\n`);
+  if (hangRequests) return;
   let response;
   if (firstUnchanged) {
     // A first answer that reuses a snapshot that does not exist yet.

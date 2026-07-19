@@ -403,8 +403,8 @@ function graphNodeOf(
   node: ISamchonGraphNode,
 ): ISamchonGraphTour.INode {
   const span = node.implementation ?? node.evidence;
-  const signature = signatureOf(graph.project, node);
-  const doc = docOf(graph.project, node);
+  const signature = signatureOf(graph, node);
+  const doc = docOf(graph, node);
   const decorators = decoratorsOf(node);
   return {
     id: node.id,

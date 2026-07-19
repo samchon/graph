@@ -43,13 +43,13 @@ export function resolveGraphHandle(
 
   const forms = nativeQualifiedForms(handle);
   for (const form of forms) {
-    const byName = resolveGraphName(graph, form, candidateLimit);
+    const byName = resolveGraphName(graph, form);
     if (byName.node !== undefined || byName.candidates !== undefined)
       return rank(graph, byName, candidateLimit);
   }
 
   for (const form of forms) {
-    const byFile = resolveFileQualified(graph, form, candidateLimit);
+    const byFile = resolveFileQualified(graph, form);
     if (byFile.node !== undefined || byFile.candidates !== undefined)
       return rank(graph, byFile, candidateLimit);
   }
@@ -57,7 +57,7 @@ export function resolveGraphHandle(
   for (const form of forms) {
     const symbol = symbolPartOf(form) ?? memberPartOf(form);
     if (symbol === undefined) continue;
-    const resolved = resolveGraphName(graph, symbol, candidateLimit);
+    const resolved = resolveGraphName(graph, symbol);
     if (resolved.node !== undefined || resolved.candidates !== undefined)
       return rank(graph, resolved, candidateLimit);
   }
@@ -99,11 +99,10 @@ function symbolPartOf(handle: string): string | undefined {
 function resolveGraphName(
   graph: SamchonGraphMemory,
   name: string,
-  candidateLimit: number,
 ): IResolvedGraphHandle {
   const exact = graph.symbols(name);
   if (exact.length === 1) return { node: exact[0] };
-  if (exact.length > 1) return { candidates: exact.slice(0, candidateLimit) };
+  if (exact.length > 1) return { candidates: [...exact] };
 
   // clangd can mix namespace dots with C++ member separators in one identity
   // (`leveldb.DBImpl::Get`), while callers naturally write either
@@ -125,8 +124,7 @@ function resolveGraphName(
       );
     });
     if (cppMatches.length === 1) return { node: cppMatches[0] };
-    if (cppMatches.length > 1)
-      return { candidates: cppMatches.slice(0, candidateLimit) };
+    if (cppMatches.length > 1) return { candidates: cppMatches };
   }
 
   if (name.includes(".")) {
@@ -136,9 +134,7 @@ function resolveGraphName(
         node.kind !== "file" && node.qualifiedName?.endsWith(suffix) === true,
     );
     if (suffixMatches.length === 1) return { node: suffixMatches[0] };
-    if (suffixMatches.length > 1) {
-      return { candidates: suffixMatches.slice(0, candidateLimit) };
-    }
+    if (suffixMatches.length > 1) return { candidates: suffixMatches };
   }
 
   // JDT.LS and csharp-ls decorate callable symbol names with their parameter
@@ -156,8 +152,7 @@ function resolveGraphName(
       return suffix !== undefined && qualified.endsWith(suffix);
     });
     if (callables.length === 1) return { node: callables[0] };
-    if (callables.length > 1)
-      return { candidates: callables.slice(0, candidateLimit) };
+    if (callables.length > 1) return { candidates: callables };
   }
   return {};
 }
@@ -182,7 +177,6 @@ function callableBaseOf(name: string): string {
 function resolveFileQualified(
   graph: SamchonGraphMemory,
   handle: string,
-  candidateLimit: number,
 ): IResolvedGraphHandle {
   const dot = handle.indexOf(".");
   if (dot <= 0) return {};
@@ -193,8 +187,7 @@ function resolveFileQualified(
     .symbols(name)
     .filter((node) => fileStem(node.file) === stem);
   if (matches.length === 1) return { node: matches[0] };
-  if (matches.length > 1)
-    return { candidates: matches.slice(0, candidateLimit) };
+  if (matches.length > 1) return { candidates: matches };
 
   // A language server may preserve a callable's parameter list in both the
   // simple and qualified names. The file portion is still the caller's
@@ -217,8 +210,7 @@ function resolveFileQualified(
       );
     });
     if (callables.length === 1) return { node: callables[0] };
-    if (callables.length > 1)
-      return { candidates: callables.slice(0, candidateLimit) };
+    if (callables.length > 1) return { candidates: callables };
   }
   return {};
 }
@@ -244,9 +236,17 @@ function rank(
 ): IResolvedGraphHandle {
   if (resolved.candidates === undefined) return resolved;
   const ranked = [...resolved.candidates]
-    .sort((a, b) => candidateScore(graph, b) - candidateScore(graph, a))
+    .sort((a, b) => {
+      const score = candidateScore(graph, b) - candidateScore(graph, a);
+      return score === 0 ? compareIdentity(a.id, b.id) : score;
+    })
     .slice(0, candidateLimit);
   return { candidates: ranked };
+}
+
+/** Stable tie-break for position-invariant ids without locale collation. */
+function compareIdentity(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function candidateScore(

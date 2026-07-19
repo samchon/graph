@@ -122,6 +122,15 @@ export function adaptTtscGraphDump(
           modifierOf(value, `${id}.modifiers[${modifierIndex}]`),
       );
     }
+    if (raw.literals !== undefined) {
+      node.literals = stringArrayOf(raw.literals, `${id}.literals`);
+    }
+    if (raw.enumMembers !== undefined) {
+      node.enumMembers = enumMembersOf(raw.enumMembers, id);
+    }
+    if (raw.objectMembers !== undefined) {
+      node.objectMembers = objectMembersOf(raw.objectMembers, id);
+    }
     if (raw.decorators !== undefined) {
       node.decorators = decoratorsOf(raw.decorators, id);
     }
@@ -474,6 +483,7 @@ const EDGE_KINDS = new Set<GraphEdgeKind>([
   "type_ref",
   "extends",
   "implements",
+  "overrides",
   "renders",
 ]);
 const MODIFIERS = new Set<NonNullable<ISamchonGraphNode["modifiers"]>[number]>([
@@ -635,6 +645,48 @@ function decoratorsOf(value: unknown, id: string): ISamchonGraphDecorator[] {
         return { literal: rawArgument.literal };
       }),
     };
+  });
+}
+
+function enumMembersOf(
+  value: unknown,
+  id: string,
+): ISamchonGraphNode.IEnumMember[] {
+  return arrayOf(value, `${id}.enumMembers`).map((item, index) => {
+    const label = `${id}.enumMembers[${index}]`;
+    const raw = objectOf(item, label);
+    const member: ISamchonGraphNode.IEnumMember = {
+      name: stringOf(raw.name, `${label}.name`),
+    };
+    optionalString(raw.value, `${label}.value`, (entry) => {
+      member.value = entry;
+    });
+    return member;
+  });
+}
+
+function objectMembersOf(
+  value: unknown,
+  id: string,
+): ISamchonGraphNode.IObjectMember[] {
+  return arrayOf(value, `${id}.objectMembers`).map((item, index) => {
+    const label = `${id}.objectMembers[${index}]`;
+    const raw = objectOf(item, label);
+    const kind = stringOf(raw.kind, `${label}.kind`);
+    if (kind !== "property" && kind !== "method") {
+      throw new Error(`ttscgraph: unsupported ${label}.kind: ${kind}`);
+    }
+    const member: ISamchonGraphNode.IObjectMember = {
+      name: stringOf(raw.name, `${label}.name`),
+      kind,
+    };
+    if (raw.line !== undefined) {
+      member.line = integerOf(raw.line, `${label}.line`);
+    }
+    optionalString(raw.signature, `${label}.signature`, (entry) => {
+      member.signature = entry;
+    });
+    return member;
   });
 }
 

@@ -104,7 +104,7 @@ export namespace ITtscGraphSnapshot {
    * `DumpSchemaVersion` in ttsc's `internal/graph/provenance.go` for the pinned
    * producer release.
    */
-  export const DUMP_SCHEMA_VERSION = 1;
+  export const DUMP_SCHEMA_VERSION = 5;
 
   /**
    * What the compiler did, as opposed to what the transport did.

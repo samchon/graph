@@ -18,7 +18,7 @@ const sha = (text: string): string =>
 // the proof boundary satisfied so each malformed case can reach and fail at the
 // node, edge, or span it targets.
 const provenance = () => ({
-  schemaVersion: 1,
+  schemaVersion: 5,
   capabilities: ["universe", "sourceDigests", "diskDigests", "diagnostics"],
   producer: { tool: "ttscgraph", version: "0.19.2", typescript: "5.9.0" },
   universe: {
@@ -79,7 +79,7 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   rejects(
     () =>
       adaptTtscGraphDump(
-        mutate((d) => (d.provenance.schemaVersion = 2)),
+        mutate((d) => (d.provenance.schemaVersion = 6)),
         project,
       ),
     "a dump above the pinned schema",
@@ -175,6 +175,19 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
           external: false,
           qualifiedName: "pkg.foo",
           modifiers: ["export", "async"],
+          literals: ['"ready"', '"done"'],
+          enumMembers: [
+            { name: "Ready", value: '"ready"' },
+            { name: "Computed" },
+          ],
+          objectMembers: [
+            {
+              name: "execute",
+              kind: "method",
+              line: 3,
+              signature: "execute(): void",
+            },
+          ],
           decorators: [{ name: "Route", arguments: [{ literal: "path" }, {}] }],
           evidence: { startLine: 1, startCol: 1, endLine: 1, endCol: 5 },
           implementation: { startLine: 2 },
@@ -193,6 +206,31 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   TestValidator.equals("a qualified name is preserved", foo?.qualifiedName, "pkg.foo");
   TestValidator.equals("an implementation span is preserved", foo?.implementation?.startLine, 2);
   TestValidator.equals(
+    "compiler-resolved literal values are preserved",
+    foo?.literals,
+    ['"ready"', '"done"'],
+  );
+  TestValidator.equals(
+    "compiler-owned enum members are preserved",
+    foo?.enumMembers,
+    [
+      { name: "Ready", value: '"ready"' },
+      { name: "Computed" },
+    ],
+  );
+  TestValidator.equals(
+    "compiler-owned object members are preserved",
+    foo?.objectMembers,
+    [
+      {
+        name: "execute",
+        kind: "method",
+        line: 3,
+        signature: "execute(): void",
+      },
+    ],
+  );
+  TestValidator.equals(
     "a decorator keeps its scalar and its empty argument",
     foo?.decorators?.[0]?.arguments,
     [{ literal: "path" }, {}],
@@ -205,6 +243,44 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   TestValidator.predicate(
     "an external non-bundled dependency remains an external fact",
     rich.nodes.some((node) => node.id === "vendor/dep.ts#Dep:interface" && node.external),
+  );
+
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate(
+          (d) =>
+            ((d.nodes[1] as { literals?: unknown }).literals = ["ok", 1]),
+        ),
+        project,
+      ),
+    "a non-string literal value",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate(
+          (d) =>
+            ((d.nodes[1] as { enumMembers?: unknown }).enumMembers = [
+              { name: "Ready", value: false },
+            ]),
+        ),
+        project,
+      ),
+    "a non-string enum member value",
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate(
+          (d) =>
+            ((d.nodes[1] as { objectMembers?: unknown }).objectMembers = [
+              { name: "dynamic", kind: "computed" },
+            ]),
+        ),
+        project,
+      ),
+    "an unsupported object member kind",
   );
 };
 

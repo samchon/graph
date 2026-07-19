@@ -10,10 +10,10 @@ import {
 } from "@samchon/graph";
 
 /**
- * A strict ttsc dump deliberately leaves two resident facts to its canonical
- * memory layer: class-owned variables are properties, and a type heritage edge
- * implies the matching member relation. The generalized memory must restore
- * those facts without mutating or duplicating the compiler dump.
+ * A strict ttsc dump leaves property refinement to its canonical memory layer,
+ * but member implementation relations are checker-owned dump facts. The
+ * generalized memory must refine properties without inventing a same-named
+ * member edge the checker rejected.
  */
 export const test_ttsc_memory_synthesizes_properties_and_member_relations =
   async () => {
@@ -50,7 +50,7 @@ export const test_ttsc_memory_synthesizes_properties_and_member_relations =
       edge.kind === "implements" || edge.kind === "overrides",
     );
     TestValidator.predicate(
-      "type implementation derives the matching method relation",
+      "a checker-supplied member implementation is preserved",
       relations.some(
         (edge) =>
           edge.kind === "implements" &&
@@ -61,7 +61,7 @@ export const test_ttsc_memory_synthesizes_properties_and_member_relations =
       ),
     );
     TestValidator.predicate(
-      "refined properties participate in member implementation",
+      "a checker-supplied refined property implementation is preserved",
       relations.some(
         (edge) =>
           edge.kind === "implements" &&
@@ -70,7 +70,7 @@ export const test_ttsc_memory_synthesizes_properties_and_member_relations =
       ),
     );
     TestValidator.predicate(
-      "a language-server field participates in member overriding",
+      "a checker-supplied field override is preserved",
       relations.some(
         (edge) =>
           edge.kind === "overrides" &&
@@ -84,6 +84,13 @@ export const test_ttsc_memory_synthesizes_properties_and_member_relations =
         (edge) => edge.from === WORKER_RUN && edge.to === BASE_RUN,
       ).length,
       1,
+    );
+    TestValidator.predicate(
+      "a checker-rejected same-name member relation is not synthesized",
+      relations.every(
+        (edge) =>
+          edge.from !== BAD_HANDLE || edge.to !== HANDLER_HANDLE,
+      ),
     );
     TestValidator.predicate(
       "constructors are not inherited member implementations",
@@ -163,6 +170,8 @@ const WORKER_LABEL = "src/worker.ts#Worker.label:variable";
 const WORKER_RUN = "src/worker.ts#Worker.run:method";
 const WORKER_SLOT = "src/worker.ts#Worker.slot:field";
 const WORKER_CONSTRUCTOR = "src/worker.ts#Worker.constructor:constructor";
+const BAD = "src/bad.ts#Bad:class";
+const BAD_HANDLE = "src/bad.ts#Bad.handle:method";
 const WORK = "src/work.ts#work:function";
 const START = "src/start.ts#start:function";
 const VERSION = "src/version.ts#version:variable";
@@ -206,6 +215,8 @@ const ttscStyleDump = (): ISamchonGraphDump => ({
       "Worker.constructor",
       18,
     ),
+    node(BAD, "class", "Bad", undefined, 1, true),
+    node(BAD_HANDLE, "method", "handle", "Bad.handle", 2),
     node(WORK, "function", "work", undefined, 1),
     node(START, "function", "start", undefined, 1, true),
     node(VERSION, "variable", "version", undefined, 1),
@@ -214,7 +225,16 @@ const ttscStyleDump = (): ISamchonGraphDump => ({
     { from: "src/index.ts", to: START, kind: "exports" },
     { from: "src/index.ts", to: WORKER, kind: "exports" },
     { from: WORKER, to: HANDLER, kind: "implements" },
+    { from: BAD, to: HANDLER, kind: "implements" },
     { from: WORKER, to: BASE, kind: "extends" },
+    {
+      from: WORKER_HANDLE,
+      to: HANDLER_HANDLE,
+      kind: "implements",
+      evidence: { startLine: 12 },
+    },
+    { from: WORKER_LABEL, to: HANDLER_LABEL, kind: "implements" },
+    { from: WORKER_SLOT, to: BASE_SLOT, kind: "overrides" },
     {
       from: WORKER_RUN,
       to: BASE_RUN,

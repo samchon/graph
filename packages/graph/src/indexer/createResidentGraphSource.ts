@@ -7,6 +7,7 @@ import {
   ISamchonGraphNode,
 } from "../structures";
 import { GraphLanguage } from "../typings";
+import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { isBulkGraphSession } from "../provider/isBulkGraphSession";
 import { mergeGraphSlices } from "../provider/mergeGraphSlices";
@@ -30,6 +31,7 @@ interface IResidentState {
   staticLanguages: GraphLanguage[];
   languages: GraphLanguage[];
   hashes: Map<string, string>;
+  source: SamchonGraphSourceReader;
 }
 
 const DEFAULT_DEPENDENCIES = {
@@ -57,6 +59,7 @@ export function createResidentGraphSource(
     });
     const sessions = result.sessions ?? new Map();
     try {
+      const texts = result.sources ?? new Map<string, string>();
       return {
         dump: result.dump,
         sessions,
@@ -67,6 +70,7 @@ export function createResidentGraphSource(
           result.sources === undefined
             ? snapshotSources(root, options, bulkLanguagesOf(sessions))
             : hashSources(result.sources),
+        source: sourceReaderOf(root, texts, sessions),
       };
     } catch (error) {
       // Once the build hands its sessions to this source, every later failure
@@ -167,6 +171,7 @@ export function createResidentGraphSource(
     current.dump = dump;
     current.hashes = hashSources(sources);
     current.generations = generations;
+    current.source = sourceReaderOf(root, sources, current.sessions);
   }
 
   async function replaceLanguages(current: IResidentState): Promise<void> {
@@ -220,6 +225,9 @@ export function createResidentGraphSource(
         return state.dump;
       });
     },
+    source(): SamchonGraphSourceReader | undefined {
+      return state?.source;
+    },
     close(): Promise<void> {
       // Flip the bit synchronously. A load already inside an await observes it
       // before publishing a newly-built/refreshed graph, while calls queued
@@ -256,6 +264,21 @@ export function createResidentGraphSource(
   function assertOpen(): void {
     if (closed) throw closedError();
   }
+}
+
+function sourceReaderOf(
+  root: string,
+  texts: ReadonlyMap<string, string>,
+  sessions: ReadonlyMap<GraphLanguage, ILspSession | IBulkGraphSession>,
+): SamchonGraphSourceReader {
+  const digests = new Map<string, IBulkGraphSession.ISourceDigest>();
+  for (const session of sessions.values()) {
+    if (!isBulkGraphSession(session)) continue;
+    for (const [file, digest] of session.current?.sources ?? []) {
+      digests.set(file, digest);
+    }
+  }
+  return new SamchonGraphSourceReader(root, { texts, digests });
 }
 
 function languagesOf(

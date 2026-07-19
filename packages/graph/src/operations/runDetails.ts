@@ -9,7 +9,6 @@ import { bound } from "./bound";
 import { decoratorsOf } from "./decoratorsOf";
 import { docOf } from "./docOf";
 import { edgeEvidenceOf } from "./edgeEvidenceOf";
-import { fileLines } from "./fileLines";
 import { isExternalNode } from "./isExternalNode";
 import { isStructural } from "./isStructural";
 import { isTestPath } from "./isTestPath";
@@ -29,8 +28,6 @@ const DEFAULT_NEIGHBORS = 2;
 const MAX_NEIGHBORS = 3;
 const DEFAULT_DEPENDENCIES = 2;
 const MAX_DEPENDENCIES = 4;
-// Object literal outlines are navigation aids, not source excerpts.
-const MAX_OBJECT_MEMBER_LINES = 300;
 // Kinds whose value is their member outline, not implementation text.
 const CONTAINER_KINDS = new Set<string>([
   "class",
@@ -106,11 +103,10 @@ export function runDetails(
       file: node.file,
     };
     if (node.evidence?.startLine) detail.line = node.evidence.startLine;
-    const sig = signatureOf(graph.project, node);
+    const sig = signatureOf(graph, node);
     if (sig !== undefined) detail.signature = sig;
-    const doc = docOf(graph.project, node);
+    const doc = docOf(graph, node);
     if (doc !== undefined) detail.doc = doc;
-    const signatureLiterals = literalSummaries(sig);
     const decorators = decoratorsOf(node);
     if (decorators !== undefined) detail.decorators = decorators;
     const implementation = evidenceCoordinatesOf(node.implementation);
@@ -151,17 +147,17 @@ export function runDetails(
       const list = members(graph, node, memberLimit);
       if (list.length > 0) detail.members = list;
     }
-    if (node.kind === "variable" && detail.sourceSpan !== undefined) {
-      const list = objectLiteralMembers(
-        graph.project,
-        detail.sourceSpan,
-        memberLimit,
-      );
+    if (node.kind === "variable") {
+      const list = objectLiteralMembers(node, memberLimit);
       if (list.length > 0) detail.members = list;
     }
-    // A union or enum's value set is part of the symbol's identity, not a
-    // sample of it, so the literals a signature names are returned whole.
-    if (signatureLiterals.length > 0) detail.literals = signatureLiterals;
+    if (node.kind === "enum") {
+      const list = enumMembers(node, memberLimit);
+      if (list.length > 0) detail.members = list;
+    }
+    if (node.literals !== undefined && node.literals.length > 0) {
+      detail.literals = node.literals;
+    }
     if (wantNeighbors) {
       detail.dependsOn = refs(
         graph,
@@ -222,7 +218,7 @@ function members(
       kind: member.kind,
     };
     if (member.evidence?.startLine) m.line = member.evidence.startLine;
-    const sig = signatureOf(graph.project, member);
+    const sig = signatureOf(graph, member);
     if (sig !== undefined) m.signature = sig;
     const decorators = decoratorsOf(member);
     if (decorators !== undefined) m.decorators = decorators;
@@ -233,85 +229,30 @@ function members(
 }
 
 function objectLiteralMembers(
-  project: string,
-  span: Pick<ISamchonGraphEvidence, "file" | "startLine" | "endLine">,
+  node: ISamchonGraphNode,
   limit: number,
 ): ISamchonGraphDetails.IMember[] {
-  if (span.endLine === undefined) return [];
-  if (span.endLine - span.startLine > MAX_OBJECT_MEMBER_LINES) return [];
-  const lines = fileLines(project, span.file);
-  if (lines === undefined) return [];
-  const start = Math.max(0, span.startLine - 1);
-  const end = Math.min(lines.length - 1, span.endLine - 1);
-  const members: ISamchonGraphDetails.IMember[] = [];
-  let depth = 0;
-  let entered = false;
-  for (let i = start; i <= end; i++) {
-    // `end` is bounded by `lines.length - 1`, so `i` is always in range.
-    /* c8 ignore next */
-    const raw = lines[i] ?? "";
-    const text = stripStrings(raw);
-    const before = depth;
-    if (entered && before === 1) {
-      const member = objectMemberOf(raw, i + 1);
-      if (member !== undefined) {
-        members.push(member);
-        if (members.length >= limit) break;
-      }
-    }
-    for (const char of text) {
-      if (char === "{") {
-        depth++;
-        entered = true;
-      } else if (char === "}") {
-        depth = Math.max(0, depth - 1);
-      }
-    }
-  }
-  return members;
+  return (node.objectMembers ?? []).slice(0, limit).map((member) => ({
+    name: member.name,
+    kind: member.kind,
+    ...(member.line !== undefined ? { line: member.line } : {}),
+    ...(member.signature !== undefined
+      ? { signature: member.signature }
+      : {}),
+  }));
 }
 
-function objectMemberOf(
-  line: string,
-  lineNumber: number,
-): ISamchonGraphDetails.IMember | undefined {
-  const text = line.trim();
-  if (
-    text === "" ||
-    text.startsWith("//") ||
-    text.startsWith("/*") ||
-    text.startsWith("*")
-  ) {
-    return undefined;
-  }
-  const property = /^(['"]?)([A-Za-z_$][\w$-]*)\1\s*\??\s*:/.exec(text);
-  if (property !== null) {
-    return {
-      name: property[2]!,
-      kind: "property",
-      line: lineNumber,
-      signature: signatureLine(text),
-    };
-  }
-  const method =
-    /^(?:async\s+)?(?:get\s+|set\s+)?([A-Za-z_$][\w$-]*)\s*\(/.exec(text);
-  if (method !== null) {
-    return {
-      name: method[1]!,
-      kind: "method",
-      line: lineNumber,
-      signature: signatureLine(text),
-    };
-  }
-  return undefined;
-}
-
-function signatureLine(text: string): string {
-  return text.replace(/\s+/g, " ").replace(/,$/, "");
-}
-
-function stripStrings(line: string): string {
-  return line.replace(/\/\/.*$/, "").replace(/(['"`])(?:\\.|(?!\1).)*\1/g, "");
+function enumMembers(
+  node: ISamchonGraphNode,
+  limit: number,
+): ISamchonGraphDetails.IMember[] {
+  return (node.enumMembers ?? []).slice(0, limit).map((member) => ({
+    name: `${node.qualifiedName ?? node.name}.${member.name}`,
+    kind: "property",
+    ...(member.value !== undefined
+      ? { signature: `${member.name} = ${member.value}` }
+      : {}),
+  }));
 }
 
 /** Map dependency edges to references on their far endpoint, dropping structure. */
@@ -442,30 +383,6 @@ function incomingDependencyRefs(
     if (out.length >= limit) break;
   }
   return out;
-}
-
-function literalSummaries(text: string | undefined): string[] {
-  if (text === undefined) return [];
-  const out: string[] = [];
-  for (const match of text.matchAll(/(["'`])((?:\\.|(?!\1).){1,80})\1/g)) {
-    const value = cleanLiteral(match[2]);
-    if (value !== undefined && !out.includes(value)) out.push(value);
-    if (out.length >= 20) break;
-  }
-  return out;
-}
-
-function cleanLiteral(value: string | undefined): string | undefined {
-  const text = value?.replace(/\s+/g, " ").trim();
-  if (
-    text === undefined ||
-    text === "" ||
-    text.length > 40 ||
-    /^[{}()[\],.:;]+$/.test(text)
-  ) {
-    return undefined;
-  }
-  return text;
 }
 
 /**

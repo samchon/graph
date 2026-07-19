@@ -148,7 +148,7 @@ function snapshot(
     // carries their text, so a resident refresh has nothing to re-read either.
     sources: new Map([[file, { checkerDigest: digest, diskDigest: digest }]]),
     provenance: {
-      schemaVersion: 1,
+      schemaVersion: 5,
       tool: "ttscgraph",
       toolVersion: "0.19.2",
       compilerVersion: "5.9.0",

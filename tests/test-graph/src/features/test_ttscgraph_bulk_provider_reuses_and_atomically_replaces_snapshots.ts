@@ -105,7 +105,7 @@ export const test_ttscgraph_bulk_provider_reuses_and_atomically_replaces_snapsho
     TestValidator.equals(
       "the snapshot reports the dump schema its facts obey",
       initial.snapshot.provenance.schemaVersion,
-      1,
+      5,
     );
     TestValidator.equals(
       "the first snapshot reports the compiler's own mode, not an inferred one",
@@ -155,14 +155,14 @@ export const test_ttscgraph_bulk_provider_reuses_and_atomically_replaces_snapsho
     );
     await rejects(client.refresh(), "serve errors are surfaced");
     TestValidator.predicate(
-      "a failed response cannot replace the last valid snapshot",
-      client.current === changed.snapshot && client.generation === 2,
+      "an untrusted child generation clears resident snapshot state",
+      client.current === undefined && client.generation === 2,
     );
     await client.close();
     TestValidator.equals(
-      "close reaches only the provider process owned by the client",
-      fs.readFileSync(marker, "utf8"),
-      "closed\n",
+      "an invalid producer is terminated instead of trusted to close cooperatively",
+      fs.existsSync(marker),
+      false,
     );
     // Four refreshes, four requests. The client used to spend a second
     // round-trip per *changed* snapshot asking the server whether the dump it

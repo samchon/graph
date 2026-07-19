@@ -22,7 +22,10 @@ export function createResidentGraphMemorySource(
   return async () => {
     const dump = await resident.load();
     if (currentMemory === undefined || dump !== currentDump) {
-      const replacement = SamchonGraphMemory.from(dump);
+      const replacement = SamchonGraphMemory.from(
+        dump,
+        resident.source() ?? undefined,
+      );
       currentDump = dump;
       currentMemory = replacement;
     }

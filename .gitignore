@@ -2,6 +2,10 @@ node_modules/
 lib/
 coverage/
 .nyc_output/
+.wiki/
+# Local agent session state: Claude Code worktrees, settings, and scratch.
+# Nothing here is tracked; a nested worktree once got `git add`ed wholesale.
+.claude/
 *.tsbuildinfo
 .env
 .env.*

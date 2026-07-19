@@ -9,6 +9,12 @@ const project = cwdIndex === -1 ? process.cwd() : path.resolve(args[cwdIndex + 1
 const invalidMode = args.find((arg) => arg.startsWith("--invalid"));
 const markerArg = args.find((arg) => arg.startsWith("--marker="));
 const marker = markerArg?.slice("--marker=".length);
+const stdinClosedMarkerArg = args.find((arg) =>
+  arg.startsWith("--stdin-closed-marker="),
+);
+const stdinClosedMarker = stdinClosedMarkerArg?.slice(
+  "--stdin-closed-marker=".length,
+);
 const requestLogArg = args.find((arg) => arg.startsWith("--request-log="));
 const requestLog = requestLogArg?.slice("--request-log=".length);
 // Stands in for a producer that speaks a protocol this client refuses, so the
@@ -334,6 +340,12 @@ input.on("line", (line) => {
     input.close();
     process.stdin.destroy();
     fs.closeSync(0);
+    // This marker is a transport fence, not a readline lifecycle hint: publish
+    // it only after descriptor 0 is actually closed so the client's next write
+    // cannot race the fake's teardown.
+    if (stdinClosedMarker !== undefined) {
+      fs.writeFileSync(stdinClosedMarker, "closed\n");
+    }
     setInterval(() => undefined, 1_000);
   }
 });

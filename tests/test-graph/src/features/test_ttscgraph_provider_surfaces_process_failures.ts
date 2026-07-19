@@ -61,11 +61,6 @@ export const test_ttscgraph_provider_surfaces_process_failures = async () => {
   // The child already exited, so close resolves immediately without touching it.
   await dying.close();
 
-  // Windows named pipes retain the inherited read handle until process exit,
-  // so they surface this condition through the already-covered exit listener.
-  /* c8 ignore next */
-  if (process.platform !== "win32") await assertClosedRequestPipe(root);
-
   // A process that exits without diagnostics still rejects, and a later refresh
   // reports the process is gone without inventing an empty snapshot.
   const silent = new TtscGraphClient({
@@ -98,6 +93,13 @@ export const test_ttscgraph_provider_surfaces_process_failures = async () => {
     closed.refresh(),
     "a refresh after close reports the session is closed",
   );
+
+  // Windows named pipes retain the inherited read handle until process exit,
+  // so they surface this condition through the already-covered exit listener.
+  // Keep this platform-specific transport probe after the independent closed
+  // session assertions so a pipe failure cannot hide their coverage.
+  /* c8 ignore next */
+  if (process.platform !== "win32") await assertClosedRequestPipe(root);
 
   // Closing before the first request must not spawn a process merely to stop it.
   const marker = path.join(root, "stubborn-closed.txt");
@@ -141,7 +143,7 @@ async function assertClosedRequestPipe(root: string): Promise<void> {
     args: [
       GraphPaths.fakeTtscGraphServer,
       "--close-stdin-after-first",
-      `--marker=${stdinClosed}`,
+      `--stdin-closed-marker=${stdinClosed}`,
     ],
     requestTimeoutMs: 5_000,
   });

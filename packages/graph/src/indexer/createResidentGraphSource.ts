@@ -189,7 +189,7 @@ export function createResidentGraphSource(
     const dump: ISamchonGraphDump = {
       ...current.dump,
       nodes: wireNodes(finalized.nodes),
-      edges: wireEdges(finalized.edges),
+      edges: wireEdges(finalized.edges, finalized.nodes),
       diagnostics,
       warnings,
     };

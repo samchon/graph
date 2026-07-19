@@ -24,6 +24,7 @@ import { GraphLanguage, GraphNodeKind } from "../typings";
 import { projectRelative } from "../utils/fs";
 import { fileFromUri, fileUri, isSubPath } from "../utils/path";
 import { appendAll } from "./appendAll";
+import { assignSemanticIdentities } from "./assignSemanticIdentities";
 import { decoratorsAbove } from "./decoratorsAbove";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { ILspSession } from "./ILspSession";
@@ -69,6 +70,11 @@ export async function scanSession(
     byFile.set(openedFile.rel, converted);
     appendAll(nodes, converted);
   }
+
+  // TypeScript keeps the compiler-canonical legacy grammar. Other generic
+  // lanes receive intrinsic or explicitly generation-scoped ids before any
+  // edge records an endpoint.
+  assignSemanticIdentities(nodes);
 
   const linesByFile = new Map<string, string[]>();
   for (const openedFile of opened) {

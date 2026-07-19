@@ -1,3 +1,4 @@
+import { semanticMemberKey } from "../provider/semanticIdentity";
 import { ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
 import { GraphEdgeKind } from "../typings";
 
@@ -29,19 +30,25 @@ export function overrideEdges(
   nodes: readonly ISamchonGraphNode[],
   edges: readonly ISamchonGraphEdge[],
 ): ISamchonGraphEdge[] {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const membersByOwner = new Map<string, Map<string, ISamchonGraphNode>>();
+  const byId = new Map<string, ISamchonGraphNode[]>();
+  for (const node of nodes) push(byId, node.id, node);
+  const membersByOwner = new Map<string, Map<string, ISamchonGraphNode[]>>();
   for (const edge of edges) {
     if (edge.kind !== "contains") continue;
-    const member = byId.get(edge.to);
-    if (member === undefined || !IMPLEMENTATION_MEMBER_KINDS.has(member.kind))
-      continue;
+    const candidates = byId.get(edge.to);
+    if (candidates === undefined) continue;
     let members = membersByOwner.get(edge.from);
     if (members === undefined) {
       members = new Map();
       membersByOwner.set(edge.from, members);
     }
-    members.set(member.name, member);
+    for (const member of candidates) {
+      if (!IMPLEMENTATION_MEMBER_KINDS.has(member.kind)) continue;
+      const key = semanticMemberKey(member);
+      const group = members.get(key);
+      if (group === undefined) members.set(key, [member]);
+      else if (!group.includes(member)) group.push(member);
+    }
   }
 
   const out: ISamchonGraphEdge[] = [];
@@ -56,9 +63,17 @@ export function overrideEdges(
     const subMembers = membersByOwner.get(edge.from);
     const superMembers = membersByOwner.get(edge.to);
     if (subMembers === undefined || superMembers === undefined) continue;
-    for (const [name, subMember] of subMembers) {
-      const superMember = superMembers.get(name);
-      if (superMember === undefined) continue;
+    for (const [key, subGroup] of subMembers) {
+      const superGroup = superMembers.get(key);
+      if (
+        subGroup.length !== 1 ||
+        superGroup === undefined ||
+        superGroup.length !== 1
+      ) {
+        continue;
+      }
+      const subMember = subGroup[0]!;
+      const superMember = superGroup[0]!;
       out.push({
         from: subMember.id,
         to: superMember.id,
@@ -68,4 +83,10 @@ export function overrideEdges(
     }
   }
   return out;
+}
+
+function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const values = map.get(key);
+  if (values === undefined) map.set(key, [value]);
+  else values.push(value);
 }

@@ -127,6 +127,10 @@ function outsideRootPath(file: string): string {
 }
 
 function rewriteId(id: string, root: string | null): string {
+  // A semantic id (`@v2/…`, `@g2/…`) is an opaque provider-native key whose
+  // pre-`#` region is a language + digest, not a path; relativizing it would
+  // corrupt the key, so it ships verbatim.
+  if (id.startsWith("@v2/") || id.startsWith("@g2/")) return id;
   const hash = id.indexOf("#");
   if (hash < 0) return id;
   return relativize(id.slice(0, hash), root) + id.slice(hash);

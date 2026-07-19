@@ -20,12 +20,13 @@ export function buildStaticGraphResult(
     parts.nodes,
     parts.edges,
   );
+  const nodes = dedupeNodes(finalized.nodes);
   const dump: ISamchonGraphDump = {
     project: parts.root,
     languages: parts.languages,
     indexer: "static",
-    nodes: wireNodes(dedupeNodes(finalized.nodes)),
-    edges: wireEdges(dedupeEdges(finalized.edges)),
+    nodes: wireNodes(nodes),
+    edges: wireEdges(dedupeEdges(finalized.edges), nodes),
     warnings: parts.warnings,
   };
   return {

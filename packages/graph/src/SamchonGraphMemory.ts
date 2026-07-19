@@ -1,4 +1,9 @@
 import {
+  isSemanticGraphNodeId,
+  legacyGraphNodeIds,
+  validateSemanticGraphNode,
+} from "./provider/semanticIdentity";
+import {
   ISamchonGraphDiagnostic,
   ISamchonGraphDump,
   ISamchonGraphEdge,
@@ -25,6 +30,7 @@ export class SamchonGraphMemory {
   private readonly outEdges: Map<string, ISamchonGraphEdge[]>;
   private readonly inEdges: Map<string, ISamchonGraphEdge[]>;
   private readonly bySymbolIndex: Map<string, ISamchonGraphNode[]>;
+  private readonly byLegacyId: Map<string, ISamchonGraphNode[]>;
 
   /** The absolute project root the dump was built for. */
   public readonly project: string;
@@ -58,10 +64,11 @@ export class SamchonGraphMemory {
     this.warnings = dump.warnings ?? [];
     this.source = source;
 
-    this.byId = new Map(nodes.map((node) => [node.id, node]));
+    this.byId = indexNodesById(nodes);
     this.outEdges = new Map();
     this.inEdges = new Map();
     this.bySymbolIndex = new Map();
+    this.byLegacyId = new Map();
 
     for (const node of nodes) {
       if (node.kind !== "file") {
@@ -70,6 +77,12 @@ export class SamchonGraphMemory {
           push(this.bySymbolIndex, node.qualifiedName, node);
         }
       }
+      for (const legacyId of legacyGraphNodeIds(node)) {
+        push(this.byLegacyId, legacyId, node);
+      }
+    }
+    for (const candidates of this.byLegacyId.values()) {
+      candidates.sort((left, right) => compareText(left.id, right.id));
     }
     for (const edge of edges) {
       push(this.outEdges, edge.from, edge);
@@ -111,6 +124,11 @@ export class SamchonGraphMemory {
     return this.bySymbolIndex.get(handle) ?? [];
   }
 
+  /** Every semantic node that used to have this file-qualified identity. */
+  public legacyNodes(id: string): readonly ISamchonGraphNode[] {
+    return this.byLegacyId.get(id) ?? [];
+  }
+
   /** Every workspace node on its module's export surface. */
   public exported(): ISamchonGraphNode[] {
     return this.nodes.filter((node) => node.exported && !node.external);
@@ -122,6 +140,25 @@ function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const bucket = map.get(key);
   if (bucket === undefined) map.set(key, [value]);
   else bucket.push(value);
+}
+
+/** Build an exact node index, rejecting corrupt dumps instead of overwriting. */
+function indexNodesById(
+  nodes: readonly ISamchonGraphNode[],
+): Map<string, ISamchonGraphNode> {
+  const indexed = new Map<string, ISamchonGraphNode>();
+  for (const node of nodes) {
+    validateSemanticGraphNode(node);
+    // A semantic id must be unique — a collision is a producer defect. A legacy
+    // id may legitimately repeat (same-named locals, ambiguous handles the
+    // name index and legacy-candidate resolver disambiguate), so it is kept,
+    // last one winning the exact-id slot, rather than rejecting the dump.
+    if (indexed.has(node.id) && isSemanticGraphNodeId(node.id)) {
+      throw new Error(`@samchon/graph: duplicate node id in dump: ${node.id}`);
+    }
+    indexed.set(node.id, node);
+  }
+  return indexed;
 }
 
 /**
@@ -149,12 +186,25 @@ function spanIn(span: ISamchonGraphSpan, file: string): ISamchonGraphEvidence {
 }
 
 /**
- * The source file a node id names. An id is `path#Qualified.Name:kind`, and a
- * file node's id is the path itself.
+ * The source file a legacy node id names. Semantic ids deliberately carry no
+ * file coordinate, so their declaring node must be consulted first.
  */
-function fileOfNodeId(id: string): string {
+function fileOfLegacyNodeId(id: string): string | undefined {
+  if (isSemanticGraphNodeId(id)) return undefined;
   const hash = id.indexOf("#");
   return hash === -1 ? id : id.slice(0, hash);
+}
+
+/** Resolve an edge source file without interpreting an opaque semantic id. */
+function fileOfEdgeSource(
+  id: string,
+  byId: ReadonlyMap<string, ISamchonGraphNode>,
+): string {
+  const file = byId.get(id)?.file ?? fileOfLegacyNodeId(id);
+  if (file !== undefined) return file;
+  throw new Error(
+    `@samchon/graph: semantic edge source is absent from the dump: ${id}`,
+  );
 }
 
 /**
@@ -193,12 +243,18 @@ function synthesize(dump: ISamchonGraphDump): {
         : {}),
     };
   });
+  const byId = indexNodesById(nodes);
   const edges: ISamchonGraphEdge[] = dump.edges.map((edge) => {
     const { evidence, ...rest } = edge;
     return {
       ...rest,
       ...(evidence !== undefined
-        ? { evidence: spanIn(evidence, fileOfNodeId(edge.from)) }
+        ? {
+            evidence: spanIn(
+              evidence,
+              evidence.file ?? fileOfEdgeSource(edge.from, byId),
+            ),
+          }
         : {}),
     };
   });
@@ -207,7 +263,6 @@ function synthesize(dump: ISamchonGraphDump): {
   // resolve a member to its declaring class/namespace. A strict provider may
   // already carry canonical file nodes for compiler modules; those are
   // containers, never symbol owners.
-  const byId = new Map(nodes.map((node) => [node.id, node]));
   const byFileKey = new Map<string, ISamchonGraphNode>();
   for (const node of nodes) {
     if (!node.external && node.kind !== "file") {
@@ -255,8 +310,10 @@ function synthesize(dump: ISamchonGraphDump): {
     addFileNode(node.file, node.language);
   }
   for (const edge of edges) {
-    if (byId.has(edge.from) || fileOfNodeId(edge.from) !== edge.from) continue;
-    addFileNode(edge.from, byId.get(edge.to)?.language ?? "unknown");
+    const file = fileOfLegacyNodeId(edge.from);
+    if (byId.has(edge.from) || file === undefined || file !== edge.from)
+      continue;
+    addFileNode(file, byId.get(edge.to)?.language ?? "unknown");
   }
 
   const edgeKeys = new Set(
@@ -281,4 +338,8 @@ function synthesize(dump: ISamchonGraphDump): {
     nodes: [...nodes, ...files.values()],
     edges: [...edges, ...structural],
   };
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }

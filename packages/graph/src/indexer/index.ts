@@ -1,5 +1,6 @@
 export * from "./allExtensions";
 export * from "./appendAll";
+export * from "./assignSemanticIdentities";
 export * from "./buildGraph";
 export * from "./buildGraphDump";
 export * from "./buildGraphResult";

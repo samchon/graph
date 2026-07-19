@@ -268,7 +268,7 @@ export async function buildLspGraph(
         // the reference cap) on a pure-LSP run must not relabel it.
         indexer: staticFallbackLanguages.length > 0 ? "hybrid" : "lsp",
         nodes: wireNodes(finalized.nodes),
-        edges: wireEdges(finalized.edges),
+        edges: wireEdges(finalized.edges, finalized.nodes),
         diagnostics,
         warnings,
       },
@@ -346,12 +346,13 @@ function staticDump(
     parts.nodes,
     parts.edges,
   );
+  const nodes = dedupeNodes(finalized.nodes);
   return {
     project: parts.root,
     languages: parts.languages,
     indexer: "static",
-    nodes: wireNodes(dedupeNodes(finalized.nodes)),
-    edges: wireEdges(dedupeEdges(finalized.edges)),
+    nodes: wireNodes(nodes),
+    edges: wireEdges(dedupeEdges(finalized.edges), nodes),
     warnings: [...parts.warnings, ...warnings],
   };
 }

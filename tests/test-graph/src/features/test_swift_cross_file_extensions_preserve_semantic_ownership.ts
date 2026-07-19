@@ -14,9 +14,10 @@ export const test_swift_cross_file_extensions_preserve_semantic_ownership =
     };
 
     write("Box.swift", "struct Box {}\n");
+    write("Runner.swift", "protocol Runner {}\n");
     write(
       "Box+Extension.swift",
-      ["extension Box {", "  func doubled() -> Int { 2 }", "}"].join("\n"),
+      ["extension Box: Runner {", "  func doubled() -> Int { 2 }", "}"].join("\n"),
     );
     write(
       "Local.swift",
@@ -32,7 +33,7 @@ export const test_swift_cross_file_extensions_preserve_semantic_ownership =
     write("SharedB.swift", "struct Shared {}\n");
     write(
       "Shared+Extension.swift",
-      ["extension Shared {", "  func ambiguous() {}", "}"].join("\n"),
+      ["extension Shared: Runner {", "  func ambiguous() {}", "}"].join("\n"),
     );
 
     const dump = await buildGraphDump({
@@ -53,11 +54,22 @@ export const test_swift_cross_file_extensions_preserve_semantic_ownership =
       );
 
     const box = node("Box.swift", "Box");
+    const runner = node("Runner.swift", "Runner");
     const doubled = node("Box+Extension.swift", "doubled");
     TestValidator.predicate(
       "a cross-file Swift extension attaches its method to the unique receiver",
       doubled?.qualifiedName === "Box.doubled" &&
         containedBy(box?.id, doubled.id),
+    );
+    TestValidator.predicate(
+      "a cross-file Swift extension preserves conformance on its unique receiver",
+      dump.edges.some(
+        (edge) =>
+          edge.kind === "implements" &&
+          edge.from === box?.id &&
+          edge.to === runner?.id &&
+          edge.evidence?.file === "Box+Extension.swift",
+      ),
     );
 
     const local = node("Local.swift", "Local");
@@ -80,5 +92,16 @@ export const test_swift_cross_file_extensions_preserve_semantic_ownership =
         shared.every((candidate) =>
           !containedBy(candidate.id, ambiguous.id)
         ),
+    );
+    TestValidator.predicate(
+      "an ambiguous Swift extension does not assign conformance to either receiver",
+      shared.every((candidate) =>
+        !dump.edges.some(
+          (edge) =>
+            edge.kind === "implements" &&
+            edge.from === candidate.id &&
+            edge.to === runner?.id,
+        )
+      ),
     );
   };

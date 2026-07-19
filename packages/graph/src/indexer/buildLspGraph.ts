@@ -483,7 +483,7 @@ async function openLanguageSession(
       opened: new Map(),
       diagnostics,
       progressVersion: () => progressVersion,
-      waitForReady: (since, allowStart) =>
+      waitForReady: (since, allowStart, signal) =>
         waitForIndexing(
           since,
           allowStart,
@@ -493,7 +493,7 @@ async function openLanguageSession(
           () => activeProgress.size,
           quietMs,
           options.lspReadyTimeoutMs,
-          options.signal,
+          signal,
         ),
     };
     const didOpenFence = session.progressVersion!();
@@ -507,7 +507,7 @@ async function openLanguageSession(
     //
     // The wait ends once progress goes quiet for `lspReadyQuietMs`. Its overall
     // ceiling is optional, so normal callers still wait as long as needed.
-    await session.waitForReady!(didOpenFence, true);
+    await session.waitForReady!(didOpenFence, true, options.signal);
     return session;
   } catch (error) {
     // A server that never answers `initialize` (or fails before the session

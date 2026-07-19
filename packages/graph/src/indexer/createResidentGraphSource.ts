@@ -102,6 +102,7 @@ export function createResidentGraphSource(
   async function refreshStale(
     current: IResidentState,
     prefetched: ReadonlyMap<GraphLanguage, IBulkGraphSession.IRefresh>,
+    signal: AbortSignal,
   ): Promise<void> {
     const nodes: ISamchonGraphNode[] = [];
     const edges: ISamchonGraphEdge[] = [];
@@ -142,7 +143,12 @@ export function createResidentGraphSource(
         extensions: allExtensions([language]),
         maxFiles: options.maxFiles,
       });
-      const result = await refreshLanguageSession(session, files, options);
+      const result = await refreshLanguageSession(
+        session,
+        files,
+        options,
+        signal,
+      );
       assertOpen();
       nodes.push(...result.nodes);
       edges.push(...result.edges);
@@ -239,7 +245,7 @@ export function createResidentGraphSource(
             ) {
               const discovered = discoverLanguages(root, options);
               if (sameLanguages(state.languages, discovered)) {
-                await refreshStale(state, prefetched);
+                await refreshStale(state, prefetched, controller.signal);
               } else {
                 await replaceLanguages(state, controller.signal);
               }

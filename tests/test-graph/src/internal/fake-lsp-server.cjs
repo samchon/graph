@@ -8,6 +8,7 @@ const options = {
   badHeader: false,
   badJson: false,
   emptySymbols: false,
+  closeInputAfterInitialize: false,
   exitOnInitialize: false,
   exitOnShutdown: false,
   messageLessError: false,
@@ -31,6 +32,8 @@ const options = {
   omitChildren: false,
   progress: false,
   hangProgressLifecycle: false,
+  hangRefreshReadiness: false,
+  ignoreTermination: false,
   progressLifecycle: false,
   referenceProgressLifecycle: false,
   rustImpls: false,
@@ -48,6 +51,7 @@ const options = {
 const symbolCallCountByUri = new Map();
 let diagnosticSeverities = [2];
 let hangMethod;
+let hangRefreshMethod;
 if (process.env.SAMCHON_GRAPH_FAKE_LSP_ARGS_FILE) {
   fs.writeFileSync(
     process.env.SAMCHON_GRAPH_FAKE_LSP_ARGS_FILE,
@@ -67,6 +71,8 @@ let slowFirstReferencesMs = 0;
 let referenceCallCount = 0;
 let progressLifecycleStarted = false;
 let progressLifecycleReady = false;
+let refreshStarted = false;
+let refreshProgressStarted = false;
 let lateProgressLifecycleMs = 0;
 let referenceProgressLifecycleStarted = false;
 let referenceProgressLifecycleReady = false;
@@ -87,6 +93,8 @@ for (const arg of process.argv.slice(2)) {
     options.badJson = true;
   } else if (arg === "--empty-symbols") {
     options.emptySymbols = true;
+  } else if (arg === "--close-input-after-initialize") {
+    options.closeInputAfterInitialize = true;
   } else if (arg === "--exit-on-initialize") {
     options.exitOnInitialize = true;
   } else if (arg === "--exit-on-shutdown") {
@@ -133,6 +141,10 @@ for (const arg of process.argv.slice(2)) {
     options.progress = true;
   } else if (arg === "--hang-progress-lifecycle") {
     options.hangProgressLifecycle = true;
+  } else if (arg === "--hang-refresh-readiness") {
+    options.hangRefreshReadiness = true;
+  } else if (arg === "--ignore-termination") {
+    options.ignoreTermination = true;
   } else if (arg === "--progress-lifecycle") {
     options.progressLifecycle = true;
   } else if (arg.startsWith("--late-progress-lifecycle=")) {
@@ -165,6 +177,8 @@ for (const arg of process.argv.slice(2)) {
     options.typeQueries = true;
   } else if (arg.startsWith("--hang-method=")) {
     hangMethod = arg.slice("--hang-method=".length);
+  } else if (arg.startsWith("--hang-refresh-method=")) {
+    hangRefreshMethod = arg.slice("--hang-refresh-method=".length);
   } else if (arg.startsWith("--slow-first-references=")) {
     slowFirstReferencesMs = Number(arg.slice("--slow-first-references=".length));
   } else if (arg.startsWith("--hang-references-after=")) {
@@ -177,6 +191,16 @@ for (const arg of process.argv.slice(2)) {
       .split(",")
       .map((value) => Number(value));
   }
+}
+if (options.ignoreTermination && process.platform !== "win32") {
+  process.on("SIGTERM", () => {
+    if (process.env.SAMCHON_GRAPH_FAKE_LSP_SIGTERM_FILE) {
+      fs.writeFileSync(
+        process.env.SAMCHON_GRAPH_FAKE_LSP_SIGTERM_FILE,
+        "received",
+      );
+    }
+  });
 }
 writeDocumentVersionLog();
 
@@ -202,7 +226,10 @@ process.stdin.on("data", (chunk) => {
 });
 
 function handle(message) {
-  if (message.method === hangMethod) {
+  if (
+    message.method === hangMethod ||
+    (refreshStarted && message.method === hangRefreshMethod)
+  ) {
     if (process.env.SAMCHON_GRAPH_FAKE_LSP_HANG_FILE) {
       fs.writeFileSync(
         process.env.SAMCHON_GRAPH_FAKE_LSP_HANG_FILE,
@@ -220,7 +247,7 @@ function handle(message) {
       process.stdout.write(`Content-Length: ${Buffer.byteLength(bad)}\r\n\r\n${bad}`);
     }
     if (options.unknownResponse) respond(999999, { ignored: true });
-    return respond(message.id, {
+    respond(message.id, {
       capabilities: {
         textDocumentSync: 1,
         documentSymbolProvider: true,
@@ -228,6 +255,20 @@ function handle(message) {
       },
       serverInfo: { name: "fake-lsp", version: "0.0.0" },
     });
+    if (options.closeInputAfterInitialize) {
+      process.stdin.removeAllListeners("data");
+      process.stdin.on("error", () => undefined);
+      process.stdin.destroy();
+      fs.closeSync(0);
+      if (process.env.SAMCHON_GRAPH_FAKE_LSP_INPUT_CLOSED_FILE) {
+        fs.writeFileSync(
+          process.env.SAMCHON_GRAPH_FAKE_LSP_INPUT_CLOSED_FILE,
+          "closed",
+        );
+      }
+      setInterval(() => undefined, 1_000);
+    }
+    return;
   }
   if (message.method === "initialized") return;
   if (message.method === "textDocument/didOpen") {
@@ -319,6 +360,21 @@ function handle(message) {
   }
   if (message.method === "textDocument/didChange") {
     recordDocumentVersion(message.method, message.params.textDocument);
+    refreshStarted = true;
+    if (options.hangRefreshReadiness && !refreshProgressStarted) {
+      refreshProgressStarted = true;
+      request("window/workDoneProgress/create", { token: "refresh-index" });
+      notify("$/progress", {
+        token: "refresh-index",
+        value: { kind: "begin", title: "refresh indexing forever" },
+      });
+      if (process.env.SAMCHON_GRAPH_FAKE_LSP_HANG_FILE) {
+        fs.writeFileSync(
+          process.env.SAMCHON_GRAPH_FAKE_LSP_HANG_FILE,
+          "indexing readiness",
+        );
+      }
+    }
     return;
   }
   if (message.method === "textDocument/didClose") {
@@ -1589,7 +1645,10 @@ function handle(message) {
     if (options.shutdownError) return respondError(message.id, "shutdown failed");
     return respond(message.id, null);
   }
-  if (message.method === "exit") process.exit(0);
+  if (message.method === "exit") {
+    if (!options.ignoreTermination) process.exit(0);
+    return;
+  }
   if (message.id !== undefined) respond(message.id, null);
 }
 

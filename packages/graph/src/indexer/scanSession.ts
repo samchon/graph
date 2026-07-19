@@ -137,7 +137,7 @@ export async function scanSession(
       // query. The first answer can be a valid-but-incomplete empty array while
       // that query starts a work-done lifecycle. Wait for its end and ask once
       // more; the second answer is from the completed index.
-      await session.waitForReady(progressFence, false);
+      await session.waitForReady(progressFence, false, options.signal);
       warm = await safeReferences(
         client,
         referenceParams(referenceTargets[0]!),

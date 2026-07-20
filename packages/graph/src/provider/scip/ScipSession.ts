@@ -234,36 +234,45 @@ export class ScipSession implements IBulkGraphSession {
     args: readonly string[],
     signal: AbortSignal | undefined,
   ): Promise<string> {
+    const child = spawn(command, [...args], {
+      cwd: this.root,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    // Registered before the first await so `close` can reach this child even
+    // if it is still starting: a session that only owned children it had
+    // already heard from would leak exactly the ones that hang.
+    const exited = deferred();
+    const owned: ISpawned = { process: child, exit: exited.promise };
+    this.children.add(owned);
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+
+    const abort = (): void => {
+      child.kill();
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+
     return new Promise<string>((resolve, reject) => {
-      const process_ = spawn(command, [...args], {
-        cwd: this.root,
-        windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      let stdout = "";
-      let stderr = "";
-      process_.stdout.setEncoding("utf8");
-      process_.stderr.setEncoding("utf8");
-      process_.stdout.on("data", (chunk: string) => (stdout += chunk));
-      process_.stderr.on("data", (chunk: string) => (stderr += chunk));
-      let settleExit!: () => void;
-      const exit = new Promise<void>((done) => (settleExit = done));
-      const owned: ISpawned = { process: process_, exit };
-      this.children.add(owned);
-      const abort = (): void => {
-        process_.kill();
-      };
-      signal?.addEventListener("abort", abort, { once: true });
       const finish = (): void => {
         signal?.removeEventListener("abort", abort);
         this.children.delete(owned);
-        settleExit();
+        exited.settle();
       };
-      process_.on("error", (error) => {
+      child.on("error", (error) => {
         finish();
         reject(error);
       });
-      process_.on("close", (code) => {
+      child.on("close", (code) => {
         finish();
         if (signal?.aborted === true) {
           const error = new Error(
@@ -342,7 +351,25 @@ export namespace ScipSession {
 
 interface ISpawned {
   process: ReturnType<typeof spawn>;
-  exit: Promise<void>;
+  exit: Promise<undefined>;
+}
+
+/**
+ * A promise plus the function that settles it.
+ *
+ * The exit promise has to exist before the listener that settles it is
+ * installed, so a caller can await a child it has just killed. Building it
+ * inside the surrounding executor would shadow that executor's own `resolve`,
+ * which reads as a bug even when it is not.
+ */
+function deferred(): { promise: Promise<undefined>; settle: () => void } {
+  let settle!: () => void;
+  const promise = new Promise<undefined>((resolve) => {
+    settle = () => {
+      resolve(undefined);
+    };
+  });
+  return { promise, settle };
 }
 
 /** The dump body contract this session emits. */

@@ -73,11 +73,12 @@ export namespace ContractParity {
    * `layer` says where the rule applies, and the choice follows from a fact about
    * the two texts: prose *contains* structure — it is the same file, comments and
    * all. So a rule that touches a code line (a relocated import, an added
-   * vocabulary member) shows up in both texts and is `"both"`, the default. Only
-   * a rule that touches a comment — reworded instruction, changed `@default` — is
+   * vocabulary member) shows up in both texts and is `"both"`, the default. A
+   * rule that touches a comment — reworded instruction, changed `@default` — is
    * `"prose"`, because the structure text has already dropped the comment it
-   * lives in. There is no structure-only rule: a code line is never absent from
-   * prose.
+   * lives in. Rarely a code-shape rule is `"structure"`: when its prose form
+   * must include JSDoc between the same fields, the prose rule owns that richer
+   * text instead of a prior structural rewrite consuming its source.
    */
   export interface IDeviation {
     /** Why this difference is intentional. */
@@ -90,7 +91,7 @@ export namespace ContractParity {
     to: string;
 
     /** Which layers the rule applies to. `"both"` unless stated. */
-    layer?: "both" | "prose";
+    layer?: "both" | Layer;
 
     /** Exact number of reference occurrences this rule reviewed. @default 1 */
     occurrences?: number;
@@ -968,6 +969,7 @@ export namespace ContractParity {
       {
         reason:
           "Opaque semantic identities carry no location syntax, so a reached tour handle includes its declaration file and kind only in that case.",
+        layer: "structure",
         from: ["id: string;", "name: string;", "line?: number;"].join("\n"),
         to: [
           "id: string;",
@@ -1136,13 +1138,13 @@ export namespace ContractParity {
       for (const sub of PROSE_SUBSTITUTIONS)
         result = result.split(sub.from).join(sub.to);
     // A `"both"` rule names a code line, present in both texts, and runs in
-    // either layer. A `"prose"` rule names a comment the structure text has
-    // dropped, so it runs only when the prose layer is being built; run against
-    // structure it would be a stale-rule failure for a target that is legitimately
-    // absent. Every rule still fails closed if its target moved within the layer
-    // it does apply to.
+    // either layer. A scoped rule runs only in its named layer: `"prose"` owns
+    // comments and `"structure"` owns a shape whose prose variant is an explicit
+    // richer rule. Running either against the other layer would be a stale-rule
+    // failure for a target that is legitimately absent. Every rule still fails
+    // closed if its target moved within the layer it does apply to.
     const applies = (deviation: IDeviation): boolean =>
-      (deviation.layer ?? "both") === "both" || layer === "prose";
+      (deviation.layer ?? "both") === "both" || deviation.layer === layer;
     for (const deviation of DEVIATIONS[contract] ?? [])
       if (applies(deviation)) result = rewrite(result, deviation);
     return result;

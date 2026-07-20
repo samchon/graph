@@ -311,6 +311,46 @@ function assertMapping(): void {
     !adapted.edges.some((edge) => edge.kind === "calls"),
   );
 
+  // A range is an offset in code units, and which code unit is the document's
+  // to declare. Graph columns are UTF-16, so a UTF-8 indexer disagrees on every
+  // line holding a non-ASCII character — silently, and only there.
+  const utf8 = adaptScipIndex({
+    index: parseScipIndex(rawIndex({ positionEncoding: "UTF8CodeUnitOffsetFromLineStart" })),
+    root: "/r",
+    provider: "scip-go",
+    languages: ["go"],
+    languageOf: () => "go",
+  });
+  TestValidator.predicate(
+    "a non-UTF-16 position encoding is reported rather than absorbed",
+    utf8.warnings.some((warning) => warning.includes("UTF-16 code units")),
+  );
+  TestValidator.equals(
+    "…and its facts are still published, because spans are evidence not identity",
+    utf8.nodes.length,
+    adapted.nodes.length,
+  );
+  // "Did not say" is not "said something wrong": an older indexer that omits
+  // the field must not put a warning on every well-behaved ASCII project.
+  TestValidator.equals(
+    "an absent position encoding is not a warning",
+    adapted.warnings.filter((warning) => warning.includes("UTF-16")),
+    [],
+  );
+  TestValidator.equals(
+    "an explicitly UTF-16 encoding is not a warning",
+    adaptScipIndex({
+      index: parseScipIndex(
+        rawIndex({ positionEncoding: "UTF16CodeUnitOffsetFromLineStart" }),
+      ),
+      root: "/r",
+      provider: "scip-go",
+      languages: ["go"],
+      languageOf: () => "go",
+    }).warnings.filter((warning) => warning.includes("UTF-16")),
+    [],
+  );
+
   // A document in a language this session does not own is reported, not
   // silently absorbed.
   const foreign = adaptScipIndex({
@@ -327,7 +367,7 @@ function assertMapping(): void {
   );
 }
 
-function rawIndex(): unknown {
+function rawIndex(document: Record<string, unknown> = {}): unknown {
   const server = "scip-go gomod example v1 `main`/Server#";
   const serve = "scip-go gomod example v1 `main`/Server#Serve().";
   const helper = "scip-go gomod example v1 `main`/helper().";
@@ -340,6 +380,7 @@ function rawIndex(): unknown {
       {
         language: "Go",
         relativePath: "main.go",
+        ...document,
         symbols: [
           { symbol: server, displayName: "Server", kind: "Struct" },
           {

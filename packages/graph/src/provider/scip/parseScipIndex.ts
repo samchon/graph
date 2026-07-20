@@ -97,6 +97,11 @@ function documentOf(value: unknown, label: string): IScipIndex.IDocument {
               symbolInformationOf(symbol, `${label}.symbols[${at}]`),
           ),
         }),
+    ...optionalString(
+      document.positionEncoding,
+      `${label}.positionEncoding`,
+      "positionEncoding",
+    ),
     ...(document.diagnostics === undefined
       ? {}
       : {

@@ -91,6 +91,19 @@ export function adaptScipIndex(
       );
       continue;
     }
+    // A SCIP range is an offset in code units, and which code unit is the
+    // document's to declare. The graph's columns follow the LSP convention of
+    // UTF-16 code units, so an indexer that counts UTF-8 bytes disagrees with
+    // it on every line holding a non-ASCII character — silently, and only
+    // there. Spans are display evidence rather than identity, so this reports
+    // rather than rejects; what it must not do is say nothing, because the
+    // resulting column is wrong in exactly the cases nobody tests.
+    const encoding = document.positionEncoding;
+    if (encoding !== undefined && encoding !== UTF16_POSITION_ENCODING) {
+      warnings.push(
+        `${props.provider}: ${file} reports ${encoding} positions, but graph columns are UTF-16 code units; columns on lines with non-ASCII characters may be off`,
+      );
+    }
     files.push(file);
     for (const symbol of document.symbols ?? []) {
       const parsed = scipSymbol(symbol.symbol);
@@ -298,6 +311,16 @@ export namespace adaptScipIndex {
   /** One strict slice mapped from one index. */
   export type IResult = IScipAdaptation;
 }
+
+/**
+ * The one position encoding whose offsets are already graph columns.
+ *
+ * `UnspecifiedPositionEncoding` and an absent field are left alone rather than
+ * warned about: they are what an older indexer emits, and treating "did not
+ * say" as "said something wrong" would put a warning on every well-behaved
+ * ASCII project.
+ */
+const UTF16_POSITION_ENCODING = "UTF16CodeUnitOffsetFromLineStart";
 
 interface IDefinition {
   id: string;

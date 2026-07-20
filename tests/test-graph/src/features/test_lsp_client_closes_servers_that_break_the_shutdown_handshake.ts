@@ -18,6 +18,7 @@ interface ILspClient {
 }
 
 interface ILspClientInternals {
+  pending: Map<number, unknown>;
   process: {
     stdin: {
       destroy(error?: Error): void;
@@ -104,6 +105,7 @@ export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
     await assertClosedInputRejectsRequests(LspClient);
     await assertSynchronousWriteFailureRejectsRequests(LspClient);
     await assertStdinStreamErrorRejectsRequests(LspClient);
+    await assertPerRequestDeadlineCleansUpTheTransport(LspClient);
 
     // An already-cancelled request never enters the wire or waits for the
     // otherwise-unlimited default deadline. The client still owns its child and
@@ -295,6 +297,53 @@ const assertStdinStreamErrorRejectsRequests = async (
     );
   } finally {
     await settleWithin(client.close(), 5_000, () => undefined);
+  }
+};
+
+const assertPerRequestDeadlineCleansUpTheTransport = async (
+  LspClient: LspClientConstructor,
+): Promise<void> => {
+  const timeoutMs = 60_000;
+  const root = GraphPaths.createTempDirectory("samchon-graph-lsp-timeout-");
+  const marker = path.join(root, "request-received");
+  const previousMarker = process.env.SAMCHON_GRAPH_FAKE_LSP_HANG_FILE;
+  const originalSetTimeout = globalThis.setTimeout;
+  let timeoutCallback: (() => void) | undefined;
+  process.env.SAMCHON_GRAPH_FAKE_LSP_HANG_FILE = marker;
+  globalThis.setTimeout = ((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
+    if (delay === timeoutMs) {
+      timeoutCallback = () => callback(...args);
+      // `deletePending` must clear this handle after the captured callback runs.
+      return originalSetTimeout(() => undefined, timeoutMs);
+    }
+    return Reflect.apply(originalSetTimeout, globalThis, [callback, delay, ...args]) as NodeJS.Timeout;
+  }) as typeof setTimeout;
+  const client = new LspClient(process.execPath, [
+    GraphPaths.fakeLspServer,
+    "--hang-method=workspace/symbol",
+  ]);
+  try {
+    await client.request("initialize", {});
+    const pending = client.request("workspace/symbol", {}, timeoutMs);
+    await waitForFile(marker);
+    if (timeoutCallback === undefined)
+      throw new Error("LspClient did not install its per-request deadline");
+    timeoutCallback();
+    const rejection = await rejectionWithin(pending, 2_000);
+    TestValidator.equals(
+      "a per-request deadline rejects an unanswered request",
+      rejection.message,
+      "LSP request timed out: workspace/symbol",
+    );
+    TestValidator.equals(
+      "a timed-out request leaves no stale pending transport entry",
+      (client as unknown as ILspClientInternals).pending.size,
+      0,
+    );
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    await Promise.allSettled([client.close()]);
+    restoreEnv("SAMCHON_GRAPH_FAKE_LSP_HANG_FILE", previousMarker);
   }
 };
 

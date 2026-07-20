@@ -13,12 +13,23 @@ function compareNaturalOrdinal(left, right) {
     const b = rightParts[index];
     if (a === b) continue;
     if (index % 2 === 1) {
-      const difference = Number(a) - Number(b);
+      const difference = compareDecimalOrdinal(a, b);
       if (difference !== 0) return difference;
     }
     return compareOrdinal(a, b);
   }
   return leftParts.length - rightParts.length;
+}
+
+/** Compare arbitrary-length ASCII decimal integers without numeric rounding. */
+function compareDecimalOrdinal(left, right) {
+  const significant = (value) => {
+    const first = value.search(/[^0]/);
+    return first === -1 ? "0" : value.slice(first);
+  };
+  const a = significant(left);
+  const b = significant(right);
+  return a.length - b.length || compareOrdinal(a, b);
 }
 
 module.exports = { compareNaturalOrdinal, compareOrdinal };

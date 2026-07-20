@@ -30,7 +30,9 @@ export const test_ordinal_ordering_is_locale_independent = async () => {
   // Windows file systems are ordinarily case-insensitive, so the filesystem
   // fixture cannot contain both `A.ts` and `a.ts`; the direct comparator
   // assertions above cover that distinct-order case.
-  for (const file of ["\u00e4.ts", "z.ts", "a\u0308.ts", "A.ts", "b.ts"]) {
+  // macOS collapses canonically equivalent file names, so create the ordinal
+  // earlier decomposed spelling first when it cannot retain both identities.
+  for (const file of ["a\u0308.ts", "\u00e4.ts", "z.ts", "A.ts", "b.ts"]) {
     fs.writeFileSync(path.join(discoveryRoot, file), "export {};\n");
   }
   TestValidator.equals(

@@ -10,7 +10,6 @@ import path from "node:path";
 import { ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
 import { GraphLanguage } from "../typings";
 import { projectRelative, readText } from "../utils/fs";
-import { assignSemanticIdentities } from "./assignSemanticIdentities";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IStaticGraphParts } from "./IStaticGraphParts";
 import { languageOf } from "./languages";

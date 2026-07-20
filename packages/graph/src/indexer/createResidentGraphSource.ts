@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { compareOrdinal } from "@samchon/graph-sitter";
 import {
   ISamchonGraphDiagnostic,
   ISamchonGraphDump,
@@ -8,6 +9,7 @@ import {
 } from "../structures";
 import { GraphLanguage } from "../typings";
 import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
+import { dumpProvenanceOf } from "../provider/dumpProvenanceOf";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { isBulkGraphSession } from "../provider/isBulkGraphSession";
 import { mergeGraphSlices } from "../provider/mergeGraphSlices";
@@ -26,6 +28,12 @@ import { selectGraphSources } from "./selectGraphSources";
 import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
 
+/**
+ * How many times one `load` may prepare a candidate before giving up on the
+ * project holding still long enough to publish it.
+ */
+const COMMIT_ATTEMPTS = 3;
+
 interface IResidentState {
   dump: ISamchonGraphDump;
   sessions: Map<GraphLanguage, ILspSession | IBulkGraphSession>;
@@ -34,6 +42,9 @@ interface IResidentState {
   languages: GraphLanguage[];
   hashes: Map<string, string>;
   source: SamchonGraphSourceReader;
+
+  /** What each provider did to compute the currently published generation. */
+  modes: Map<string, IBulkGraphSession.Mode>;
 }
 
 interface IResidentDependencies {
@@ -91,6 +102,7 @@ export function createResidentGraphSource(
             ? snapshotSources(root, options, bulkLanguagesOf(sessions))
             : hashSources(result.sources),
         source: result.source ?? sourceReaderOf(root, texts, sessions),
+        modes: result.modes ?? new Map(),
       };
     } catch (error) {
       // Once the build hands its sessions to this source, every later failure
@@ -119,8 +131,15 @@ export function createResidentGraphSource(
     const warnings: string[] = [];
     const sources = new Map<string, string>();
     const generations = new Map(current.generations);
+    const provenance: ISamchonGraphDump.IProvenance[] = [];
+    const modes = new Map<string, IBulkGraphSession.Mode>();
     const selected = selectGraphSources(root, options);
 
+    // One slice per distinct bulk session, not per key. A provider that owns
+    // two languages appears twice in `sessions` pointing at one object, and
+    // merging its snapshot once per key would publish every node it produced
+    // twice.
+    const merged = new Set<IBulkGraphSession>();
     for (const [language, session] of current.sessions) {
       if (isBulkGraphSession(session)) {
         // `load` refreshes every bulk session through `refreshBulkSessions`
@@ -131,6 +150,9 @@ export function createResidentGraphSource(
         // (double-counting) refresh.
         const refresh = prefetched.get(language)!;
         assertOpen();
+        generations.set(language, refresh.generation);
+        if (merged.has(session)) continue;
+        merged.add(session);
         strictNodes.push(...refresh.snapshot.nodes);
         strictEdges.push(...refresh.snapshot.edges);
         // Rebuilt from what the compiler says now, exactly like the nodes and
@@ -138,7 +160,8 @@ export function createResidentGraphSource(
         // forward: a diagnostic belongs to the generation that produced it.
         diagnostics.push(...refresh.snapshot.diagnostics);
         warnings.push(...refresh.snapshot.warnings);
-        generations.set(language, refresh.generation);
+        provenance.push(dumpProvenanceOf(refresh.snapshot));
+        modes.set(refresh.snapshot.provenance.provider, refresh.mode);
         continue;
       }
       // `sameLanguages` only admits this refresh while discovery still sees
@@ -187,16 +210,53 @@ export function createResidentGraphSource(
       strictEdges,
     });
     warnings.push(...finalized.warnings);
+
+    // The commit fence. Every slice above was prepared at its own moment: the
+    // bulk providers answered first, each generic session re-read its documents
+    // next, and the static lane parsed last. That the final object swap is
+    // atomic to a reader says nothing about the inputs — a file edited between
+    // the compiler's export and the static parse produces a dump whose halves
+    // describe two different checkouts, and the audit riding on it claims one.
+    //
+    // So the exact texts the generic lanes consumed are compared against disk
+    // now, after preparation and before publication. A candidate built over
+    // source that has since moved is discarded whole rather than committed in
+    // part; the caller retries, and until one attempt closes the fence the
+    // previously published dump stands untouched.
+    //
+    // Bulk slices are not re-read here, and must not be: a provider's manifest
+    // is the provider's statement about the program it resolved, and opening
+    // its files behind its back answers a different question with bytes the
+    // checker never saw. Their revision token is the manifest digest each
+    // candidate carries.
+    const moved = movedSources(sources);
+    if (moved !== undefined) {
+      throw new StaleCandidateError(
+        `@samchon/graph: ${moved} changed while this refresh was preparing, so no slice of it may be published`,
+      );
+    }
+
     const dump: ISamchonGraphDump = {
       ...current.dump,
       nodes: wireNodes(finalized.nodes),
       edges: wireEdges(finalized.edges, finalized.nodes),
       diagnostics,
       warnings,
+      ...(provenance.length === 0
+        ? {}
+        : {
+            provenance: provenance.sort((left, right) =>
+              compareOrdinal(left.provider, right.provider),
+            ),
+          }),
     };
+    // One replacement, after the fence closed. Nothing above this line is
+    // visible to a reader, so a throw anywhere in the transaction leaves the
+    // previous generation whole.
     current.dump = dump;
     current.hashes = hashSources(sources);
     current.generations = generations;
+    current.modes = modes;
     current.source = sourceReaderOf(root, sources, current.sessions);
   }
 
@@ -216,6 +276,61 @@ export function createResidentGraphSource(
     await closeSessions(current.sessions, sessionClosures);
   }
 
+  /**
+   * Decide whether the project moved, and if it did, commit exactly one new
+   * generation for it.
+   *
+   * The retry exists because "prepare a candidate" and "the project holds
+   * still" are independent: a checkout under an active editor can move again
+   * while the previous attempt was preparing, and an attempt that discards
+   * itself has changed nothing a reader can see. Bounded, because a project
+   * being rewritten continuously has no quiet moment to snapshot, and an
+   * unbounded loop would answer that by never returning.
+   *
+   * Exhausting the bound rejects rather than returning the previous dump. That
+   * generation does survive — nothing published it away, and the next quiet
+   * load still has it — but handing it back to *this* call would attach the
+   * result audit's "for the snapshot this call synced to" to a snapshot this
+   * call did not sync to.
+   */
+  async function commitRefresh(
+    current: IResidentState,
+    signal: AbortSignal,
+  ): Promise<void> {
+    for (let attempt = 1; ; attempt++) {
+      const prefetched = await refreshBulkSessions(current.sessions, signal);
+      const bulkChanged = [...prefetched].some(
+        ([language, refresh]) =>
+          current.generations.get(language) !== refresh.generation,
+      );
+      if (
+        !bulkChanged &&
+        !isStale(current.hashes, root, options, bulkLanguagesOf(current.sessions))
+      ) {
+        return;
+      }
+      const discovered = discoverLanguages(root, options);
+      if (!sameLanguages(current.languages, discovered)) {
+        // A language appearing or disappearing replaces every session, so the
+        // transaction is the fresh build itself: it reads one source selection
+        // and publishes one state.
+        await replaceLanguages(current, signal);
+        return;
+      }
+      try {
+        await refreshStale(current, prefetched, signal);
+        return;
+      } catch (error) {
+        if (!isStaleCandidate(error)) throw error;
+        if (attempt >= COMMIT_ATTEMPTS) {
+          throw new Error(
+            `@samchon/graph: the project kept changing while ${String(COMMIT_ATTEMPTS)} refreshes were preparing, so none of them describes a checkout that still exists: ${(error as Error).message}`,
+          );
+        }
+      }
+    }
+  }
+
   return {
     load(): Promise<ISamchonGraphDump> {
       return enqueue(async () => {
@@ -231,30 +346,7 @@ export function createResidentGraphSource(
             }
             state = fresh;
           } else {
-            const prefetched = await refreshBulkSessions(
-              state.sessions,
-              controller.signal,
-            );
-            const bulkChanged = [...prefetched].some(
-              ([language, refresh]) =>
-                state!.generations.get(language) !== refresh.generation,
-            );
-            if (
-              bulkChanged ||
-              isStale(
-                state.hashes,
-                root,
-                options,
-                bulkLanguagesOf(state.sessions),
-              )
-            ) {
-              const discovered = discoverLanguages(root, options);
-              if (sameLanguages(state.languages, discovered)) {
-                await refreshStale(state, prefetched, controller.signal);
-              } else {
-                await replaceLanguages(state, controller.signal);
-              }
-            }
+            await commitRefresh(state, controller.signal);
           }
           assertOpen();
           return state.dump;
@@ -402,6 +494,44 @@ function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
+/**
+ * A prepared candidate that the project moved out from under before it could
+ * be committed.
+ *
+ * Its own class because it is the one refresh failure that is not a defect:
+ * nothing is wrong with the graph, the sessions, or the source — the answer
+ * simply describes a checkout that no longer exists. The caller retries it a
+ * bounded number of times instead of surfacing it, which it cannot do for a
+ * failure it cannot distinguish.
+ */
+class StaleCandidateError extends Error {
+  public readonly stale = true as const;
+}
+
+function isStaleCandidate(error: unknown): boolean {
+  return error instanceof StaleCandidateError;
+}
+
+/**
+ * The first consumed file whose bytes on disk no longer match what this
+ * refresh read, or `undefined` when every one still matches.
+ *
+ * Content, not mtime: an editor that writes a file twice inside one clock
+ * resolution, or a script that rewrites it to the same length, leaves the
+ * timestamp where it was — and the fence would then certify a candidate built
+ * from source that had already changed.
+ */
+function movedSources(sources: ReadonlyMap<string, string>): string | undefined {
+  for (const [file, text] of sources) {
+    const current = readText(file);
+    // A file consumed by this refresh and deleted before the fence is a change
+    // like any other: whatever was published from it describes source nobody
+    // has any more.
+    if (current !== text) return file;
+  }
+  return undefined;
+}
+
 // A language ended up in the static fallback if the dump reports it but no
 // live session was returned for it (an LSP session is only kept for a
 // language that actually produced real symbols).
@@ -426,15 +556,30 @@ function bulkGenerationsOf(
   return generations;
 }
 
+/**
+ * Poll every distinct bulk session once, and index the result by language.
+ *
+ * Deduplicated by session identity rather than by key. A provider that owns C
+ * and C++ appears in the map twice, pointing at one object; refreshing per key
+ * would ask that provider for two snapshots per load, advance its generation
+ * twice, and then merge its facts into the dump twice — which the strict-slice
+ * validator would reject as duplicated nodes, after the compiler had already
+ * done the work a second time.
+ */
 async function refreshBulkSessions(
   sessions: ReadonlyMap<GraphLanguage, ILspSession | IBulkGraphSession>,
   signal?: AbortSignal,
 ): Promise<Map<GraphLanguage, IBulkGraphSession.IRefresh>> {
   const refreshed = new Map<GraphLanguage, IBulkGraphSession.IRefresh>();
+  const bySession = new Map<IBulkGraphSession, IBulkGraphSession.IRefresh>();
   for (const [language, session] of sessions) {
-    if (isBulkGraphSession(session)) {
-      refreshed.set(language, await session.refresh({ signal }));
+    if (!isBulkGraphSession(session)) continue;
+    let refresh = bySession.get(session);
+    if (refresh === undefined) {
+      refresh = await session.refresh({ signal });
+      bySession.set(session, refresh);
     }
+    refreshed.set(language, refresh);
   }
   return refreshed;
 }

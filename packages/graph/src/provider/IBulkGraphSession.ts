@@ -3,7 +3,11 @@ import {
   ISamchonGraphEdge,
   ISamchonGraphNode,
 } from "../structures";
-import { GraphLanguage } from "../typings";
+import {
+  GraphEdgeKind,
+  GraphLanguage,
+  GraphProviderAuthority,
+} from "../typings";
 
 /**
  * One compiler-owned whole-graph session.
@@ -15,7 +19,19 @@ import { GraphLanguage } from "../typings";
  */
 export interface IBulkGraphSession {
   readonly kind: "bulk";
-  readonly language: GraphLanguage;
+
+  /**
+   * Every language this session publishes as one atomic slice. Never empty.
+   *
+   * A list rather than a single language because one compilation universe can
+   * span several: a Clang provider that indexes a project's C and C++
+   * translation units resolves edges that cross the boundary, and publishing
+   * them as two independently produced slices would claim an atomicity that
+   * never existed. A single-language provider is the one-element case of the
+   * same contract, not a different one.
+   */
+  readonly languages: readonly GraphLanguage[];
+
   readonly root: string;
   readonly generation: number;
   readonly current: IBulkGraphSession.ISnapshot | undefined;
@@ -29,7 +45,9 @@ export interface IBulkGraphSession {
 export namespace IBulkGraphSession {
   /** A complete strict fact slice from one compiler snapshot. */
   export interface ISnapshot {
-    language: GraphLanguage;
+    /** Every language this slice replaces atomically. Never empty. */
+    languages: GraphLanguage[];
+
     nodes: ISamchonGraphNode[];
     edges: ISamchonGraphEdge[];
 
@@ -112,6 +130,39 @@ export namespace IBulkGraphSession {
    * reconstruction this contract exists to make unnecessary.
    */
   export interface IProvenance {
+    /**
+     * Registry name of the provider that opened this session.
+     *
+     * Separate from {@link tool} because the two answer different questions.
+     * `tool` is what the producer calls itself on the wire; `provider` is which
+     * registered entry this graph selected, and it is the one a fallback
+     * warning names and a publication guard checks. One registry entry can
+     * drive more than one producer build, and one producer can back more than
+     * one entry.
+     */
+    provider: string;
+
+    /**
+     * What these facts are grounded in, as the registry declared for the
+     * provider — not as the payload's shape suggests.
+     *
+     * A consumer degrades against this. "The compiler resolved this" and "an
+     * index built from a navigation skeleton reports this" are different
+     * claims, and a reader that cannot tell them apart cannot know whether a
+     * missing edge means absent or unproven.
+     */
+    authority: GraphProviderAuthority;
+
+    /**
+     * The edge families this provider is registered to prove.
+     *
+     * The coordinator holds a snapshot to exactly this list: publishing an
+     * edge of an unclaimed family rejects the snapshot rather than being
+     * quietly accepted. That is the difference between a provider that cannot
+     * prove calls and one that proves there are none.
+     */
+    facts: GraphEdgeKind[];
+
     /** The version of the dump body contract the producer emitted. */
     schemaVersion: number;
 

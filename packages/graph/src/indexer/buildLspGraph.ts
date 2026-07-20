@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { compareOrdinal } from "@samchon/graph-sitter";
 import { IDiagnostic, LspClient } from "../lsp";
 import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import {
@@ -12,12 +13,15 @@ import {
 import { GraphLanguage } from "../typings";
 import { projectRelative, readText } from "../utils/fs";
 import { fileFromUri, fileUri, isSubPath } from "../utils/path";
+import { assertGraphSnapshotContract } from "../provider/assertGraphSnapshotContract";
+import { dumpProvenanceOf } from "../provider/dumpProvenanceOf";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { isBulkGraphSession } from "../provider/isBulkGraphSession";
 import { mergeGraphSlices } from "../provider/mergeGraphSlices";
-import { TtscGraphClient } from "../provider/ttscgraph/TtscGraphClient";
-import { resolveTtscGraphCommand } from "../provider/ttscgraph/resolveTtscGraphCommand";
-import { ttscGraphStrictRefusal } from "../provider/ttscgraph/ttscGraphStrictRefusal";
+import {
+  IGraphProviderCandidate,
+  selectGraphProviders,
+} from "../provider/selectGraphProviders";
 import { appendAll } from "./appendAll";
 import { dedupeEdges } from "./dedupeEdges";
 import { dedupeNodes } from "./dedupeNodes";
@@ -38,14 +42,14 @@ import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
 
 interface IBuildLspGraphDependencies {
-  resolveTtscGraphCommand: typeof resolveTtscGraphCommand;
-  collectTtscGraph: typeof collectTtscGraph;
+  selectGraphProviders: typeof selectGraphProviders;
+  collectProviderGraph: typeof collectProviderGraph;
   collectLanguageGraph: typeof collectLanguageGraph;
 }
 
 const DEFAULT_DEPENDENCIES: IBuildLspGraphDependencies = {
-  resolveTtscGraphCommand,
-  collectTtscGraph,
+  selectGraphProviders,
+  collectProviderGraph,
   collectLanguageGraph,
 };
 
@@ -78,6 +82,8 @@ export async function buildLspGraph(
       texts: sources,
       digests: strictDigests,
     });
+  const provenance: ISamchonGraphDump.IProvenance[] = [];
+  const modes = new Map<string, IBulkGraphSession.Mode>();
   let lspNodeCount = 0;
   try {
     // Computed once (not per-language) since cpp and c share the same clangd
@@ -88,56 +94,73 @@ export async function buildLspGraph(
         : undefined;
     if (languages.includes("dart")) ensurePubDeps(root, options.pubCommand);
 
+    // Every strict provider runs before the generic loop, and the loop then
+    // serves whatever they did not claim. The selection this replaces was an
+    // `if (language === "typescript")` arm in the middle of that loop: adding a
+    // provider meant adding a branch, nothing could enumerate the set, and a
+    // caller whose options disqualified the compiler-owned lane fell through
+    // without a word — a fallback success indistinguishable from the strict
+    // result it had silently replaced.
+    const strictLanguages = new Set<GraphLanguage>();
+    const withSources = languages.filter(
+      (language) => (selected.byLanguage.get(language) ?? []).length > 0,
+    );
+    const selection = resolvedDependencies.selectGraphProviders(
+      root,
+      withSources,
+      options,
+      process.env,
+    );
+    appendAll(warnings, selection.warnings);
+    for (const candidate of selection.candidates) {
+      try {
+        const { refresh, session } =
+          await resolvedDependencies.collectProviderGraph(
+            root,
+            candidate,
+            options,
+          );
+        const snapshot = refresh.snapshot;
+        assertGraphSnapshotContract(
+          snapshot,
+          candidate.provider,
+          candidate.languages,
+        );
+        appendAll(strictNodes, snapshot.nodes);
+        appendAll(strictEdges, snapshot.edges);
+        appendAll(diagnostics, snapshot.diagnostics);
+        appendAll(warnings, snapshot.warnings);
+        // The manifest names the files, and the provider owns the fact that it
+        // does. Nothing reads their text here: the strict lane's facts are
+        // already resolved, and the only thing the generic lane wanted text for
+        // — deriving export edges — is work this provider has already done
+        // against the real checker.
+        for (const [file, digest] of snapshot.sources) {
+          strictDigests.set(file, digest);
+        }
+        provenance.push(dumpProvenanceOf(snapshot));
+        modes.set(candidate.provider.name, refresh.mode);
+        lspNodeCount += snapshot.nodes.length;
+        for (const language of snapshot.languages) {
+          strictLanguages.add(language);
+          // A multi-language provider is one session under several keys. The
+          // map stays keyed by language because every consumer asks it a
+          // language question; deduplication is the consumers' job and they do
+          // it by session identity, not by key.
+          if (options.keepAlive) sessions.set(language, session);
+        }
+      } catch (error) {
+        if (options.signal?.aborted) throw error;
+        warnings.push(
+          `${candidate.languages.join(", ")}: the ${candidate.provider.name} ${candidate.provider.authority} provider failed, so these languages fall through to the generic language-server lane: ${(error as Error).message}`,
+        );
+      }
+    }
+
     for (const language of languages) {
       const files = selected.byLanguage.get(language) ?? [];
       if (files.length === 0) continue;
-      if (language === "typescript") {
-        // The provider decides whether it can honour these options; this loop only
-        // reports what it decided. The condition used to live here, inline and
-        // without an `else`, which is how the experiment's caps came to disable
-        // the compiler-owned lane on every run without a word of explanation.
-        const refusal = ttscGraphStrictRefusal(options);
-        if (refusal !== undefined) {
-          warnings.push(refusal);
-        } else {
-          const resolved = resolvedDependencies.resolveTtscGraphCommand(root);
-          if (resolved !== undefined) {
-            try {
-              const { result, session } =
-                await resolvedDependencies.collectTtscGraph(
-                  root,
-                  resolved.command,
-                  resolved.args,
-                  options,
-                );
-              appendAll(strictNodes, result.nodes);
-              appendAll(strictEdges, result.edges);
-              appendAll(diagnostics, result.diagnostics);
-              appendAll(warnings, result.warnings);
-              // The manifest names the files, and the compiler owns the fact that
-              // it does. Nothing reads their text here: the strict lane's facts
-              // are already resolved, and the only thing the generic lane wanted
-              // text for — deriving export edges — is work this provider has
-              // already done against the real checker.
-              for (const [file, digest] of result.sources) {
-                strictDigests.set(file, digest);
-              }
-              lspNodeCount += result.nodes.length;
-              if (options.keepAlive) sessions.set(language, session);
-              continue;
-            } catch (error) {
-              if (options.signal?.aborted) throw error;
-              warnings.push(
-                `typescript: ttscgraph bulk indexing failed; using ttscserver LSP: ${(error as Error).message}`,
-              );
-            }
-          } else {
-            warnings.push(
-              "typescript: ttscgraph bulk provider was not found; using ttscserver LSP.",
-            );
-          }
-        }
-      }
+      if (strictLanguages.has(language)) continue;
       const spec = specOf(language);
       if (spec?.lsp === undefined) {
         warnings.push(`${language}: no built-in LSP server is configured.`);
@@ -274,9 +297,11 @@ export async function buildLspGraph(
         edges: wireEdges(finalized.edges, finalized.nodes),
         diagnostics,
         warnings,
+        ...provenanceField(provenance),
       },
       warnings,
       source: snapshotSource(),
+      modes,
       ...(options.keepAlive ? { sessions, sources } : {}),
     };
   } catch (error) {
@@ -318,20 +343,32 @@ async function closeKeptSessions(
   return failures;
 }
 
-async function collectTtscGraph(
+/**
+ * Open one strict provider candidate and take its first snapshot.
+ *
+ * The session is closed on any failure and on a one-shot build, so a provider
+ * that dies before its first snapshot leaves no child behind: only this
+ * function ever holds the session between construction and the caller's
+ * decision to keep it.
+ */
+async function collectProviderGraph(
   root: string,
-  command: string,
-  args: readonly string[],
+  candidate: IGraphProviderCandidate,
   options: IBuildGraphOptions,
 ): Promise<{
-  result: IBulkGraphSession.ISnapshot;
+  refresh: IBulkGraphSession.IRefresh;
   session: IBulkGraphSession;
 }> {
-  const session = new TtscGraphClient({ root, command, args });
+  const session = candidate.provider.open({
+    root,
+    command: candidate.command,
+    languages: candidate.languages,
+    options,
+  });
   try {
-    const result = (await session.refresh({ signal: options.signal })).snapshot;
+    const refresh = await session.refresh({ signal: options.signal });
     if (!options.keepAlive) await session.close();
-    return { result, session };
+    return { refresh, session };
   } catch (error) {
     await session.close();
     throw error;
@@ -370,6 +407,26 @@ function appendSources(
   source: ReadonlyMap<string, string>,
 ): void {
   for (const [file, text] of source) target.set(file, text);
+}
+
+/**
+ * The dump's provenance rows, sorted, or nothing when no provider contributed.
+ *
+ * Sorted rather than left in selection order so the dump stays a pure function
+ * of its source: registry order is a property of the build, not of the code it
+ * describes, and a reordering there must not change the bytes of a dump taken
+ * from an unedited checkout. Omitted entirely when empty, because an empty
+ * array would claim a provider was asked and proved nothing.
+ */
+function provenanceField(
+  provenance: readonly ISamchonGraphDump.IProvenance[],
+): { provenance?: ISamchonGraphDump.IProvenance[] } {
+  if (provenance.length === 0) return {};
+  return {
+    provenance: [...provenance].sort((left, right) =>
+      compareOrdinal(left.provider, right.provider),
+    ),
+  };
 }
 
 // Opens a fresh LSP connection and hands back BOTH the extracted graph slice

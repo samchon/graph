@@ -27,4 +27,18 @@ export interface IIndexerResult {
 
   /** Immutable source-display evidence captured with this exact dump. */
   source?: SamchonGraphSourceReader;
+
+  /**
+   * What each contributing provider did to compute this build, by provider
+   * name.
+   *
+   * Reported here rather than in the dump because computation mode is a
+   * property of one refresh, not of the facts: a session that reused its
+   * resident program and a cold build that loaded it from scratch can publish
+   * identical facts, and recording the difference inside the dump would make
+   * two dumps of the same unedited checkout differ. Experiments and the
+   * conformance harness measure incrementality from this; a generation counter
+   * cannot, because a reuse and a full rebuild both move it by one.
+   */
+  modes?: Map<string, IBulkGraphSession.Mode>;
 }

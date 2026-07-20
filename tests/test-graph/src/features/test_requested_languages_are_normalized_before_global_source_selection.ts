@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
+import { ProviderFixtures } from "../internal/ProviderFixtures";
 
 type BuildDependencies = NonNullable<Parameters<typeof buildLspGraph>[1]>;
 
@@ -34,7 +35,7 @@ export const test_requested_languages_are_normalized_before_global_source_select
 async function assertGenericDuplicatesAndGlobalCap(root: string): Promise<void> {
   const calls: GraphLanguage[] = [];
   const dependencies: BuildDependencies = {
-    resolveTtscGraphCommand: () => undefined,
+    selectGraphProviders: () => ({ candidates: [], warnings: [] }),
     collectLanguageGraph: async (_root, language) => {
       calls.push(language);
       return {
@@ -90,15 +91,15 @@ async function assertStrictDuplicatesAreNotOpenedTwice(root: string): Promise<vo
   let closes = 0;
   const session: IBulkGraphSession = {
     kind: "bulk",
-    language: "typescript",
+    languages: ["typescript"],
     root,
     generation: 1,
-    current: strictSnapshot(root),
+    current: strictSnapshot(),
     refresh: async () => ({
       changed: false,
       generation: 1,
       mode: "unchanged",
-      snapshot: strictSnapshot(root),
+      snapshot: strictSnapshot(),
     }),
     close: async () => {
       closes += 1;
@@ -111,10 +112,27 @@ async function assertStrictDuplicatesAreNotOpenedTwice(root: string): Promise<vo
       keepAlive: true,
     },
     {
-      resolveTtscGraphCommand: () => ({ command: process.execPath, args: [] }),
-      collectTtscGraph: async () => {
+      selectGraphProviders: () => ({
+        candidates: [
+          {
+            provider: ProviderFixtures.provider(),
+            languages: ["typescript"],
+            command: { command: process.execPath, args: [] },
+          },
+        ],
+        warnings: [],
+      }),
+      collectProviderGraph: async () => {
         calls += 1;
-        return { result: strictSnapshot(root), session };
+        return {
+          refresh: {
+            changed: true,
+            generation: 1,
+            mode: "initial",
+            snapshot: strictSnapshot(),
+          },
+          session,
+        };
       },
     },
   );
@@ -205,24 +223,10 @@ function graphNode(language: GraphLanguage, file: string): ISamchonGraphNode {
   };
 }
 
-function strictSnapshot(root: string): IBulkGraphSession.ISnapshot {
-  return {
-    language: "typescript",
+function strictSnapshot(): IBulkGraphSession.ISnapshot {
+  return ProviderFixtures.snapshot({
     nodes: [graphNode("typescript", "b.ts")],
-    edges: [],
-    diagnostics: [],
-    sources: new Map(),
-    provenance: {
-      schemaVersion: 5,
-      tool: "test",
-      toolVersion: "1",
-      compilerVersion: "1",
-      protocolVersion: 1,
-      universe: root,
-      capabilities: [],
-    },
-    warnings: [],
-  };
+  });
 }
 
 async function closeSessions(

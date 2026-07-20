@@ -3,6 +3,7 @@ import {
   buildLspGraph,
   type GraphLanguage,
   type IBulkGraphSession,
+  type IGraphProviderCandidate,
   type ILspSession,
   type ISamchonGraphNode,
 } from "@samchon/graph";
@@ -10,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
+import { ProviderFixtures } from "../internal/ProviderFixtures";
 
 type BuildDependencies = NonNullable<Parameters<typeof buildLspGraph>[1]>;
 
@@ -81,8 +83,11 @@ async function assertStrictProviderCancellationBoundary(): Promise<void> {
         signal: cancelled.signal,
       },
       {
-        resolveTtscGraphCommand: () => ({ command: process.execPath, args: [] }),
-        collectTtscGraph: async () => {
+        selectGraphProviders: () => ({
+          candidates: [fakeCandidate()],
+          warnings: [],
+        }),
+        collectProviderGraph: async () => {
           cancelled.abort("strict provider cancelled");
           throw strictError;
         },
@@ -167,10 +172,10 @@ async function runAbortedBuild(
   const buildError = new Error("later language aborted");
   let bulkCloseCalls = 0;
   let genericCloseCalls = 0;
-  const snapshot = bulkSnapshot(root);
+  const snapshot = bulkSnapshot();
   const bulk: IBulkGraphSession = {
     kind: "bulk",
-    language: "typescript",
+    languages: ["typescript"],
     root,
     generation: 1,
     current: snapshot,
@@ -203,8 +208,19 @@ async function runAbortedBuild(
   } as ILspSession;
 
   const dependencies: BuildDependencies = {
-    resolveTtscGraphCommand: () => ({ command: process.execPath, args: [] }),
-    collectTtscGraph: async () => ({ result: snapshot, session: bulk }),
+    selectGraphProviders: () => ({
+      candidates: [fakeCandidate()],
+      warnings: [],
+    }),
+    collectProviderGraph: async () => ({
+      refresh: {
+        changed: true,
+        generation: 1,
+        mode: "initial",
+        snapshot,
+      },
+      session: bulk,
+    }),
     collectLanguageGraph: async (_root, language) => {
       if (language === "go") {
         return {
@@ -258,24 +274,19 @@ function installCommand(root: string, command: string): void {
   if (process.platform !== "win32") fs.chmodSync(file, 0o755);
 }
 
-function bulkSnapshot(root: string): IBulkGraphSession.ISnapshot {
+/** The one strict candidate these builds select, matching the fake snapshot. */
+function fakeCandidate(): IGraphProviderCandidate {
   return {
-    language: "typescript",
-    nodes: [graphNode("typescript", "index.ts", "value", "variable")],
-    edges: [],
-    diagnostics: [],
-    sources: new Map(),
-    provenance: {
-      schemaVersion: 5,
-      tool: "test",
-      toolVersion: "1",
-      compilerVersion: "1",
-      protocolVersion: 1,
-      universe: root,
-      capabilities: [],
-    },
-    warnings: [],
+    provider: ProviderFixtures.provider(),
+    languages: ["typescript"],
+    command: { command: process.execPath, args: [] },
   };
+}
+
+function bulkSnapshot(): IBulkGraphSession.ISnapshot {
+  return ProviderFixtures.snapshot({
+    nodes: [graphNode("typescript", "index.ts", "value", "variable")],
+  });
 }
 
 function graphNode(

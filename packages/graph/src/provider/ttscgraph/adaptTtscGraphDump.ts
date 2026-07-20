@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { compareOrdinal } from "@samchon/graph-sitter";
 
 import {
   ISamchonGraphDecorator,
@@ -228,7 +229,7 @@ export function adaptTtscGraphDump(
   }
 
   const manifest = manifestOf(dump.provenance);
-  for (const file of [...factFiles].sort(compareText)) {
+  for (const file of [...factFiles].sort(compareOrdinal)) {
     if (!manifest.has(file)) {
       throw new Error(
         `ttscgraph: dump declares facts for ${file}, which its own source manifest never loaded`,
@@ -241,7 +242,7 @@ export function adaptTtscGraphDump(
   // absolute stay canonical, and bundled virtual identities must never pass
   // through `path.resolve`, which would turn them into unrelated disk paths.
   for (const [file, digest] of [...manifest].sort(([left], [right]) =>
-    compareText(left, right),
+    compareOrdinal(left, right),
   )) {
     sources.set(sourceManifestKey(expectedRoot, file), digest);
   }
@@ -853,9 +854,4 @@ function samePath(left: string, right: string): boolean {
   return process.platform === "win32"
     ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
     : normalizedLeft === normalizedRight;
-}
-
-function compareText(left: string, right: string): number {
-  /* c8 ignore next -- manifestOf rejects duplicate source identities. */
-  return left < right ? -1 : left > right ? 1 : 0;
 }

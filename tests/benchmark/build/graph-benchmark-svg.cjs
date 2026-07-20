@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { renderPng } = require("./svg-to-png.cjs");
+const { compareOrdinal } = require("../graph/ordinal.cjs");
 
 const ROOT = path.resolve(__dirname, "..");
 const INPUT = path.resolve(
@@ -202,7 +203,7 @@ function buildRows(input) {
       };
     })
     .filter((row) => row.values.some((value) => value.value > 0))
-    .sort((a, b) => a.label.localeCompare(b.label));
+    .sort((a, b) => compareOrdinal(a.label, b.label));
 }
 
 // Grouped chart, laid out like the website: one banded block per repo with the
@@ -601,7 +602,7 @@ function renderTime(index, cells) {
       }).filter((value) => value.answerMs > 0),
     }))
     .filter((row) => row.values.length > 0)
-    .sort((a, b) => a.label.localeCompare(b.label));
+    .sort((a, b) => compareOrdinal(a.label, b.label));
 
   // Banded blocks like the grouped chart: repo header + one row per tool, the
   // two-tone bar (faded index build + solid LLM answer) inside a full-width

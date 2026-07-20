@@ -15,6 +15,9 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import ordinal from "./ordinal.cjs";
+
+const { compareNaturalOrdinal, compareOrdinal } = ordinal;
 
 const args = parseArgs(process.argv.slice(2));
 const suiteDir = args.dir ? path.resolve(args.dir) : null;
@@ -116,7 +119,7 @@ function auditCell(reportPath, baselineIndex) {
   const traces = fs
     .readdirSync(traceDir)
     .filter((file) => file.endsWith(".stream.jsonl"))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    .sort(compareNaturalOrdinal);
   const runs = traces.map((file) => {
     const match = /^(.*)-run-(\d+)\.stream\.jsonl$/.exec(file);
     const parsed = parseTrace(
@@ -1013,7 +1016,7 @@ function callHotspots(runs, include, limit = 15) {
       ...group,
       overfetchTypes: Object.fromEntries(
         Object.entries(group.overfetchTypes).sort((a, b) =>
-          a[0].localeCompare(b[0]),
+          compareOrdinal(a[0], b[0]),
         ),
       ),
     }))

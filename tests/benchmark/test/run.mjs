@@ -17,6 +17,9 @@ import {
   invalidWebsiteCellReason,
   sanitizeWebsiteSamples,
 } from "../graph/website-cell.mjs";
+import ordinal from "../graph/ordinal.cjs";
+
+const { compareNaturalOrdinal } = ordinal;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const benchmarkDir = path.resolve(here, "..");
@@ -26,6 +29,7 @@ const manifestPath = path.join(graphDir, "questions", "manifest.json");
 
 testCorpusAndPromptProvenance();
 testManifestGenerationIsDeterministic();
+testNaturalOrdinalUsesArbitraryPrecision();
 testCodexTraceAuditor();
 testWebsiteCellValidityGate();
 testPublicationRequiresMatchingCodexTraceAudit();
@@ -89,6 +93,16 @@ function testManifestGenerationIsDeterministic() {
   run(process.execPath, [path.join(graphDir, "generate-manifest.mjs")]);
   const after = fs.readFileSync(manifestPath);
   assert.deepEqual(after, before);
+}
+
+function testNaturalOrdinalUsesArbitraryPrecision() {
+  const nineHundredNines = `graph-run-${"9".repeat(400)}.stream.jsonl`;
+  const oneFollowedByFourHundredZeroes = `graph-run-1${"0".repeat(400)}.stream.jsonl`;
+  assert.ok(compareNaturalOrdinal(nineHundredNines, oneFollowedByFourHundredZeroes) < 0);
+  assert.deepEqual(
+    [oneFollowedByFourHundredZeroes, nineHundredNines].sort(compareNaturalOrdinal),
+    [nineHundredNines, oneFollowedByFourHundredZeroes],
+  );
 }
 
 function testCodexTraceAuditor() {

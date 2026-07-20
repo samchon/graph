@@ -2,7 +2,6 @@ import { TestValidator } from "@nestia/e2e";
 import { ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import http from "node:http";
-import net from "node:net";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
@@ -21,7 +20,6 @@ export const test_view_command_serves_the_bundled_reference_viewer = async () =>
       edges: [{ from: "a.ts#A:class", to: "b.ts#B:function", kind: "calls" }],
     }),
   );
-  const port = await freePort();
   const child = spawn(
     process.execPath,
     [
@@ -29,15 +27,17 @@ export const test_view_command_serves_the_bundled_reference_viewer = async () =>
       "view",
       `--graph-file=${graphFile}`,
       `--cwd=${root}`,
-      `--port=${port}`,
+      "--port=0",
       "--no-open",
       "--max-nodes=10",
     ],
     { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] },
   );
   try {
-    await waitUntilServing(child);
-    const graph = JSON.parse(await get(`http://127.0.0.1:${port}/graph.json?cache=off`));
+    const url = await waitUntilServing(child);
+    const graph = JSON.parse(
+      await get(new URL("graph.json?cache=off", url).href),
+    );
     TestValidator.equals("the HTTP payload carries the reduced graph", graph.counts, {
       rawNodes: 2,
       rawEdges: 1,
@@ -49,9 +49,9 @@ export const test_view_command_serves_the_bundled_reference_viewer = async () =>
     TestValidator.equals("the view names the requested cwd", graph.project, path.basename(root));
     TestValidator.predicate(
       "the bundled viewer JavaScript is substantial",
-      (await get(`http://127.0.0.1:${port}/viewer.js`)).length > 100_000,
+      (await get(new URL("viewer.js", url).href)).length > 100_000,
     );
-    const html = await get(`http://127.0.0.1:${port}/anything`);
+    const html = await get(new URL("anything", url).href);
     TestValidator.predicate("fallback routes serve the viewer shell", html.includes("viewer.js"));
   } finally {
     child.kill();
@@ -59,26 +59,21 @@ export const test_view_command_serves_the_bundled_reference_viewer = async () =>
   }
 };
 
-const freePort = (): Promise<number> =>
-  new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      const port = typeof address === "object" && address ? address.port : 0;
-      server.close((error) => (error ? reject(error) : resolve(port)));
-    });
-  });
-
-const waitUntilServing = (child: ChildProcess): Promise<void> =>
+const waitUntilServing = (child: ChildProcess): Promise<string> =>
   new Promise((resolve, reject) => {
     let stderr = "";
-    const timer = setTimeout(() => reject(new Error(`viewer did not start:\n${stderr}`)), 15_000);
+    const timer = setTimeout(
+      () => reject(new Error(`viewer did not start:\n${stderr}`)),
+      15_000,
+    );
     child.stderr?.on("data", (chunk) => {
       stderr += chunk.toString();
-      if (stderr.includes("serving the 3D viewer")) {
+      const match = /serving the 3D viewer at (http:\/\/127\.0\.0\.1:\d+\/)/.exec(
+        stderr,
+      );
+      if (match !== null) {
         clearTimeout(timer);
-        resolve();
+        resolve(match[1]!);
       }
     });
     child.once("exit", (code) => {

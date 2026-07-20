@@ -582,10 +582,12 @@ export namespace ContractParity {
     Dump: [
       {
         reason:
-          "The dump gained a language set, an indexer authority, diagnostics, and warnings, so it imports the language vocabulary and the diagnostic structure the reference never needed.",
+          "The dump gained a language set, an indexer authority, diagnostics, warnings, and per-provider provenance, so it imports the language, edge-family, and provider-authority vocabularies plus the diagnostic structure the reference never needed.",
         from: 'import { ISamchonGraphEdge } from "./ISamchonGraphEdge";',
         to: [
+          'import { GraphEdgeKind } from "../typings/GraphEdgeKind";',
           'import { GraphLanguage } from "../typings/GraphLanguage";',
+          'import { GraphProviderAuthority } from "../typings/GraphProviderAuthority";',
           'import { ISamchonGraphDiagnostic } from "./ISamchonGraphDiagnostic";',
           'import { ISamchonGraphEdge } from "./ISamchonGraphEdge";',
         ].join("\n"),
@@ -608,9 +610,9 @@ export namespace ContractParity {
       },
       {
         reason:
-          "The single-program provenance and its compiler-only diagnostic row are provider-boundary facts today, not claims of the combined public dump. #66 must replace this omission with a multi-provider registry rather than reusing the TypeScript shape.",
+          "#66 replaced the reference's single-Program claim in the same position, but not with its shape. One TypeScript Program resolves the reference's whole dump; this product's can be owned in part by a compiler, a Clang compilation universe, and a semantic index at once, so the claim is a list with one row per contributing provider. It is optional because the generic and static lanes make no such claim, and the compiler-only diagnostic row is dropped because diagnostics arrive from every lane and are declared further down.",
         from: DUMP_METADATA_STRUCTURE,
-        to: "",
+        to: "provenance?: ISamchonGraphDump.IProvenance[];\n",
       },
       {
         reason:
@@ -637,9 +639,28 @@ export namespace ContractParity {
       },
       {
         reason:
-          "These helper types describe only the omitted one-Program provenance and diagnostics contract. #66 will define the product's non-empty provider-set provenance instead of exporting dead TypeScript-only helpers.",
+          "#66 replaced these helpers rather than deleting them. The reference's universe, root, file-digest, source-digest, and diagnostic rows describe one TypeScript Program's own manifest; the product publishes a fingerprint per provider instead, because every language answers 'what decides the file set' with a different shape and a reader only ever asks whether it moved. The producer row keeps its tool and version, gains the schema and protocol generations a multi-provider reader needs to tell two producers apart, and renames `typescript` to `compiler` for the same reason. Diagnostics are declared on the dump body, not here, because they no longer come from one program.",
         from: DUMP_PROVENANCE_STRUCTURE,
-        to: "",
+        to: [
+          "export interface IProvenance {",
+          "provider: string;",
+          "languages: GraphLanguage[];",
+          "authority: GraphProviderAuthority;",
+          "facts: GraphEdgeKind[];",
+          "capabilities: string[];",
+          "producer: IProducer;",
+          "universe: string;",
+          "manifest: string;",
+          "content: string;",
+          "}",
+          "export interface IProducer {",
+          "tool: string;",
+          "version: string;",
+          "compiler: string;",
+          "schemaVersion: number;",
+          "protocolVersion: number;",
+          "}",
+        ].join("\n").concat("\n"),
       },
       {
         reason:

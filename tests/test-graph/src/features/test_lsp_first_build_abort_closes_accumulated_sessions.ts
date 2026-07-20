@@ -4,8 +4,8 @@ import {
   type GraphLanguage,
   type IBulkGraphSession,
   type ILspSession,
+  type IGraphProvider,
   type ISamchonGraphNode,
-  type selectGraphProviders,
 } from "@samchon/graph";
 import fs from "node:fs";
 import path from "node:path";
@@ -83,10 +83,7 @@ async function assertStrictProviderCancellationBoundary(): Promise<void> {
         signal: cancelled.signal,
       },
       {
-        selectGraphProviders: () => ({
-          candidates: [fakeCandidate()],
-          warnings: [],
-        }),
+        providers: [fakeProvider()],
         collectProviderGraph: async () => {
           cancelled.abort("strict provider cancelled");
           throw strictError;
@@ -122,10 +119,7 @@ async function assertStrictProviderCancellationBoundary(): Promise<void> {
       signal: live.signal,
     },
     {
-      selectGraphProviders: () => ({
-        candidates: [fakeCandidate()],
-        warnings: [],
-      }),
+      providers: [fakeProvider()],
       collectProviderGraph: async () => {
         throw fallbackError;
       },
@@ -211,10 +205,7 @@ async function runAbortedBuild(
   } as ILspSession;
 
   const dependencies: BuildDependencies = {
-    selectGraphProviders: () => ({
-      candidates: [fakeCandidate()],
-      warnings: [],
-    }),
+    providers: [fakeProvider()],
     collectProviderGraph: async () => ({
       refresh: {
         changed: true,
@@ -277,13 +268,15 @@ function installCommand(root: string, command: string): void {
   if (process.platform !== "win32") fs.chmodSync(file, 0o755);
 }
 
-/** The one strict candidate these builds select, matching the fake snapshot. */
-function fakeCandidate(): selectGraphProviders.ICandidate {
-  return {
-    provider: ProviderFixtures.provider(),
-    languages: ["typescript"],
-    command: { command: process.execPath, args: [] },
-  };
+/**
+ * The one registered provider these builds select.
+ *
+ * Registered rather than pre-selected: real discovery runs against it, so the
+ * candidate these tests exercise is one `selectGraphProviders` actually
+ * produced.
+ */
+function fakeProvider(): IGraphProvider {
+  return ProviderFixtures.provider();
 }
 
 function bulkSnapshot(): IBulkGraphSession.ISnapshot {

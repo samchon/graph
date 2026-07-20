@@ -35,7 +35,9 @@ export const test_requested_languages_are_normalized_before_global_source_select
 async function assertGenericDuplicatesAndGlobalCap(root: string): Promise<void> {
   const calls: GraphLanguage[] = [];
   const dependencies: BuildDependencies = {
-    selectGraphProviders: () => ({ candidates: [], warnings: [] }),
+    // No strict provider is registered, so every language reaches the generic
+    // lane and this case measures what it was written to measure.
+    providers: [],
     collectLanguageGraph: async (_root, language) => {
       calls.push(language);
       return {
@@ -112,16 +114,7 @@ async function assertStrictDuplicatesAreNotOpenedTwice(root: string): Promise<vo
       keepAlive: true,
     },
     {
-      selectGraphProviders: () => ({
-        candidates: [
-          {
-            provider: ProviderFixtures.provider(),
-            languages: ["typescript"],
-            command: { command: process.execPath, args: [] },
-          },
-        ],
-        warnings: [],
-      }),
+      providers: [ProviderFixtures.provider()],
       collectProviderGraph: async () => {
         calls += 1;
         return {

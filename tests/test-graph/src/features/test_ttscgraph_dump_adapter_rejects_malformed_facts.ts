@@ -232,6 +232,21 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
     },
   );
 
+  const ordinalManifest = good();
+  ordinalManifest.provenance = provenance([
+    "src/\u00e4.ts",
+    "src/z.ts",
+    "src/a\u0308.ts",
+    "src/a.ts",
+  ]);
+  TestValidator.equals(
+    "strict manifest serialization uses canonical ordinal source order",
+    [...adaptTtscGraphDump(ordinalManifest, project).sources.keys()].map(
+      (file) => path.basename(file),
+    ),
+    ["a.ts", "a\u0308.ts", "z.ts", "\u00e4.ts"],
+  );
+
   const globalDiagnostic = good();
   globalDiagnostic.diagnostics.push({
     file: "",

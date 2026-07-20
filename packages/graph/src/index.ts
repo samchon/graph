@@ -1,5 +1,6 @@
 export * from "./application";
 export * from "./indexer";
+export { compareOrdinal } from "@samchon/graph-sitter";
 /** What a graph result says about where its facts came from. */
 export * from "./operations/RESULT_AUDIT";
 export * from "./operations/RESULT_AUDIT_DETAILS";

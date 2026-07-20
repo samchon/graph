@@ -6,5 +6,6 @@
  * compiler-resolved provider required by `ITtscGraphApplication` parity.
  */
 export * from "./indexer";
+export * from "./compareOrdinal";
 export * from "./structures";
 export * from "./typings";

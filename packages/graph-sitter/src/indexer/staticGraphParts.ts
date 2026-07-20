@@ -4,6 +4,7 @@ import {
   ISamchonGraphEvidence,
   ISamchonGraphNode,
 } from "../structures";
+import { compareOrdinal } from "../compareOrdinal";
 import { GraphLanguage, GraphNodeKind } from "../typings";
 import { IGraphSitterOptions } from "./IGraphSitterOptions";
 import { CppDeclarations } from "./CppDeclarations";
@@ -668,7 +669,7 @@ function connectProjectWideCppOwners(
       (a, b) =>
         Number(b.endIndex > b.startIndex) - Number(a.endIndex > a.startIndex) ||
         Number(b.node.exported === true) - Number(a.node.exported === true) ||
-        a.node.id.localeCompare(b.node.id),
+        compareOrdinal(a.node.id, b.node.id),
     )[0];
   for (const declaration of declarations) {
     if (declaration.ownerId !== undefined || declaration.ownerName === undefined)

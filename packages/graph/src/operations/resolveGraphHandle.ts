@@ -1,3 +1,4 @@
+import { compareOrdinal } from "@samchon/graph-sitter";
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import { ISamchonGraphNode } from "../structures";
 import { exportFanIn } from "./exportFanIn";
@@ -240,17 +241,12 @@ function rank(
     .sort((a, b) => {
       const score = b.score - a.score;
       return score === 0
-        ? compareIdentity(a.node.id, b.node.id)
+        ? compareOrdinal(a.node.id, b.node.id)
         : score;
     })
     .slice(0, candidateLimit)
     .map(({ node }) => node);
   return { candidates: ranked };
-}
-
-/** Stable tie-break for position-invariant ids without locale collation. */
-function compareIdentity(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function candidateScore(

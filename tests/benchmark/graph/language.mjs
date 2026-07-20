@@ -6,6 +6,9 @@ import cp from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ordinal from "./ordinal.cjs";
+
+const { compareOrdinal } = ordinal;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const benchmarkDir = path.resolve(here, "..");
@@ -291,7 +294,7 @@ function findFiles(root, name) {
       } else if (entry.isFile() && entry.name === name) found.push(dir);
     }
   }
-  return found.sort((a, b) => a.localeCompare(b));
+  return found.sort(compareOrdinal);
 }
 
 function prepareExternalServerArgs(spec, repoDir) {

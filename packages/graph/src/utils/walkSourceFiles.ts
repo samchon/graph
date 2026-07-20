@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { compareOrdinal } from "@samchon/graph-sitter";
 import { DEFAULT_IGNORES } from "./DEFAULT_IGNORES";
 import { IWalkOptions } from "./IWalkOptions";
 
@@ -15,7 +16,7 @@ export function walkSourceFiles(root: string, options: IWalkOptions): string[] {
     } catch {
       return;
     }
-    entries.sort((a, b) => a.name.localeCompare(b.name));
+    entries.sort((a, b) => compareOrdinal(a.name, b.name));
     for (const entry of entries) {
       if (options.maxFiles !== undefined && out.length >= options.maxFiles) break;
       const abs = path.join(dir, entry.name);

@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import {
   IGraphSemanticIdentity,
   callableBaseOf,
@@ -28,6 +30,10 @@ export function assignSemanticIdentities(
     idCounts.set(node.id, (idCounts.get(node.id) ?? 0) + 1);
   }
   const remap = new Map<string, IRemappedNode[]>();
+  const candidates: Array<{
+    node: ISamchonGraphNode;
+    identity: IGraphSemanticIdentity;
+  }> = [];
   for (const node of nodes) {
     // ttsc's strict slice preserves its exact legacy ids, and its generic
     // fallback has the same public convention when it is unambiguous. Promote
@@ -42,9 +48,39 @@ export function assignSemanticIdentities(
     }
     const identity = genericIdentityOf(node);
     if (identity === undefined) continue;
+    candidates.push({ node, identity });
+  }
+  const collisionGroups = new Map<string, typeof candidates>();
+  for (const candidate of candidates) {
+    const id = semanticGraphNodeId(
+      candidate.identity,
+      candidate.node.qualifiedName ?? candidate.node.name,
+    );
+    const group = collisionGroups.get(id);
+    if (group === undefined) collisionGroups.set(id, [candidate]);
+    else group.push(candidate);
+  }
+  for (const group of collisionGroups.values()) {
+    const representative = group[0]!.node;
+    const conflicted = group.some(
+      ({ node }) => !sameSemanticFact(representative, node),
+    );
+    for (const candidate of group) {
+      const identity = conflicted
+        ? {
+            ...candidate.identity,
+            stability: "generation" as const,
+            generation: generationOf(
+              candidate.node,
+              canonicalSemanticFactKey(candidate.node),
+            ),
+          }
+        : candidate.identity;
+      const { node } = candidate;
     const oldId = node.id;
-    node.id = semanticGraphNodeId(identity, node.qualifiedName ?? node.name);
-    push(remap, oldId, { node, id: node.id });
+      node.id = semanticGraphNodeId(identity, node.qualifiedName ?? node.name);
+      push(remap, oldId, { node, id: node.id });
+    }
   }
   for (let index = edges.length - 1; index >= 0; index--) {
     const edge = edges[index]!;
@@ -65,6 +101,32 @@ export function assignSemanticIdentities(
     edge.from = from;
     edge.to = to;
   }
+}
+
+/**
+ * Two generic observations may represent one declaration at separate spans.
+ * Their portable symbol facts must agree; otherwise the producer has no
+ * durable discriminator and each observation is explicitly generation-scoped.
+ */
+function sameSemanticFact(
+  left: ISamchonGraphNode,
+  right: ISamchonGraphNode,
+): boolean {
+  return isDeepStrictEqual(semanticFactOf(left), semanticFactOf(right));
+}
+
+function semanticFactOf(node: ISamchonGraphNode): Omit<ISamchonGraphNode, "id"> {
+  const {
+    id: _id,
+    file: _file,
+    evidence: _evidence,
+    implementation: _implementation,
+    ignored: _ignored,
+    exported: _exported,
+    closure: _closure,
+    ...fact
+  } = node;
+  return { ...fact, file: "" };
 }
 
 function genericIdentityOf(
@@ -116,14 +178,37 @@ function overloadOf(name: string): string | undefined {
   return name.slice(open).replace(/\s+/g, " ").trim();
 }
 
-function generationOf(node: ISamchonGraphNode): string {
+function generationOf(
+  node: ISamchonGraphNode,
+  semanticFactKey?: string,
+): string {
   const evidence = node.evidence;
   return [
     evidence?.file ?? node.file,
     evidence?.startLine ?? 0,
     evidence?.startCol ?? 0,
     node.qualifiedName ?? node.name,
+    ...(semanticFactKey === undefined ? [] : [semanticFactKey]),
   ].join("\0");
+}
+
+/**
+ * A provider can emit conflicting observations at exactly the same coordinate.
+ * Keep their final generation identities distinct without letting object-key
+ * insertion order make the graph move between equivalent producer payloads.
+ */
+function canonicalSemanticFactKey(node: ISamchonGraphNode): string {
+  return JSON.stringify(canonicalize(semanticFactOf(node)))!;
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, nested]) => [key, canonicalize(nested)]),
+  );
 }
 
 function anonymousName(name: string): boolean {
@@ -143,6 +228,8 @@ function endpointOf(
 ): string | undefined {
   if (candidates === undefined || candidates.length === 0) return current;
   if (candidates.length === 1) return candidates[0]!.id;
+  const ids = new Set(candidates.map(({ id }) => id));
+  if (ids.size === 1) return candidates[0]!.id;
   const exact = candidates.filter(({ node }) =>
     sameStart(node.evidence, evidence),
   );

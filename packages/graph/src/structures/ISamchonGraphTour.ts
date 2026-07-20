@@ -137,18 +137,23 @@ export namespace ISamchonGraphTour {
   /**
    * A node a flow reached, as its handle and its declaration line.
    *
-   * A node id _is_ its coordinates — `path/to/file.ts#Owner.member:kind` — so a
-   * reached node carrying `file` and `kind` beside it bought the same fact
-   * three times. Across the benchmark corpus that repetition was 15% of every
-   * tour, and a tour is re-sent whole on every turn of the conversation it
-   * opened.
+   * Legacy ids carry their location as `path/to/file.ts#Owner.member:kind`;
+   * opaque semantic ids deliberately do not. Only those opaque ids therefore
+   * retain their declaring `file` and `kind` here, so every reached handle
+   * remains inspectable.
    */
   export interface IReached {
-    /** Stable node id for later graph calls: `file#Qualified.Name:kind`. */
+    /** Stable node id for later graph calls. */
     id: string;
 
     /** Qualified symbol name when available, otherwise the simple name. */
     name: string;
+
+    /** Declaration file when this node has an opaque semantic id. */
+    file?: string;
+
+    /** Declaration kind when this node has an opaque semantic id. */
+    kind?: string;
 
     /** 1-based declaration line, when known. */
     line?: number;

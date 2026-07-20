@@ -227,7 +227,7 @@ function synthesize(dump: ISamchonGraphDump): {
 } {
   // Clone nodes so the ownership synthesis does not mutate the caller's dump,
   // and put back the file the indexer left out of every span: a node's span is
-  // in the node's file, an edge's span is in the file its `from` id names. The
+  // in the node's file, an edge's span is in its source node's file. The
   // indexer omits both because they are exactly reconstructible and they are
   // not small — the two copies are 17% of the document, 55 MB of VS Code's 323
   // MB, paid again in the encode, the pipe, the parse and the validation.

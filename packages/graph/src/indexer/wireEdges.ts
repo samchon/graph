@@ -16,7 +16,7 @@ import { spanWithoutFile } from "./spanWithoutFile";
  */
 export function wireEdges(
   edges: readonly ISamchonGraphEdge[],
-  nodes: readonly ISamchonGraphNode[],
+  nodes: readonly ISamchonGraphNode[] = [],
 ): ISamchonGraphDump.IEdge[] {
   const files = new Map(nodes.map((node) => [node.id, node.file]));
   return edges.map((edge) => {

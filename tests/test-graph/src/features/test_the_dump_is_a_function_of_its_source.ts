@@ -87,20 +87,17 @@ const scenario_a_span_does_not_carry_the_file_the_reader_already_holds = (
 
   // And the reader gets the whole evidence back, file included.
   const graph = SamchonGraphMemory.from(dump);
-  const create = graph.legacyNodes(
-    "src/order.ts#OrderService.create:method",
-  )[0];
+  const create = graph.node("src/order.ts#OrderService.create:method");
   TestValidator.equals(
-    "the loader restores a semantic node's own file in its span",
+    "the loader restores a node's own file in its span",
     create?.evidence?.file,
     "src/order.ts",
   );
-  const call =
-    create === undefined
-      ? undefined
-      : graph.outgoing(create.id).find((edge) => edge.kind === "calls");
+  const call = graph
+    .outgoing("src/order.ts#OrderService.create:method")
+    .find((edge) => edge.kind === "calls");
   TestValidator.equals(
-    "the loader restores an opaque semantic edge source file in its span",
+    "the loader restores an edge source file in its span",
     call?.evidence?.file,
     "src/order.ts",
   );

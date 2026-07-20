@@ -150,6 +150,77 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
   );
   TestValidator.equals("the omitted endpoint is reported", ambiguousWarnings.length, 1);
 
+  const duplicateLocations: ISamchonGraphNode[] = [
+    gnode({
+      id: "src/service.cs#Service.GetEnumerator():method",
+      language: "csharp",
+      name: "GetEnumerator()",
+      qualifiedName: "Service.GetEnumerator()",
+      modifiers: ["public"],
+      evidence: { file: "src/service.cs", startLine: 1 },
+    }),
+    gnode({
+      id: "src/service.cs#Service.GetEnumerator():method",
+      language: "csharp",
+      name: "GetEnumerator()",
+      qualifiedName: "Service.GetEnumerator()",
+      modifiers: ["public"],
+      evidence: { file: "src/service.cs", startLine: 8 },
+    }),
+  ];
+  const duplicateLocationEdges: ISamchonGraphEdge[] = [
+    {
+      kind: "calls",
+      from: "src/service.cs#Service.GetEnumerator():method",
+      to: "src/service.cs#Service.GetEnumerator():method",
+    },
+  ];
+  assignSemanticIdentities(duplicateLocations, duplicateLocationEdges);
+  TestValidator.equals(
+    "matching observations retain one persistent declaration identity",
+    duplicateLocations[0]!.id,
+    duplicateLocations[1]!.id,
+  );
+  TestValidator.equals(
+    "an edge to duplicate observations with one final id remains unambiguous",
+    duplicateLocationEdges[0],
+    {
+      kind: "calls",
+      from: duplicateLocations[0]!.id,
+      to: duplicateLocations[0]!.id,
+    },
+  );
+  const conflictingFacts: ISamchonGraphNode[] = [
+    { ...duplicateLocations[0]!, id: "src/service.cs#Service.GetEnumerator():method", modifiers: ["public"], evidence: { file: "src/service.cs", startLine: 1 } },
+    { ...duplicateLocations[1]!, id: "src/service.cs#Service.GetEnumerator():method", modifiers: ["private"], evidence: { file: "src/service.cs", startLine: 8 } },
+  ];
+  assignSemanticIdentities(conflictingFacts);
+  TestValidator.predicate(
+    "conflicting generic facts become distinct generation-scoped identities",
+    conflictingFacts.every((node) => node.id.startsWith("@g2/")) &&
+      conflictingFacts[0]!.id !== conflictingFacts[1]!.id,
+  );
+  const sameCoordinateConflicts: ISamchonGraphNode[] = [
+    {
+      ...duplicateLocations[0]!,
+      id: "src/service.cs#Service.GetEnumerator():method",
+      modifiers: ["public"],
+      evidence: { file: "src/service.cs", startLine: 1 },
+    },
+    {
+      ...duplicateLocations[1]!,
+      id: "src/service.cs#Service.GetEnumerator():method",
+      modifiers: ["private"],
+      evidence: { file: "src/service.cs", startLine: 1 },
+    },
+  ];
+  assignSemanticIdentities(sameCoordinateConflicts);
+  TestValidator.predicate(
+    "same-coordinate conflicting facts receive distinct generation identities",
+    sameCoordinateConflicts.every((node) => node.id.startsWith("@g2/")) &&
+      sameCoordinateConflicts[0]!.id !== sameCoordinateConflicts[1]!.id,
+  );
+
   const finalNodes: ISamchonGraphNode[] = [
     gnode({ id: "src/a.go#outer:function", name: "outer", evidence: { file: "src/a.go", startLine: 1, endLine: 12 } }),
     gnode({ id: "src/a.go#outer.value:variable", name: "value", kind: "variable", qualifiedName: "outer.value", evidence: { file: "src/a.go", startLine: 3 } }),
@@ -242,7 +313,7 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
   // wireEdges: a source in the node map, a legacy source absent from it, and an
   // opaque semantic source absent from it.
   const { wireEdges } = await importLib<{
-    wireEdges: (edges: readonly ISamchonGraphEdge[], nodes: readonly ISamchonGraphNode[]) => ISamchonGraphDump.IEdge[];
+    wireEdges: (edges: readonly ISamchonGraphEdge[], nodes?: readonly ISamchonGraphNode[]) => ISamchonGraphDump.IEdge[];
   }>("indexer/wireEdges.js");
   const wired = wireEdges(
     [
@@ -253,6 +324,14 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
     [gnode({ id: "src/a.go#present:function", name: "present", file: "src/a.go" })],
   );
   TestValidator.equals("every edge survives wiring", wired.length, 3);
+  const legacyWired = wireEdges([
+    { kind: "calls", from: strictA.id, to: "t", evidence: { file: "src/a.go", startLine: 1 } },
+  ]);
+  TestValidator.equals(
+    "one-argument edge wiring retains opaque source evidence",
+    legacyWired[0]?.evidence?.file,
+    "src/a.go",
+  );
 
   // overrideEdges: two members that share a signature key.
   const { overrideEdges } = await importLib<{

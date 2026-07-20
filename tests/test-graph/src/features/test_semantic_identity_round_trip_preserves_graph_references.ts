@@ -8,8 +8,12 @@ import {
   wireEdges,
   wireNodes,
 } from "@samchon/graph";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 
-export const test_semantic_identity_round_trip_preserves_graph_references = () => {
+import { GraphPaths } from "../internal/GraphPaths";
+
+export const test_semantic_identity_round_trip_preserves_graph_references = async () => {
   const classId = id("Demo", "class", "T:Demo");
   const methodId = id("Demo.run()", "method", "M:Demo.run()");
   const nodes: ISamchonGraphNode[] = [
@@ -38,6 +42,18 @@ export const test_semantic_identity_round_trip_preserves_graph_references = () =
         endCol: 9,
       },
     },
+    {
+      from: methodId,
+      to: classId,
+      kind: "calls",
+      evidence: {
+        file: "src/Demo.java",
+        startLine: 5,
+        startCol: 5,
+        endLine: 5,
+        endCol: 9,
+      },
+    },
   ];
   const wireNodesResult = wireNodes(nodes);
   const wireEdgesResult = wireEdges(edges, nodes);
@@ -57,7 +73,7 @@ export const test_semantic_identity_round_trip_preserves_graph_references = () =
   TestValidator.equals(
     "dump reload preserves semantic endpoints",
     memory.outgoing(methodId).map((edge) => [edge.kind, edge.to]),
-    [["type_ref", classId]],
+    [["type_ref", classId], ["calls", classId]],
   );
   TestValidator.equals(
     "dump reload restores semantic edge evidence from its source node",
@@ -69,6 +85,42 @@ export const test_semantic_identity_round_trip_preserves_graph_references = () =
     memory.outgoing(classId).some(
       (edge) => edge.kind === "contains" && edge.to === methodId,
     ),
+  );
+
+  const { runTour } = await import(
+    pathToFileURL(
+      path.join(GraphPaths.graphPackageRoot, "lib", "operations", "runTour.js"),
+    ).href,
+  ) as {
+    runTour: (
+      graph: SamchonGraphMemory,
+      props: { type: "tour"; reinterpretations: string[]; limit: number },
+      question: string,
+    ) => {
+      result: {
+        primaryFlow: Array<{
+          reached: Array<{ id: string; file?: string; kind?: string }>;
+        }>;
+      };
+    };
+  };
+  const tour = runTour(
+    memory,
+    { type: "tour", reinterpretations: ["Demo.run()"], limit: 1 },
+    "Demo.run",
+  );
+  TestValidator.equals(
+    "a tour keeps the opaque reached handle location",
+    tour.result.primaryFlow
+      .flatMap((flow) => flow.reached)
+      .find((node) => node.id === classId),
+    {
+      id: classId,
+      name: "Demo",
+      file: "src/Demo.java",
+      kind: "class",
+      line: 1,
+    },
   );
 
   const viewed = reduce({

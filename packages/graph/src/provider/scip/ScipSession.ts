@@ -36,6 +36,7 @@ export class ScipSession implements IBulkGraphSession {
   private universe = "";
   private version = 0;
   private closed = false;
+  private closing: Promise<void> | undefined;
   private queue: Promise<void> = Promise.resolve();
 
   public constructor(options: ScipSession.IOptions) {
@@ -89,17 +90,55 @@ export class ScipSession implements IBulkGraphSession {
     });
   }
 
-  public async close(): Promise<void> {
+  /**
+   * Begin shutdown immediately, and settle only after every owned child exits.
+   *
+   * The result is cached because close is idempotent by contract and because
+   * the naive form is worse than merely repetitive: a second caller would find
+   * the child set already emptied by the first, and return *before* those
+   * children had exited. Two callers would then disagree about whether the
+   * session was closed, and the one who was wrong is the one who asked second.
+   */
+  public close(): Promise<void> {
+    if (this.closing !== undefined) return this.closing;
     this.closed = true;
     // Only the exact objects this session spawned. Nothing here scans the
     // process table or matches on a name: another copy of the same indexer
     // belongs to somebody else.
     const owned = [...this.children];
     this.children.clear();
-    for (const child of owned) {
-      child.process.kill();
+    this.closing = Promise.all(owned.map((child) => this.terminate(child))).then(
+      () => undefined,
+    );
+    return this.closing;
+  }
+
+  /**
+   * End one owned child, escalating if it does not go.
+   *
+   * An indexer that ignores its termination signal — mid-write, blocked on a
+   * lock, wedged in a runtime's shutdown hook — would otherwise hold `close`
+   * open forever, and a resident server's shutdown with it. The grace period
+   * is short because nothing here needs a clean exit: the artifact directory
+   * is discarded either way.
+   */
+  private terminate(child: ISpawned): Promise<undefined> {
+    child.process.kill();
+    let timer: NodeJS.Timeout | undefined;
+    const escalated = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => {
+        /* c8 ignore next -- reached only when a child ignores its first
+         * signal, which no deterministic fixture can stage portably. */
+        child.process.kill("SIGKILL");
+        resolve(undefined);
+      }, TERMINATION_GRACE_MS);
+      timer.unref();
+    });
+    return Promise.race([child.exit, escalated]).then(async () => {
+      if (timer !== undefined) clearTimeout(timer);
       await child.exit;
-    }
+      return undefined;
+    });
   }
 
   private async build(
@@ -371,6 +410,9 @@ function deferred(): { promise: Promise<undefined>; settle: () => void } {
   });
   return { promise, settle };
 }
+
+/** How long an owned child may ignore its termination signal. */
+const TERMINATION_GRACE_MS = 1_000;
 
 /** The dump body contract this session emits. */
 const SCIP_SCHEMA_VERSION = 5;

@@ -2,7 +2,18 @@
 
 Read this document in full when the user authorizes implementation pull requests or ends a campaign that entered implementation. Also read the repository development, pull-request, and review skills before acting.
 
+## Flow
+
+- [Plan And Claim A Pull Request Wave](#plan-and-claim-a-pull-request-wave)
+- [Keep Working While Commands Run](#keep-working-while-commands-run)
+- [Implement And Revalidate A Batch](#implement-and-revalidate-a-batch)
+- [Remove Every Finished Worktree](#remove-every-finished-worktree)
+- [Repeat A Campaign Cycle](#repeat-a-campaign-cycle)
+- [Final Reconciliation](#final-reconciliation)
+
 ## Plan And Claim A Pull Request Wave
+
+Only an admitted issue can enter implementation. The lead first reopens the issue evidence, reproduces the behavior, verifies ownership and the full consequence surface, compares related open and closed work, and records an accept, partial acceptance, rewrite, combine, split, reject, or defer disposition. A rejected or deferred issue has no worktree or claim pull request.
 
 Build the issue dependency DAG before assigning implementation. Form cohesive batches instead of creating one worktree per issue.
 
@@ -14,15 +25,36 @@ Build the issue dependency DAG before assigning implementation. Form cohesive ba
 When remote work is authorized, the assigned agent claims a batch before implementation:
 
 1. Create an isolated worktree and topic branch from the intended target.
-2. Open a draft pull request that names the complete batch and links every included issue. If the host requires a pushed commit first, use the smallest repository-valid claim commit.
-3. Mark implementation and verification as pending.
-4. Record the batch, worktree, branch, issues, pull request, and initial check state in `.wiki/<campaign>/`.
+2. Create the smallest repository-valid, implementation-free claim commit and push the branch.
+3. Immediately open a draft pull request that names the complete batch and links every included issue.
+4. Mark implementation and verification as pending, then record the batch, worktree, branch, issues, pull request, and initial check state in `.wiki/<campaign>/`.
+5. Start `pnpm install` asynchronously in the worktree, then begin source inspection, consequence analysis, and test design immediately.
 
 The draft reserves the whole batch. Do not create claim branches or pull requests during an audit-only or issue-publication-only phase.
+
+## Keep Working While Commands Run
+
+Start every long local command asynchronously and continue with work that does not depend on its result. `pnpm install`, package builds, language-server or toolchain downloads, and test suites are background work. Watching a CLI process, repeatedly polling it without a decision to make, or reserving an agent solely to wait is not campaign work.
+
+Maintain a compact command record containing the command, worktree, source snapshot, start time, dependent decision, and final result. Check a running command when it exits, at a genuine decision boundary, or before merge. Do not use sleep loops or foreground waits merely to learn that it is still running.
+
+While installation runs, read the admitted issues and nearby implementation, map the consequence surface, and write the implementation and regression tests. Once a stable source-and-test snapshot is committed and pushed, begin solo Self-Review at once and launch each narrow proving test as soon as its prerequisites are ready. A test process may run during review because it does not change the snapshot. Start independent checks together instead of serially waiting for each one to finish.
+
+Ordinary pull-request checks remain required evidence. Monitor them without making an implementation agent idle: continue the current snapshot's Self-Review, documentation audit, generated-surface inspection, or other safe in-scope work until a result creates a decision.
+
+Some boundaries remain strict:
+
+- **A Self-Review round must not race a source change.** Freeze and commit the snapshot before opening the round. If review or a command result requires a change, commit the correction and restart a fresh complete round over the new snapshot.
+- **A merge must not precede its evidence.** Required local results and ordinary checks must be final before merge.
+- **A failed command blocks only dependent decisions.** Continue safe independent work while repairing or awaiting it.
+
+Report any command still running, its dependent decision, and its last observed state when handing work off. Waiting is justified only when the next decision genuinely depends on the completed result and no safe independent work remains.
 
 ## Implement And Revalidate A Batch
 
 Analyze the full consequence and case surface across every issue in the batch. Follow the development skill for regression tests, implementation, documentation, generated artifacts, and narrow-to-broad verification.
+
+A batch progresses through one-way states: admitted, reserved, active, snapshotted, reviewed, verified, then resolved. Active work begins while installation runs. A snapshot is the committed implementation and test program, not the completion of its background commands. Review starts on that immutable snapshot while narrow tests run. Verification consumes every required local and CI result, applies any correction through a new snapshot and fresh review, and only then permits resolution.
 
 An implementation agent may find that an issue is false or too broad. The lead must independently validate that conclusion before changing campaign state:
 
@@ -30,11 +62,11 @@ An implementation agent may find that an issue is false or too broad. The lead m
 - For a confirmed-invalid issue, record the evidence and close the issue only when remote issue mutation is authorized.
 - If no issue remains in the batch, close the claim pull request instead of leaving an orphan reservation.
 
-Commit and push coherent increments to the claimed branch. After every push, follow the pull-request skill and wait for every relevant ordinary check. Do not cancel repository Actions or exact-SHA runs as a campaign shortcut; this repository's cross-platform test and path-sensitive experiment matrices are evidence.
+Commit and push a coherent increment as soon as its source and test program are complete. Do not hold a completed snapshot locally while waiting for tests already running. After every push, follow the pull-request skill and monitor every relevant ordinary check while continuing safe work on the immutable snapshot. Do not cancel repository Actions or exact-SHA runs as a campaign shortcut; this repository's cross-platform test and path-sensitive experiment matrices are evidence.
 
 Paid agent benchmarks, releases, package publication, global language-server installation, and destructive fixture resets remain separate authorization boundaries. Record them as pending when the batch needs evidence that cannot safely run in the current environment.
 
-Before merge, complete solo Self-Review. Under an ordinary campaign, merge only with explicit user authorization. Under a standing mandate to carry the campaign through merge, merge once implementation, Self-Review, local verification, and required checks pass.
+Before merge, complete solo Self-Review. A pending local test or ordinary check never delays the start of that review, but its final result is required before merge. Under an ordinary campaign, merge only with explicit user authorization. Under a standing mandate to carry the campaign through merge, merge once implementation, Self-Review, local verification, and required checks pass.
 
 ## Remove Every Finished Worktree
 

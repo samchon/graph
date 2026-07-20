@@ -664,7 +664,7 @@ export namespace ContractParity {
       },
       {
         reason:
-          "The reference's one Program can make one provenance claim for the entire dump. The combined public dump cannot make that claim until #66 represents every contributing provider and build universe.",
+          "#66 gave the combined dump a provenance claim, but not the reference's singular one: one TypeScript Program resolved the reference's whole dump, while this product's can be owned in part by a compiler, a Clang compilation universe, and a semantic index at once. The claim is therefore per contributing provider, and optional because the generic and static lanes make no such claim at all.",
         layer: "prose",
         from: "every node and edge the build resolved, plus the `provenance` that says which program resolved them.",
         to: "every node and edge the build resolved.",

@@ -35,7 +35,7 @@ export const test_ttscgraph_published_schema3_falls_back_honestly = async () => 
       "the published schema 3 snapshot is refused before the LSP fallback",
       dump.warnings?.some(
         (warning) =>
-          warning.includes("bulk indexing failed") &&
+          warning.includes("provider failed") &&
           warning.includes("dump is schema v3, this client reads v5"),
       ) === true &&
         dump.warnings.every(

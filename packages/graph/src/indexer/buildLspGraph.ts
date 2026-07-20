@@ -18,6 +18,8 @@ import { dumpProvenanceOf } from "../provider/dumpProvenanceOf";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { isBulkGraphSession } from "../provider/isBulkGraphSession";
 import { mergeGraphSlices } from "../provider/mergeGraphSlices";
+import { GRAPH_PROVIDERS } from "../provider/GRAPH_PROVIDERS";
+import { IGraphProvider } from "../provider/IGraphProvider";
 import { selectGraphProviders } from "../provider/selectGraphProviders";
 import { appendAll } from "./appendAll";
 import { dedupeEdges } from "./dedupeEdges";
@@ -39,13 +41,23 @@ import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
 
 interface IBuildLspGraphDependencies {
-  selectGraphProviders: typeof selectGraphProviders;
+  /**
+   * The registry discovery reads.
+   *
+   * The seam is the registry, not the selection. Letting a caller replace
+   * `selectGraphProviders` itself would mean that refusal, command resolution,
+   * project preparation, and the one-owner-per-language check never run on any
+   * path a test exercises — the integration would be proved by a stub standing
+   * exactly where the logic under test belongs. Substituting an entry instead
+   * leaves every one of those steps running against it.
+   */
+  providers: readonly IGraphProvider[];
   collectProviderGraph: typeof collectProviderGraph;
   collectLanguageGraph: typeof collectLanguageGraph;
 }
 
 const DEFAULT_DEPENDENCIES: IBuildLspGraphDependencies = {
-  selectGraphProviders,
+  providers: GRAPH_PROVIDERS,
   collectProviderGraph,
   collectLanguageGraph,
 };
@@ -102,11 +114,12 @@ export async function buildLspGraph(
     const withSources = languages.filter(
       (language) => (selected.byLanguage.get(language) ?? []).length > 0,
     );
-    const selection = resolvedDependencies.selectGraphProviders(
+    const selection = selectGraphProviders(
       root,
       withSources,
       options,
       process.env,
+      resolvedDependencies.providers,
     );
     appendAll(warnings, selection.warnings);
     for (const candidate of selection.candidates) {

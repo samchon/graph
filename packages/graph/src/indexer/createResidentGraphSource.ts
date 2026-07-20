@@ -11,8 +11,7 @@ import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { isBulkGraphSession } from "../provider/isBulkGraphSession";
 import { mergeGraphSlices } from "../provider/mergeGraphSlices";
-import { readText, walkSourceFiles } from "../utils/fs";
-import { allExtensions } from "./allExtensions";
+import { readText } from "../utils/fs";
 import { buildLspGraph } from "./buildLspGraph";
 import { buildStaticGraphResult } from "./buildStaticGraphResult";
 import { staticGraphParts } from "./staticGraphParts";
@@ -22,6 +21,7 @@ import { ILspSession } from "./ILspSession";
 import { IResidentGraphSource } from "./IResidentGraphSource";
 import { languageOf } from "./languageOf";
 import { refreshLanguageSession } from "./refreshLanguageSession";
+import { IGraphSourceSelection, selectGraphSources } from "./selectGraphSources";
 import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
 
@@ -118,6 +118,7 @@ export function createResidentGraphSource(
     const warnings: string[] = [];
     const sources = new Map<string, string>();
     const generations = new Map(current.generations);
+    const selected = selectGraphSources(root, options);
 
     for (const [language, session] of current.sessions) {
       if (isBulkGraphSession(session)) {
@@ -139,10 +140,7 @@ export function createResidentGraphSource(
         generations.set(language, refresh.generation);
         continue;
       }
-      const files = walkSourceFiles(root, {
-        extensions: allExtensions([language]),
-        maxFiles: options.maxFiles,
-      });
+      const files = selected.byLanguage.get(language) ?? [];
       const result = await refreshLanguageSession(
         session,
         files,
@@ -159,12 +157,15 @@ export function createResidentGraphSource(
       }
     }
     if (current.staticLanguages.length > 0) {
-      const fallback = staticGraphParts({
-        ...options,
-        cwd: root,
-        mode: "static",
-        languages: current.staticLanguages,
-      });
+      const fallback = staticGraphParts(
+        {
+          ...options,
+          cwd: root,
+          mode: "static",
+          languages: current.staticLanguages,
+        },
+        filesForLanguages(selected, current.staticLanguages),
+      );
       nodes.push(...fallback.nodes);
       edges.push(...fallback.edges);
       warnings.push(...fallback.warnings);
@@ -464,10 +465,7 @@ function snapshotSources(
   options: IBuildGraphOptions,
   excludedLanguages: ReadonlySet<GraphLanguage> = new Set(),
 ): Map<string, string> {
-  const files = walkSourceFiles(root, {
-    extensions: allExtensions(options.languages),
-    maxFiles: options.maxFiles,
-  });
+  const files = selectGraphSources(root, options).files;
   const snapshot = new Map<string, string>();
   for (const abs of files) {
     if (excludedLanguages.has(languageOf(abs))) continue;
@@ -479,6 +477,18 @@ function snapshotSources(
     snapshot.set(abs, createHash("sha256").update(text).digest("hex"));
   }
   return snapshot;
+}
+
+function filesForLanguages(
+  selected: IGraphSourceSelection,
+  languages: readonly GraphLanguage[],
+): string[] {
+  // Resident static languages came from this source-selection-backed dump, so
+  // every partition is present before the fallback is refreshed.
+  const allowed = new Set(
+    languages.flatMap((language) => selected.byLanguage.get(language)!),
+  );
+  return selected.files.filter((file) => allowed.has(file));
 }
 
 /** Content hashes for the exact texts an index pass consumed. */

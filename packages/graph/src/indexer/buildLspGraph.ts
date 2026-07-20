@@ -10,7 +10,7 @@ import {
   ISamchonGraphNode,
 } from "../structures";
 import { GraphLanguage } from "../typings";
-import { projectRelative, readText, walkSourceFiles } from "../utils/fs";
+import { projectRelative, readText } from "../utils/fs";
 import { fileFromUri, fileUri, isSubPath } from "../utils/path";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { isBulkGraphSession } from "../provider/isBulkGraphSession";
@@ -21,7 +21,6 @@ import { ttscGraphStrictRefusal } from "../provider/ttscgraph/ttscGraphStrictRef
 import { appendAll } from "./appendAll";
 import { dedupeEdges } from "./dedupeEdges";
 import { dedupeNodes } from "./dedupeNodes";
-import { discoverLanguages } from "./discoverLanguages";
 import { ensureCompileCommands } from "./ensureCompileCommands";
 import { ensurePubDeps } from "./ensurePubDeps";
 import { finalizeGraph } from "./finalizeGraph";
@@ -29,8 +28,9 @@ import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IIndexerResult } from "./IIndexerResult";
 import { ILspSession } from "./ILspSession";
 import { languageIdOf } from "./languageIdOf";
-import { allExtensions, languageOf, specOf } from "./languages";
+import { specOf } from "./languages";
 import { scanSession } from "./scanSession";
+import { IGraphSourceSelection, selectGraphSources } from "./selectGraphSources";
 import { IStaticGraphParts } from "./IStaticGraphParts";
 import { staticGraphParts } from "./staticGraphParts";
 import { wireEdges } from "./wireEdges";
@@ -57,7 +57,8 @@ export async function buildLspGraph(
     ...dependencies,
   };
   const root = path.resolve(options.cwd ?? process.cwd());
-  const languages = options.languages ?? discoverLanguages(root, options);
+  const selected = selectGraphSources(root, options);
+  const languages = selected.languages;
   const nodes: ISamchonGraphNode[] = [];
   const edges: ISamchonGraphEdge[] = [];
   const strictNodes: ISamchonGraphNode[] = [];
@@ -87,10 +88,7 @@ export async function buildLspGraph(
     if (languages.includes("dart")) ensurePubDeps(root, options.pubCommand);
 
     for (const language of languages) {
-      const files = walkSourceFiles(root, {
-        extensions: allExtensions([language]),
-        maxFiles: options.maxFiles,
-      });
+      const files = selected.byLanguage.get(language) ?? [];
       if (files.length === 0) continue;
       if (language === "typescript") {
         // The provider decides whether it can honour these options; this loop only
@@ -212,12 +210,15 @@ export async function buildLspGraph(
     // export surface is followed once across the whole project, so a barrel in one
     // lane can still publish a symbol declared in the other.
     if (staticFallbackLanguages.length > 0) {
-      const fallback = staticGraphParts({
-        ...options,
-        cwd: root,
-        mode: "static",
-        languages: staticFallbackLanguages,
-      });
+      const fallback = staticGraphParts(
+        {
+          ...options,
+          cwd: root,
+          mode: "static",
+          languages: staticFallbackLanguages,
+        },
+        filesForLanguages(selected, staticFallbackLanguages),
+      );
       appendSources(sources, fallback.sources);
       if (lspNodeCount === 0) {
         return {
@@ -233,7 +234,7 @@ export async function buildLspGraph(
     }
 
     if (nodes.length === 0 && strictNodes.length === 0) {
-      const fallback = staticGraphParts(options);
+      const fallback = staticGraphParts(options, selected.files);
       appendSources(sources, fallback.sources);
       return {
         dump: staticDump(fallback, warnings),
@@ -284,6 +285,18 @@ export async function buildLspGraph(
     }
     throw error;
   }
+}
+
+function filesForLanguages(
+  selected: IGraphSourceSelection,
+  languages: readonly GraphLanguage[],
+): string[] {
+  // A fallback language is added only after this exact selection supplied one
+  // of its files, so each partition is present here.
+  const allowed = new Set(
+    languages.flatMap((language) => selected.byLanguage.get(language)!),
+  );
+  return selected.files.filter((file) => allowed.has(file));
 }
 
 async function closeKeptSessions(

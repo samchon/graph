@@ -6,6 +6,7 @@ import { createResidentGraphSource } from "../indexer/createResidentGraphSource"
 import { discoverLanguages } from "../indexer/discoverLanguages";
 import { IBuildGraphOptions } from "../indexer/IBuildGraphOptions";
 import { IResidentGraphSource } from "../indexer/IResidentGraphSource";
+import { normalizeRequestedLanguages } from "../indexer/selectGraphSources";
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import { ISamchonGraphDump } from "../structures";
@@ -57,7 +58,9 @@ export async function startServer(
     );
   } else {
     const root = path.resolve(options.cwd ?? process.cwd());
-    languages = options.languages ?? discoverLanguages(root, options);
+    languages =
+      normalizeRequestedLanguages(options.languages) ??
+      discoverLanguages(root, options);
     const opened = createResidentGraphSource(options);
     resident = opened;
     source = createResidentGraphMemorySource(opened);

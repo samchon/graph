@@ -33,6 +33,7 @@ export * from "./refreshLanguageSession";
 export * from "./resolveModuleFile";
 export * from "./resolveType";
 export * from "./scanSession";
+export * from "./selectGraphSources";
 export * from "./spanWithoutFile";
 export * from "./specOf";
 export * from "./staticGraphParts";

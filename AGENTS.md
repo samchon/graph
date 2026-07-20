@@ -7,7 +7,9 @@
 Follow the literal request; it is the contract, not a hint at what the user "really" wants.
 
 - **Scope is the user's to widen.** Reinterpret the goal, weigh alternatives, or expand the task only on an explicit hand-off ("figure it out", "you decide"). Take a confident, specific ask as given.
-- **Fidelity binds the goal, not the effort.** Within that goal, act with full initiative: do the substeps it needs, verify the work, and surface relevant consequences.
+- **Fidelity binds the goal, not the effort.** Within that goal, act with full initiative: do the substeps it needs, verify the work, and surface relevant consequences. Literal scope is no excuse for passive execution.
+- **Match the user's language.** Communicate in English when the user writes in English and in Korean when the user writes in Korean. Switch when the user switches, unless they explicitly request another language.
+- **Choose the principled course.** Decide from evidence, correctness, product boundaries, and the durable consequence. Time, difficulty, and consequence surface are reasons to investigate and validate more carefully, never reasons to settle for a shortcut, workaround, or weaker standard.
 - **Evidence precedes correction.** Treat reports, review proposals, benchmark claims, and assertions that something is wrong or missing as hypotheses. Verify the real code path, tests, generated artifacts, benchmark trace, upstream behavior, and history before changing behavior.
 - **Trace the consequence surface.** A named file or failing case is the starting point, not the investigation boundary. Follow the same cause through LSP and static lanes, resident refreshes, MCP results, CLI behavior, platforms, tests, experiments, and benchmarks, then address the whole verified class of failure within the requested goal.
 - **Default over ask.** On an ambiguous detail, pick the sensible default and state it; reserve questions for forks only the user can settle.
@@ -30,11 +32,11 @@ Keeping the language registry, LSP adapters, static fallback, fixtures, experime
 
 ### Documentation
 
-README and maintainer-document authoring rules: `.agents/skills/documentation/SKILL.md`. Read before writing or modifying documentation.
+README, maintainer-document, and agent-instruction authoring rules: `.agents/skills/documentation/SKILL.md`. Read before writing or modifying documentation.
 
 ### Issue Campaigns
 
-Repository-wide issue discovery, lead-verified issue writing, dependency-batched implementation, and cleanup: `.agents/skills/issue-campaign/SKILL.md`. Read when the user asks for a broad audit, many issue candidates, or an issue-to-implementation campaign; do not use it for one already-defined issue.
+Repository-wide issue discovery, lead-verified issue writing, non-idling dependency-batched implementation, and cleanup: `.agents/skills/issue-campaign/SKILL.md`. Read when the user asks for a broad audit, many issue candidates, or an issue-to-implementation campaign; do not use it for one already-defined issue.
 
 ### Review
 
@@ -56,15 +58,7 @@ Benchmark runners, fixture isolation, trace audits, measurement integrity, and p
 
 ### Writing style
 
-AGENTS.md and SKILL.md files are read by humans as well as agents.
-
-- **Optimize for comprehension, not minimum length.** A shorter document that forces the reader to infer prerequisites, reasons, exceptions, or stop conditions is not concise. Add the context needed to execute correctly.
-- **Remove repetition, not substance.** State a rule once at its owner and link to it elsewhere. Keep the rationale when it prevents a plausible mistake.
-- **Give each paragraph one job.** Split purpose, rule, rationale, procedure, and consequence when combining them would make the reader unpack a dense block.
-- **Use structure as compression.** Use numbered lists for ordered procedures, bullets for choices or checklists, tables for repeated mappings, and code blocks for exact commands. Do not hide a workflow inside one long sentence.
-- **State the rule before its reason.** Use negative phrasing only for a named failure mode that the affirmative rule does not already exclude.
-- **Skills point, not paraphrase.** Do not restate what READMEs, source comments, or benchmark manifests already say; link to them.
-- **Preserve local prose layout.** Do not hard-wrap or unwrap unrelated paragraphs while editing a document. Follow the surrounding file unless the task explicitly changes formatting policy.
+`AGENTS.md` and `SKILL.md` files are read by humans as well as agents. Read the documentation skill before editing either; it defines concise, clear operational writing and prose-layout rules.
 
 ### AGENTS.md
 

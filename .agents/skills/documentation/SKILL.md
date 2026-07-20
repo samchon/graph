@@ -1,6 +1,6 @@
 ---
 name: documentation
-description: Defines public README and maintainer-document structure, source-of-truth boundaries, prose formatting, and voice for @samchon/graph. Use before writing, modifying, renaming, or moving repository Markdown documentation, CLI or MCP examples, benchmark methodology, or language-support instructions.
+description: Defines public README, maintainer-document, and agent-instruction structure, source-of-truth boundaries, concise prose, formatting, and voice for @samchon/graph. Use before writing, modifying, renaming, or moving repository Markdown documentation, CLI or MCP examples, benchmark methodology, language-support instructions, AGENTS.md, or SKILL.md files.
 ---
 
 # Documentation
@@ -31,6 +31,19 @@ Do not weaken the test, hand-edit generated package output, or leave examples de
 - `.agents/skills/` owns agent workflows and durable repository contracts; it points to source and READMEs rather than duplicating them.
 
 Keep one audience and task per document. Put user setup in the root README, experiment operation beside the experiment, and benchmark methodology beside the harness.
+
+## Agent Instructions
+
+`AGENTS.md` and `SKILL.md` files are operational documents for humans and agents. Keep only the product-wide contract in `AGENTS.md`, the always-applicable procedure in `SKILL.md`, and conditional detail in a linked sibling document.
+
+Concise and clear means:
+
+- Include the context needed to act correctly. Do not make the reader infer prerequisites, exceptions, reasons, or stop conditions merely to shorten the document.
+- State each rule at its owning document and link to it elsewhere. Remove repeated wording, not necessary substance, and preserve rationale when it prevents a plausible mistake.
+- Give each paragraph one job. Separate purpose, rule, rationale, procedure, and consequence when combining them obscures the action.
+- Use structure to compress meaning: ordered lists for procedures, bullets for choices and checks, tables for repeated mappings, and code blocks for exact commands. Do not hide a workflow inside one long sentence.
+- State the rule before its reason. Use a negative rule only when it prevents a named failure that the affirmative rule does not already exclude.
+- Link to READMEs, source comments, benchmark manifests, and other owning documents instead of paraphrasing them.
 
 ## Prose Layout
 

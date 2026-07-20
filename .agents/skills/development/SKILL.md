@@ -16,6 +16,7 @@ These approaches are never acceptable:
 
 ## Work Rules
 
+- Choose the principled course. Time, difficulty, and the breadth of consequences require more careful analysis and validation; they never justify a shortcut, leaving a verified consequence unaddressed, or a weaker acceptance standard.
 - Open nearby peers before adding a file, function, public type, operation, test, or fixture. Mirror the established naming, location, export, and error-handling conventions.
 - Respect package boundaries. Semantic graph, LSP, MCP, and CLI source lives under `packages/graph/src`; best-effort syntax extraction lives under `packages/graph-sitter/src`; test-only helpers live under `tests/test-graph/src/internal`; real-server provisioning lives under `tests/experiment`; benchmark policy stays under `tests/benchmark`.
 - Keep public exports synchronized through the nearest barrel and the root package surface. Public schema changes also require the matching MCP description, README contract excerpt, and compatibility review.

@@ -1,11 +1,13 @@
 ---
 name: issue-campaign
-description: Defines repository-wide issue discovery, lead-vetted issue publication, dependency-batched implementation, ordinary CI verification, and worktree cleanup for @samchon/graph. Use when the user asks for a broad audit, many issue candidates, or a repeated issue-to-pull-request campaign; do not use for one already-defined issue, an ordinary pull request, or a review with no campaign scope.
+description: Defines repository-wide issue discovery, lead-vetted issue publication, non-idling dependency-batched implementation, ordinary CI verification, and worktree cleanup for @samchon/graph. Use when the user asks for a broad audit, many issue candidates, or a repeated issue-to-pull-request campaign; do not use for one already-defined issue, an ordinary pull request, or a review with no campaign scope.
 ---
 
 # Issue Campaign
 
 An issue campaign is a repeatable sequence of exhaustive discovery, issue publication, implementation pull requests, and final reconciliation. The user's requested phase boundary controls how far to proceed. An audit-only request does not authorize issue publication, branch pushes, pull requests, merges, paid benchmarks, releases, or global tool installation.
+
+Choose the principled course throughout the campaign. Its scale, duration, and consequence surface require stronger evidence, deeper consequence analysis, and complete verification; they never justify accepting an unverified candidate, a shortcut, or a weaker implementation or review standard.
 
 Read the project, development, and review skills before starting, and require every discovery-agent brief to do the same. Use the review skill's Issue Discovery Rounds; issue discovery is independent review, not discussion.
 
@@ -59,6 +61,6 @@ Use tables for repeated case mappings. Read the rendered issue back and keep its
 
 ## Develop And Repeat The Campaign
 
-Read [development.md](development.md) in full when the user authorizes implementation pull requests or ends a campaign that entered implementation. It owns dependency batching, claim pull requests, implementation waves, ordinary check handling, worktree cleanup, renewed discovery, and final reconciliation.
+Read [development.md](development.md) in full when the user authorizes implementation pull requests or ends a campaign that entered implementation. It owns issue admission, dependency batching, immediate claim pull requests, non-idling implementation and Self-Review, ordinary check handling, worktree cleanup, renewed discovery, and final reconciliation. A pending setup, test, build, or check command is a merge gate when its evidence is required, never a reason for an implementation agent to sit idle while independent work remains.
 
 An audit or issue-publication-only campaign does not load the implementation procedure or mutate repository, Actions, benchmark, or release state.

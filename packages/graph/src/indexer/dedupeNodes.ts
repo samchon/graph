@@ -7,98 +7,99 @@ import {
 import { ISamchonGraphEvidence, ISamchonGraphNode } from "../structures";
 
 /**
- * Remove identical generic facts and merge the two locations of one semantic
- * declaration. A differing legacy collision is an indexing defect, never a
- * last-write-wins choice.
+ * Remove identical generic facts and merge all locations of one semantic
+ * declaration through the public declaration/implementation representation.
  */
-export function dedupeNodes(nodes: ISamchonGraphNode[]): ISamchonGraphNode[] {
-  const map = new Map<string, ISamchonGraphNode>();
+export function dedupeNodes(
+  nodes: ISamchonGraphNode[],
+  onSemanticLocationOverflow?: (id: string, count: number) => void,
+): ISamchonGraphNode[] {
+  const groups = new Map<string, ISamchonGraphNode[]>();
   for (const node of nodes) {
     validateSemanticGraphNode(node);
-    const previous = map.get(node.id);
-    if (previous === undefined) {
-      map.set(node.id, node);
-      continue;
-    }
-    map.set(node.id, mergeDuplicate(previous, node));
+    const group = groups.get(node.id);
+    if (group === undefined) groups.set(node.id, [node]);
+    else group.push(node);
   }
-  return [...map.values()];
+  return [...groups.values()].map((group) =>
+    mergeGroup(group, onSemanticLocationOverflow),
+  );
 }
 
 /**
- * Merge only intrinsic semantic duplicates in a strict provider slice.
+ * Merge only intrinsic semantic duplicates in a generic provider slice.
  * Legacy duplicates remain visible for the strict trust boundary to reject.
  */
 export function mergeSemanticNodes(
   nodes: readonly ISamchonGraphNode[],
+  onSemanticLocationOverflow?: (id: string, count: number) => void,
 ): ISamchonGraphNode[] {
-  const semantic = new Map<string, number>();
-  const out: ISamchonGraphNode[] = [];
+  const semantic = new Map<string, ISamchonGraphNode[]>();
+  const legacy: ISamchonGraphNode[] = [];
   for (const node of nodes) {
     validateSemanticGraphNode(node);
     if (!isSemanticGraphNodeId(node.id)) {
-      out.push(node);
+      legacy.push(node);
       continue;
     }
-    const index = semantic.get(node.id);
-    if (index === undefined) {
-      semantic.set(node.id, out.length);
-      out.push(node);
-    } else {
-      out[index] = mergeDuplicate(out[index]!, node);
-    }
+    const group = semantic.get(node.id);
+    if (group === undefined) semantic.set(node.id, [node]);
+    else group.push(node);
   }
-  return out;
+  return [
+    ...legacy,
+    ...[...semantic.values()].map((group) =>
+      mergeGroup(group, onSemanticLocationOverflow),
+    ),
+  ];
 }
 
-function mergeDuplicate(
-  left: ISamchonGraphNode,
-  right: ISamchonGraphNode,
+function mergeGroup(
+  nodes: readonly ISamchonGraphNode[],
+  onSemanticLocationOverflow: ((id: string, count: number) => void) | undefined,
 ): ISamchonGraphNode {
+  const left = nodes[0]!;
   if (!isSemanticGraphNodeId(left.id)) {
-    if (isDeepStrictEqual(left, right)) return left;
-    // Two distinct declarations share a legacy id — same-named locals a
-    // generic/static producer cannot tell apart without a native symbol, and a
-    // TypeScript id must stay `path#qualifiedName:kind` for parity so it cannot
-    // be promoted here. The strict provider boundary still rejects such a
-    // collision; the generic path keeps the last declaration, exactly as the
-    // pre-identity dedupe did, rather than failing the whole graph.
-    return right;
+    return nodes.slice(1).reduce(mergeLegacyDuplicate, left);
   }
   const leftFact = factWithoutLocations(left);
-  const rightFact = factWithoutLocations(right);
-  if (!isDeepStrictEqual(leftFact, rightFact)) {
-    throw new Error(
-      `@samchon/graph: semantic node locations disagree on symbol facts: ${left.id}`,
-    );
+  for (const right of nodes.slice(1)) {
+    if (!isDeepStrictEqual(leftFact, factWithoutLocations(right))) {
+      throw new Error(
+        `@samchon/graph: semantic node locations disagree on symbol facts: ${left.id}`,
+      );
+    }
   }
-  const locations = uniqueLocations([
-    left.evidence,
-    left.implementation,
-    right.evidence,
-    right.implementation,
-  ]);
+  const locations = uniqueLocations(
+    nodes.flatMap((node) => [node.evidence, node.implementation]),
+  );
   if (locations.length > 2) {
-    throw new Error(
-      `@samchon/graph: semantic node has more than the declaration/implementation location policy can preserve: ${left.id}`,
-    );
+    onSemanticLocationOverflow?.(left.id, locations.length);
   }
   const [evidence, implementation] = locations;
   return {
     ...leftFact,
     file: evidence?.file ?? left.file,
-    ...(left.ignored === true || right.ignored === true
-      ? { ignored: true }
-      : {}),
-    ...(left.exported === true || right.exported === true
-      ? { exported: true }
-      : {}),
-    ...(left.closure === true || right.closure === true
-      ? { closure: true }
-      : {}),
+    ...(nodes.some((node) => node.ignored === true) ? { ignored: true } : {}),
+    ...(nodes.some((node) => node.exported === true) ? { exported: true } : {}),
+    ...(nodes.some((node) => node.closure === true) ? { closure: true } : {}),
     ...(evidence === undefined ? {} : { evidence }),
     ...(implementation === undefined ? {} : { implementation }),
   };
+}
+
+function mergeLegacyDuplicate(
+  left: ISamchonGraphNode,
+  right: ISamchonGraphNode,
+): ISamchonGraphNode {
+  if (isDeepStrictEqual(left, right)) return left;
+  // Two distinct declarations share a legacy id ??same-named locals a
+  // generic/static producer cannot tell apart without a native symbol, and a
+  // TypeScript id must stay `path#qualifiedName:kind` for parity so it cannot
+  // be promoted here. The strict provider boundary still rejects such a
+  // collision; the generic path keeps the last declaration, exactly as the
+  // pre-identity dedupe did, rather than failing the whole graph.
+  return right;
 }
 
 function factWithoutLocations(
@@ -140,5 +141,6 @@ function locationKey(evidence: ISamchonGraphEvidence): string {
 }
 
 function compareText(left: string, right: string): number {
+  /* c8 ignore next 2 -- uniqueLocations removes equal keys before sorting. */
   return left < right ? -1 : left > right ? 1 : 0;
 }

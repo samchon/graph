@@ -222,9 +222,10 @@ export async function buildLspGraph(
       );
       appendSources(sources, fallback.sources);
       if (lspNodeCount === 0) {
+        const dump = staticDump(fallback, warnings);
         return {
-          dump: staticDump(fallback, warnings),
-          warnings,
+          dump,
+          warnings: dump.warnings ?? [],
           source: snapshotSource(),
           ...(options.keepAlive ? { sessions, sources } : {}),
         };
@@ -237,9 +238,10 @@ export async function buildLspGraph(
     if (nodes.length === 0 && strictNodes.length === 0) {
       const fallback = staticGraphParts(options, selected.files);
       appendSources(sources, fallback.sources);
+      const dump = staticDump(fallback, warnings);
       return {
-        dump: staticDump(fallback, warnings),
-        warnings,
+        dump,
+        warnings: dump.warnings ?? [],
         source: snapshotSource(),
         ...(options.keepAlive ? { sessions, sources } : {}),
       };
@@ -256,6 +258,7 @@ export async function buildLspGraph(
       strictNodes,
       strictEdges,
     });
+    warnings.push(...finalized.warnings);
     return {
       dump: {
         project: root,
@@ -346,14 +349,19 @@ function staticDump(
     parts.nodes,
     parts.edges,
   );
-  const nodes = dedupeNodes(finalized.nodes);
+  const dedupeWarnings = [...finalized.warnings];
+  const nodes = dedupeNodes(finalized.nodes, (id, count) =>
+    dedupeWarnings.push(
+      `@samchon/graph: generic semantic declaration has ${count} locations; retaining canonical declaration and implementation spans: ${id}`,
+    ),
+  );
   return {
     project: parts.root,
     languages: parts.languages,
     indexer: "static",
     nodes: wireNodes(nodes),
     edges: wireEdges(dedupeEdges(finalized.edges), nodes),
-    warnings: [...parts.warnings, ...warnings],
+    warnings: [...parts.warnings, ...warnings, ...dedupeWarnings],
   };
 }
 

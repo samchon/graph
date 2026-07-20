@@ -3,6 +3,7 @@ import {
   legacyGraphNodeIds,
   validateSemanticGraphNode,
 } from "./provider/semanticIdentity";
+import { normalizeGraphNodeKinds } from "./indexer/normalizeGraphNodeKinds";
 import {
   ISamchonGraphDiagnostic,
   ISamchonGraphDump,
@@ -241,8 +242,9 @@ function synthesize(dump: ISamchonGraphDump): {
       ...(implementation !== undefined
         ? { implementation: spanIn(implementation, node.file) }
         : {}),
-    };
+      };
   });
+  normalizeGraphNodeKinds(nodes);
   const byId = indexNodesById(nodes);
   const edges: ISamchonGraphEdge[] = dump.edges.map((edge) => {
     const { evidence, ...rest } = edge;
@@ -275,17 +277,6 @@ function synthesize(dump: ISamchonGraphDump): {
       ? undefined
       : byFileKey.get(`${node.file}\0${parentKey}`);
   };
-
-  // Refine: a `variable` whose owner is a class or interface is a property.
-  // This deliberately changes only the cloned resident node. The raw ttsc id
-  // stays position-invariant and the caller's wire dump remains untouched.
-  for (const node of nodes) {
-    if (node.kind !== "variable" || node.external) continue;
-    const parent = owner(node);
-    if (parent?.kind === "class" || parent?.kind === "interface") {
-      node.kind = "property";
-    }
-  }
 
   // One file container node per distinct workspace source file, plus every bare
   // file id an edge leaves from. A module-scope edge is already folded onto its

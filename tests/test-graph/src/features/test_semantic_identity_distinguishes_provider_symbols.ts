@@ -145,19 +145,51 @@ export const test_semantic_identity_distinguishes_provider_symbols = async () =>
     ["src/Partial.cs", "src/Partial.impl.cs"],
   );
 
-  const canonical: ISamchonGraphNode = {
-    id: "src/app.ts#run:function",
+  const fallbackTypeScriptOverloads: ISamchonGraphNode[] = [
+    {
+      id: "src/app.ts#Service.run:method",
+      kind: "method",
+      language: "typescript",
+      name: "run(text: string)",
+      qualifiedName: "Service.run(text: string)",
+      file: "src/app.ts",
+      external: false,
+      evidence: { file: "src/app.ts", startLine: 2 },
+    },
+    {
+      id: "src/app.ts#Service.run:method",
+      kind: "method",
+      language: "typescript",
+      name: "run(count: number)",
+      qualifiedName: "Service.run(count: number)",
+      file: "src/app.ts",
+      external: false,
+      evidence: { file: "src/app.ts", startLine: 3 },
+    },
+  ];
+  assignSemanticIdentities(fallbackTypeScriptOverloads);
+  TestValidator.notEquals(
+    "generic TypeScript fallback overloads are distinct",
+    fallbackTypeScriptOverloads[0]!.id,
+    fallbackTypeScriptOverloads[1]!.id,
+  );
+  TestValidator.predicate(
+    "generic TypeScript fallback uses semantic ids while the strict ttsc lane remains untouched",
+    fallbackTypeScriptOverloads.every((node) => node.id.startsWith("@v2/")),
+  );
+  const unknown: ISamchonGraphNode = {
+    id: "src/unknown#run:function",
     kind: "function",
-    language: "typescript",
+    language: "unknown",
     name: "run",
-    file: "src/app.ts",
+    file: "src/unknown",
     external: false,
   };
-  assignSemanticIdentities([canonical]);
+  assignSemanticIdentities([unknown]);
   TestValidator.equals(
-    "canonical TypeScript ids remain byte-identical",
-    canonical.id,
-    "src/app.ts#run:function",
+    "unknown-language declarations keep their legacy id",
+    unknown.id,
+    "src/unknown#run:function",
   );
 
   const owner: ISamchonGraphNode = {

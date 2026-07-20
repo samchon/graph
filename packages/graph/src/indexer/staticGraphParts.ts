@@ -49,7 +49,6 @@ export function staticGraphParts(
     });
   }
   const parts = graphSitterParts({ root, files });
-  assignSemanticIdentities(parts.nodes, parts.edges);
   return parts;
 }
 

@@ -1,8 +1,11 @@
 import { ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
 import { dedupeEdges } from "../indexer/dedupeEdges";
-import { dedupeNodes, mergeSemanticNodes } from "../indexer/dedupeNodes";
+import { dedupeNodes } from "../indexer/dedupeNodes";
 import { finalizeGraph } from "../indexer/finalizeGraph";
-import { isSemanticGraphNodeId } from "./semanticIdentity";
+import {
+  isSemanticGraphNodeId,
+  validateSemanticGraphNode,
+} from "./semanticIdentity";
 
 /**
  * Merge ordinary LSP/static facts with compiler-owned strict slices.
@@ -19,17 +22,26 @@ export function mergeGraphSlices(options: {
   genericEdges: ISamchonGraphEdge[];
   strictNodes: ISamchonGraphNode[];
   strictEdges: ISamchonGraphEdge[];
-}): { nodes: ISamchonGraphNode[]; edges: ISamchonGraphEdge[] } {
+}): {
+  nodes: ISamchonGraphNode[];
+  edges: ISamchonGraphEdge[];
+  warnings: string[];
+} {
+  assertStrictSlice(options.strictNodes, options.strictEdges);
   const strictNodes = normalizeStrictNodes(options.strictNodes);
   const strictEdges = normalizeStrictEdges(options.strictEdges);
-  assertStrictSlice(strictNodes, strictEdges);
   const generic = finalizeGraph(
     options.root,
     options.files,
     options.genericNodes,
     options.genericEdges,
   );
-  const genericNodes = dedupeNodes(generic.nodes);
+  const warnings = [...generic.warnings];
+  const genericNodes = dedupeNodes(generic.nodes, (id, count) =>
+    warnings.push(
+      `@samchon/graph: generic semantic declaration has ${count} locations; retaining canonical declaration and implementation spans: ${id}`,
+    ),
+  );
   const genericEdges = dedupeEdges(generic.edges);
   const nodeIds = new Set(strictNodes.map((node) => node.id));
   const duplicateNode = genericNodes.find((node) => nodeIds.has(node.id));
@@ -48,15 +60,15 @@ export function mergeGraphSlices(options: {
   return {
     nodes: [...strictNodes, ...genericNodes],
     edges: [...strictEdges, ...genericEdges],
+    warnings,
   };
 }
 
 function normalizeStrictNodes(
   nodes: ISamchonGraphNode[],
 ): ISamchonGraphNode[] {
-  const merged = mergeSemanticNodes(nodes);
-  const legacy = merged.filter((node) => !isSemanticGraphNodeId(node.id));
-  const semantic = merged
+  const legacy = nodes.filter((node) => !isSemanticGraphNodeId(node.id));
+  const semantic = nodes
     .filter((node) => isSemanticGraphNodeId(node.id))
     .sort((left, right) => compareText(left.id, right.id));
   return [...legacy, ...semantic];
@@ -76,7 +88,7 @@ function normalizeStrictEdges(
   semantic.sort((left, right) =>
     compareText(edgeOrderKey(left), edgeOrderKey(right)),
   );
-  return [...legacy, ...dedupeEdges(semantic)];
+  return [...legacy, ...semantic];
 }
 
 function assertStrictSlice(
@@ -85,6 +97,7 @@ function assertStrictSlice(
 ): void {
   const nodeIds = new Set<string>();
   for (const node of nodes) {
+    validateSemanticGraphNode(node);
     if (nodeIds.has(node.id)) {
       throw new Error(
         `@samchon/graph: strict provider duplicated node: ${node.id}`,
@@ -128,5 +141,6 @@ function edgeOrderKey(edge: ISamchonGraphEdge): string {
 }
 
 function compareText(left: string, right: string): number {
+  /* c8 ignore next 2 -- sort keys include distinct node or edge identities. */
   return left < right ? -1 : left > right ? 1 : 0;
 }

@@ -49,12 +49,13 @@ export function semanticGraphNodeId(
     throw new Error("@samchon/graph: semantic identity display name is empty");
   }
   const prefix = identity.stability === "persistent" ? "@v2" : "@g2";
-  return `${prefix}/${identity.language}/${semanticIdentityDigest(identity)}#${encodeURIComponent(displayName)}:${identity.role}`;
+  return `${prefix}/${identity.language}/${semanticIdentityDigest(identity, displayName)}#${encodeURIComponent(displayName)}:${identity.role}`;
 }
 
 /** Full SHA-256 of the length-prefixed identity fields. */
 export function semanticIdentityDigest(
   identity: IGraphSemanticIdentity,
+  displayName?: string,
 ): string {
   validateIdentity(identity);
   const fields: Array<readonly [string, string]> = [
@@ -79,6 +80,7 @@ export function semanticIdentityDigest(
     }
   }
   append(fields, "generation", identity.generation);
+  append(fields, "display", displayName);
   const encoded = fields
     .flatMap(([name, value]) => [lengthPrefix(name), lengthPrefix(value)])
     .join("");
@@ -87,15 +89,13 @@ export function semanticIdentityDigest(
 
 /** True for an intrinsic persistent or explicitly generation-scoped id. */
 export function isSemanticGraphNodeId(id: string): boolean {
-  return id.startsWith("@v2/") || id.startsWith("@g2/");
+  return SEMANTIC_NODE_ID.test(id);
 }
 
 /** Fail closed when a semantic id contradicts its node's language or kind. */
 export function validateSemanticGraphNode(node: ISamchonGraphNode): void {
   if (!isSemanticGraphNodeId(node.id)) return;
-  const match = /^@(v2|g2)\/([^/]+)\/([0-9a-f]{64})#([^#]+):([^:]+)$/.exec(
-    node.id,
-  );
+  const match = SEMANTIC_NODE_ID.exec(node.id);
   if (
     match === null ||
     match[2] !== node.language ||
@@ -205,8 +205,11 @@ function normalizeSignature(value: string): string {
 }
 
 function compareText(left: string, right: string): number {
+  /* c8 ignore next 2 -- callers sort distinct ids or handles. */
   return left < right ? -1 : left > right ? 1 : 0;
 }
+
+const SEMANTIC_NODE_ID = /^@(v2|g2)\/([^/]+)\/([0-9a-f]{64})#([^#]+):([^:]+)$/;
 
 const CALLABLE_KINDS = new Set<GraphNodeKind>([
   "function",

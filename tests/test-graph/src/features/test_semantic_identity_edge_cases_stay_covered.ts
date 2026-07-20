@@ -7,6 +7,8 @@ import {
   SamchonGraphMemory,
   assignSemanticIdentities,
   dedupeNodes,
+  finalizeGraph,
+  isSemanticGraphNodeId,
   semanticGraphNodeId,
 } from "@samchon/graph";
 import path from "node:path";
@@ -61,7 +63,11 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
       genericEdges: ISamchonGraphEdge[];
       strictNodes: ISamchonGraphNode[];
       strictEdges: ISamchonGraphEdge[];
-    }) => { nodes: ISamchonGraphNode[]; edges: ISamchonGraphEdge[] };
+    }) => {
+      nodes: ISamchonGraphNode[];
+      edges: ISamchonGraphEdge[];
+      warnings: string[];
+    };
   }>("provider/mergeGraphSlices.js");
   TestValidator.equals("a file id has no hash", fileOfNodeId("src/a.go"), "src/a.go");
   TestValidator.equals(
@@ -84,6 +90,26 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
     "a generation-scoped identity without a generation key is refused",
     () => semanticGraphNodeId(identity({ symbol: "demo.run", stability: "generation" }), "demo.run"),
   );
+  TestValidator.error("an empty semantic symbol is refused", () =>
+    semanticGraphNodeId(identity({ symbol: "" }), "demo.run"),
+  );
+  TestValidator.error("an empty native symbol key is refused", () =>
+    semanticGraphNodeId(
+      identity({ symbol: "demo.run", native: { key: "", stability: "semantic" } }),
+      "demo.run",
+    ),
+  );
+
+  TestValidator.equals(
+    "a legacy path beginning with the semantic namespace stays legacy",
+    isSemanticGraphNodeId("@v2/source.go#run:function"),
+    false,
+  );
+  TestValidator.notEquals(
+    "display spelling is part of the semantic id digest",
+    semanticGraphNodeId(identity({ symbol: "demo.run" }), "demo.run"),
+    semanticGraphNodeId(identity({ symbol: "demo.run" }), "demo.execute"),
+  );
 
   // assignSemanticIdentities: an empty-file scope, a generation-scoped node with
   // no evidence, and two same-id callables an edge cannot disambiguate.
@@ -102,36 +128,87 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
     }),
     gnode({ id: "src/a.go#fileless:function", name: "fileless", qualifiedName: "fileless", file: "" }),
     gnode({ id: "src/a.go#bare:function", name: "bare", qualifiedName: "bare" }),
+    gnode({ id: "src/a.go#value:parameter", name: "value", kind: "parameter", qualifiedName: "value" }),
   ];
   const ambiguousEdges: ISamchonGraphEdge[] = [
     { kind: "calls", from: "src/a.go#foo:function", to: "src/a.go#bare:function", evidence: { file: "src/a.go", startLine: 3 } },
   ];
-  assignSemanticIdentities(ambiguous, ambiguousEdges);
+  const ambiguousWarnings: string[] = [];
+  assignSemanticIdentities(ambiguous, ambiguousEdges, ambiguousWarnings);
   TestValidator.predicate(
     "an empty-file declaration still receives a generation-scoped id",
     ambiguous[2]!.id.startsWith("@g2/"),
   );
   TestValidator.predicate(
-    "an unresolved ambiguous endpoint falls back to a deterministic candidate",
-    ambiguousEdges[0]!.from.startsWith("@"),
+    "a parameter without a callable owner is generation scoped",
+    ambiguous[4]!.id.startsWith("@g2/"),
   );
+  TestValidator.equals(
+    "an unresolved ambiguous endpoint is omitted instead of bound by hash order",
+    ambiguousEdges,
+    [],
+  );
+  TestValidator.equals("the omitted endpoint is reported", ambiguousWarnings.length, 1);
 
-  // dedupeNodes / mergeSemanticNodes: two locations of one semantic declaration
-  // merge into a single node with declaration + implementation provenance.
+  const finalNodes: ISamchonGraphNode[] = [
+    gnode({ id: "src/a.go#outer:function", name: "outer", evidence: { file: "src/a.go", startLine: 1, endLine: 12 } }),
+    gnode({ id: "src/a.go#outer.value:variable", name: "value", kind: "variable", qualifiedName: "outer.value", evidence: { file: "src/a.go", startLine: 3 } }),
+    gnode({ id: "src/a.go#outer.value:variable", name: "value", kind: "variable", qualifiedName: "outer.value", evidence: { file: "src/a.go", startLine: 7 } }),
+    gnode({ id: "src/a.go#Box:class", name: "Box", kind: "class", evidence: { file: "src/a.go", startLine: 14, endLine: 20 } }),
+    gnode({ id: "src/a.go#Box.value:variable", name: "value", kind: "variable", qualifiedName: "Box.value", evidence: { file: "src/a.go", startLine: 16 } }),
+    gnode({ id: "src/a.go#flat:variable", name: "flat", kind: "variable", evidence: { file: "src/a.go", startLine: 22 } }),
+    gnode({ id: "src/a.go#outside:variable", name: "outside", kind: "variable", external: true, evidence: { file: "src/a.go", startLine: 23 } }),
+  ];
+  finalizeGraph("/repo", ["src/a.go"], finalNodes, []);
+  const locals = finalNodes.filter((node) => node.qualifiedName === "outer.value");
+  TestValidator.predicate(
+    "locals receive distinct generation identities after closure ownership is known",
+    locals.every((node) => node.id.startsWith("@g2/")) && locals[0]!.id !== locals[1]!.id,
+  );
+  const property = finalNodes.find((node) => node.qualifiedName === "Box.value")!;
+  TestValidator.equals("member kind normalizes before identity assignment", property.kind, "property");
+  TestValidator.predicate("member identity carries the normalized role", property.id.endsWith(":property"));
+  const alreadySemantic = gnode({
+    id: semanticGraphNodeId(
+      identity({ symbol: "demo.Existing", role: "class", native: { key: "existing", stability: "semantic" } }),
+      "demo.Existing",
+    ),
+    name: "Existing",
+    kind: "class",
+  });
+  assignSemanticIdentities([alreadySemantic]);
+  TestValidator.predicate("an already-semantic node is not re-keyed", alreadySemantic.id.startsWith("@v2/"));
+
+  // dedupeNodes / mergeSemanticNodes: every location is considered together,
+  // then the ttsc-compatible declaration/implementation pair is canonicalized.
   const semId = semanticGraphNodeId(
     identity({ symbol: "demo.Widget.draw", role: "method", native: { key: "u", stability: "semantic" }, overload: "parameters=" }),
     "demo.Widget.draw",
   );
-  const twoLocations: ISamchonGraphNode[] = [
+  const threeLocations: ISamchonGraphNode[] = [
     gnode({ id: semId, name: "draw", kind: "method", qualifiedName: "demo.Widget.draw", file: "src/a.go", evidence: { file: "src/a.go", startLine: 2, startCol: 0 } }),
+    gnode({ id: semId, name: "draw", kind: "method", qualifiedName: "demo.Widget.draw", file: "src/a.go", evidence: { file: "src/a.go", startLine: 5, startCol: 0 } }),
     gnode({ id: semId, name: "draw", kind: "method", qualifiedName: "demo.Widget.draw", file: "src/a.go", evidence: { file: "src/a.go", startLine: 9, startCol: 0 } }),
   ];
-  TestValidator.equals("dedupe merges two locations of one semantic node", dedupeNodes(twoLocations).length, 1);
-  const merged = mergeSemanticNodes(twoLocations);
+  const locationWarnings: Array<readonly [string, number]> = [];
+  const forward = dedupeNodes(threeLocations, (id, count) =>
+    locationWarnings.push([id, count]),
+  );
+  const reverse = dedupeNodes([...threeLocations].reverse());
+  TestValidator.equals("dedupe merges arbitrary semantic locations", forward.length, 1);
+  TestValidator.equals("the overflow is reported", locationWarnings, [[semId, 3]]);
+  TestValidator.equals(
+    "canonical location selection is independent of producer order",
+    [forward[0]!.evidence, forward[0]!.implementation],
+    [reverse[0]!.evidence, reverse[0]!.implementation],
+  );
+  const merged = mergeSemanticNodes(threeLocations);
   TestValidator.equals("mergeSemanticNodes collapses a repeated semantic id", merged.length, 1);
-  TestValidator.predicate(
-    "the merged node keeps both provenance locations",
-    merged[0]!.implementation !== undefined,
+  TestValidator.error("semantic location facts cannot disagree", () =>
+    dedupeNodes([
+      threeLocations[0]!,
+      { ...threeLocations[1]!, name: "other" },
+    ]),
   );
 
   // mergeGraphSlices: a strict slice normalizes and orders its nodes and edges.
@@ -140,6 +217,7 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
   const strictEdges: ISamchonGraphEdge[] = [
     { kind: "references", from: strictB.id, to: strictA.id, evidence: { file: "src/b.go", startLine: 2 } },
     { kind: "references", from: strictA.id, to: strictB.id, evidence: { file: "src/a.go", startLine: 4 } },
+    { kind: "type_ref", from: strictA.id, to: strictA.id },
   ];
   const mergedSlice = mergeGraphSlices({
     root: "/repo",
@@ -149,7 +227,17 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
     strictNodes: [strictA, strictB],
     strictEdges,
   });
-  TestValidator.equals("a strict slice keeps both ordered edges", mergedSlice.edges.length, 2);
+  TestValidator.equals("a strict slice keeps every ordered edge", mergedSlice.edges.length, 3);
+  TestValidator.error("a strict duplicate node remains a provider defect", () =>
+    mergeGraphSlices({
+      root: "/repo",
+      files: ["src/a.go"],
+      genericNodes: [],
+      genericEdges: [],
+      strictNodes: [strictA, { ...strictA }],
+      strictEdges: [],
+    }),
+  );
 
   // wireEdges: a source in the node map, a legacy source absent from it, and an
   // opaque semantic source absent from it.
@@ -170,13 +258,17 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
   const { overrideEdges } = await importLib<{
     overrideEdges: (nodes: ISamchonGraphNode[], edges: ISamchonGraphEdge[]) => ISamchonGraphEdge[];
   }>("indexer/overrideEdges.js");
+  const sharedMembers = [
+    gnode({ id: "src/a.go#Base.run:method", name: "run(x)", kind: "method", qualifiedName: "Base.run" }),
+    gnode({ id: "src/a.go#Impl.run:method", name: "run(x)", kind: "method", qualifiedName: "Impl.run" }),
+  ];
   overrideEdges(
-    [
-      gnode({ id: "src/a.go#Base.run:method", name: "run(x)", kind: "method", qualifiedName: "Base.run" }),
-      gnode({ id: "src/a.go#Impl.run:method", name: "run(x)", kind: "method", qualifiedName: "Impl.run" }),
-      gnode({ id: "src/a.go#Other.run:method", name: "run(x)", kind: "method", qualifiedName: "Other.run" }),
-    ],
-    [],
+    sharedMembers,
+    sharedMembers.map((node) => ({
+      from: "src/a.go#Owner:class",
+      to: node.id,
+      kind: "contains" as const,
+    })),
   );
   TestValidator.predicate("overrideEdges tolerates shared member keys", true);
 
@@ -204,9 +296,29 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
     languages: ["go"],
     indexer: "static",
     nodes: [gnode({ id: "src/a.go#Real:class", name: "Real", kind: "class", file: "src/a.go", evidence: { file: "src/a.go", startLine: 1, startCol: 0 } })],
-    edges: [{ kind: "references", from: orphanId, to: "src/a.go#Real:class", evidence: { file: "src/a.go", startLine: 1 } }],
+    edges: [{ kind: "references", from: orphanId, to: "src/a.go#Real:class", evidence: { startLine: 1 } }],
   } as unknown as ISamchonGraphDump;
   TestValidator.error("an absent semantic edge source fails closed", () =>
     SamchonGraphMemory.from(dumpWithOrphanEdge),
+  );
+
+  const semanticProperty = semanticGraphNodeId(
+    identity({ symbol: "demo.Box.value", role: "property", native: { key: "p", stability: "semantic" } }),
+    "demo.Box.value",
+  );
+  const resident = SamchonGraphMemory.from({
+    project: "p",
+    languages: ["go"],
+    indexer: "static",
+    nodes: [
+      gnode({ id: "src/a.go#Box:class", name: "Box", kind: "class", qualifiedName: "Box", evidence: { file: "src/a.go", startLine: 1, endLine: 4 } }),
+      gnode({ id: semanticProperty, name: "value", kind: "variable", qualifiedName: "Box.value", evidence: { file: "src/a.go", startLine: 2 } }),
+    ],
+    edges: [],
+  } as unknown as ISamchonGraphDump);
+  TestValidator.equals(
+    "resident normalization validates the semantic property role after refinement",
+    resident.node(semanticProperty)!.kind,
+    "property",
   );
 };

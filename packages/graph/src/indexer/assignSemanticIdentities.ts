@@ -1,6 +1,7 @@
 import {
   IGraphSemanticIdentity,
   callableBaseOf,
+  isSemanticGraphNodeId,
   semanticGraphNodeId,
 } from "../provider/semanticIdentity";
 import {
@@ -10,7 +11,7 @@ import {
 } from "../structures";
 
 /**
- * Give best-effort non-TypeScript declarations intrinsic ids before dedupe.
+ * Give best-effort generic declarations intrinsic ids before dedupe.
  *
  * A generic LSP/static producer has no durable native symbol handle. A
  * decorated callable signature is still persistent; an undecorated callable,
@@ -20,6 +21,7 @@ import {
 export function assignSemanticIdentities(
   nodes: ISamchonGraphNode[],
   edges: ISamchonGraphEdge[] = [],
+  warnings: string[] = [],
 ): void {
   const remap = new Map<string, IRemappedNode[]>();
   for (const node of nodes) {
@@ -29,9 +31,24 @@ export function assignSemanticIdentities(
     node.id = semanticGraphNodeId(identity, node.qualifiedName ?? node.name);
     push(remap, oldId, { node, id: node.id });
   }
-  for (const edge of edges) {
-    edge.from = endpointOf(edge.from, remap.get(edge.from), edge.evidence, "from");
-    edge.to = endpointOf(edge.to, remap.get(edge.to), edge.evidence, "to");
+  for (let index = edges.length - 1; index >= 0; index--) {
+    const edge = edges[index]!;
+    const from = endpointOf(
+      edge.from,
+      remap.get(edge.from),
+      edge.evidence,
+      "from",
+    );
+    const to = endpointOf(edge.to, remap.get(edge.to), edge.evidence, "to");
+    if (from === undefined || to === undefined) {
+      warnings.push(
+        `@samchon/graph: omitted an ambiguous generic edge without provider endpoint proof: ${edge.kind} ${edge.from} -> ${edge.to}`,
+      );
+      edges.splice(index, 1);
+      continue;
+    }
+    edge.from = from;
+    edge.to = to;
   }
 }
 
@@ -39,7 +56,7 @@ function genericIdentityOf(
   node: ISamchonGraphNode,
 ): IGraphSemanticIdentity | undefined {
   if (
-    node.language === "typescript" ||
+    isSemanticGraphNodeId(node.id) ||
     node.language === "unknown" ||
     node.kind === "file" ||
     node.kind === "package" ||
@@ -108,7 +125,7 @@ function endpointOf(
   candidates: readonly IRemappedNode[] | undefined,
   evidence: ISamchonGraphEvidence | undefined,
   side: "from" | "to",
-): string {
+): string | undefined {
   if (candidates === undefined || candidates.length === 0) return current;
   if (candidates.length === 1) return candidates[0]!.id;
   const exact = candidates.filter(({ node }) =>
@@ -119,8 +136,7 @@ function endpointOf(
     const owner = candidates.filter(({ node }) => contains(node, evidence));
     if (owner.length === 1) return owner[0]!.id;
   }
-  return [...candidates].sort((left, right) => compareText(left.id, right.id))[0]!
-    .id;
+  return undefined;
 }
 
 function sameStart(
@@ -153,10 +169,6 @@ function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const bucket = map.get(key);
   if (bucket === undefined) map.set(key, [value]);
   else bucket.push(value);
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 interface IRemappedNode {

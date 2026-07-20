@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 
-import { ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
 import { IBulkGraphSession } from "./IBulkGraphSession";
 
 /**
@@ -43,45 +42,49 @@ export namespace graphSnapshotDigests {
   export function contentOf(snapshot: IBulkGraphSession.ISnapshot): string {
     const hash = createHash("sha256");
     hash.update(`languages\0${snapshot.languages.join(",")}\n`);
-    for (const node of snapshot.nodes) hash.update(`node\0${nodeKey(node)}\n`);
-    for (const edge of snapshot.edges) hash.update(`edge\0${edgeKey(edge)}\n`);
+    // Every field, not a chosen few. An earlier form hashed a node's id, kind,
+    // name, file, and span offsets, which meant a slice that changed a node's
+    // modifiers, export flag, qualified name, decorators, or enum members
+    // digested identically to the one before it — and the transaction fence
+    // and the dump's provenance both compare exactly this value to decide
+    // whether anything moved. A digest over part of the facts is not a weaker
+    // proof of the whole; it is a proof of something else.
+    for (const node of snapshot.nodes) hash.update(`node\0${canonical(node)}\n`);
+    for (const edge of snapshot.edges) hash.update(`edge\0${canonical(edge)}\n`);
     for (const diagnostic of snapshot.diagnostics) {
-      hash.update(
-        `diagnostic\0${diagnostic.file}\0${String(diagnostic.line)}\0${String(
-          diagnostic.column,
-        )}\0${String(diagnostic.code)}\0${diagnostic.message}\n`,
-      );
+      hash.update(`diagnostic\0${canonical(diagnostic)}\n`);
     }
     return hash.digest("hex");
   }
 }
 
-function nodeKey(node: ISamchonGraphNode): string {
-  return [
-    node.id,
-    node.kind,
-    node.language,
-    node.name,
-    node.file,
-    node.evidence?.startLine ?? "",
-    node.evidence?.startCol ?? "",
-    node.implementation?.startLine ?? "",
-    node.implementation?.startCol ?? "",
-  ].join("\0");
-}
-
-function edgeKey(edge: ISamchonGraphEdge): string {
-  return [
-    edge.kind,
-    edge.from,
-    edge.to,
-    edge.evidence?.file ?? "",
-    edge.evidence?.startLine ?? "",
-    edge.evidence?.startCol ?? "",
-  ].join("\0");
+/**
+ * One value as a string that depends on its content and not on its key order.
+ *
+ * `JSON.stringify` would be shorter and wrong: it preserves insertion order, so
+ * two structurally identical nodes built by different code paths — a strict
+ * provider's and a fallback's — would digest differently while describing the
+ * same declaration. Absent optional properties are dropped rather than
+ * serialized as `null`, so a node that never had a `qualifiedName` and one
+ * whose `qualifiedName` was cleared agree, which is what the graph means by
+ * them.
+ */
+function canonical(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value) ?? "undefined";
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonical).join(",")}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entry]) => entry !== undefined)
+    .sort(([left], [right]) => compareOrdinal(left, right));
+  return `{${entries
+    .map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`)
+    .join(",")}}`;
 }
 
 function compareOrdinal(left: string, right: string): number {
-  /* c8 ignore next 2 -- manifest keys are distinct file identities. */
+  /* c8 ignore next 2 -- sort keys are distinct file identities or object keys. */
   return left < right ? -1 : left > right ? 1 : 0;
 }

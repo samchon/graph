@@ -428,6 +428,80 @@ async function assertDigestsAndProvenance(): Promise<void> {
     graphSnapshotDigests.contentOf(base),
   );
 
+  // The digest covers a node's whole shape, not a chosen few fields: an
+  // earlier form hashed id, kind, name, file, and span offsets only, so a
+  // slice whose modifiers or export flag changed digested identically to the
+  // one before it — while the transaction fence compared exactly this value to
+  // decide whether anything had moved.
+  const decorated: ISamchonGraphNode = {
+    ...node("a.ts", "run", "typescript"),
+    exported: true,
+    modifiers: ["export", "async"],
+    qualifiedName: "mod.run",
+  };
+  TestValidator.notEquals(
+    "a changed modifier changes the content digest",
+    graphSnapshotDigests.contentOf(
+      ProviderFixtures.snapshot({
+        nodes: [{ ...decorated, modifiers: ["export"] }],
+      }),
+    ),
+    graphSnapshotDigests.contentOf(
+      ProviderFixtures.snapshot({ nodes: [decorated] }),
+    ),
+  );
+  TestValidator.notEquals(
+    "a changed export flag changes the content digest",
+    graphSnapshotDigests.contentOf(
+      ProviderFixtures.snapshot({
+        nodes: [{ ...decorated, exported: false }],
+      }),
+    ),
+    graphSnapshotDigests.contentOf(
+      ProviderFixtures.snapshot({ nodes: [decorated] }),
+    ),
+  );
+  // Key order is not content. Two structurally identical nodes built by
+  // different code paths describe one declaration and must digest alike.
+  TestValidator.equals(
+    "property order does not change the content digest",
+    graphSnapshotDigests.contentOf(
+      ProviderFixtures.snapshot({
+        nodes: [
+          {
+            external: false,
+            file: "a.ts",
+            name: "run",
+            language: "typescript",
+            kind: "function",
+            id: "a.ts#run",
+          } as ISamchonGraphNode,
+        ],
+      }),
+    ),
+    graphSnapshotDigests.contentOf(
+      ProviderFixtures.snapshot({ nodes: [node("a.ts", "run", "typescript")] }),
+    ),
+  );
+  // An absent optional property and one explicitly set to `undefined` are the
+  // same fact about the declaration.
+  TestValidator.equals(
+    "an explicitly undefined property is absent",
+    graphSnapshotDigests.contentOf(
+      ProviderFixtures.snapshot({
+        nodes: [
+          {
+            ...node("a.ts", "run", "typescript"),
+            qualifiedName: undefined,
+          } as ISamchonGraphNode,
+        ],
+      }),
+    ),
+    graphSnapshotDigests.contentOf(
+      ProviderFixtures.snapshot({ nodes: [node("a.ts", "run", "typescript")] }),
+    ),
+  );
+
   const provenance = dumpProvenanceOf(base);
   TestValidator.equals(
     "provenance republishes what the registry declared",

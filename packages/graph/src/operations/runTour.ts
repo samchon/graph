@@ -1,4 +1,5 @@
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
+import { isSemanticGraphNodeId } from "../provider/semanticIdentity";
 import {
   ISamchonGraphDetails,
   ISamchonGraphEdge,
@@ -436,16 +437,18 @@ function graphNodeOf(
  * spilled the whole thing to a file, and the model shelled out to read back its
  * own answer.
  *
- * The file and the kind went the same way, for the same reason: a node id _is_
- * `path/to/file.ts#Owner.member:kind`, so a reached node that also carried them
- * bought one fact three times, and the flows are two thirds of a tour that is
- * re-sent whole on every turn of the conversation it opened. The flow's start
- * keeps the full node; the chain behind it does not need one.
+ * Legacy ids still carry `path/to/file.ts#Owner.member:kind`, so a reached node
+ * does not repeat its location. An opaque semantic id carries neither fact,
+ * however, so it keeps the declaration file and kind for a caller that needs
+ * to inspect it next.
  */
 function traceNodeOf(node: ISamchonGraphTrace.INode): ISamchonGraphTour.IReached {
   return {
     id: node.id,
     name: node.name,
+    ...(isSemanticGraphNodeId(node.id)
+      ? { file: node.file, kind: node.kind }
+      : {}),
     ...(node.line !== undefined ? { line: node.line } : {}),
   };
 }

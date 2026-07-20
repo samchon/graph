@@ -55,11 +55,16 @@ export const test_scan_reference_type_queries_classify_by_context = async () => 
   // A non-TypeScript typeof is unconditionally a type reference.
   TestValidator.predicate(
     "a non-TypeScript typeof is a type reference",
-    dump.edges.some(
-      (edge) =>
-        edge.to.includes("queries.go") &&
-        edge.to.includes("Target") &&
-        edge.kind === "type_ref",
-    ),
+    dump.edges.some((edge) => {
+      if (edge.kind !== "type_ref") return false;
+      // A non-TypeScript target carries a provider-native semantic id whose
+      // file lives on the node, not in the opaque id string, so resolve it.
+      const target = dump.nodes.find((node) => node.id === edge.to);
+      return (
+        target !== undefined &&
+        target.name === "Target" &&
+        target.file.includes("queries.go")
+      );
+    }),
   );
 };

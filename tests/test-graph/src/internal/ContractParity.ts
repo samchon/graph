@@ -73,11 +73,12 @@ export namespace ContractParity {
    * `layer` says where the rule applies, and the choice follows from a fact about
    * the two texts: prose *contains* structure — it is the same file, comments and
    * all. So a rule that touches a code line (a relocated import, an added
-   * vocabulary member) shows up in both texts and is `"both"`, the default. Only
-   * a rule that touches a comment — reworded instruction, changed `@default` — is
+   * vocabulary member) shows up in both texts and is `"both"`, the default. A
+   * rule that touches a comment — reworded instruction, changed `@default` — is
    * `"prose"`, because the structure text has already dropped the comment it
-   * lives in. There is no structure-only rule: a code line is never absent from
-   * prose.
+   * lives in. Rarely a code-shape rule is `"structure"`: when its prose form
+   * must include JSDoc between the same fields, the prose rule owns that richer
+   * text instead of a prior structural rewrite consuming its source.
    */
   export interface IDeviation {
     /** Why this difference is intentional. */
@@ -90,7 +91,7 @@ export namespace ContractParity {
     to: string;
 
     /** Which layers the rule applies to. `"both"` unless stated. */
-    layer?: "both" | "prose";
+    layer?: "both" | Layer;
 
     /** Exact number of reference occurrences this rule reviewed. @default 1 */
     occurrences?: number;
@@ -687,7 +688,7 @@ export namespace ContractParity {
           "The product's public dump has no single TypeScript config or provenance manifest, but a strict compiler provider can contribute out-of-root and virtual source identities that must remain canonical across every result surface.",
         layer: "prose",
         from: "`project` is absolute. Every other path is relative to it — `tsconfig`, and the `file` fields on nodes, edges, diagnostics, and the provenance manifest. Two kinds of path fall outside the project and so cannot be relative to it: a dependency keeps its `node_modules/`-relative tail, which is what makes a dependency leaf readable, and anything else the compiler loaded keeps the identity the compiler gave it — a virtual lib stays `bundled:///…`.",
-        to: "`project` is absolute. A graph file identity uses normalized forward slashes: a project-owned file is relative to `project`, a compiler-loaded file outside that root keeps its normalized absolute identity, and a virtual compiler library keeps its `bundled:///` identity. The same identity flows through a node's `file` and id prefix, reconstructed edge evidence, diagnostics, and operation results.",
+        to: "`project` is absolute. A graph file identity uses normalized forward slashes: a project-owned file is relative to `project`, a compiler-loaded file outside that root keeps its normalized absolute identity, and a virtual compiler library keeps its `bundled:///` identity. The same identity flows through a node's `file`, legacy id prefix when it has one, reconstructed edge evidence, diagnostics, and operation results.",
       },
       {
         reason:
@@ -729,6 +730,20 @@ export namespace ContractParity {
         from: "the builder sends it",
         to: "the indexer sends it",
         occurrences: 2,
+      },
+      {
+        reason:
+          "Opaque semantic ids do not encode a source path, so edge span compression recovers the source node file from the finalized node map rather than interpreting `from`.",
+        layer: "prose",
+        from: "/** An edge as the indexer sends it. Its span is in the file its `from` id names — the id is `path#Qualified.Name:kind` — so the path rode the wire a second time on every edge, and edges outnumber nodes several times over. */",
+        to: "/** An edge as the indexer sends it. Its span is in its source node's file, looked up by the opaque id when necessary, so the path need not ride the wire a second time on every edge. */",
+      },
+      {
+        reason:
+          "A wire edge obtains its omitted evidence file from its source node; only legacy ids expose that path directly.",
+        layer: "prose",
+        from: "/** Expression span; its file is the one embedded in `from`. */",
+        to: "/** Expression span; its file is the source node's declaration file. */",
       },
     ],
     Edge: [
@@ -812,6 +827,20 @@ export namespace ContractParity {
         layer: "prose",
         from: "/** Project-relative path of the file that declares this node. */",
         to: "/** Graph file identity of the declaration. Project-owned files are project-relative; compiler-loaded files outside the root keep normalized absolute identities, and virtual libraries use `bundled:///`. */",
+      },
+      {
+        reason:
+          "Non-TypeScript providers use opaque semantic identities while TypeScript retains its ttsc-compatible legacy handles.",
+        layer: "prose",
+        from: "/** One node in the graph: a declared symbol or a structural container (file, package). The `id` is position-invariant: `path#qualifiedName:kind` (e.g. `src/order.ts#OrderService.create:method`), so inserting a line above a declaration does not re-key it. Line and span live in `evidence` and are never part of identity. */",
+        to: "/** One node in the graph: a declared symbol or a structural container (file, package). A TypeScript node keeps its position-invariant `path#qualifiedName:kind` id (e.g. `src/order.ts#OrderService.create:method`) for ttsc parity. Other providers may carry an opaque semantic id instead. Neither form puts declaration coordinates in the identity; they live in `evidence`. */",
+      },
+      {
+        reason:
+          "The public identity can now be a provider-owned opaque semantic key instead of a legacy file-qualified spelling.",
+        layer: "prose",
+        from: "/** Position-invariant identity (see the interface doc for the id grammar). */",
+        to: "/** Provider-owned stable identity (see the interface doc for its grammar). */",
       },
     ],
     Overview: [
@@ -913,6 +942,13 @@ export namespace ContractParity {
         from: "/** Present only when it cannot be derived: an `implementation` can live in a different file from the declaration that owns it. */",
         to: "/** Present only when it cannot be derived: an `implementation` can live in a different file from the declaration that owns it. Uses the same project-relative, normalized absolute, or `bundled:///` identity as a complete graph evidence span. */",
       },
+      {
+        reason:
+          "An opaque source id cannot be parsed for its file, but the loader can reconstruct an edge span from the finalized source node.",
+        layer: "prose",
+        from: "an edge's span is in the file its `from` id names. Sending the path a second and a third time",
+        to: "an edge's span is in its source node's file. Sending the path a second and a third time",
+      },
     ],
     Tour: [
       {
@@ -929,6 +965,54 @@ export namespace ContractParity {
         from: "/** Project-relative file. */",
         to: "/** Graph file identity: project-relative, normalized absolute, or `bundled:///`. */",
         occurrences: 2,
+      },
+      {
+        reason:
+          "Opaque semantic identities carry no location syntax, so a reached tour handle includes its declaration file and kind only in that case.",
+        layer: "structure",
+        from: ["id: string;", "name: string;", "line?: number;"].join("\n"),
+        to: [
+          "id: string;",
+          "name: string;",
+          "file?: string;",
+          "kind?: string;",
+          "line?: number;",
+        ].join("\n"),
+      },
+      {
+        reason:
+          "A reached tour node must retain its location only when its provider-owned identity is opaque; legacy ids remain compact file-qualified handles.",
+        layer: "prose",
+        from: "/** A node a flow reached, as its handle and its declaration line. A node id _is_ its coordinates — `path/to/file.ts#Owner.member:kind` — so a reached node carrying `file` and `kind` beside it bought the same fact three times. Across the benchmark corpus that repetition was 15% of every tour, and a tour is re-sent whole on every turn of the conversation it opened. */",
+        to: "/** A node a flow reached, as its handle and its declaration line. Legacy ids carry their location as `path/to/file.ts#Owner.member:kind`; opaque semantic ids deliberately do not. Only those opaque ids therefore retain their declaring `file` and `kind` here, so every reached handle remains inspectable. */",
+      },
+      {
+        reason:
+          "A reached tour id can be opaque rather than the legacy file-qualified spelling.",
+        layer: "prose",
+        from: "/** Stable node id for later graph calls: `file#Qualified.Name:kind`. */",
+        to: "/** Stable node id for later graph calls. */",
+      },
+      {
+        reason:
+          "The optional file and kind on a reached node are the declaration identity needed to inspect an opaque semantic handle.",
+        layer: "prose",
+        from: [
+          "/** Qualified symbol name when available, otherwise the simple name. */",
+          "name: string;",
+          "/** 1-based declaration line, when known. */",
+          "line?: number;",
+        ].join("\n"),
+        to: [
+          "/** Qualified symbol name when available, otherwise the simple name. */",
+          "name: string;",
+          "/** Declaration file when this node has an opaque semantic id. */",
+          "file?: string;",
+          "/** Declaration kind when this node has an opaque semantic id. */",
+          "kind?: string;",
+          "/** 1-based declaration line, when known. */",
+          "line?: number;",
+        ].join("\n"),
       },
     ],
     Trace: [
@@ -1054,13 +1138,13 @@ export namespace ContractParity {
       for (const sub of PROSE_SUBSTITUTIONS)
         result = result.split(sub.from).join(sub.to);
     // A `"both"` rule names a code line, present in both texts, and runs in
-    // either layer. A `"prose"` rule names a comment the structure text has
-    // dropped, so it runs only when the prose layer is being built; run against
-    // structure it would be a stale-rule failure for a target that is legitimately
-    // absent. Every rule still fails closed if its target moved within the layer
-    // it does apply to.
+    // either layer. A scoped rule runs only in its named layer: `"prose"` owns
+    // comments and `"structure"` owns a shape whose prose variant is an explicit
+    // richer rule. Running either against the other layer would be a stale-rule
+    // failure for a target that is legitimately absent. Every rule still fails
+    // closed if its target moved within the layer it does apply to.
     const applies = (deviation: IDeviation): boolean =>
-      (deviation.layer ?? "both") === "both" || layer === "prose";
+      (deviation.layer ?? "both") === "both" || deviation.layer === layer;
     for (const deviation of DEVIATIONS[contract] ?? [])
       if (applies(deviation)) result = rewrite(result, deviation);
     return result;

@@ -14,6 +14,30 @@ import { ContractParity } from "../internal/ContractParity";
  */
 export const test_application_contract_parity_fails_closed_on_drift = () => {
   const canonical = ContractParity.canonical();
+  const tourStructure = ContractParity.expected(
+    "Tour",
+    canonical.contracts.Tour.structure,
+    "structure",
+  );
+  const tourProse = ContractParity.expected(
+    "Tour",
+    canonical.contracts.Tour.prose,
+    "prose",
+  );
+  TestValidator.predicate(
+    "a structure-scoped reached-node shape leaves prose to its JSDoc-rich rule",
+    tourStructure.includes(
+      ["name: string;", "file?: string;", "kind?: string;"].join("\n"),
+    ) &&
+      tourProse.includes(
+        [
+          "/** Declaration file when this node has an opaque semantic id. */",
+          "file?: string;",
+          "/** Declaration kind when this node has an opaque semantic id. */",
+          "kind?: string;",
+        ].join("\n"),
+      ),
+  );
   const application: string = canonical.contracts.Application.structure;
 
   const drifted = (mutate: (text: string) => string): string =>

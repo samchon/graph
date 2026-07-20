@@ -222,9 +222,10 @@ export async function buildLspGraph(
       );
       appendSources(sources, fallback.sources);
       if (lspNodeCount === 0) {
+        const dump = staticDump(fallback, warnings);
         return {
-          dump: staticDump(fallback, warnings),
-          warnings,
+          dump,
+          warnings: dump.warnings,
           source: snapshotSource(),
           ...(options.keepAlive ? { sessions, sources } : {}),
         };
@@ -237,9 +238,10 @@ export async function buildLspGraph(
     if (nodes.length === 0 && strictNodes.length === 0) {
       const fallback = staticGraphParts(options, selected.files);
       appendSources(sources, fallback.sources);
+      const dump = staticDump(fallback, warnings);
       return {
-        dump: staticDump(fallback, warnings),
-        warnings,
+        dump,
+        warnings: dump.warnings,
         source: snapshotSource(),
         ...(options.keepAlive ? { sessions, sources } : {}),
       };
@@ -256,6 +258,7 @@ export async function buildLspGraph(
       strictNodes,
       strictEdges,
     });
+    warnings.push(...finalized.warnings);
     return {
       dump: {
         project: root,
@@ -268,7 +271,7 @@ export async function buildLspGraph(
         // the reference cap) on a pure-LSP run must not relabel it.
         indexer: staticFallbackLanguages.length > 0 ? "hybrid" : "lsp",
         nodes: wireNodes(finalized.nodes),
-        edges: wireEdges(finalized.edges),
+        edges: wireEdges(finalized.edges, finalized.nodes),
         diagnostics,
         warnings,
       },
@@ -339,20 +342,26 @@ async function collectTtscGraph(
 function staticDump(
   parts: IStaticGraphParts,
   warnings: readonly string[],
-): ISamchonGraphDump {
+): ISamchonGraphDump & { warnings: string[] } {
   const finalized = finalizeGraph(
     parts.root,
     [...parts.sources.keys()],
     parts.nodes,
     parts.edges,
   );
+  const dedupeWarnings = [...finalized.warnings];
+  const nodes = dedupeNodes(finalized.nodes, (id, count) =>
+    dedupeWarnings.push(
+      `@samchon/graph: generic semantic declaration has ${count} locations; retaining canonical declaration and implementation spans: ${id}`,
+    ),
+  );
   return {
     project: parts.root,
     languages: parts.languages,
     indexer: "static",
-    nodes: wireNodes(dedupeNodes(finalized.nodes)),
-    edges: wireEdges(dedupeEdges(finalized.edges)),
-    warnings: [...parts.warnings, ...warnings],
+    nodes: wireNodes(nodes),
+    edges: wireEdges(dedupeEdges(finalized.edges), nodes),
+    warnings: [...parts.warnings, ...warnings, ...dedupeWarnings],
   };
 }
 

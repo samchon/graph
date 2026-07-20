@@ -2,8 +2,8 @@
  * A span on the wire, without the file it lives in.
  *
  * The reader already knows the file: a node's span is in the node's `file`, and
- * an edge's span is in the file its `from` id names. Sending the path a second
- * and a third time cost 17% of the document — on VS Code, 55 MB of a 323 MB
+ * an edge's span is in its source node's file. Sending the path a second and a
+ * third time cost 17% of the document — on VS Code, 55 MB of a 323 MB
  * dump that then has to be encoded, piped, parsed and validated — for a value
  * that is reconstructible exactly.
  *

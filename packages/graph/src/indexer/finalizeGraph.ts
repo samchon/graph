@@ -1,7 +1,9 @@
 import { ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
+import { assignSemanticIdentities } from "./assignSemanticIdentities";
 import { exportEdges } from "./exportEdges";
 import { markClosures } from "./markClosures";
 import { markIgnored } from "./markIgnored";
+import { normalizeGraphNodeKinds } from "./normalizeGraphNodeKinds";
 
 /**
  * The facts the ranking leans on that no single-file pass can see: the `closure`
@@ -19,8 +21,16 @@ export function finalizeGraph(
   files: readonly string[],
   nodes: ISamchonGraphNode[],
   edges: ISamchonGraphEdge[],
-): { nodes: ISamchonGraphNode[]; edges: ISamchonGraphEdge[] } {
+): {
+  nodes: ISamchonGraphNode[];
+  edges: ISamchonGraphEdge[];
+  warnings: string[];
+} {
+  normalizeGraphNodeKinds(nodes);
   markClosures(nodes);
   markIgnored(root, nodes);
-  return { nodes, edges: [...edges, ...exportEdges(root, files, nodes)] };
+  const finalizedEdges = [...edges, ...exportEdges(root, files, nodes)];
+  const warnings: string[] = [];
+  assignSemanticIdentities(nodes, finalizedEdges, warnings);
+  return { nodes, edges: finalizedEdges, warnings };
 }

@@ -39,19 +39,19 @@ export const test_python_lsp_drops_local_values_but_keeps_callable_closures = as
   const owners = targetEdges.map((edge) => edge.from);
   TestValidator.predicate(
     "an assigned call belongs directly to its enclosing method",
-    owners.includes("src/app.py#App.dispatch:method") &&
+    owners.some((owner) => owner.endsWith("#App.dispatch:method")) &&
       !owners.some((owner) => owner.includes("App.dispatch.response")),
   );
   TestValidator.equals(
     "a local lambda owns its body without duplicating the call on its parent",
-    owners.filter((owner) => owner === "src/app.py#App.dispatch:method").length,
+    owners.filter((owner) => owner.endsWith("#App.dispatch:method")).length,
     1,
   );
   TestValidator.predicate(
     "the callable local remains a real call owner",
     targetEdges.some(
       (edge) =>
-        edge.from === "src/app.py#App.dispatch.handler:variable" &&
+        edge.from.endsWith("#App.dispatch.handler:variable") &&
         edge.kind === "calls",
     ),
   );

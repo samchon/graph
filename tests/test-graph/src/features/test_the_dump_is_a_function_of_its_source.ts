@@ -67,7 +67,7 @@ const scenario_a_span_does_not_carry_the_file_the_reader_already_holds = (
     [],
   );
   TestValidator.equals(
-    "no edge's span repeats the file its `from` id already names",
+    "no edge's span repeats the file its source node already names",
     dump.edges.filter((edge) => edge.evidence?.file !== undefined),
     [],
   );
@@ -89,7 +89,7 @@ const scenario_a_span_does_not_carry_the_file_the_reader_already_holds = (
   const graph = SamchonGraphMemory.from(dump);
   const create = graph.node("src/order.ts#OrderService.create:method");
   TestValidator.equals(
-    "the loader puts the node's file back into its span",
+    "the loader restores a node's own file in its span",
     create?.evidence?.file,
     "src/order.ts",
   );
@@ -97,7 +97,7 @@ const scenario_a_span_does_not_carry_the_file_the_reader_already_holds = (
     .outgoing("src/order.ts#OrderService.create:method")
     .find((edge) => edge.kind === "calls");
   TestValidator.equals(
-    "the loader puts the edge's file back into its span",
+    "the loader restores an edge source file in its span",
     call?.evidence?.file,
     "src/order.ts",
   );

@@ -20,17 +20,23 @@ export function buildStaticGraphResult(
     parts.nodes,
     parts.edges,
   );
+  const warnings = [...parts.warnings, ...finalized.warnings];
+  const nodes = dedupeNodes(finalized.nodes, (id, count) =>
+    warnings.push(
+      `@samchon/graph: generic semantic declaration has ${count} locations; retaining canonical declaration and implementation spans: ${id}`,
+    ),
+  );
   const dump: ISamchonGraphDump = {
     project: parts.root,
     languages: parts.languages,
     indexer: "static",
-    nodes: wireNodes(dedupeNodes(finalized.nodes)),
-    edges: wireEdges(dedupeEdges(finalized.edges)),
-    warnings: parts.warnings,
+    nodes: wireNodes(nodes),
+    edges: wireEdges(dedupeEdges(finalized.edges), nodes),
+    warnings,
   };
   return {
     dump,
-    warnings: parts.warnings,
+    warnings,
     sources: new Map(parts.sources),
     source: new SamchonGraphSourceReader(parts.root, {
       texts: parts.sources,

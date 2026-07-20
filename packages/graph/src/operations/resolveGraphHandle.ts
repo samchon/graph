@@ -1,4 +1,5 @@
 import { compareOrdinal } from "@samchon/graph-sitter";
+import { callableBaseOf } from "../provider/semanticIdentity";
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import { ISamchonGraphNode } from "../structures";
 import { exportFanIn } from "./exportFanIn";
@@ -41,6 +42,12 @@ export function resolveGraphHandle(
 ): IResolvedGraphHandle {
   const byId = graph.node(handle);
   if (byId !== undefined) return { node: byId };
+
+  const byLegacyId = graph.legacyNodes(handle);
+  if (byLegacyId.length === 1) return { node: byLegacyId[0] };
+  if (byLegacyId.length > 1) {
+    return rank(graph, { candidates: [...byLegacyId] }, candidateLimit);
+  }
 
   const forms = nativeQualifiedForms(handle);
   for (const form of forms) {
@@ -163,11 +170,6 @@ function cppQualifiedForm(name: string): string {
 }
 
 const CALLABLE_KINDS = new Set(["function", "method", "constructor"]);
-
-function callableBaseOf(name: string): string {
-  const open = name.indexOf("(");
-  return open <= 0 ? name : name.slice(0, open).trimEnd();
-}
 
 /**
  * A `file.symbol` handle: the stem of the file a result cited, then the symbol

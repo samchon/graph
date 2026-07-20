@@ -8,13 +8,14 @@ import { SamchonGraphNodeModifier } from "./SamchonGraphNodeModifier";
  * One node in the graph: a declared symbol or a structural container (file,
  * package).
  *
- * The `id` is position-invariant: `path#qualifiedName:kind` (e.g.
- * `src/order.ts#OrderService.create:method`), so inserting a line above a
- * declaration does not re-key it. Line and span live in `evidence` and are
- * never part of identity.
+ * A TypeScript node keeps its position-invariant
+ * `path#qualifiedName:kind` id (e.g. `src/order.ts#OrderService.create:method`)
+ * for ttsc parity. Other providers may carry an opaque semantic id instead.
+ * Neither form puts declaration coordinates in the identity; they live in
+ * `evidence`.
  */
 export interface ISamchonGraphNode {
-  /** Position-invariant identity (see the interface doc for the id grammar). */
+  /** Provider-owned stable identity (see the interface doc for its grammar). */
   id: string;
 
   /** What this node represents. */

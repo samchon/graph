@@ -1,5 +1,6 @@
 export * from "./allExtensions";
 export * from "./appendAll";
+export * from "./assignSemanticIdentities";
 export * from "./buildGraph";
 export * from "./buildGraphDump";
 export * from "./buildGraphResult";
@@ -29,6 +30,7 @@ export * from "./languageOf";
 export * from "./markClosures";
 export * from "./markIgnored";
 export * from "./normalizeRequestedLanguages";
+export * from "./normalizeGraphNodeKinds";
 export * from "./overrideEdges";
 export * from "./reexportsOf";
 export * from "./refreshLanguageSession";

@@ -27,6 +27,20 @@ export const test_source_files_export_only_their_matching_symbol = () => {
       "reduce",
     ],
     "packages/graph/src/view.ts": ["runView"],
+    "packages/graph/src/provider/semanticIdentity.ts": [
+      "IGraphSemanticIdentity",
+      "semanticGraphNodeId",
+      "semanticIdentityDigest",
+      "isSemanticGraphNodeId",
+      "validateSemanticGraphNode",
+      "legacyGraphNodeIds",
+      "callableBaseOf",
+      "semanticMemberKey",
+    ],
+    "packages/graph/src/indexer/dedupeNodes.ts": [
+      "dedupeNodes",
+      "mergeSemanticNodes",
+    ],
   };
   const roots = [
     path.join(GraphPaths.graphPackageRoot, "src"),

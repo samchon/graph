@@ -22,8 +22,8 @@ import { ISamchonGraphSpan } from "./ISamchonGraphSpan";
  * a project-owned file is relative to `project`, a compiler-loaded file outside
  * that root keeps its normalized absolute identity, and a virtual compiler
  * library keeps its `bundled:///` identity. The same identity flows through a
- * node's `file` and id prefix, reconstructed edge evidence, diagnostics, and
- * operation results.
+ * node's `file`, legacy id prefix when it has one, reconstructed edge evidence,
+ * diagnostics, and operation results.
  */
 export interface ISamchonGraphDump {
   /** Absolute path of the project root the graph was built for. */
@@ -74,12 +74,12 @@ export namespace ISamchonGraphDump {
   }
 
   /**
-   * An edge as the indexer sends it. Its span is in the file its `from` id
-   * names — the id is `path#Qualified.Name:kind` — so the path rode the wire a
-   * second time on every edge, and edges outnumber nodes several times over.
+   * An edge as the indexer sends it. Its span is in its source node's file,
+   * looked up by the opaque id when necessary, so the path need not ride the
+   * wire a second time on every edge.
    */
   export interface IEdge extends Omit<ISamchonGraphEdge, "evidence"> {
-    /** Expression span; its file is the one embedded in `from`. */
+    /** Expression span; its file is the source node's declaration file. */
     evidence?: ISamchonGraphSpan;
   }
 }

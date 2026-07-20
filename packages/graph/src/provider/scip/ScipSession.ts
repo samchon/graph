@@ -6,7 +6,7 @@ import path from "node:path";
 
 import { GraphLanguage, GraphProviderAuthority } from "../../typings";
 import { IBulkGraphSession } from "../IBulkGraphSession";
-import { adaptScipIndex, SCIP_EDGE_KINDS } from "./adaptScipIndex";
+import { adaptScipIndex } from "./adaptScipIndex";
 import { parseScipIndex } from "./parseScipIndex";
 
 /**
@@ -144,7 +144,7 @@ export class ScipSession implements IBulkGraphSession {
         provenance: {
           provider: this.options.provider,
           authority: this.options.authority,
-          facts: [...SCIP_EDGE_KINDS],
+          facts: [...adaptScipIndex.EDGE_KINDS],
           schemaVersion: SCIP_SCHEMA_VERSION,
           tool: index.metadata.toolInfo?.name ?? this.options.provider,
           toolVersion: index.metadata.toolInfo?.version ?? "",

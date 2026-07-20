@@ -3,39 +3,6 @@ import { GraphLanguage } from "../typings";
 import { GRAPH_PROVIDERS } from "./GRAPH_PROVIDERS";
 import { IGraphProvider } from "./IGraphProvider";
 
-/** One provider that can serve this build, and the languages it will own. */
-export interface IGraphProviderCandidate {
-  provider: IGraphProvider;
-
-  /**
-   * The subset of the provider's languages this build actually selected.
-   *
-   * A Clang provider registered for C and C++ owns only C in a project with no
-   * C++ sources, and its session must say so: publishing an empty C++ slice
-   * would delete nothing but would claim the language was indexed.
-   */
-  languages: GraphLanguage[];
-
-  command: IGraphProvider.ICommand;
-}
-
-export interface IGraphProviderSelection {
-  /** Providers that can serve this build, in registry order. */
-  candidates: IGraphProviderCandidate[];
-
-  /**
-   * One sentence per language that a registered provider could have served but
-   * will not, naming the provider and the reason.
-   *
-   * Every declined candidate produces exactly one of these. The condition this
-   * replaces was folded into the indexer's language loop with no `else`, so a
-   * caller whose options disabled the compiler-owned lane got a generic-LSP
-   * success that read exactly like the strict result it had silently replaced.
-   * A fallback nobody can see is the failure; the sentence is the fix.
-   */
-  warnings: string[];
-}
-
 /**
  * Choose which registered providers serve which languages for one build.
  *
@@ -49,10 +16,10 @@ export function selectGraphProviders(
   options: IBuildGraphOptions,
   env: NodeJS.ProcessEnv = process.env,
   registry: readonly IGraphProvider[] = GRAPH_PROVIDERS,
-): IGraphProviderSelection {
+): selectGraphProviders.IResult {
   assertOneOwnerPerLanguage(registry);
   const requested = new Set(languages);
-  const candidates: IGraphProviderCandidate[] = [];
+  const candidates: selectGraphProviders.ICandidate[] = [];
   const warnings: string[] = [];
 
   for (const provider of registry) {
@@ -90,6 +57,42 @@ export function selectGraphProviders(
   }
 
   return { candidates, warnings };
+}
+
+export namespace selectGraphProviders {
+  /** One provider that can serve this build, and the languages it will own. */
+  export interface ICandidate {
+    provider: IGraphProvider;
+
+    /**
+     * The subset of the provider's languages this build actually selected.
+     *
+     * A Clang provider registered for C and C++ owns only C in a project with
+     * no C++ sources, and its session must say so: publishing an empty C++
+     * slice would delete nothing but would claim the language was indexed.
+     */
+    languages: GraphLanguage[];
+
+    command: IGraphProvider.ICommand;
+  }
+
+  export interface IResult {
+    /** Providers that can serve this build, in registry order. */
+    candidates: ICandidate[];
+
+    /**
+     * One sentence per language that a registered provider could have served
+     * but will not, naming the provider and the reason.
+     *
+     * Every declined candidate produces exactly one of these. The condition
+     * this replaces was folded into the indexer's language loop with no
+     * `else`, so a caller whose options disabled the compiler-owned lane got a
+     * generic-LSP success that read exactly like the strict result it had
+     * silently replaced. A fallback nobody can see is the failure; the
+     * sentence is the fix.
+     */
+    warnings: string[];
+  }
 }
 
 /**

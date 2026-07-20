@@ -9,7 +9,7 @@ import {
 import { GraphEdgeKind, GraphLanguage } from "../../typings";
 import { IGraphSemanticIdentity, semanticGraphNodeId } from "../semanticIdentity";
 import { IScipIndex } from "./IScipIndex";
-import { IScipSymbol, scipNodeKind, scipSymbol } from "./scipSymbol";
+import { scipSymbol } from "./scipSymbol";
 
 /**
  * The edge families a bare SCIP index can prove.
@@ -27,7 +27,7 @@ import { IScipSymbol, scipNodeKind, scipSymbol } from "./scipSymbol";
  * its name, and it is wrong on every function value, every macro, and every
  * language whose call syntax is not juxtaposition with parentheses.
  */
-export const SCIP_EDGE_KINDS: readonly GraphEdgeKind[] = [
+const SCIP_EDGE_KINDS: readonly GraphEdgeKind[] = [
   "contains",
   "references",
   "accesses",
@@ -35,7 +35,7 @@ export const SCIP_EDGE_KINDS: readonly GraphEdgeKind[] = [
   "type_ref",
 ];
 
-export interface IScipAdaptation {
+interface IScipAdaptation {
   nodes: ISamchonGraphNode[];
   edges: ISamchonGraphEdge[];
   diagnostics: ISamchonGraphDiagnostic[];
@@ -45,7 +45,7 @@ export interface IScipAdaptation {
   files: string[];
 }
 
-export interface IAdaptScipIndexProps {
+interface IAdaptScipIndexProps {
   index: IScipIndex;
   root: string;
 
@@ -69,8 +69,8 @@ export interface IAdaptScipIndexProps {
  * worse to reason about than one that is visibly incomplete.
  */
 export function adaptScipIndex(
-  props: IAdaptScipIndexProps,
-): IScipAdaptation {
+  props: adaptScipIndex.IProps,
+): adaptScipIndex.IResult {
   const owned = new Set(props.languages);
   const nodes = new Map<string, ISamchonGraphNode>();
   const edges: ISamchonGraphEdge[] = [];
@@ -100,7 +100,7 @@ export function adaptScipIndex(
         );
         continue;
       }
-      const kind = scipNodeKind(symbol.kind, parsed.descriptor);
+      const kind = scipSymbol.nodeKind(symbol.kind, parsed.descriptor);
       if (kind === undefined) continue;
       const displayName = symbol.displayName ?? parsed.displayName;
       if (displayName === "") continue;
@@ -270,6 +270,17 @@ export function adaptScipIndex(
   };
 }
 
+export namespace adaptScipIndex {
+  /** What a bare SCIP index proves, and nothing more. */
+  export const EDGE_KINDS = SCIP_EDGE_KINDS;
+
+  /** Everything the adapter needs that only the session knows. */
+  export type IProps = IAdaptScipIndexProps;
+
+  /** One strict slice mapped from one index. */
+  export type IResult = IScipAdaptation;
+}
+
 interface IDefinition {
   id: string;
   file: string;
@@ -292,7 +303,7 @@ interface IScope {
  * unrelated edit above it renames nothing.
  */
 function identityOf(
-  symbol: IScipSymbol,
+  symbol: scipSymbol.IParsed,
   language: GraphLanguage,
   role: ISamchonGraphNode["kind"],
   file: string,

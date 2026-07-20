@@ -18,10 +18,7 @@ import { dumpProvenanceOf } from "../provider/dumpProvenanceOf";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { isBulkGraphSession } from "../provider/isBulkGraphSession";
 import { mergeGraphSlices } from "../provider/mergeGraphSlices";
-import {
-  IGraphProviderCandidate,
-  selectGraphProviders,
-} from "../provider/selectGraphProviders";
+import { selectGraphProviders } from "../provider/selectGraphProviders";
 import { appendAll } from "./appendAll";
 import { dedupeEdges } from "./dedupeEdges";
 import { dedupeNodes } from "./dedupeNodes";
@@ -353,7 +350,7 @@ async function closeKeptSessions(
  */
 async function collectProviderGraph(
   root: string,
-  candidate: IGraphProviderCandidate,
+  candidate: selectGraphProviders.ICandidate,
   options: IBuildGraphOptions,
 ): Promise<{
   refresh: IBulkGraphSession.IRefresh;

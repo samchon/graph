@@ -3,9 +3,9 @@ import {
   buildLspGraph,
   type GraphLanguage,
   type IBulkGraphSession,
-  type IGraphProviderCandidate,
   type ILspSession,
   type ISamchonGraphNode,
+  type selectGraphProviders,
 } from "@samchon/graph";
 import fs from "node:fs";
 import path from "node:path";
@@ -122,8 +122,11 @@ async function assertStrictProviderCancellationBoundary(): Promise<void> {
       signal: live.signal,
     },
     {
-      resolveTtscGraphCommand: () => ({ command: process.execPath, args: [] }),
-      collectTtscGraph: async () => {
+      selectGraphProviders: () => ({
+        candidates: [fakeCandidate()],
+        warnings: [],
+      }),
+      collectProviderGraph: async () => {
         throw fallbackError;
       },
       collectLanguageGraph: async () => {
@@ -275,7 +278,7 @@ function installCommand(root: string, command: string): void {
 }
 
 /** The one strict candidate these builds select, matching the fake snapshot. */
-function fakeCandidate(): IGraphProviderCandidate {
+function fakeCandidate(): selectGraphProviders.ICandidate {
   return {
     provider: ProviderFixtures.provider(),
     languages: ["typescript"],

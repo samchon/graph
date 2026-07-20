@@ -1,5 +1,5 @@
 import { IGraphProvider } from "../IGraphProvider";
-import { TTSC_GRAPH_EDGE_KINDS } from "./adaptTtscGraphDump";
+import { adaptTtscGraphDump } from "./adaptTtscGraphDump";
 import { resolveTtscGraphCommand } from "./resolveTtscGraphCommand";
 import { TtscGraphClient } from "./TtscGraphClient";
 import { ttscGraphStrictRefusal } from "./ttscGraphStrictRefusal";
@@ -22,7 +22,7 @@ export const ttscGraphProvider: IGraphProvider = {
   // silently substitute a weaker lane for them without saying so.
   authority: "compiler",
 
-  facts: TTSC_GRAPH_EDGE_KINDS,
+  facts: adaptTtscGraphDump.EDGE_KINDS,
 
   // A `tsconfig` change can add or drop whole files from the program, and a
   // `package.json` change can move the resolution roots those files import

@@ -2,10 +2,7 @@ import { TestValidator } from "@nestia/e2e";
 import {
   adaptScipIndex,
   parseScipIndex,
-  scipNodeKind,
   scipSymbol,
-  SCIP_EDGE_KINDS,
-  type IScipIndex,
 } from "@samchon/graph";
 
 /**
@@ -79,7 +76,7 @@ function assertSymbolParsing(): void {
   );
   TestValidator.equals(
     "a doubled backtick is one literal backtick",
-    scipSymbol("scip-scala maven example v1 ``tick``tock``#")?.displayName,
+    scipSymbol("scip-scala maven example v1 `tick``tock`#")?.displayName,
     "tick`tock",
   );
 
@@ -111,44 +108,44 @@ function assertSymbolParsing(): void {
   // mapping means no node, because a guessed kind is read as fact downstream.
   TestValidator.equals(
     "the index's kind wins over the descriptor",
-    scipNodeKind("Interface", "type"),
+    scipSymbol.nodeKind("Interface", "type"),
     "interface",
   );
   TestValidator.equals(
     "the descriptor is the fallback",
-    scipNodeKind(undefined, "method"),
+    scipSymbol.nodeKind(undefined, "method"),
     "method",
   );
   TestValidator.equals(
     "an unmapped kind falls back to the descriptor",
-    scipNodeKind("SelfParameterButNotReally", "type"),
+    scipSymbol.nodeKind("SelfParameterButNotReally", "type"),
     "class",
   );
   TestValidator.equals(
     "a namespace descriptor maps",
-    scipNodeKind(undefined, "namespace"),
+    scipSymbol.nodeKind(undefined, "namespace"),
     "namespace",
   );
   TestValidator.equals(
     "a term descriptor maps",
-    scipNodeKind(undefined, "term"),
+    scipSymbol.nodeKind(undefined, "term"),
     "variable",
   );
   TestValidator.equals(
     "a macro descriptor maps",
-    scipNodeKind(undefined, "macro"),
+    scipSymbol.nodeKind(undefined, "macro"),
     "function",
   );
   for (const undecided of ["type-parameter", "parameter", "meta"] as const) {
     TestValidator.equals(
       `a ${undecided} descriptor declares nothing this graph models`,
-      scipNodeKind(undefined, undecided),
+      scipSymbol.nodeKind(undefined, undecided),
       undefined,
     );
   }
   TestValidator.equals(
     "no kind and no descriptor is no node",
-    scipNodeKind(undefined, undefined),
+    scipSymbol.nodeKind(undefined, undefined),
     undefined,
   );
 }
@@ -307,7 +304,7 @@ function assertMapping(): void {
   // an invocation, so no `calls` edge is invented for it.
   TestValidator.predicate(
     "no edge family outside SCIP's proof is published",
-    adapted.edges.every((edge) => SCIP_EDGE_KINDS.includes(edge.kind)),
+    adapted.edges.every((edge) => adaptScipIndex.EDGE_KINDS.includes(edge.kind)),
   );
   TestValidator.predicate(
     "calls are never inferred",

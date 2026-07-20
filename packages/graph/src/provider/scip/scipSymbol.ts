@@ -1,7 +1,7 @@
 import { GraphNodeKind } from "../../typings";
 
 /** One parsed SCIP symbol string. */
-export interface IScipSymbol {
+interface IParsedSymbol {
   /**
    * Whether this symbol is stable across rebuilds.
    *
@@ -29,10 +29,10 @@ export interface IScipSymbol {
   owners: string[];
 
   /** What the final descriptor's suffix says this symbol is. */
-  descriptor: IScipSymbol.Descriptor | undefined;
+  descriptor: IParsedSymbol.Descriptor | undefined;
 }
 
-export namespace IScipSymbol {
+namespace IParsedSymbol {
   /**
    * The descriptor suffix SCIP uses to say what a name denotes.
    *
@@ -66,7 +66,7 @@ export namespace IScipSymbol {
  * drops the occurrence with a warning. Guessing a display name out of an
  * unparseable string is how a graph acquires nodes named after punctuation.
  */
-export function scipSymbol(symbol: string): IScipSymbol | undefined {
+export function scipSymbol(symbol: string): IParsedSymbol | undefined {
   if (symbol === "") return undefined;
   if (symbol.startsWith("local ")) {
     const id = symbol.slice("local ".length).trim();
@@ -97,19 +97,29 @@ export function scipSymbol(symbol: string): IScipSymbol | undefined {
   };
 }
 
-/**
- * Map a symbol's descriptor and the index's own kind onto a graph node kind.
- *
- * The index's `kind` wins when it maps, because it is the indexer's semantic
- * statement; the descriptor is the fallback, because it is at least the
- * indexer's syntactic one. When neither maps, the symbol has no kind this
- * graph models and the caller omits the node rather than defaulting it to
- * `variable` — a wrong kind is worse than an absent one, since every ranking
- * and traversal reads it as fact.
- */
-export function scipNodeKind(
+export namespace scipSymbol {
+  /** One parsed symbol string, as {@link scipSymbol} returns it. */
+  export type IParsed = IParsedSymbol;
+
+  /** What a symbol's final descriptor suffix says it denotes. */
+  export type Descriptor = IParsedSymbol.Descriptor;
+
+  /**
+   * Map a symbol's descriptor and the index's own kind onto a graph node kind.
+   *
+   * The index's `kind` wins when it maps, because it is the indexer's semantic
+   * statement; the descriptor is the fallback, because it is at least the
+   * indexer's syntactic one. When neither maps, the symbol has no kind this
+   * graph models and the caller omits the node rather than defaulting it to
+   * `variable` — a wrong kind is worse than an absent one, since every ranking
+   * and traversal reads it as fact.
+   */
+  export const nodeKind = scipNodeKindImpl;
+}
+
+function scipNodeKindImpl(
   kind: string | undefined,
-  descriptor: IScipSymbol.Descriptor | undefined,
+  descriptor: IParsedSymbol.Descriptor | undefined,
 ): GraphNodeKind | undefined {
   const mapped = kind === undefined ? undefined : SCIP_KINDS.get(kind);
   if (mapped !== undefined) return mapped;
@@ -194,7 +204,7 @@ function splitPackage(symbol: string): string | undefined {
 
 interface IDescriptor {
   name: string;
-  descriptor: IScipSymbol.Descriptor;
+  descriptor: IParsedSymbol.Descriptor;
 }
 
 /**

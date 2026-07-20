@@ -21,7 +21,8 @@ import { ILspSession } from "./ILspSession";
 import { IResidentGraphSource } from "./IResidentGraphSource";
 import { languageOf } from "./languageOf";
 import { refreshLanguageSession } from "./refreshLanguageSession";
-import { IGraphSourceSelection, selectGraphSources } from "./selectGraphSources";
+import { IGraphSourceSelection } from "./IGraphSourceSelection";
+import { selectGraphSources } from "./selectGraphSources";
 import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
 

@@ -2,19 +2,9 @@ import { GraphLanguage } from "../typings";
 import { walkSourceFiles } from "../utils/fs";
 import { allExtensions } from "./allExtensions";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
+import { IGraphSourceSelection } from "./IGraphSourceSelection";
 import { languageOf } from "./languageOf";
-import { specOf } from "./specOf";
-
-export interface IGraphSourceSelection {
-  /** Requested languages, deduplicated in caller order; discovery uses files. */
-  languages: GraphLanguage[];
-  /** Languages actually represented by the globally capped source set. */
-  presentLanguages: GraphLanguage[];
-  /** One deterministic global source set, before it is partitioned by language. */
-  files: string[];
-  /** The selected files that belong to each discovered/requested language. */
-  byLanguage: Map<GraphLanguage, string[]>;
-}
+import { normalizeRequestedLanguages } from "./normalizeRequestedLanguages";
 
 /**
  * Select the source snapshot once for an index build or resident refresh.
@@ -46,21 +36,4 @@ export function selectGraphSources(
     files,
     byLanguage,
   };
-}
-
-/** Reject runtime values outside the public language registry before a walk. */
-export function normalizeRequestedLanguages(
-  languages: readonly GraphLanguage[] | undefined,
-): GraphLanguage[] | undefined {
-  if (languages === undefined) return undefined;
-  const normalized: GraphLanguage[] = [];
-  for (const language of languages) {
-    if (typeof language !== "string" || specOf(language) === undefined) {
-      throw new Error(
-        `@samchon/graph: unsupported explicit language: ${String(language)}`,
-      );
-    }
-    if (!normalized.includes(language)) normalized.push(language);
-  }
-  return normalized;
 }

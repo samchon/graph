@@ -6,7 +6,7 @@ import { createResidentGraphSource } from "../indexer/createResidentGraphSource"
 import { discoverLanguages } from "../indexer/discoverLanguages";
 import { IBuildGraphOptions } from "../indexer/IBuildGraphOptions";
 import { IResidentGraphSource } from "../indexer/IResidentGraphSource";
-import { normalizeRequestedLanguages } from "../indexer/selectGraphSources";
+import { normalizeRequestedLanguages } from "../indexer/normalizeRequestedLanguages";
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import { ISamchonGraphDump } from "../structures";

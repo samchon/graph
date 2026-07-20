@@ -7,7 +7,7 @@ Read this document in full when the user authorizes implementation pull requests
 - [Plan And Claim A Pull Request Wave](#plan-and-claim-a-pull-request-wave)
 - [Keep Working While Commands Run](#keep-working-while-commands-run)
 - [Implement And Revalidate A Batch](#implement-and-revalidate-a-batch)
-- [Remove Every Finished Worktree](#remove-every-finished-worktree)
+- [Remove Every Finished Worktree And Temporary Asset](#remove-every-finished-worktree-and-temporary-asset)
 - [Repeat A Campaign Cycle](#repeat-a-campaign-cycle)
 - [Final Reconciliation](#final-reconciliation)
 
@@ -17,18 +17,20 @@ Only an admitted issue can enter implementation. The lead first reopens the issu
 
 Build the issue dependency DAG before assigning implementation. Form cohesive batches instead of creating one worktree per issue.
 
-- Group dependency-ready issues when their change surfaces and verification are compatible.
+- Treat every active claim pull request as a fixed batch in the DAG. Do not add issues, transfer issues between active claims, combine active branches, or repurpose a claim. Its scope may narrow only through the independently validated invalid-or-narrow issue procedure below; it never widens to absorb new work.
+- Batch only unclaimed issues that are dependency-ready together and share the same architectural owner and root cause, overlapping files or consequence surfaces, one shared focused-to-broad verification program, and an atomic review and rollback boundary. Shared broad verification alone does not justify a batch.
 - Assign one batch to one agent, worktree, branch, and pull request.
-- Split jointly implementable issues only for a concrete dependency, ownership, atomicity, or validation reason. Record the reason in the campaign knowledge base.
-- Immediately before claiming a batch, check for an overlapping implementation pull request or branch.
+- Split otherwise related issues for a concrete dependency, ownership, atomicity, or validation reason. Record every split, its category, and its evidence in a campaign knowledge-base split ledger so the pull-request count remains explainable.
+- Immediately before claiming a batch, refresh issue, pull-request, branch, and dependency state. Recompute the DAG if an overlapping claim or readiness change appears.
 
 When remote work is authorized, the assigned agent claims a batch before implementation:
 
 1. Create an isolated worktree and topic branch from the intended target.
 2. Create the smallest repository-valid, implementation-free claim commit and push the branch.
 3. Immediately open a draft pull request that names the complete batch and links every included issue.
-4. Mark implementation and verification as pending, then record the batch, worktree, branch, issues, pull request, and initial check state in `.wiki/<campaign>/`.
-5. Start `pnpm install` asynchronously in the worktree, then begin source inspection, consequence analysis, and test design immediately.
+4. Treat the draft pull request's `createdAt` as the batch start time. Open it only after dependencies are ready, scope is final, and the assigned agent and worktree can begin immediately; never pre-claim future or blocked work.
+5. Mark implementation and verification as pending, then record the batch, worktree, branch, issues, pull request, start time, and initial check state in `.wiki/<campaign>/`.
+6. Start `pnpm install` asynchronously in the worktree, then begin source inspection, consequence analysis, and test design immediately.
 
 The draft reserves the whole batch. Do not create claim branches or pull requests during an audit-only or issue-publication-only phase.
 
@@ -68,9 +70,9 @@ Paid agent benchmarks, releases, package publication, global language-server ins
 
 Before merge, complete solo Self-Review. A pending local test or ordinary check never delays the start of that review, but its final result is required before merge. Under an ordinary campaign, merge only with explicit user authorization. Under a standing mandate to carry the campaign through merge, merge once implementation, Self-Review, local verification, and required checks pass.
 
-## Remove Every Finished Worktree
+## Remove Every Finished Worktree And Temporary Asset
 
-Worktree removal is part of finishing an assignment.
+Worktree and assignment-created temporary-asset removal are part of finishing an assignment.
 
 After a pull request merges:
 
@@ -83,6 +85,8 @@ After a pull request merges:
 
 If an assignment ends without a merge, first record retained evidence and obtain any authority needed to discard the remaining contents. Never force-remove a worktree whose ownership or unpublished contents are uncertain.
 
+Remove disposable Go assets created for the completed assignment as well, including workspace-local temporary server binaries, Go work or cache directories, extracted tool directories, and temporary benchmark setup directories. Resolve every target path first and remove it only when it is inside the completed worktree or an explicit assignment-owned temporary root, is no longer in use, and contains no retained evidence. Never delete a global `GOCACHE`, `GOMODCACHE`, or a shared fixture checkout as campaign cleanup.
+
 ## Repeat A Campaign Cycle
 
 Report the wave after every surviving issue is covered by its assigned batch pull request.
@@ -91,13 +95,13 @@ When the user requests another discovery cycle, return to the parent skill's Dis
 
 ## Final Reconciliation
 
-Run this phase only after the user ends the campaign, every campaign pull request is resolved, and every campaign worktree is either removed or explicitly retained.
+Run this phase only after the user ends the campaign, every campaign pull request is resolved, and every campaign worktree and assignment-created temporary asset is either removed or explicitly retained.
 
 1. Reconcile the knowledge base against actual issue, branch, pull-request, merge, check, and worktree state.
 2. In a clean checkout of the integrated target, run `pnpm build`, `pnpm test`, and `pnpm coverage`.
 3. Run affected deterministic benchmark tests and any authorized experiment or paid-benchmark gates. Record unavailable external checks rather than pretending they passed.
 4. Confirm the root README, public application contract, language claims, manifest-derived files, and tracked benchmark assets match the integrated source.
-5. Confirm no campaign-created branch, worktree, temporary report, generated package README, or ignored build artifact remains unless the knowledge base explicitly records why it is retained.
+5. Confirm no campaign-created branch, worktree, assignment-owned external temporary asset, temporary report, generated package README, or ignored build artifact remains unless the knowledge base explicitly records why it is retained.
 6. Report resolved issues, merged pull requests, exact verification, deferred risks, and retained artifacts.
 
 There is no repository-wide formatter or formatter cleanup pull request. Do not invent a `pnpm format` phase for campaign cleanup.

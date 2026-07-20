@@ -22,6 +22,10 @@ The corpus pins external repositories by full commit and clones them beside this
 
 Do not move fixtures under `tests/benchmark/.work`. Do not edit a prepared clone as the durable source of a fixture change; the next setup resets it to the pinned commit. Update the authoritative corpus or upstream fixture only when the task explicitly calls for it, then regenerate and verify the manifest through the repository script.
 
+## Cleanup
+
+At the end of an authorized benchmark assignment, remove every completed worktree and disposable Go asset that the assignment created. First verify the absolute path, that no process uses it, and that raw reports, traces, and other retained evidence live elsewhere. Only remove workspace-local temporary server binaries, Go work or cache directories, extracted tool directories, or benchmark setup directories inside the completed worktree or an explicit assignment-owned temporary root. Never delete global `GOCACHE`, `GOMODCACHE`, or a shared corpus fixture as benchmark cleanup.
+
 ## Reporting And Publication
 
 Preserve raw samples, exact model versions, answers, trace paths, setup time, tool calls, source touches, shell calls, durations, and failures in the report. A spent-token failure is evidence, not a sample to erase. Only the harness's explicitly classified zero-token infrastructure or capacity failures may be retried away.

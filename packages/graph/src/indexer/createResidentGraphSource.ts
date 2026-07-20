@@ -141,7 +141,9 @@ export function createResidentGraphSource(
         generations.set(language, refresh.generation);
         continue;
       }
-      const files = selected.byLanguage.get(language) ?? [];
+      // `sameLanguages` only admits this refresh while discovery still sees
+      // every live session language in the selected source snapshot.
+      const files = selected.byLanguage.get(language)!;
       const result = await refreshLanguageSession(
         session,
         files,

@@ -23,8 +23,23 @@ export function assignSemanticIdentities(
   edges: ISamchonGraphEdge[] = [],
   warnings: string[] = [],
 ): void {
+  const idCounts = new Map<string, number>();
+  for (const node of nodes) {
+    idCounts.set(node.id, (idCounts.get(node.id) ?? 0) + 1);
+  }
   const remap = new Map<string, IRemappedNode[]>();
   for (const node of nodes) {
+    // ttsc's strict slice preserves its exact legacy ids, and its generic
+    // fallback has the same public convention when it is unambiguous. Promote
+    // only a real fallback collision ??an overload or otherwise ambiguous
+    // declaration ??so the fallback separates it without re-keying every
+    // ordinary TypeScript handle.
+    if (
+      node.language === "typescript" &&
+      idCounts.get(node.id) === 1
+    ) {
+      continue;
+    }
     const identity = genericIdentityOf(node);
     if (identity === undefined) continue;
     const oldId = node.id;

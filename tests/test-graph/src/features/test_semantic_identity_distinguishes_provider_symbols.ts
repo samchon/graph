@@ -174,8 +174,22 @@ export const test_semantic_identity_distinguishes_provider_symbols = async () =>
     fallbackTypeScriptOverloads[1]!.id,
   );
   TestValidator.predicate(
-    "generic TypeScript fallback uses semantic ids while the strict ttsc lane remains untouched",
+    "a collided generic TypeScript fallback uses semantic ids",
     fallbackTypeScriptOverloads.every((node) => node.id.startsWith("@v2/")),
+  );
+  const canonicalTypeScript: ISamchonGraphNode = {
+    id: "src/app.ts#run:function",
+    kind: "function",
+    language: "typescript",
+    name: "run",
+    file: "src/app.ts",
+    external: false,
+  };
+  assignSemanticIdentities([canonicalTypeScript]);
+  TestValidator.equals(
+    "an unambiguous generic TypeScript fallback retains its canonical handle",
+    canonicalTypeScript.id,
+    "src/app.ts#run:function",
   );
   const unknown: ISamchonGraphNode = {
     id: "src/unknown#run:function",

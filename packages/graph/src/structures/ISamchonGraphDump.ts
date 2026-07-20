@@ -37,28 +37,7 @@ export interface ISamchonGraphDump {
   /** Which indexing strategy produced the graph. */
   indexer: "lsp" | "static" | "hybrid";
 
-  /**
-   * What each strict provider proved about the slice it contributed.
-   *
-   * One row per contributing provider, ordered by provider name so an
-   * unchanged checkout produces byte-identical output. Absent when no strict
-   * provider served this build, and absent from dumps written before this
-   * field existed — a reader must treat its absence as "no provider stated
-   * this", never as "no provider contributed".
-   *
-   * Only strict providers appear. The generic language-server and static lanes
-   * are already described by {@link indexer}, and inventing a provenance row
-   * for them would put a fabricated build-universe fingerprint and manifest
-   * digest next to real ones, which is the opposite of what this field is for.
-   *
-   * Nothing here records what the provider *did* to compute the generation.
-   * Computation mode is a property of one refresh, not of the facts: a
-   * resident session that reused its program and a one-shot build that loaded
-   * it from scratch can publish identical facts, and recording the difference
-   * would make two dumps of the same unedited checkout differ — the one
-   * property this structure's contract rests on. It is reported through the
-   * session and the indexer result instead.
-   */
+  /** What each strict provider proved about the slice it contributed, one row per provider, ordered by provider name so an unchanged checkout stays byte-identical. Absent when no strict provider served the build, and absent from dumps written before this field existed. Computation mode is deliberately not here: it belongs to one refresh rather than to the facts, so recording it would make two dumps of the same unedited checkout differ. */
   provenance?: ISamchonGraphDump.IProvenance[];
 
   /** Every node the build recorded. */

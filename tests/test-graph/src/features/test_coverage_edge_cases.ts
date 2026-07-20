@@ -274,8 +274,45 @@ export const test_coverage_edge_cases = async () => {
   });
   TestValidator.equals("empty LSP symbols fall back to static", emptySymbols.indexer, "static");
   TestValidator.predicate(
+    "empty LSP symbols retain static source declarations",
+    emptySymbols.nodes.some((node) => node.name === "LspService"),
+  );
+  TestValidator.predicate(
     "empty LSP symbols warning is retained",
     emptySymbols.warnings?.some((warning) => warning.includes("LSP returned no symbols")) === true,
+  );
+
+  const partialFallbackRoot = GraphPaths.createTempDirectory(
+    "samchon-lsp-static-partial-",
+  );
+  fs.mkdirSync(path.join(partialFallbackRoot, "src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(partialFallbackRoot, "src", "Service.cs"),
+    [
+      "namespace Demo;",
+      "partial class Service {}",
+      "partial class Service {}",
+      "partial class Service {}",
+      "",
+    ].join("\n"),
+  );
+  const partialFallback = await buildGraphDump({
+    cwd: partialFallbackRoot,
+    mode: "lsp",
+    languages: ["csharp"],
+    server: process.execPath,
+    serverArgs: [GraphPaths.fakeLspServer, "--empty-symbols"],
+  });
+  TestValidator.equals(
+    "a static partial fallback keeps one canonical declaration",
+    partialFallback.nodes.filter((node) => node.name === "Service").length,
+    1,
+  );
+  TestValidator.predicate(
+    "a static partial fallback reports every overflow location",
+    partialFallback.warnings?.some((warning) =>
+      warning.includes("generic semantic declaration has 3 locations"),
+    ) === true,
   );
 
   const absoluteMissing = await buildGraphDump({
@@ -355,6 +392,31 @@ export const test_coverage_edge_cases = async () => {
     TestValidator.predicate(
       "missing configured LSP warning is retained",
       noConfiguredLsp.warnings?.some((warning) => warning.includes("no built-in LSP server")) === true,
+    );
+    const { buildLspGraph: buildKeepAliveFallback } = await importLib<{
+      buildLspGraph: (options: {
+        cwd: string;
+        languages: string[];
+        keepAlive: boolean;
+      }) => Promise<{
+        dump: ISamchonGraphDump;
+        sessions?: Map<unknown, unknown>;
+        sources?: Map<string, string>;
+      }>;
+    }>("indexer/buildLspGraph.js");
+    const keepAliveFallback = await buildKeepAliveFallback({
+      cwd: lspRoot,
+      languages: ["typescript"],
+      keepAlive: true,
+    });
+    TestValidator.equals(
+      "static fallback retains the requested session map",
+      keepAliveFallback.sessions?.size,
+      0,
+    );
+    TestValidator.predicate(
+      "static fallback retains its source snapshot",
+      (keepAliveFallback.sources?.size ?? 0) > 0,
     );
   } finally {
     if (typescriptSpec !== undefined) typescriptSpec.lsp = originalTypescriptLsp;
@@ -440,11 +502,17 @@ export const test_coverage_edge_cases = async () => {
   }>("indexer/buildStaticGraph.js");
   const { buildLspGraph } = await importLib<{
     buildLspGraph: (options?: {
+      cwd?: string;
       languages?: string[];
       server?: string;
       serverArgs?: string[];
       lspReferenceLimit?: number;
-    }) => Promise<{ dump: ISamchonGraphDump }>;
+      keepAlive?: boolean;
+    }) => Promise<{
+      dump: ISamchonGraphDump;
+      sessions?: Map<unknown, unknown>;
+      sources?: Map<string, string>;
+    }>;
   }>("indexer/buildLspGraph.js");
   process.chdir(staticRoot);
   try {
@@ -464,6 +532,16 @@ export const test_coverage_edge_cases = async () => {
   } finally {
     process.chdir(previousCwd);
   }
+  const emptyKeepAliveRoot = GraphPaths.createTempDirectory("samchon-empty-lsp-");
+  const emptyKeepAliveGraph = await buildLspGraph({
+    cwd: emptyKeepAliveRoot,
+    languages: ["typescript"],
+    keepAlive: true,
+  });
+  TestValidator.equals("empty LSP project uses the static graph", emptyKeepAliveGraph.dump.indexer, "static");
+  TestValidator.equals("empty LSP project has no nodes", emptyKeepAliveGraph.dump.nodes.length, 0);
+  TestValidator.equals("empty LSP project retains an empty session map", emptyKeepAliveGraph.sessions?.size, 0);
+  TestValidator.equals("empty LSP project retains an empty source snapshot", emptyKeepAliveGraph.sources?.size, 0);
   const importLimitRoot = GraphPaths.createTempDirectory("samchon-import-limit-");
   fs.mkdirSync(path.join(importLimitRoot, "src"), { recursive: true });
   fs.writeFileSync(

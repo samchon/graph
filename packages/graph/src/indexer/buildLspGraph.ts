@@ -225,7 +225,7 @@ export async function buildLspGraph(
         const dump = staticDump(fallback, warnings);
         return {
           dump,
-          warnings: dump.warnings ?? [],
+          warnings: dump.warnings,
           source: snapshotSource(),
           ...(options.keepAlive ? { sessions, sources } : {}),
         };
@@ -241,7 +241,7 @@ export async function buildLspGraph(
       const dump = staticDump(fallback, warnings);
       return {
         dump,
-        warnings: dump.warnings ?? [],
+        warnings: dump.warnings,
         source: snapshotSource(),
         ...(options.keepAlive ? { sessions, sources } : {}),
       };
@@ -342,7 +342,7 @@ async function collectTtscGraph(
 function staticDump(
   parts: IStaticGraphParts,
   warnings: readonly string[],
-): ISamchonGraphDump {
+): ISamchonGraphDump & { warnings: string[] } {
   const finalized = finalizeGraph(
     parts.root,
     [...parts.sources.keys()],

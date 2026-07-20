@@ -5,6 +5,7 @@ import {
   ISamchonGraphNode,
   assignSemanticIdentities,
   dedupeNodes,
+  mergeSemanticNodes,
   semanticGraphNodeId,
 } from "@samchon/graph";
 
@@ -143,6 +144,40 @@ export const test_semantic_identity_distinguishes_provider_symbols = async () =>
     "the declaration/implementation policy preserves both partial locations",
     [partials[0]?.evidence?.file, partials[0]?.implementation?.file],
     ["src/Partial.cs", "src/Partial.impl.cs"],
+  );
+
+  // Legacy handles remain ambiguous until a strict provider can reject their
+  // collision. The generic compatibility lane keeps its historical last-wins
+  // reduction, while the strict boundary must retain both facts to see it.
+  const legacyDuplicates: ISamchonGraphNode[] = [
+    {
+      id: "src/legacy.ts#run:function",
+      kind: "function",
+      language: "typescript",
+      name: "run",
+      file: "src/legacy.ts",
+      external: false,
+      evidence: { file: "src/legacy.ts", startLine: 1 },
+    },
+    {
+      id: "src/legacy.ts#run:function",
+      kind: "function",
+      language: "typescript",
+      name: "run",
+      file: "src/legacy.ts",
+      external: false,
+      evidence: { file: "src/legacy.ts", startLine: 2 },
+    },
+  ];
+  TestValidator.equals(
+    "strict semantic merging preserves ambiguous legacy declarations",
+    mergeSemanticNodes(legacyDuplicates).map((node) => node.evidence?.startLine),
+    [1, 2],
+  );
+  TestValidator.equals(
+    "generic legacy compatibility retains the final declaration",
+    dedupeNodes(legacyDuplicates).map((node) => node.evidence?.startLine),
+    [2],
   );
 
   const fallbackTypeScriptOverloads: ISamchonGraphNode[] = [

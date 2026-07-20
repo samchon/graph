@@ -332,5 +332,5 @@ function synthesize(dump: ISamchonGraphDump): {
 }
 
 function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
+  return Number(left > right) - Number(left < right);
 }

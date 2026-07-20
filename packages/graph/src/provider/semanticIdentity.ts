@@ -95,9 +95,8 @@ export function isSemanticGraphNodeId(id: string): boolean {
 /** Fail closed when a semantic id contradicts its node's language or kind. */
 export function validateSemanticGraphNode(node: ISamchonGraphNode): void {
   if (!isSemanticGraphNodeId(node.id)) return;
-  const match = SEMANTIC_NODE_ID.exec(node.id);
+  const match = SEMANTIC_NODE_ID.exec(node.id)!;
   if (
-    match === null ||
     match[2] !== node.language ||
     match[5] !== node.kind
   ) {

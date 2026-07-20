@@ -9,6 +9,7 @@ import {
   dedupeNodes,
   finalizeGraph,
   isSemanticGraphNodeId,
+  legacyGraphNodeIds,
   semanticGraphNodeId,
 } from "@samchon/graph";
 import path from "node:path";
@@ -92,6 +93,18 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
   );
   TestValidator.error("an empty semantic symbol is refused", () =>
     semanticGraphNodeId(identity({ symbol: "" }), "demo.run"),
+  );
+  TestValidator.error("an older provider identity schema is refused", () =>
+    semanticGraphNodeId(
+      {
+        ...identity({ symbol: "demo.run" }),
+        version: 1,
+      } as unknown as IGraphSemanticIdentity,
+      "demo.run",
+    ),
+  );
+  TestValidator.error("an empty semantic display name is refused", () =>
+    semanticGraphNodeId(identity({ symbol: "demo.run" }), ""),
   );
   TestValidator.error("an empty native symbol key is refused", () =>
     semanticGraphNodeId(
@@ -257,9 +270,9 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
     "demo.Widget.draw",
   );
   const threeLocations: ISamchonGraphNode[] = [
-    gnode({ id: semId, name: "draw", kind: "method", qualifiedName: "demo.Widget.draw", file: "src/a.go", evidence: { file: "src/a.go", startLine: 2, startCol: 0 } }),
-    gnode({ id: semId, name: "draw", kind: "method", qualifiedName: "demo.Widget.draw", file: "src/a.go", evidence: { file: "src/a.go", startLine: 5, startCol: 0 } }),
-    gnode({ id: semId, name: "draw", kind: "method", qualifiedName: "demo.Widget.draw", file: "src/a.go", evidence: { file: "src/a.go", startLine: 9, startCol: 0 } }),
+    gnode({ id: semId, name: "draw", kind: "method", qualifiedName: "demo.Widget.draw", file: "src/a.go", evidence: { file: "src/a.go", startLine: 2, startCol: 0 }, ignored: true }),
+    gnode({ id: semId, name: "draw", kind: "method", qualifiedName: "demo.Widget.draw", file: "src/a.go", evidence: { file: "src/a.go", startLine: 5, startCol: 0 }, exported: true }),
+    gnode({ id: semId, name: "draw", kind: "method", qualifiedName: "demo.Widget.draw", file: "src/a.go", evidence: { file: "src/a.go", startLine: 9, startCol: 0 }, closure: true }),
   ];
   const locationWarnings: Array<readonly [string, number]> = [];
   const forward = dedupeNodes(threeLocations, (id, count) =>
@@ -273,6 +286,25 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
     [forward[0]!.evidence, forward[0]!.implementation],
     [reverse[0]!.evidence, reverse[0]!.implementation],
   );
+  TestValidator.equals(
+    "semantic location merging preserves every truthy graph modifier",
+    [forward[0]!.ignored, forward[0]!.exported, forward[0]!.closure],
+    [true, true, true],
+  );
+  const withoutLocations = dedupeNodes([
+    gnode({ id: semId, name: "draw", kind: "method", qualifiedName: "demo.Widget.draw", file: "src/no-span.go", ignored: true }),
+    gnode({ id: semId, name: "draw", kind: "method", qualifiedName: "demo.Widget.draw", file: "src/no-span.go", ignored: true }),
+  ]);
+  TestValidator.equals(
+    "semantic facts without locations preserve their source file alone",
+    [
+      withoutLocations[0]!.file,
+      withoutLocations[0]!.ignored,
+      withoutLocations[0]!.evidence,
+      withoutLocations[0]!.implementation,
+    ],
+    ["src/no-span.go", true, undefined, undefined],
+  );
   const merged = mergeSemanticNodes(threeLocations);
   TestValidator.equals("mergeSemanticNodes collapses a repeated semantic id", merged.length, 1);
   TestValidator.error("semantic location facts cannot disagree", () =>
@@ -280,6 +312,34 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
       threeLocations[0]!,
       { ...threeLocations[1]!, name: "other" },
     ]),
+  );
+
+  const aliases = legacyGraphNodeIds(
+    gnode({
+      id: semId,
+      name: "draw(string)",
+      kind: "method",
+      qualifiedName: "demo.Widget.draw(string)",
+      file: "src/Widget.go",
+      evidence: { file: "src/Widget.decl.go", startLine: 2 },
+      implementation: { file: "src/Widget.impl.go", startLine: 8 },
+    }),
+  );
+  TestValidator.predicate(
+    "legacy aliases retain the declaration evidence file",
+    aliases.includes("src/Widget.decl.go#demo.Widget.draw(string):method"),
+  );
+  TestValidator.predicate(
+    "legacy aliases fall back to the node file when evidence is absent",
+    legacyGraphNodeIds(
+      gnode({
+        id: semId,
+        name: "draw(string)",
+        kind: "method",
+        qualifiedName: "demo.Widget.draw(string)",
+        file: "src/Widget.file-only.go",
+      }),
+    ).includes("src/Widget.file-only.go#demo.Widget.draw(string):method"),
   );
 
   // mergeGraphSlices: a strict slice normalizes and orders its nodes and edges.

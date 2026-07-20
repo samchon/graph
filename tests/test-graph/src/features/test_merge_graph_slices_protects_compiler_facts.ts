@@ -1,5 +1,9 @@
 import { TestValidator } from "@nestia/e2e";
-import type { ISamchonGraphEdge, ISamchonGraphNode } from "@samchon/graph";
+import {
+  ISamchonGraphEdge,
+  ISamchonGraphNode,
+  semanticGraphNodeId,
+} from "@samchon/graph";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -50,6 +54,7 @@ export const test_merge_graph_slices_protects_compiler_facts = async () => {
     mergeGraphSlices: (options: IMergeOptions) => {
       nodes: ISamchonGraphNode[];
       edges: ISamchonGraphEdge[];
+      warnings: string[];
     };
   }>("provider/mergeGraphSlices.js");
 
@@ -150,6 +155,88 @@ export const test_merge_graph_slices_protects_compiler_facts = async () => {
       (edge) => edge.from === STRICT_FILE && edge.to === STRICT_HANDLER,
     ),
     true,
+  );
+
+  // A strict provider owns its semantic ids, so an id that says TypeScript but
+  // is attached to a Go fact is corrupt provider output rather than a generic
+  // fallback ambiguity the merge may repair.
+  const typeScriptClassId = semanticGraphNodeId(
+    {
+      version: 2,
+      language: "typescript",
+      symbol: "Service",
+      role: "class",
+      native: { key: "Service", stability: "semantic" },
+      stability: "persistent",
+    },
+    "Service",
+  );
+  await TestValidator.error(
+    "a strict semantic id must match its provider fact language",
+    () =>
+      merge({
+        strictNodes: [
+          {
+            ...node(typeScriptClassId, "Service", STRICT_FILE, "class"),
+            language: "go",
+          },
+        ],
+      }),
+  );
+  const goClassId = semanticGraphNodeId(
+    {
+      version: 2,
+      language: "go",
+      symbol: "Service",
+      role: "class",
+      native: { key: "Service", stability: "semantic" },
+      stability: "persistent",
+    },
+    "Service",
+  );
+  await TestValidator.error(
+    "a strict semantic id must match its provider fact kind",
+    () =>
+      merge({
+        strictNodes: [
+          {
+            ...node(goClassId, "Service", STRICT_FILE, "class"),
+            language: "go",
+            kind: "function",
+          },
+        ],
+      }),
+  );
+
+  // A generic C# provider can observe one partial declaration at several
+  // locations. The merged graph retains its canonical declaration and
+  // implementation spans, while exposing the overflow to callers as a warning.
+  const genericPartialLocations = [1, 2, 3].map((startLine) => ({
+    ...node(
+      "src/Service.cs#Service:class",
+      "Service",
+      "src/Service.cs",
+      "class",
+    ),
+    language: "csharp" as const,
+    modifiers: ["partial"],
+    evidence: { file: "src/Service.cs", startLine },
+  }));
+  const genericLocations = merge({ genericNodes: genericPartialLocations });
+  TestValidator.equals(
+    "generic partial locations retain declaration and implementation spans",
+    genericLocations.nodes.map((entry) => [
+      entry.evidence?.startLine,
+      entry.implementation?.startLine,
+    ]),
+    [[1, 2]],
+  );
+  TestValidator.equals(
+    "generic partial location overflow is reported",
+    genericLocations.warnings,
+    [
+      `@samchon/graph: generic semantic declaration has 3 locations; retaining canonical declaration and implementation spans: ${genericLocations.nodes[0]!.id}`,
+    ],
   );
 
   // The lanes index disjoint languages, so one identity claimed by both means a

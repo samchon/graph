@@ -206,7 +206,7 @@ function canonicalize(value: unknown): unknown {
   if (typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .sort(([left], [right]) => Number(left > right) - Number(left < right))
       .map(([key, nested]) => [key, canonicalize(nested)]),
   );
 }

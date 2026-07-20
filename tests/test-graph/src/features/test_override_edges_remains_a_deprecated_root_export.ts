@@ -80,4 +80,28 @@ export const test_override_edges_remains_a_deprecated_root_export = () => {
       },
     ],
   );
+  TestValidator.equals(
+    "ambiguous subtype members are never paired by their insertion order",
+    overrideEdges(
+      [...nodes, node("Worker.run", "method", "run")],
+      [
+        ...edges,
+        { from: "Worker", to: "Worker.run", kind: "contains" },
+      ],
+    ),
+    [
+      {
+        from: "Worker.value",
+        to: "Contract.value",
+        kind: "implements",
+        evidence: { file: "src/example.ts", startLine: 1 },
+      },
+      {
+        from: "Child.save",
+        to: "Base.save",
+        kind: "overrides",
+        evidence: { file: "src/example.ts", startLine: 1 },
+      },
+    ],
+  );
 };

@@ -9,10 +9,11 @@ import {
 import path from "node:path";
 import { ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
 import { GraphLanguage } from "../typings";
-import { projectRelative, readText, walkSourceFiles } from "../utils/fs";
+import { projectRelative, readText } from "../utils/fs";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IStaticGraphParts } from "./IStaticGraphParts";
-import { allExtensions, languageOf } from "./languages";
+import { languageOf } from "./languages";
+import { selectGraphSources } from "./selectGraphSources";
 
 /**
  * Discover a project snapshot and delegate its best-effort syntax extraction to
@@ -20,12 +21,10 @@ import { allExtensions, languageOf } from "./languages";
  */
 export function staticGraphParts(
   options: IBuildGraphOptions = {},
+  selectedFiles?: readonly string[],
 ): IStaticGraphParts {
   const root = path.resolve(options.cwd ?? process.cwd());
-  const discovered = walkSourceFiles(root, {
-    extensions: allExtensions(options.languages),
-    maxFiles: options.maxFiles,
-  });
+  const discovered = selectedFiles ?? selectGraphSources(root, options).files;
   const files: IGraphSitterFile[] = [];
   for (const absolutePath of discovered) {
     const language = languageOf(absolutePath);

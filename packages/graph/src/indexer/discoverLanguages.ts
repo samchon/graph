@@ -1,17 +1,10 @@
 import { GraphLanguage } from "../typings";
-import { walkSourceFiles } from "../utils/fs";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
-import { allExtensions, languageOf } from "./languages";
+import { selectGraphSources } from "./selectGraphSources";
 
 export function discoverLanguages(
   root: string,
   options: IBuildGraphOptions,
 ): GraphLanguage[] {
-  const files = walkSourceFiles(root, {
-    extensions: allExtensions(options.languages),
-    maxFiles: options.maxFiles,
-  });
-  return [
-    ...new Set(files.map(languageOf).filter((language) => language !== "unknown")),
-  ];
+  return selectGraphSources(root, options).presentLanguages;
 }

@@ -137,17 +137,36 @@ export function adaptScipIndex(
   // External symbols are dependency-boundary leaves: named endpoints the
   // workspace references but does not declare. They exist so a reference edge
   // has somewhere to land instead of dangling.
+  //
+  // Held back rather than materialized here, because a node needs a language
+  // and this list does not carry one. Taking the session's first language
+  // would be an answer for a single-language indexer and a coin toss for a
+  // provider that owns C and C++ together — every external symbol in the
+  // program attributed to whichever language the registry happened to list
+  // first. The language a reference *appears in* is a fact the index does
+  // state, so each external leaf is created when its first occurrence names
+  // it, and inherits that document's language.
+  const pendingExternals = new Map<string, IScipIndex.ISymbolInformation>();
   for (const symbol of props.index.externalSymbols ?? []) {
     const parsed = scipSymbol(symbol.symbol);
     if (parsed === undefined || definitions.has(parsed.key)) continue;
+    pendingExternals.set(parsed.key, symbol);
+  }
+
+  const externalize = (
+    key: string,
+    language: GraphLanguage,
+  ): IDefinition | undefined => {
+    const symbol = pendingExternals.get(key);
+    if (symbol === undefined) return undefined;
+    const parsed = scipSymbol(key)!;
     const displayName = symbol.displayName ?? parsed.displayName;
-    if (displayName === "") continue;
-    const language = props.languages[0]!;
+    if (displayName === "") return undefined;
     const id = semanticGraphNodeId(
       identityOf(parsed, language, "external_symbol", ""),
       displayName,
     );
-    if (nodes.has(id)) continue;
+    pendingExternals.delete(key);
     const node: ISamchonGraphNode = {
       id,
       kind: "external_symbol",
@@ -157,13 +176,10 @@ export function adaptScipIndex(
       external: true,
     };
     nodes.set(id, node);
-    definitions.set(parsed.key, {
-      id,
-      file: "",
-      node,
-      relationships: [],
-    });
-  }
+    const definition: IDefinition = { id, file: "", node, relationships: [] };
+    definitions.set(key, definition);
+    return definition;
+  };
 
   for (const document of props.index.documents) {
     const file = normalizeFile(document.relativePath);
@@ -197,7 +213,9 @@ export function adaptScipIndex(
       if (hasRole(occurrence, IScipIndex.SymbolRole.Definition)) continue;
       const parsed = scipSymbol(occurrence.symbol);
       if (parsed === undefined) continue;
-      const target = definitions.get(parsed.key);
+      const target =
+        definitions.get(parsed.key) ??
+        externalize(parsed.key, props.languageOf(file));
       if (target === undefined) continue;
       const owner = scopes.find((scope) => contains(scope.range, occurrence.range));
       if (owner === undefined) continue;

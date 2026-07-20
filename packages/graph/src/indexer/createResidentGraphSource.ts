@@ -9,7 +9,9 @@ import {
 } from "../structures";
 import { GraphLanguage } from "../typings";
 import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
+import { assertGraphSnapshotContract } from "../provider/assertGraphSnapshotContract";
 import { dumpProvenanceOf } from "../provider/dumpProvenanceOf";
+import { IGraphProvider } from "../provider/IGraphProvider";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { isBulkGraphSession } from "../provider/isBulkGraphSession";
 import { mergeGraphSlices } from "../provider/mergeGraphSlices";
@@ -45,6 +47,9 @@ interface IResidentState {
 
   /** What each provider did to compute the currently published generation. */
   modes: Map<string, IBulkGraphSession.Mode>;
+
+  /** The registry entry behind each kept strict session, by language. */
+  providers: Map<GraphLanguage, IGraphProvider>;
 }
 
 interface IResidentDependencies {
@@ -103,6 +108,7 @@ export function createResidentGraphSource(
             : hashSources(result.sources),
         source: result.source ?? sourceReaderOf(root, texts, sessions),
         modes: result.modes ?? new Map(),
+        providers: result.providers ?? new Map(),
       };
     } catch (error) {
       // Once the build hands its sessions to this source, every later failure
@@ -153,6 +159,19 @@ export function createResidentGraphSource(
         generations.set(language, refresh.generation);
         if (merged.has(session)) continue;
         merged.add(session);
+        // Held to the same contract as the first snapshot, on every refresh.
+        // Checking only the initial build would leave a session unexamined for
+        // its entire working life — a provider whose second generation
+        // published an unclaimed edge family or another language's nodes would
+        // be merged straight into the dump.
+        const provider = current.providers.get(language);
+        if (provider !== undefined) {
+          assertGraphSnapshotContract(
+            refresh.snapshot,
+            provider,
+            session.languages,
+          );
+        }
         strictNodes.push(...refresh.snapshot.nodes);
         strictEdges.push(...refresh.snapshot.edges);
         // Rebuilt from what the compiler says now, exactly like the nodes and

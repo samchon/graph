@@ -2,6 +2,7 @@ import { ISamchonGraphDump } from "../structures";
 import { GraphLanguage } from "../typings";
 import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
+import { IGraphProvider } from "../provider/IGraphProvider";
 import { ILspSession } from "./ILspSession";
 
 export interface IIndexerResult {
@@ -41,4 +42,16 @@ export interface IIndexerResult {
    * cannot, because a reuse and a full rebuild both move it by one.
    */
   modes?: Map<string, IBulkGraphSession.Mode>;
+
+  /**
+   * The registry entry behind each kept strict session, by language.
+   *
+   * Present only with `keepAlive`, and only so a resident source can hold every
+   * *later* snapshot to the same contract as the first. Without it the
+   * contract check would run once, on the initial build, and a provider whose
+   * second generation published an unclaimed edge family or a foreign
+   * language's nodes would be merged into the dump unexamined — which is
+   * exactly the generation a long-lived session spends all its time in.
+   */
+  providers?: Map<GraphLanguage, IGraphProvider>;
 }

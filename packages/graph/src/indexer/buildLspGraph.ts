@@ -93,6 +93,7 @@ export async function buildLspGraph(
     });
   const provenance: ISamchonGraphDump.IProvenance[] = [];
   const modes = new Map<string, IBulkGraphSession.Mode>();
+  const providers = new Map<GraphLanguage, IGraphProvider>();
   let lspNodeCount = 0;
   try {
     // Computed once (not per-language) since cpp and c share the same clangd
@@ -157,7 +158,10 @@ export async function buildLspGraph(
           // map stays keyed by language because every consumer asks it a
           // language question; deduplication is the consumers' job and they do
           // it by session identity, not by key.
-          if (options.keepAlive) sessions.set(language, session);
+          if (options.keepAlive) {
+            sessions.set(language, session);
+            providers.set(language, candidate.provider);
+          }
         }
       } catch (error) {
         if (options.signal?.aborted) throw error;
@@ -260,7 +264,7 @@ export async function buildLspGraph(
           dump,
           warnings: dump.warnings,
           source: snapshotSource(),
-          ...(options.keepAlive ? { sessions, sources } : {}),
+          ...(options.keepAlive ? { sessions, sources, providers } : {}),
         };
       }
       appendAll(nodes, fallback.nodes);
@@ -276,7 +280,7 @@ export async function buildLspGraph(
         dump,
         warnings: dump.warnings,
         source: snapshotSource(),
-        ...(options.keepAlive ? { sessions, sources } : {}),
+        ...(options.keepAlive ? { sessions, sources, providers } : {}),
       };
     }
 
@@ -312,7 +316,7 @@ export async function buildLspGraph(
       warnings,
       source: snapshotSource(),
       modes,
-      ...(options.keepAlive ? { sessions, sources } : {}),
+      ...(options.keepAlive ? { sessions, sources, providers } : {}),
     };
   } catch (error) {
     const closeErrors = await closeKeptSessions(sessions);

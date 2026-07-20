@@ -12,6 +12,8 @@ Follow the literal request; it is the contract, not a hint at what the user "rea
 - **Choose the principled course.** Decide from evidence, correctness, product boundaries, and the durable consequence. Time, difficulty, and consequence surface are reasons to investigate and validate more carefully, never reasons to settle for a shortcut, workaround, or weaker standard.
 - **Evidence precedes correction.** Treat reports, review proposals, benchmark claims, and assertions that something is wrong or missing as hypotheses. Verify the real code path, tests, generated artifacts, benchmark trace, upstream behavior, and history before changing behavior.
 - **Trace the consequence surface.** A named file or failing case is the starting point, not the investigation boundary. Follow the same cause through LSP and static lanes, resident refreshes, MCP results, CLI behavior, platforms, tests, experiments, and benchmarks, then address the whole verified class of failure within the requested goal.
+- **Default to solo campaigns and review.** An issue campaign, Self-Review, and unqualified review are single-agent work. Use agents only when the user explicitly requests a team, parallel, or multi-agent workflow, then load the `multi-agent` skill.
+- **Keep solo work in its checkout.** Do not create a clone or worktree for solo work or Self-Review. A worktree belongs only to an explicitly parallel implementation batch and its cleanup.
 - **Default over ask.** On an ambiguous detail, pick the sensible default and state it; reserve questions for forks only the user can settle.
 
 ## Skills
@@ -36,11 +38,15 @@ README, maintainer-document, and agent-instruction authoring rules: `.agents/ski
 
 ### Issue Campaigns
 
-Repository-wide issue discovery, lead-verified issue writing, non-idling dependency-batched implementation, and cleanup: `.agents/skills/issue-campaign/SKILL.md`. Read when the user asks for a broad audit, many issue candidates, or an issue-to-implementation campaign; do not use it for one already-defined issue.
+Default solo repository-wide issue discovery, issue adjudication, one integrated implementation pull request per cycle, CI repair, and cleanup: `.agents/skills/issue-campaign/SKILL.md`. Read when the user asks for a broad audit, many issue candidates, or an issue-to-implementation campaign without explicitly requesting parallel agents; do not use it for one already-defined issue.
 
 ### Review
 
-Solo review, team Review Cycle, research review, and exhaustive issue-discovery rounds: `.agents/skills/review/SKILL.md`. Every reviewer inspects the whole declared surface independently, and rounds continue until a complete pass produces no sound improvement or meaningful issue candidate. Self-Review and any unqualified review request are always solo.
+Default solo Self-Review, unqualified review, and exhaustive solo issue-discovery rounds: `.agents/skills/review/SKILL.md`. The reviewer inspects the whole declared surface and repeats fresh rounds until a complete pass produces no sound improvement or meaningful issue candidate.
+
+### Multi-Agent Workflows
+
+Explicitly parallel review and issue-campaign variants: `.agents/skills/multi-agent/SKILL.md`. Read it only when the user explicitly asks for a team, parallel, or multi-agent workflow. Multi-agent issue campaigns parallelize discovery and implementation by default; use solo implementation only when the user explicitly requests parallel discovery alone.
 
 ### Discussion
 
@@ -52,7 +58,7 @@ Branch, commit, pull-request, check, and merge flow: `.agents/skills/pull-reques
 
 ### Benchmark
 
-Benchmark runners, fixture isolation, trace audits, measurement integrity, and publication: `.agents/skills/benchmark/SKILL.md`. Read before running, modifying, or publishing benchmark results.
+Benchmark runners, fixture isolation, trace audits, measurement integrity, and publication: `.agents/skills/benchmark/SKILL.md`. This repository has no benchmark-campaign workflow. Read it before running, modifying, or publishing benchmark results.
 
 ## Maintenance
 
@@ -73,4 +79,4 @@ Update AGENTS.md only for repository-contract changes: a new skill area, a renam
 - **Two trigger surfaces, one scope.** The frontmatter description is the full trigger contract. The AGENTS.md pointer mirrors that scope more briefly. Correct the frontmatter first when the scope changes.
 - **Create or merge.** Add a skill when a substantial repository concern would otherwise inflate AGENTS.md beyond an index. Merge sibling concerns when they share most of their structure.
 - **Headings are plain.** Do not number skill or AGENTS.md headings. Use descriptive titles.
-- **Current set.** The repository skills are `project`, `development`, `language-support`, `documentation`, `issue-campaign`, `review`, `discussion`, `pull-request`, and `benchmark`.
+- **Current set.** The repository skills are `project`, `development`, `language-support`, `documentation`, `issue-campaign`, `review`, `multi-agent`, `discussion`, `pull-request`, and `benchmark`.

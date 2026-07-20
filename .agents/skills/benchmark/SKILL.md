@@ -7,6 +7,11 @@ description: Defines @samchon/graph benchmark selection, external fixture isolat
 
 This repository has one benchmark system under `tests/benchmark`. Read [graph.md](graph.md) in full before running or changing its orchestrator, prompts, fixtures, comparator setup, trace audit, publication data, or rendered assets.
 
+This is a measurement workflow, not a benchmark-campaign skill. It does not
+create agents or define campaign topology; a broader issue campaign that finds a
+benchmark defect follows the default solo issue-campaign skill unless the user
+explicitly requests the multi-agent variant.
+
 ## Measurement Integrity
 
 - Measure the real product. Do not add benchmark-only branches, fixture-name checks, expected-answer checks, monkey patches, prompt-specific ranking, or agent restrictions that would be wrong for an unmeasured repository.

@@ -11,7 +11,11 @@ Act on this skill only when the user explicitly requests the corresponding remot
 
 Branch from the pull-request target (`master` unless stated otherwise); never commit or push directly to the target. Name the branch for the merged outcome and follow the nearest established repository convention.
 
-If the current checkout contains unrelated or protected work, create an isolated worktree from the target instead of stashing, reverting, or mixing it. Never delete or overwrite another user's dirty state.
+For solo work, do not create a clone or worktree to escape unrelated or
+protected changes. Never stash, delete, overwrite, or mix another user's dirty
+state; preserve it and obtain direction when the current checkout cannot safely
+host the requested branch. Only the explicit multi-agent workflow creates an
+isolated worktree for a parallel implementation batch.
 
 ## Commit Logical Units
 

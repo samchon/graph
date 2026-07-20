@@ -38,7 +38,7 @@ Start every long local command asynchronously and continue with work that does n
 
 Maintain a compact command record containing the command, worktree, source snapshot, start time, dependent decision, and final result. Check a running command when it exits, at a genuine decision boundary, or before merge. Do not use sleep loops or foreground waits merely to learn that it is still running.
 
-While installation runs, read the admitted issues and nearby implementation, map the consequence surface, and write the implementation and regression tests. Once a stable source-and-test snapshot is committed and pushed, launch the narrowest proving tests and begin solo Self-Review at once. A test process may run during review because it does not change the snapshot. Start independent checks together instead of serially waiting for each one to finish.
+While installation runs, read the admitted issues and nearby implementation, map the consequence surface, and write the implementation and regression tests. Once a stable source-and-test snapshot is committed and pushed, begin solo Self-Review at once and launch each narrow proving test as soon as its prerequisites are ready. A test process may run during review because it does not change the snapshot. Start independent checks together instead of serially waiting for each one to finish.
 
 Ordinary pull-request checks remain required evidence. Monitor them without making an implementation agent idle: continue the current snapshot's Self-Review, documentation audit, generated-surface inspection, or other safe in-scope work until a result creates a decision.
 

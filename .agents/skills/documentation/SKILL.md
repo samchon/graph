@@ -47,7 +47,7 @@ Concise and clear means:
 
 ## Prose Layout
 
-Preserve the surrounding document's line-wrapping convention. The public README generally keeps prose compact, while maintainer READMEs contain hard-wrapped paragraphs. Do not reflow unrelated paragraphs just to impose a different style, and do not claim a formatter policy the repository does not have.
+Preserve the surrounding document's line-wrapping convention. The public README generally keeps prose compact, while maintainer READMEs contain hard-wrapped paragraphs. Follow the surrounding file unless the task explicitly changes formatting policy. Do not reflow unrelated paragraphs just to impose a different style, and do not claim a formatter policy the repository does not have.
 
 Keep structural line breaks for headings, paragraphs, list items, tables, block quotes, and fenced code. Verify shell examples from the repository root unless the text explicitly changes directories.
 

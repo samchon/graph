@@ -657,6 +657,56 @@ function assertRelationshipsAndExternals(): void {
     1,
   );
 
+  // A `local N` counter is scoped to its document. Two files each holding a
+  // `local 4` describe two unrelated declarations, and filing both under one
+  // key made the second overwrite the first — after which every reference in
+  // the earlier file resolved to a declaration in the later one.
+  const locals = adaptScipIndex({
+    index: parseScipIndex({
+      metadata: { projectRoot: "file:///r" },
+      documents: [
+        {
+          relativePath: "a.go",
+          symbols: [{ symbol: "local 4", displayName: "alpha", kind: "Variable" }],
+          occurrences: [
+            {
+              range: [0, 0, 5],
+              symbol: "local 4",
+              symbolRoles: 1,
+              enclosingRange: [0, 0, 9, 0],
+            },
+          ],
+        },
+        {
+          relativePath: "b.go",
+          symbols: [{ symbol: "local 4", displayName: "beta", kind: "Variable" }],
+          occurrences: [
+            {
+              range: [0, 0, 4],
+              symbol: "local 4",
+              symbolRoles: 1,
+              enclosingRange: [0, 0, 9, 0],
+            },
+          ],
+        },
+      ],
+    }),
+    root: "/r",
+    provider: "scip-go",
+    languages: ["go"],
+    languageOf: () => "go",
+  });
+  TestValidator.equals(
+    "one local counter per document is two declarations",
+    locals.nodes.map((entry) => `${entry.name}@${entry.file}`).sort(),
+    ["alpha@a.go", "beta@b.go"],
+  );
+  TestValidator.equals(
+    "…and neither is reported as a redefinition of the other",
+    locals.warnings,
+    [],
+  );
+
   // One symbol cannot be defined in two documents; keeping the first is
   // reported rather than silently overwriting.
   const duplicated = adaptScipIndex({

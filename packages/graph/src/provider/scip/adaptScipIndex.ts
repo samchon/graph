@@ -127,10 +127,22 @@ export function adaptScipIndex(
         identityOf(parsed, language, kind, file),
         displayName,
       );
-      const definition = definitions.get(parsed.key);
+      const symbolKey = definitionKey(parsed, file);
+      const definition = definitions.get(symbolKey);
       if (definition !== undefined) {
         warnings.push(
           `${props.provider}: ${parsed.key} is defined in both ${definition.file} and ${file}; keeping the first`,
+        );
+        continue;
+      }
+      // Two documents can still derive one id — a name and kind that digest
+      // identically under different `local N` counters. Publishing both would
+      // duplicate an id, which `mergeGraphSlices` rejects, taking the whole
+      // slice with it.
+      const colliding = nodes.get(id);
+      if (colliding !== undefined) {
+        warnings.push(
+          `${props.provider}: ${parsed.key} in ${file} derives the same identity as ${colliding.file}'s; keeping the first, because a graph cannot hold one id twice`,
         );
         continue;
       }
@@ -143,7 +155,7 @@ export function adaptScipIndex(
         external: false,
       };
       nodes.set(id, node);
-      definitions.set(parsed.key, {
+      definitions.set(symbolKey, {
         id,
         file,
         node,
@@ -214,7 +226,7 @@ export function adaptScipIndex(
       if (!hasRole(occurrence, IScipIndex.SymbolRole.Definition)) continue;
       const parsed = scipSymbol(occurrence.symbol);
       const definition =
-        parsed === undefined ? undefined : definitions.get(parsed.key);
+        parsed === undefined ? undefined : resolve(definitions, parsed, file);
       if (definition === undefined) continue;
       definition.node.evidence = spanOf(file, occurrence.range);
       if (occurrence.enclosingRange !== undefined) {
@@ -233,7 +245,7 @@ export function adaptScipIndex(
       const parsed = scipSymbol(occurrence.symbol);
       if (parsed === undefined) continue;
       const target =
-        definitions.get(parsed.key) ??
+        resolve(definitions, parsed, file) ??
         externalize(parsed.key, props.languageOf(file));
       if (target === undefined) continue;
       const owner = scopes.find((scope) => contains(scope.range, occurrence.range));
@@ -285,7 +297,9 @@ export function adaptScipIndex(
     if (definition.enclosingSymbol !== undefined) {
       const parsed = scipSymbol(definition.enclosingSymbol);
       const owner =
-        parsed === undefined ? undefined : definitions.get(parsed.key);
+        parsed === undefined
+          ? undefined
+          : resolve(definitions, parsed, definition.file);
       if (owner !== undefined && owner.id !== definition.id) {
         edges.push({ kind: "contains", from: owner.id, to: definition.id });
       }
@@ -293,7 +307,9 @@ export function adaptScipIndex(
     for (const relationship of definition.relationships) {
       const parsed = scipSymbol(relationship.symbol);
       const target =
-        parsed === undefined ? undefined : definitions.get(parsed.key);
+        parsed === undefined
+          ? undefined
+          : resolve(definitions, parsed, definition.file);
       if (target === undefined || target.id === definition.id) continue;
       // Each flag is its own claim; a relationship can be both an
       // implementation and a type definition, and checking them as if they
@@ -400,6 +416,37 @@ function identityOf(
       ? { scope: { document: file }, generation: file }
       : {}),
   };
+}
+
+/**
+ * The key one definition is filed under.
+ *
+ * A global symbol is the same declaration wherever it is named, so its own
+ * string is enough. A `local N` symbol is not: the counter is scoped to its
+ * document, and two files each holding a `local 4` describe two unrelated
+ * declarations. Filing both under `local 4` made whichever came second
+ * overwrite the first, and every reference in the earlier file then resolved to
+ * a declaration in the later one.
+ */
+function definitionKey(symbol: scipSymbol.IParsed, file: string): string {
+  return symbol.stability === "generation"
+    ? `${file}\0${symbol.key}`
+    : symbol.key;
+}
+
+/**
+ * Find a definition from a document that is naming it.
+ *
+ * A local symbol can only mean the one in this document; a global one is
+ * looked up as itself. Trying the scoped key first is what keeps a local
+ * reference from reaching another file's identically numbered local.
+ */
+function resolve(
+  definitions: ReadonlyMap<string, IDefinition>,
+  symbol: scipSymbol.IParsed,
+  file: string,
+): IDefinition | undefined {
+  return definitions.get(definitionKey(symbol, file));
 }
 
 function diagnosticOf(

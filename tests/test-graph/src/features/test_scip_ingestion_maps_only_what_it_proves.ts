@@ -99,6 +99,11 @@ function assertSymbolParsing(): void {
     // A suffix that closes a descriptor it never opened denotes nothing.
     "scip-go gomod example v1 `pkg`/bad)",
     "scip-go gomod example v1 `pkg`/bad]",
+    // A bracketed descriptor with nothing inside it names nothing.
+    "scip-java maven example v1 `pkg`/Box#[]",
+    "scip-java maven example v1 `pkg`/run().()",
+    // A descriptor that is only a suffix has no name to read.
+    "scip-go gomod example v1 #",
   ]) {
     TestValidator.equals(
       `an unreadable symbol is not guessed: "${malformed}"`,
@@ -470,12 +475,28 @@ function assertRelationshipsAndExternals(): void {
             { symbol: `${base}/anon.`, displayName: "", kind: "Variable" },
           ],
           occurrences: [
-            { range: [0, 5, 11], symbol: iface, symbolRoles: 1 },
+            {
+              range: [0, 5, 11],
+              symbol: iface,
+              symbolRoles: 1,
+              // A second scope, so attribution has to rank them: the innermost
+              // enclosing definition owns a reference, and with one scope the
+              // ranking never runs.
+              enclosingRange: [0, 0, 30, 0],
+            },
             {
               range: [2, 5, 9],
               symbol: impl,
               symbolRoles: 1,
               enclosingRange: [2, 0, 9, 1],
+            },
+            {
+              range: [3, 4, 10],
+              symbol: typed,
+              symbolRoles: 1,
+              // Starts on the same line its owner does, so containment has to
+              // compare columns rather than stopping at the line number.
+              enclosingRange: [2, 2, 2, 40],
             },
             // A dependency leaf, created at the moment a document names it and
             // taking that document's language.

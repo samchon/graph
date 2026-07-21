@@ -22,7 +22,73 @@ export const test_resident_commits_one_input_generation_or_none = async () => {
   await assertAMovedSourceDiscardsTheCandidate();
   await assertAPersistentlyMovingProjectIsReported();
   await assertALaterGenerationIsStillHeldToItsContract();
+  await assertAMultiLanguageSessionIsMergedOnce();
 };
+
+/**
+ * A provider owning two languages is one session, merged once.
+ *
+ * It appears in the session map under each language it owns, pointing at one
+ * object. Merging per key would publish every node it produced twice, which
+ * the strict-slice validator rejects as duplicated — after the provider had
+ * already done the work a second time.
+ */
+async function assertAMultiLanguageSessionIsMergedOnce(): Promise<void> {
+  const root = GraphPaths.createTempDirectory("samchon-graph-two-languages-");
+  const file = path.join(root, "a.ts");
+  fs.writeFileSync(file, "export const value = 1;\n");
+  fs.writeFileSync(path.join(root, "b.go"), "package main\n");
+
+  const provider = ProviderFixtures.provider({
+    name: "both",
+    languages: ["typescript", "go"],
+  });
+  const snapshot = ProviderFixtures.snapshot({
+    languages: ["typescript", "go"],
+    provider: "both",
+    nodes: [
+      {
+        id: "a.ts#shared:function",
+        kind: "function",
+        language: "typescript",
+        name: "shared",
+        file: "a.ts",
+        external: false,
+      },
+    ],
+  });
+  const session = ProviderFixtures.session({
+    root,
+    languages: ["typescript", "go"],
+    snapshots: [snapshot],
+  });
+
+  const source = createResidentGraphSource(
+    { cwd: root },
+    {
+      buildLspGraph: async () => ({
+        ...resultOf(root, file, fs.readFileSync(file, "utf8")),
+        sessions: new Map([
+          ["typescript", session],
+          ["go", session],
+        ]),
+        providers: new Map([
+          ["typescript", provider],
+          ["go", provider],
+        ]),
+      }),
+    },
+  );
+
+  await source.load();
+  const dump = await source.load();
+  TestValidator.equals(
+    "a two-language session contributes its nodes once",
+    dump.nodes.filter((node) => node.name === "shared").length,
+    1,
+  );
+  await source.close();
+}
 
 async function assertAMovedSourceDiscardsTheCandidate(): Promise<void> {
   const root = GraphPaths.createTempDirectory("samchon-graph-fence-");

@@ -294,6 +294,50 @@ async function assertCloseOwnsItsChildren(): Promise<void> {
   TestValidator.error("a session must own at least one language", () =>
     sessionOf(root, { languages: [] }),
   );
+
+  // An executable that is not there fails to spawn rather than exiting.
+  const missing = new ScipSession({
+    root,
+    languages: ["go"],
+    provider: "scip-missing",
+    authority: "semantic-index",
+    command: { command: path.join(root, "not-an-executable"), args: [] },
+    decode: { command: process.execPath, args: [] },
+    indexArgs: () => [],
+    inputs: () => ["main.go"],
+    languageOf: () => "go",
+  });
+  await rejects(missing.refresh(), "an unspawnable indexer rejects");
+  await missing.close();
+
+  // An aborted refresh reaches the child it started, and rejects as an abort
+  // rather than as the exit code killing it happens to produce.
+  const aborted = sessionOf(root, { mode: "hang" });
+  const controller = new AbortController();
+  const inFlight = aborted.refresh({ signal: controller.signal });
+  await settle();
+  controller.abort();
+  let name: string | undefined;
+  try {
+    await inFlight;
+  } catch (error) {
+    name = (error as Error).name;
+  }
+  TestValidator.equals("an aborted refresh rejects as an abort", name, "AbortError");
+  await aborted.close();
+
+  // Closing while a refresh is queued behind another makes the queued one find
+  // the session already closed.
+  const racing = sessionOf(root, { mode: "hang" });
+  const first = racing.refresh().catch(() => undefined);
+  const second = racing.refresh().catch((error: Error) => error.message);
+  await settle();
+  await racing.close();
+  await first;
+  TestValidator.predicate(
+    "a refresh queued across a close is told the session is closed",
+    ((await second) ?? "").includes("closed"),
+  );
 }
 
 interface IFixtureOptions {

@@ -127,10 +127,12 @@ export class ScipSession implements IBulkGraphSession {
     let timer: NodeJS.Timeout | undefined;
     const escalated = new Promise<undefined>((resolve) => {
       timer = setTimeout(() => {
-        /* c8 ignore next -- reached only when a child ignores its first
-         * signal, which no deterministic fixture can stage portably. */
+        /* c8 ignore start -- Windows terminates on the first signal, so the
+         * escalation is unreachable there. POSIX exercises it through the
+         * fixture indexer that ignores SIGTERM. */
         child.process.kill("SIGKILL");
         resolve(undefined);
+        /* c8 ignore stop */
       }, TERMINATION_GRACE_MS);
       timer.unref();
     });

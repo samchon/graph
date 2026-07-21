@@ -538,6 +538,9 @@ const NODE_KINDS = new Set<GraphNodeKind>([
   "method",
   "module",
 ]);
+/* c8 ignore next -- merging a namespace onto a function compiles to an
+ * `X || (X = {})` initialiser whose falsy arm cannot run: the function
+ * declaration above it is always evaluated first. */
 export namespace adaptTtscGraphDump {
   /** The registry identity every `ttscgraph` snapshot is published under. */
   export const PROVIDER = "ttscgraph";

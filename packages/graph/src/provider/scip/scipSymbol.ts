@@ -97,6 +97,9 @@ export function scipSymbol(symbol: string): IParsedSymbol | undefined {
   };
 }
 
+/* c8 ignore next -- merging a namespace onto a function compiles to an
+ * `X || (X = {})` initialiser whose falsy arm cannot run: the function
+ * declaration above it is always evaluated first. */
 export namespace scipSymbol {
   /** One parsed symbol string, as {@link scipSymbol} returns it. */
   export type IParsed = IParsedSymbol;

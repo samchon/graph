@@ -486,6 +486,25 @@ async function assertDigestsAndProvenance(): Promise<void> {
       ProviderFixtures.snapshot({ nodes: [node("a.ts", "run", "typescript")] }),
     ),
   );
+  // A JSON null is a value the walk has to render, not a hole to drop: a
+  // producer that states a field as null said something, and it is not the
+  // same thing as never having said it.
+  TestValidator.notEquals(
+    "an explicit null is not the same as an absent property",
+    graphSnapshotDigests.contentOf(
+      ProviderFixtures.snapshot({
+        nodes: [
+          {
+            ...node("a.ts", "run", "typescript"),
+            qualifiedName: null,
+          } as unknown as ISamchonGraphNode,
+        ],
+      }),
+    ),
+    graphSnapshotDigests.contentOf(
+      ProviderFixtures.snapshot({ nodes: [node("a.ts", "run", "typescript")] }),
+    ),
+  );
   // An absent optional property and one explicitly set to `undefined` are the
   // same fact about the declaration.
   TestValidator.equals(

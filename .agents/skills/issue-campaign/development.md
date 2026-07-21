@@ -16,7 +16,8 @@ development, pull-request, and review skills before acting.
 Four rules govern implementation:
 
 - The main agent performs all implementation, test authoring, CI diagnosis,
-  review, and cleanup. Do not spawn or delegate to a subagent.
+  review, and cleanup. Spawn no subagent except the read-only
+  [commit early-warning pass](#implement-and-write-tests).
 - Put every accepted, implementation-ready issue in the current cycle into one
   pull request. The issue DAG controls edit order inside that pull request, not
   pull-request count.
@@ -54,6 +55,12 @@ An issue whose only predecessor is another issue in the same cycle is
 implementation-ready for this purpose. Order the edits through the DAG instead
 of deferring it to another pull request.
 
+Difficulty never removes an issue from the cycle. When a resolution needs a
+judgment call about design, invariant ownership, or an acceptable behavior
+change, settle it from the issue's evidence and implement that decision inside
+the cycle. A proved duplicate, an invalid premise, an out-of-scope finding, and
+an external blocker remain the only dispositions that remove one.
+
 ## Claim The Complete Cycle
 
 Claim the whole cycle before implementation:
@@ -63,10 +70,16 @@ Claim the whole cycle before implementation:
    create a clone or worktree for a solo campaign.
 2. Create one implementation-free commit with `git commit --allow-empty`.
 3. Push the branch and open one draft pull request.
-4. Link every cycle issue, mark verification pending, and state that the pull
-   request owns the complete accepted cycle.
+4. Reference every cycle issue by number, mark verification pending, and state
+   that the pull request owns the complete accepted cycle.
 5. Record the checkout, branch, pull request, head SHA, issue set, and
    assignment-created temporary-asset ledger in `.wiki`.
+
+Keep every closing keyword out of the claim body. The body is written before any
+code exists, so a claim-time closing list closes whatever the cycle later drops,
+defers, or disproves, burying the analysis those issues carry. The cycle's
+closing set is the union of the [commit closing lines](#implement-and-write-tests),
+which makes the merge close exactly what landed.
 
 The empty pull request prevents overlapping contributor work before code is
 written. Measure official duration from its GitHub `createdAt` timestamp through
@@ -77,6 +90,36 @@ written. Measure official duration from its GitHub `createdAt` timestamp through
 Work through the DAG on the claimed topic branch. Analyze the full consequence
 and case surface across every issue before editing, then implement the complete
 cycle and its tests.
+
+Write each piece's tests as that piece lands instead of leaving the tests for
+the end of the cycle, and keep committing as each unit becomes coherent.
+
+Close each issue from the commit that earns it. End the commit message with one
+`Close #n: <issue title>` line per resolved issue, so a commit that resolves
+several issues carries several lines. GitHub matches the keyword and the number
+and ignores the title tail, so the line closes the issue normally while the log
+stays legible without opening each number.
+
+Once a commit reaches the pull request, post a comment naming what it landed and
+which issues it resolved. The comment is the running ledger for a reader who
+does not read the diff, not a closing mechanism: GitHub closes an issue only
+from a commit message or the pull-request body.
+
+The main agent may also spawn one read-only subagent as a commit early-warning
+pass over a landed commit and keep implementing while it runs. The pass reads
+that one commit and reports candidates. It never edits, commits, pushes, or
+makes an implementation decision. Its value is timing: a defect named while that
+code is the newest thing written costs little to correct, and nothing has been
+built on top of it yet.
+
+The pass never reduces the [Self-Review](#validate-with-ci-and-self-review) that
+gates the merge. A reader holding one commit cannot see what appears only across
+files: a helper that duplicates one the package already has, an LSP lane whose
+static counterpart no longer agrees with it, or a README contract paragraph that
+now contradicts the schema it embeds. The main agent's own complete round over
+the whole base-to-head diff is what finds those, and no number of passes
+substitutes for it. The [review skill](../review/SKILL.md#commit-early-warning-pass)
+owns that boundary and the name the pass must not take.
 
 Each issue remains an evidence and acceptance unit inside the combined diff.
 Keep its positive, negative, boundary, and regression cases identifiable.

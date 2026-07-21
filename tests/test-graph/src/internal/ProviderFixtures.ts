@@ -112,8 +112,15 @@ export namespace ProviderFixtures {
         return {
           changed,
           generation,
+          // Derived from what this refresh actually did, not from the
+          // generation alone: a scripted session whose list has run out
+          // republishes its last snapshot without changing anything, and
+          // reporting that as `initial` would hand every test the one answer a
+          // real provider is forbidden to give — a mode that contradicts its
+          // own `changed` flag.
           mode:
-            props.modes?.[index] ?? (generation === 1 ? "initial" : "unchanged"),
+            props.modes?.[index] ??
+            (changed ? (generation === 1 ? "initial" : "rebuild") : "unchanged"),
           snapshot: next,
         };
       },

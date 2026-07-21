@@ -34,3 +34,7 @@ tests/benchmark/results/.excluded/
 
 # package README is copied from the root at build time
 packages/graph/README.md
+
+# Tarballs packed for release inspection. The published artifact is the one the
+# registry serves; these are the copies the preflight opened to check it.
+.release/

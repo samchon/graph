@@ -96,6 +96,9 @@ function assertSymbolParsing(): void {
     "scip-go gomod example v1 `pkg`/unterminated",
     "scip-go gomod example v1 `unclosed",
     "scip-go gomod example v1 `pkg`/run(unclosed.",
+    // A suffix that closes a descriptor it never opened denotes nothing.
+    "scip-go gomod example v1 `pkg`/bad)",
+    "scip-go gomod example v1 `pkg`/bad]",
   ]) {
     TestValidator.equals(
       `an unreadable symbol is not guessed: "${malformed}"`,
@@ -233,6 +236,52 @@ function assertIndexValidation(): void {
       .occurrences![0]!.range,
     [4, 2, 9],
   );
+  // Optional records the graph does not read are still validated, because a
+  // malformed one is evidence the index was not produced the way it claims.
+  const documented = parseScipIndex(
+    withSymbol({
+      symbol: "scip-go gomod example v1 `pkg`/run().",
+      documentation: ["one", "two"],
+      relationships: [{ symbol: "scip-go gomod example v1 `pkg`/Other#" }],
+      enclosingSymbol: "scip-go gomod example v1 `pkg`/Owner#",
+    }),
+  ).documents[0]!.symbols![0]!;
+  TestValidator.equals(
+    "documentation lines are carried",
+    documented.documentation,
+    ["one", "two"],
+  );
+  TestValidator.equals(
+    "a relationship with no flags set carries none",
+    documented.relationships,
+    [{ symbol: "scip-go gomod example v1 `pkg`/Other#" }],
+  );
+  TestValidator.error("a non-string documentation line is refused", () =>
+    parseScipIndex(withSymbol({ symbol: "s", documentation: [1] })),
+  );
+  TestValidator.error("non-array documentation is refused", () =>
+    parseScipIndex(withSymbol({ symbol: "s", documentation: "one" })),
+  );
+  TestValidator.error("non-array relationships are refused", () =>
+    parseScipIndex(withSymbol({ symbol: "s", relationships: {} })),
+  );
+  TestValidator.error("a non-string enclosing symbol is refused", () =>
+    parseScipIndex(withSymbol({ symbol: "s", enclosingSymbol: 1 })),
+  );
+  TestValidator.error("a non-string position encoding is refused", () =>
+    parseScipIndex(withDocument({ relativePath: "a.go", positionEncoding: 1 })),
+  );
+  TestValidator.error("a non-string syntax kind is refused", () =>
+    parseScipIndex(
+      withOccurrence({ range: [0, 0, 1], symbol: "s", syntaxKind: 1 }),
+    ),
+  );
+  TestValidator.error("a malformed enclosing range is refused", () =>
+    parseScipIndex(
+      withOccurrence({ range: [0, 0, 1], symbol: "s", enclosingRange: [0, 0] }),
+    ),
+  );
+
   TestValidator.equals(
     "an optional tool info block is kept",
     parseScipIndex({

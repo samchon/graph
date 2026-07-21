@@ -133,6 +133,11 @@ export const test_release_preflight_refuses_an_unpublishable_release =
       publicationOrder([graph({ dependencies: ["typia"] })]),
       ["@samchon/graph"],
     );
+    TestValidator.equals(
+      "a package declaring no dependencies at all is still ordered",
+      publicationOrder([graphSitter({ dependencies: undefined })]),
+      ["@samchon/graph-sitter"],
+    );
     TestValidator.error("a dependency cycle has no safe order", () =>
       publicationOrder([
         graphSitter({ dependencies: ["@samchon/graph"] }),

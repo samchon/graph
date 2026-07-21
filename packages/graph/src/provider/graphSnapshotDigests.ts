@@ -67,11 +67,14 @@ export namespace graphSnapshotDigests {
  * same declaration. Absent optional properties are dropped rather than
  * serialized as `null`, so a node that never had a `qualifiedName` and one
  * whose `qualifiedName` was cleared agree, which is what the graph means by
- * them.
+ * them. Inside an array is the one place an `undefined` survives that filter,
+ * and it becomes `null` there for the reason `JSON` does the same: an array's
+ * length is part of its meaning, so the hole must keep its place.
  */
 function canonical(value: unknown): string {
+  if (value === undefined) return "null";
   if (value === null || typeof value !== "object") {
-    return JSON.stringify(value) ?? "undefined";
+    return JSON.stringify(value);
   }
   if (Array.isArray(value)) {
     return `[${value.map(canonical).join(",")}]`;

@@ -1,5 +1,6 @@
 import { TestValidator } from "@nestia/e2e";
 import { ScipSession, scipProvider } from "@samchon/graph";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -167,10 +168,28 @@ async function assertGenerations(): Promise<void> {
     ],
     ["fake-scip", "1.2.3", "scip-fake", "semantic-index"],
   );
+  // The index carries no document text, so there is no honest checker digest
+  // to give: hashing the disk here and calling it one would let a reader
+  // "prove" byte-identity against text the facts were never computed from.
+  const entry = initial.snapshot.sources.get(path.join(root, "main.go"));
+  TestValidator.equals(
+    "a textless index proves no checker digest",
+    entry?.checkerDigest,
+    "",
+  );
   TestValidator.predicate(
-    "the manifest carries a digest a reader can reproduce",
-    initial.snapshot.sources.get(path.join(root, "main.go"))?.checkerDigest !==
-      undefined,
+    "…but still reports what is on disk",
+    (entry?.diskDigest ?? "") !== "",
+  );
+  TestValidator.predicate(
+    "…and does not claim the capability that would license the proof",
+    !initial.snapshot.provenance.capabilities.includes("sourceDigests"),
+  );
+  TestValidator.predicate(
+    "…and says so rather than staying quiet",
+    initial.snapshot.warnings.some((warning) =>
+      warning.includes("no document text"),
+    ),
   );
 
   // Unchanged is a statement about the inputs, not a guess from a counter: the
@@ -190,6 +209,22 @@ async function assertGenerations(): Promise<void> {
     fs.readFileSync(state, "utf8").trim(),
     "1",
   );
+
+  // The positive twin: an index that carries its document text can state the
+  // bytes its facts came from, so the digest is real and the capability that
+  // licenses a reader to use it is claimed.
+  const textual = sessionOf(root, { withText: true });
+  const proven = await textual.refresh();
+  TestValidator.equals(
+    "an index carrying its text proves a checker digest",
+    proven.snapshot.sources.get(path.join(root, "main.go"))?.checkerDigest,
+    createHash("sha256").update("package main\n", "utf8").digest("hex"),
+  );
+  TestValidator.predicate(
+    "…and claims the capability that licenses the comparison",
+    proven.snapshot.provenance.capabilities.includes("sourceDigests"),
+  );
+  await textual.close();
 
   // A build input outside the language's own extensions still moves the file
   // set, which is the whole reason the fingerprint covers it.
@@ -345,6 +380,7 @@ interface IFixtureOptions {
   mode?: string;
   decodeMode?: string;
   indexRoot?: string;
+  withText?: boolean;
   language?: "go" | "rust";
   languages?: ("go" | "rust")[];
 }
@@ -372,6 +408,7 @@ function sessionOf(root: string, options: IFixtureOptions = {}): ScipSession {
       `--output=${artifact}`,
       `--root=${options.indexRoot ?? root}`,
       ...(options.mode === undefined ? [] : [`--mode=${options.mode}`]),
+      ...(options.withText === true ? ["--with-text"] : []),
       ...(options.state === undefined ? [] : [`--state=${options.state}`]),
     ],
     inputs: () =>

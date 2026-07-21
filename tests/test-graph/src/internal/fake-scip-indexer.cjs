@@ -67,6 +67,11 @@ function indexOf(generation) {
   const root = options.get("root") ?? "/";
   const name = generation === 0 ? "first" : "second";
   const symbol = `scip-fake fake example v1 \`pkg\`/${name}().`;
+  const relativePath = options.get("document") ?? "main.go";
+  // Most indexers omit `text`. The ones that carry it are the only ones whose
+  // facts can be tied to the bytes they were computed from, so both shapes are
+  // producible here.
+  const withText = options.has("with-text");
   return {
     metadata: {
       projectRoot: `file://${root.startsWith("/") ? "" : "/"}${root.replace(/\\/g, "/")}`,
@@ -75,7 +80,10 @@ function indexOf(generation) {
     documents: [
       {
         language: "Go",
-        relativePath: options.get("document") ?? "main.go",
+        relativePath,
+        ...(withText
+          ? { text: fs.readFileSync(path.join(root, relativePath), "utf8") }
+          : {}),
         symbols: [{ symbol, displayName: name, kind: "Function" }],
         occurrences: [{ range: [0, 5, 10], symbol, symbolRoles: 1 }],
       },

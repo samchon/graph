@@ -7,6 +7,7 @@ import path from "node:path";
 import { GraphLanguage, GraphProviderAuthority } from "../../typings";
 import { IBulkGraphSession } from "../IBulkGraphSession";
 import { adaptScipIndex } from "./adaptScipIndex";
+import { IScipIndex } from "./IScipIndex";
 import { parseScipIndex } from "./parseScipIndex";
 
 /**
@@ -176,12 +177,13 @@ export class ScipSession implements IBulkGraphSession {
         languages: this.languages,
         languageOf: this.options.languageOf,
       });
+      const manifest = this.manifest(index, adapted.files);
       return {
         languages: [...this.languages],
         nodes: adapted.nodes,
         edges: adapted.edges,
         diagnostics: adapted.diagnostics,
-        sources: this.manifest(adapted.files),
+        sources: manifest.sources,
         provenance: {
           provider: this.options.provider,
           authority: this.options.authority,
@@ -192,9 +194,16 @@ export class ScipSession implements IBulkGraphSession {
           compilerVersion: "",
           protocolVersion: SCIP_PROTOCOL_VERSION,
           universe,
-          capabilities: [...SCIP_CAPABILITIES],
+          capabilities: manifest.proven
+            ? [...SCIP_CAPABILITIES, SOURCE_DIGESTS_CAPABILITY]
+            : [...SCIP_CAPABILITIES],
         },
-        warnings: adapted.warnings,
+        warnings: manifest.proven
+          ? adapted.warnings
+          : [
+              ...adapted.warnings,
+              `${this.options.provider}: the index carries no document text, so its facts cannot be tied to the bytes they were computed from; source display falls back to what this graph can prove itself`,
+            ],
       };
     } finally {
       fs.rmSync(output, { recursive: true, force: true });
@@ -202,35 +211,56 @@ export class ScipSession implements IBulkGraphSession {
   }
 
   /**
-   * The digest a reader can reproduce for every file this index attributed
-   * facts to.
+   * The manifest for every file this index attributed facts to.
    *
-   * A SCIP indexer states which documents it read but not what they hashed to,
-   * so the digest is taken here, from the same bytes the mapping was validated
-   * against. Both digests are the disk digest because they are the same read:
-   * unlike a compiler with a source-preamble plugin, a SCIP indexer has no
-   * separate notion of augmented text to distinguish them.
+   * `checkerDigest` is the ground truth for the facts — the bytes the indexer
+   * actually resolved against — and this session can only supply it when the
+   * index carries `Document.text`. When it does not, the field stays `""` and
+   * the snapshot does not claim the `sourceDigests` capability.
+   *
+   * Hashing the disk here and calling the result a checker digest would be the
+   * exact move `IBulkGraphSession.ISnapshot.sources` exists to forbid: the
+   * bytes a later read returns are not the bytes the indexer saw, a write that
+   * lands and reverts in between is invisible to both reads, and the resulting
+   * digest would let a reader "prove" byte-identity against text the facts were
+   * never computed from. An absent proof is a fact about this indexer; a
+   * fabricated one is a lie about the program.
    */
   private manifest(
+    index: IScipIndex,
     files: readonly string[],
-  ): Map<string, IBulkGraphSession.ISourceDigest> {
-    const manifest = new Map<string, IBulkGraphSession.ISourceDigest>();
+  ): { sources: Map<string, IBulkGraphSession.ISourceDigest>; proven: boolean } {
+    const indexed = new Map<string, string>();
+    for (const document of index.documents) {
+      const text = document.text;
+      if (text !== undefined && text !== "") {
+        indexed.set(
+          path.resolve(this.root, document.relativePath),
+          createHash("sha256").update(text, "utf8").digest("hex"),
+        );
+      }
+    }
+
+    const sources = new Map<string, IBulkGraphSession.ISourceDigest>();
+    let proven = files.length > 0;
     for (const file of files) {
       const absolute = path.resolve(this.root, file);
-      let digest = "";
+      const checkerDigest = indexed.get(absolute) ?? "";
+      if (checkerDigest === "") proven = false;
+      let diskDigest = "";
       try {
-        digest = createHash("sha256")
+        diskDigest = createHash("sha256")
           .update(fs.readFileSync(absolute))
           .digest("hex");
         /* c8 ignore start -- a document the indexer read and that vanished
          * before this read is a race no hermetic fixture can stage. */
       } catch {
-        digest = "";
+        diskDigest = "";
       }
       /* c8 ignore stop */
-      manifest.set(absolute, { checkerDigest: digest, diskDigest: digest });
+      sources.set(absolute, { checkerDigest, diskDigest });
     }
-    return manifest;
+    return { sources, proven };
   }
 
   /**
@@ -423,19 +453,25 @@ const SCIP_SCHEMA_VERSION = 5;
 const SCIP_PROTOCOL_VERSION = 0;
 
 /**
- * What a SCIP snapshot proves about itself.
+ * What every SCIP snapshot proves about itself.
  *
- * `sourceDigests` and `diskDigests` are both claimed because this session
- * hashes the documents itself. `universe` is claimed because the fingerprint
- * covers the declared build inputs. `diagnostics` is not: SCIP carries them
- * only when the indexer chose to emit them, and claiming the capability would
- * turn "this indexer reports none" into "this project has none".
+ * `universe` is claimed because the fingerprint covers the declared build
+ * inputs, and `diskDigests` because this session hashes the files. Neither
+ * `diagnostics` nor `sourceDigests` is here: SCIP carries diagnostics only
+ * when the indexer chose to emit them, so claiming it would turn "this indexer
+ * reports none" into "this project has none", and source digests depend on the
+ * index carrying document text — which most indexers omit.
  */
-const SCIP_CAPABILITIES: readonly string[] = [
-  "universe",
-  "sourceDigests",
-  "diskDigests",
-];
+const SCIP_CAPABILITIES: readonly string[] = ["universe", "diskDigests"];
+
+/**
+ * Claimed only when the index carried the text its facts were computed from.
+ *
+ * Naming it is what tells a reader they may compare their own read against
+ * `checkerDigest` and conclude something. Claiming it without the text would
+ * invite exactly the unsound proof the manifest refuses to fabricate.
+ */
+const SOURCE_DIGESTS_CAPABILITY = "sourceDigests";
 
 function fileUriToPath(uri: string): string {
   const withoutScheme = uri.slice("file://".length).replace(/^\/(?=[a-zA-Z]:)/, "");

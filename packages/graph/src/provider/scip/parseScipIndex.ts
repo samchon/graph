@@ -97,6 +97,11 @@ function documentOf(value: unknown, label: string): IScipIndex.IDocument {
               symbolInformationOf(symbol, `${label}.symbols[${at}]`),
           ),
         }),
+    // The one field that lets a snapshot say which bytes its facts came from.
+    // Most indexers omit it; when present it is the only honest source of a
+    // checker digest, because everything else this client can read is a later
+    // instant.
+    ...optionalString(document.text, `${label}.text`, "text"),
     ...optionalString(
       document.positionEncoding,
       `${label}.positionEncoding`,

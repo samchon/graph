@@ -504,6 +504,8 @@ function assertRelationshipsAndExternals(): void {
             // attribution has to compare columns rather than stopping once the
             // line numbers match, and lands on the enclosing method.
             { range: [2, 50, 56], symbol: external },
+            // The same relationship again: one edge, not two.
+            { range: [6, 50, 56], symbol: external },
             // A reference with no enclosing definition has nothing to
             // attribute it to.
             { range: [20, 0, 4], symbol: iface },
@@ -513,8 +515,18 @@ function assertRelationshipsAndExternals(): void {
             { range: [6, 0, 4], symbol: `${base}/Nowhere#` },
             // …and one this parser cannot read.
             { range: [7, 0, 4], symbol: "!!unreadable!!" },
+            // An occurrence-level diagnostic has a range, and it is used.
+            // Pinning it to 1:1 would send a reader to the top of the file for
+            // a problem twelve lines down.
+            {
+              range: [11, 6, 10],
+              symbol: iface,
+              diagnostics: [{ severity: "Warning", message: "shadowed here" }],
+            },
           ],
           diagnostics: [
+            // Document-level: no range of its own, so the file's first
+            // position is the honest answer — the file is what it is about.
             { severity: "Error", code: "E1", message: "broken" },
             { severity: "Warning", message: "suspicious" },
             { severity: "Information", message: "noted" },
@@ -597,12 +609,38 @@ function assertRelationshipsAndExternals(): void {
   TestValidator.equals(
     "every diagnostic severity the index states is carried",
     adapted.diagnostics.map((diagnostic) => diagnostic.severity),
-    ["error", "warning", "info", "hint", undefined],
+    ["error", "warning", "info", "hint", undefined, "warning"],
   );
   TestValidator.equals(
     "a diagnostic without a code falls back to its source",
     adapted.diagnostics[4]?.code,
     "vet",
+  );
+  // A document-level finding is about the file; an occurrence-level one is
+  // about a place in it, and reporting the second at 1:1 would look like an
+  // answer while sending the reader to the wrong line.
+  TestValidator.equals(
+    "a document-level diagnostic is reported at the file's first position",
+    [adapted.diagnostics[0]?.line, adapted.diagnostics[0]?.column],
+    [1, 1],
+  );
+  TestValidator.equals(
+    "an occurrence-level diagnostic keeps the position it was given",
+    [adapted.diagnostics[5]?.line, adapted.diagnostics[5]?.column],
+    [12, 7],
+  );
+
+  // One name referenced twice in a scope is two occurrences of one
+  // relationship; a strict slice may not carry it twice.
+  TestValidator.equals(
+    "repeated occurrences of one relationship publish one edge",
+    adapted.edges.filter(
+      (candidate) =>
+        candidate.kind === "references" &&
+        candidate.from === named("File") &&
+        candidate.to === named("Client"),
+    ).length,
+    1,
   );
 
   // One symbol cannot be defined in two documents; keeping the first is

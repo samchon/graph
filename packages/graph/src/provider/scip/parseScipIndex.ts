@@ -142,6 +142,19 @@ function occurrenceOf(value: unknown, label: string): IScipIndex.IOccurrence {
             `${label}.enclosingRange`,
           ),
         }),
+    // Kept, because this is where a diagnostic gets a position. Dropping it
+    // left the adapter with nothing but document-level findings, every one of
+    // which it then had to report at the top of the file.
+    ...(occurrence.diagnostics === undefined
+      ? {}
+      : {
+          diagnostics: arrayOf(
+            occurrence.diagnostics,
+            `${label}.diagnostics`,
+          ).map((diagnostic, at) =>
+            diagnosticOf(diagnostic, `${label}.diagnostics[${at}]`),
+          ),
+        }),
   };
 }
 

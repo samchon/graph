@@ -249,15 +249,19 @@ export function adaptScipIndex(
       });
     }
 
+    // A document-level diagnostic has no range of its own, so it is reported
+    // at the file's first position — the file *is* what it is about. An
+    // occurrence-level one does have a range, and it is used: pinning every
+    // finding to 1:1 would send a reader to the top of the file for a problem
+    // twenty lines down, which is worse than saying nothing, because it looks
+    // like an answer.
     for (const diagnostic of document.diagnostics ?? []) {
-      diagnostics.push({
-        file,
-        line: 1,
-        column: 1,
-        code: diagnostic.code ?? diagnostic.source ?? "unknown",
-        message: diagnostic.message,
-        ...severityOf(diagnostic.severity),
-      });
+      diagnostics.push(diagnosticOf(diagnostic, file, undefined));
+    }
+    for (const occurrence of occurrences) {
+      for (const diagnostic of occurrence.diagnostics ?? []) {
+        diagnostics.push(diagnosticOf(diagnostic, file, occurrence.range));
+      }
     }
   }
 
@@ -294,11 +298,27 @@ export function adaptScipIndex(
 
   return {
     nodes: [...nodes.values()],
-    edges,
+    // Deduplicated on the way out. A name referenced twice in one scope is two
+    // occurrences of one relationship, and a symbol listing the same
+    // relationship under two flags is one claim per flag — both legitimate in
+    // an index, both duplicates in a graph, and `mergeGraphSlices` rejects a
+    // strict slice that carries one. The first occurrence keeps its evidence,
+    // because the earliest is the one a reader is sent to.
+    edges: dedupe(edges),
     diagnostics,
     warnings,
     files,
   };
+}
+
+/** One edge per kind and endpoint pair, keeping the first evidence seen. */
+function dedupe(edges: readonly ISamchonGraphEdge[]): ISamchonGraphEdge[] {
+  const seen = new Map<string, ISamchonGraphEdge>();
+  for (const edge of edges) {
+    const key = `${edge.kind}\0${edge.from}\0${edge.to}`;
+    if (!seen.has(key)) seen.set(key, edge);
+  }
+  return [...seen.values()];
 }
 
 /* c8 ignore start -- merging a namespace onto a function compiles to an
@@ -364,6 +384,22 @@ function identityOf(
     ...(symbol.stability === "generation"
       ? { scope: { document: file }, generation: file }
       : {}),
+  };
+}
+
+function diagnosticOf(
+  diagnostic: IScipIndex.IDiagnostic,
+  file: string,
+  range: number[] | undefined,
+): ISamchonGraphDiagnostic {
+  const span = range === undefined ? undefined : spanOf(file, range);
+  return {
+    file,
+    line: span?.startLine ?? 1,
+    column: span?.startCol ?? 1,
+    code: diagnostic.code ?? diagnostic.source ?? "unknown",
+    message: diagnostic.message,
+    ...severityOf(diagnostic.severity),
   };
 }
 

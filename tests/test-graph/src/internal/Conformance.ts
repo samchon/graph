@@ -70,10 +70,10 @@ export namespace Conformance {
   /**
    * Check one published slice against a golden expectation set.
    *
-   * Symbols are matched by display name and kind rather than by id, because a
-   * provider's ids are its own — that is the point of a semantic identity —
-   * and a harness that compared them would only ever pass for the provider it
-   * was written against.
+   * Declarations are matched by display name and kind, relationships by
+   * display name alone, because a provider's ids are its own — that is the
+   * point of a semantic identity — and a harness that compared them would only
+   * ever pass for the provider it was written against.
    */
   export function check(
     snapshot: IBulkGraphSession.ISnapshot,
@@ -85,6 +85,25 @@ export namespace Conformance {
       const key = `${node.name}\0${node.kind}`;
       byName.set(key, [...(byName.get(key) ?? []), node]);
     }
+    // Edge expectations name their endpoints by display name alone, because a
+    // provider's ids are its own — that is what a semantic identity is for, and
+    // a harness comparing them would only ever pass for the provider it was
+    // written against. The cost is that a golden fixture must not reuse a
+    // display name: two declarations sharing one would make every edge
+    // expectation ambiguous, and an ambiguous assertion passes for the wrong
+    // reason. So the fixture is held to that instead.
+    const ambiguous = new Map<string, number>();
+    for (const node of snapshot.nodes) {
+      ambiguous.set(node.name, (ambiguous.get(node.name) ?? 0) + 1);
+    }
+    for (const [name, count] of ambiguous) {
+      if (count > 1) {
+        failures.push(
+          `golden fixture reuses the display name "${name}" ${String(count)} times, so no edge expectation naming it can be unambiguous`,
+        );
+      }
+    }
+
     const idsOf = (name: string): Set<string> => {
       const ids = new Set<string>();
       for (const [key, nodes] of byName) {
@@ -174,6 +193,16 @@ export namespace Conformance {
       }
       if ((span.endLine ?? span.startLine) < span.startLine) {
         failures.push(`${node.id} has a span that ends before it starts`);
+      }
+      // An implementation span is a second real location, encoded the same
+      // way. Checking only the declaration would let a provider emit a
+      // zero-based one wherever a declaration and its body are apart, which is
+      // every overridden method and every header-and-source pair.
+      const body = node.implementation;
+      if (body !== undefined && (body.startLine < 1 || (body.startCol ?? 1) < 1)) {
+        failures.push(
+          `${node.id} has a zero-based implementation span at ${String(body.startLine)}:${String(body.startCol)}`,
+        );
       }
     }
 

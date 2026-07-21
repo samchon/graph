@@ -103,6 +103,38 @@ export const test_conformance_harness_rejects_a_text_heuristic_provider =
       ).failures.some((failure) => failure.includes("zero-based span")),
     );
     TestValidator.predicate(
+      "a zero-based implementation span is caught",
+      Conformance.structure(
+        snapshotOf({
+          nodes: [
+            {
+              ...declaration("caller", "function"),
+              implementation: { file: "a.ts", startLine: 0, startCol: 0 },
+            },
+          ],
+        }),
+        provider,
+        ["typescript"],
+      ).failures.some((failure) =>
+        failure.includes("zero-based implementation span"),
+      ),
+    );
+    // A fixture that reuses a display name makes every edge expectation
+    // naming it ambiguous, and an ambiguous assertion passes for the wrong
+    // reason.
+    TestValidator.predicate(
+      "a golden fixture reusing a display name is caught",
+      Conformance.check(
+        snapshotOf({
+          nodes: [
+            declaration("caller", "function"),
+            { ...declaration("caller", "method"), id: "a.ts#caller:method" },
+          ],
+        }),
+        [],
+      ).failures.some((failure) => failure.includes("reuses the display name")),
+    );
+    TestValidator.predicate(
       "a manifest entry without a checker digest is caught",
       Conformance.structure(
         snapshotOf({

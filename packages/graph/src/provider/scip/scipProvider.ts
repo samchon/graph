@@ -41,8 +41,12 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
         refused.push("lspReferenceLimit");
       }
       if (refused.length === 0) return undefined;
+      // Names the authority as well as the provider, because that is what a
+      // reader loses: the sentence has to say which grade of fact the build
+      // gave up, not merely which program it did not run.
+      const authority = props.authority ?? "semantic-index";
       return (
-        `${props.languages.join(", ")}: the ${props.name} provider is disabled by ${refused.join(", ")}; ` +
+        `${props.languages.join(", ")}: the ${props.name} ${authority} provider is disabled by ${refused.join(", ")}; ` +
         `it publishes whole-workspace indexes and has no bounded mode, so these languages fall through to the generic language-server lane. ` +
         `Drop ${refused.length === 1 ? "that option" : "those options"} for a strict index.`
       );

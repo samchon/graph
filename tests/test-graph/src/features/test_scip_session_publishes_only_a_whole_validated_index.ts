@@ -87,6 +87,12 @@ async function assertTheRegistryEntryItBuilds(): Promise<void> {
       "those options",
     ),
   );
+  // A refusal has to say which grade of fact was given up, not merely which
+  // program did not run — that is what a reader actually loses.
+  TestValidator.predicate(
+    "a refusal names the authority as well as the provider",
+    (provider.refuse({ maxFiles: 1 }) ?? "").includes("semantic-index provider"),
+  );
 
   const session = provider.open({
     root,

@@ -227,8 +227,9 @@ async function assertSnapshotContract(): Promise<void> {
     facts: ["calls"],
     nodes: [node("a.cpp", "run", "cpp")],
   });
+  // Admission is proved by this not throwing; asserting a literal `true`
+  // afterwards would read like a check while testing nothing.
   assertGraphSnapshotContract(valid, provider, ["cpp", "c"]);
-  TestValidator.predicate("a conforming slice is admitted", true);
 
   TestValidator.error("a slice owning no language is refused", () =>
     assertGraphSnapshotContract(

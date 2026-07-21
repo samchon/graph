@@ -486,6 +486,32 @@ async function assertDigestsAndProvenance(): Promise<void> {
       ProviderFixtures.snapshot({ nodes: [node("a.ts", "run", "typescript")] }),
     ),
   );
+  // Inside an array is the one place an `undefined` survives the object
+  // filter, and it has to keep its place: an array's length is part of its
+  // meaning, so dropping the hole would make two different lists agree.
+  TestValidator.notEquals(
+    "an undefined inside an array keeps its place",
+    graphSnapshotDigests.contentOf(
+      ProviderFixtures.snapshot({
+        nodes: [
+          {
+            ...node("a.ts", "run", "typescript"),
+            modifiers: [undefined, "export"],
+          } as unknown as ISamchonGraphNode,
+        ],
+      }),
+    ),
+    graphSnapshotDigests.contentOf(
+      ProviderFixtures.snapshot({
+        nodes: [
+          {
+            ...node("a.ts", "run", "typescript"),
+            modifiers: ["export"],
+          } as ISamchonGraphNode,
+        ],
+      }),
+    ),
+  );
   // A JSON null is a value the walk has to render, not a hole to drop: a
   // producer that states a field as null said something, and it is not the
   // same thing as never having said it.

@@ -538,9 +538,10 @@ const NODE_KINDS = new Set<GraphNodeKind>([
   "method",
   "module",
 ]);
-/* c8 ignore next -- merging a namespace onto a function compiles to an
- * `X || (X = {})` initialiser whose falsy arm cannot run: the function
- * declaration above it is always evaluated first. */
+/* c8 ignore start -- merging a namespace onto a function compiles to an
+ * `X || (X = {})` initialiser, emitted at the closing brace, whose falsy arm
+ * cannot run: the function declaration above it is always evaluated first.
+ * The constants inside run unconditionally, so nothing testable is hidden. */
 export namespace adaptTtscGraphDump {
   /** The registry identity every `ttscgraph` snapshot is published under. */
   export const PROVIDER = "ttscgraph";
@@ -570,6 +571,7 @@ export namespace adaptTtscGraphDump {
     "renders",
   ];
 }
+/* c8 ignore stop */
 
 const EDGE_KINDS = new Set<GraphEdgeKind>(adaptTtscGraphDump.EDGE_KINDS);
 const MODIFIERS = new Set<NonNullable<ISamchonGraphNode["modifiers"]>[number]>([

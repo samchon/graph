@@ -301,6 +301,10 @@ export function adaptScipIndex(
   };
 }
 
+/* c8 ignore start -- merging a namespace onto a function compiles to an
+ * `X || (X = {})` initialiser, emitted at the closing brace, whose falsy arm
+ * cannot run: the function declaration above it is always evaluated first.
+ * The constant inside runs unconditionally, so nothing testable is hidden. */
 export namespace adaptScipIndex {
   /** What a bare SCIP index proves, and nothing more. */
   export const EDGE_KINDS = SCIP_EDGE_KINDS;
@@ -311,6 +315,7 @@ export namespace adaptScipIndex {
   /** One strict slice mapped from one index. */
   export type IResult = IScipAdaptation;
 }
+/* c8 ignore stop */
 
 /**
  * The one position encoding whose offsets are already graph columns.

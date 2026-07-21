@@ -97,9 +97,10 @@ export function scipSymbol(symbol: string): IParsedSymbol | undefined {
   };
 }
 
-/* c8 ignore next -- merging a namespace onto a function compiles to an
- * `X || (X = {})` initialiser whose falsy arm cannot run: the function
- * declaration above it is always evaluated first. */
+/* c8 ignore start -- merging a namespace onto a function compiles to an
+ * `X || (X = {})` initialiser, emitted at the closing brace, whose falsy arm
+ * cannot run: the function declaration above it is always evaluated first.
+ * The alias inside runs unconditionally, so nothing testable is hidden. */
 export namespace scipSymbol {
   /** One parsed symbol string, as {@link scipSymbol} returns it. */
   export type IParsed = IParsedSymbol;
@@ -119,6 +120,7 @@ export namespace scipSymbol {
    */
   export const nodeKind = scipNodeKindImpl;
 }
+/* c8 ignore stop */
 
 function scipNodeKindImpl(
   kind: string | undefined,

@@ -55,6 +55,19 @@ interface IResidentState {
 interface IResidentDependencies {
   buildLspGraph: typeof buildLspGraph;
   buildStaticGraphResult?: typeof buildStaticGraphResult;
+
+  /**
+   * The static lane's parse, substitutable so the commit fence can be proved.
+   *
+   * The fence exists for the moment between a lane reading its source and the
+   * refresh publishing what it read. In production that moment belongs to
+   * whoever else is editing the checkout; in a test it belongs to nobody,
+   * because the last read and the fence are adjacent statements with no seam
+   * between them. A safety net that cannot be made to catch anything is not
+   * one — so the parse that closes the preparation phase is a dependency, and
+   * a test can move the project inside it.
+   */
+  staticGraphParts?: typeof staticGraphParts;
 }
 
 const DEFAULT_DEPENDENCIES: IResidentDependencies = {
@@ -202,7 +215,7 @@ export function createResidentGraphSource(
       }
     }
     if (current.staticLanguages.length > 0) {
-      const fallback = staticGraphParts(
+      const fallback = (dependencies.staticGraphParts ?? staticGraphParts)(
         {
           ...options,
           cwd: root,

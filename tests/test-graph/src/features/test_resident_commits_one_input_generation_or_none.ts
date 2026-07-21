@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { createResidentGraphSource } from "../../../../packages/graph/src/indexer/createResidentGraphSource";
 import type { IIndexerResult } from "../../../../packages/graph/src/indexer/IIndexerResult";
+import { staticGraphParts as realStaticGraphParts } from "../../../../packages/graph/src/indexer/staticGraphParts";
 import { GraphPaths } from "../internal/GraphPaths";
 import { ProviderFixtures } from "../internal/ProviderFixtures";
 
@@ -28,21 +29,22 @@ async function assertAMovedSourceDiscardsTheCandidate(): Promise<void> {
   const file = path.join(root, "a.ts");
   fs.writeFileSync(file, "export const value = 1;\n");
 
-  // The candidate is prepared from one text and the file moves before the
-  // fence closes, exactly once. The retry then finds it still.
+  // The static parse is what closes the preparation phase, so the project is
+  // moved from inside it exactly once: the candidate it just produced now
+  // describes source nobody has. The retry then finds the project still.
   let edits = 0;
   const source = createResidentGraphSource(
     { cwd: root },
     {
-      buildLspGraph: async () => {
-        const text = fs.readFileSync(file, "utf8");
+      buildLspGraph: async () =>
+        resultOf(root, file, fs.readFileSync(file, "utf8")),
+      staticGraphParts: (options, files) => {
+        const parts = realStaticGraphParts(options, files);
         if (edits === 0) {
           edits += 1;
-          // Written after this build read it: the candidate now describes
-          // source nobody has.
           fs.writeFileSync(file, "export const value = 2;\n");
         }
-        return resultOf(root, file, text);
+        return parts;
       },
     },
   );
@@ -73,13 +75,15 @@ async function assertAPersistentlyMovingProjectIsReported(): Promise<void> {
   const source = createResidentGraphSource(
     { cwd: root },
     {
-      buildLspGraph: async () => {
-        const text = fs.readFileSync(file, "utf8");
+      buildLspGraph: async () =>
+        resultOf(root, file, fs.readFileSync(file, "utf8")),
+      staticGraphParts: (options, files) => {
+        const parts = realStaticGraphParts(options, files);
         // Every attempt is overtaken. The bound is what keeps this from
         // never returning.
         revision += 1;
         fs.writeFileSync(file, `export const value = ${String(revision)};\n`);
-        return resultOf(root, file, text);
+        return parts;
       },
     },
   );

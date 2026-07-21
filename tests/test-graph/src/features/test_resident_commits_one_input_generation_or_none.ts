@@ -55,6 +55,10 @@ async function assertAMovedSourceDiscardsTheCandidate(): Promise<void> {
     dump.nodes.length,
     1,
   );
+  // A refresh only happens for a project that moved, so move it. The build
+  // that publishes the first generation never reaches the static lane, which
+  // is why the fence cannot fire on it.
+  fs.writeFileSync(file, "export const value = 1; // touched\n");
   // The second load prepares a candidate, finds the file moved under it,
   // discards it whole, and retries — so what it publishes is one generation.
   const refreshed = await source.load();
@@ -89,6 +93,7 @@ async function assertAPersistentlyMovingProjectIsReported(): Promise<void> {
   );
 
   await source.load();
+  fs.writeFileSync(file, "export const value = 0; // touched\n");
   let reported: string | undefined;
   try {
     await source.load();

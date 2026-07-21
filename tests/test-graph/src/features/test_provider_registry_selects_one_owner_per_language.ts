@@ -4,6 +4,7 @@ import {
   assertGraphSnapshotContract,
   dumpProvenanceOf,
   graphSnapshotDigests,
+  mergeGraphSlices,
   selectGraphProviders,
   type IGraphProvider,
   type ISamchonGraphNode,
@@ -26,6 +27,7 @@ export const test_provider_registry_selects_one_owner_per_language =
   async () => {
     await assertSelection();
     await assertSnapshotContract();
+    await assertCrossProviderCollisions();
     await assertDigestsAndProvenance();
   };
 
@@ -330,6 +332,71 @@ async function assertSnapshotContract(): Promise<void> {
       provider,
       ["cpp"],
     ),
+  );
+}
+
+/**
+ * The strict lane now carries several providers' slices at once.
+ *
+ * That makes a duplicate ambiguous in a way it was not when one provider
+ * produced everything, and the two meanings need different answers — a reader
+ * told only "duplicated node" for a cross-provider collision will look for the
+ * bug inside one provider and never find it.
+ */
+async function assertCrossProviderCollisions(): Promise<void> {
+  const shared = (language: ISamchonGraphNode["language"]) => ({
+    ...node("shared.h", "run", language),
+    id: "shared.h#run",
+  });
+
+  TestValidator.error("one provider publishing an id twice is refused", () =>
+    mergeGraphSlices({
+      root: "/r",
+      files: [],
+      genericNodes: [],
+      genericEdges: [],
+      strictNodes: [shared("cpp"), shared("cpp")],
+      strictEdges: [],
+    }),
+  );
+
+  let message = "";
+  try {
+    mergeGraphSlices({
+      root: "/r",
+      files: [],
+      genericNodes: [],
+      genericEdges: [],
+      strictNodes: [shared("c"), shared("cpp")],
+      strictEdges: [],
+    });
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  TestValidator.predicate(
+    "two providers publishing one id name both languages",
+    message.includes("c and cpp") && message.includes("two owners"),
+  );
+
+  // The other half of the same decision: endpoint closure is checked across
+  // the strict facts as a whole, because a provider owning C and C++ resolves
+  // calls that cross between them — and publishing those is what a shared
+  // compilation universe is for.
+  const merged = mergeGraphSlices({
+    root: "/r",
+    files: [],
+    genericNodes: [],
+    genericEdges: [],
+    strictNodes: [
+      { ...node("a.c", "caller", "c"), id: "a.c#caller" },
+      { ...node("b.cpp", "callee", "cpp"), id: "b.cpp#callee" },
+    ],
+    strictEdges: [{ kind: "calls", from: "a.c#caller", to: "b.cpp#callee" }],
+  });
+  TestValidator.equals(
+    "a cross-language edge inside one universe survives the merge",
+    merged.edges.length,
+    1,
   );
 }
 

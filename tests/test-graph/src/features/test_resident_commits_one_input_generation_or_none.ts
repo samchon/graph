@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { createResidentGraphSource } from "../../../../packages/graph/src/indexer/createResidentGraphSource";
 import type { IIndexerResult } from "../../../../packages/graph/src/indexer/IIndexerResult";
+import type { IBulkGraphSession } from "../../../../packages/graph/src/provider/IBulkGraphSession";
 import { staticGraphParts as realStaticGraphParts } from "../../../../packages/graph/src/indexer/staticGraphParts";
 import { GraphPaths } from "../internal/GraphPaths";
 import { ProviderFixtures } from "../internal/ProviderFixtures";
@@ -100,14 +101,30 @@ async function assertAProviderThatMovedMidTransactionIsDiscarded(): Promise<void
   fs.writeFileSync(file, "export const value = 1;\n");
 
   const provider = ProviderFixtures.provider({ name: "restless" });
-  const session = ProviderFixtures.session({
+  // Hand-rolled rather than scripted, because the rebuild has to be observable
+  // at the moment the fence looks. The transaction runs from the static parse
+  // to the fence without awaiting anything, so a refresh started there would
+  // still be a pending microtask when the check reads `current` — the test
+  // would pass or fail on scheduling rather than on the behaviour.
+  const taken = ProviderFixtures.snapshot({ provider: "restless" });
+  const rebuilt = ProviderFixtures.snapshot({ provider: "restless" });
+  let published = taken;
+  const session: IBulkGraphSession = {
+    kind: "bulk",
+    languages: ["typescript"],
     root,
-    snapshots: [
-      ProviderFixtures.snapshot({ provider: "restless" }),
-      ProviderFixtures.snapshot({ provider: "restless" }),
-      ProviderFixtures.snapshot({ provider: "restless" }),
-    ],
-  });
+    generation: 1,
+    get current() {
+      return published;
+    },
+    refresh: async () => ({
+      changed: false,
+      generation: 1,
+      mode: "unchanged",
+      snapshot: published,
+    }),
+    close: async () => undefined,
+  };
 
   let rebuilds = 0;
   const source = createResidentGraphSource(
@@ -123,7 +140,7 @@ async function assertAProviderThatMovedMidTransactionIsDiscarded(): Promise<void
         // The provider moves after this transaction already took its snapshot.
         if (rebuilds === 0) {
           rebuilds += 1;
-          void session.refresh();
+          published = rebuilt;
         }
         return parts;
       },

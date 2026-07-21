@@ -519,6 +519,10 @@ function assertRelationshipsAndExternals(): void {
             { range: [6, 0, 4], symbol: `${base}/Nowhere#` },
             // …and one this parser cannot read.
             { range: [7, 0, 4], symbol: "!!unreadable!!" },
+            // A *definition* occurrence whose symbol is unreadable: there is no
+            // declaration to attach the span to, and inventing one would put a
+            // node in the graph named after a string nobody could parse.
+            { range: [8, 0, 4], symbol: "!!unreadable!!", symbolRoles: 1 },
             // An occurrence-level diagnostic has a range, and it is used.
             // Pinning it to 1:1 would send a reader to the top of the file for
             // a problem twelve lines down.
@@ -540,6 +544,10 @@ function assertRelationshipsAndExternals(): void {
             { message: "unattributed", source: "vet" },
           ],
         },
+        // A file the indexer read and found nothing in — an empty source, or
+        // one holding only comments. It belongs in the manifest, because the
+        // index did read it, and it declares nothing.
+        { relativePath: "empty.go" },
       ],
       externalSymbols: [
         { symbol: external, displayName: "Client", kind: "Class" },
@@ -576,6 +584,11 @@ function assertRelationshipsAndExternals(): void {
   TestValidator.predicate(
     "an unreadable symbol is reported",
     adapted.warnings.some((warning) => warning.includes("cannot name")),
+  );
+  // A file the index read and found nothing in is still a file it read.
+  TestValidator.predicate(
+    "a declaration-free document stays in the manifest",
+    adapted.files.includes("empty.go"),
   );
 
   const edge = (kind: string, from: string, to: string): boolean =>

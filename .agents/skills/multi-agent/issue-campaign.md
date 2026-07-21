@@ -74,8 +74,11 @@ For each immediately executable batch:
 
 1. Create one isolated worktree and topic branch.
 2. Create an implementation-free commit with `git commit --allow-empty`.
-3. Push and open a draft pull request linking every batch issue and stating its
-   owned files.
+3. Push and open a draft pull request referencing every batch issue by number
+   and stating its owned files. Keep closing keywords out of the claim body and
+   close each issue from the commit that earns it, as the
+   [solo development procedure](../issue-campaign/development.md#implement-and-write-tests)
+   defines.
 4. Record the batch, worktree, branch, issues, pull request, head SHA, and
    assignment-created temporary assets in `.wiki`.
 5. Implement the full consequence surface and its positive, negative, boundary,

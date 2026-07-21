@@ -154,11 +154,12 @@ export function createResidentGraphSource(
     const modes = new Map<string, IBulkGraphSession.Mode>();
     const selected = selectGraphSources(root, options);
 
-    // One slice per distinct bulk session, not per key. A provider that owns
+    // One slice per distinct bulk session, not per key: a provider that owns
     // two languages appears twice in `sessions` pointing at one object, and
     // merging its snapshot once per key would publish every node it produced
-    // twice.
-    const merged = new Set<IBulkGraphSession>();
+    // twice. The value is the exact snapshot this transaction took, so the
+    // fence below can ask whether it is still what the session holds.
+    const merged = new Map<IBulkGraphSession, IBulkGraphSession.ISnapshot>();
     for (const [language, session] of current.sessions) {
       if (isBulkGraphSession(session)) {
         // `load` refreshes every bulk session through `refreshBulkSessions`
@@ -171,7 +172,7 @@ export function createResidentGraphSource(
         assertOpen();
         generations.set(language, refresh.generation);
         if (merged.has(session)) continue;
-        merged.add(session);
+        merged.set(session, refresh.snapshot);
         // Held to the same contract as the first snapshot, on every refresh.
         // Checking only the initial build would leave a session unexamined for
         // its entire working life — a provider whose second generation
@@ -265,6 +266,19 @@ export function createResidentGraphSource(
     if (moved !== undefined) {
       throw new StaleCandidateError(
         `@samchon/graph: ${moved} changed while this refresh was preparing, so no slice of it may be published`,
+      );
+    }
+
+    // …but the token has to be checked, or naming it is just a sentence. A
+    // provider polled at the start of this transaction can have rebuilt while
+    // the generic lanes were still reading, and its candidate would then be one
+    // program's facts committed beside another's — the exact mixture the fence
+    // exists to refuse, arriving through the one lane the fence was not
+    // watching.
+    for (const [session, snapshot] of merged) {
+      if (session.current === snapshot) continue;
+      throw new StaleCandidateError(
+        `@samchon/graph: the ${snapshot.provenance.provider} provider replaced its snapshot while this refresh was preparing, so no slice of that generation may be published`,
       );
     }
 

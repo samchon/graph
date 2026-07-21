@@ -23,7 +23,70 @@ export const test_resident_commits_one_input_generation_or_none = async () => {
   await assertAPersistentlyMovingProjectIsReported();
   await assertALaterGenerationIsStillHeldToItsContract();
   await assertAMultiLanguageSessionIsMergedOnce();
+  await assertAProviderThatMovedMidTransactionIsDiscarded();
 };
+
+/**
+ * A provider that rebuilt mid-transaction does not get committed beside the
+ * lanes that read before it.
+ *
+ * Bulk sessions are polled at the start of a refresh, and the generic lanes
+ * read afterwards. A provider that replaced its snapshot in between leaves this
+ * transaction holding one program's facts next to another's — the exact mixture
+ * the fence exists to refuse, arriving through the one lane it was not
+ * watching. Its manifest digest is its revision token, and naming that in a
+ * comment is not the same as checking it.
+ */
+async function assertAProviderThatMovedMidTransactionIsDiscarded(): Promise<void> {
+  const root = GraphPaths.createTempDirectory("samchon-graph-provider-moved-");
+  const file = path.join(root, "a.ts");
+  fs.writeFileSync(file, "export const value = 1;\n");
+
+  const provider = ProviderFixtures.provider({ name: "restless" });
+  const session = ProviderFixtures.session({
+    root,
+    snapshots: [
+      ProviderFixtures.snapshot({ provider: "restless" }),
+      ProviderFixtures.snapshot({ provider: "restless" }),
+      ProviderFixtures.snapshot({ provider: "restless" }),
+    ],
+  });
+
+  let rebuilds = 0;
+  const source = createResidentGraphSource(
+    { cwd: root },
+    {
+      buildLspGraph: async () => ({
+        ...resultOf(root, file, fs.readFileSync(file, "utf8")),
+        sessions: new Map([["typescript", session]]),
+        providers: new Map([["typescript", provider]]),
+      }),
+      staticGraphParts: (options, files) => {
+        const parts = realStaticGraphParts(options, files);
+        // The provider moves after this transaction already took its snapshot.
+        if (rebuilds === 0) {
+          rebuilds += 1;
+          void session.refresh();
+        }
+        return parts;
+      },
+    },
+  );
+
+  await source.load();
+  fs.writeFileSync(file, "export const value = 2;\n");
+  let reported: string | undefined;
+  try {
+    await source.load();
+  } catch (error) {
+    reported = (error as Error).message;
+  }
+  TestValidator.predicate(
+    "a provider that replaced its snapshot mid-transaction is refused",
+    reported !== undefined && reported.includes("restless"),
+  );
+  await source.close();
+}
 
 /**
  * A provider owning two languages is one session, merged once.

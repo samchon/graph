@@ -56,7 +56,7 @@ async function assertTheRegistryEntryItBuilds(): Promise<void> {
   TestValidator.equals(
     "a SCIP entry claims only what a bare index proves",
     [...provider.facts].sort(),
-    ["accesses", "contains", "implements", "references", "type_ref"],
+    ["accesses", "contains", "implements", "imports", "references", "type_ref"],
   );
   TestValidator.equals(
     "…and grounds them in a semantic index by default",

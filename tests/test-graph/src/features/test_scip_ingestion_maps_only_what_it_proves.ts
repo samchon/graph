@@ -506,6 +506,10 @@ function assertRelationshipsAndExternals(): void {
             { range: [2, 50, 56], symbol: external },
             // The same relationship again: one edge, not two.
             { range: [6, 50, 56], symbol: external },
+            // An import role, carried together with a read. The mask holds
+            // both bits, and calling this an access would lose the one fact
+            // nothing else records: the module boundary was crossed here.
+            { range: [3, 50, 56], symbol: typed, symbolRoles: 2 | 8 },
             // A reference with no enclosing definition has nothing to
             // attribute it to.
             { range: [20, 0, 4], symbol: iface },
@@ -596,6 +600,16 @@ function assertRelationshipsAndExternals(): void {
   TestValidator.predicate(
     "a reference to a dependency leaf lands on it",
     edge("references", "File", "Client"),
+  );
+  // The import role is one of the few facts every SCIP indexer records the
+  // same way, so it maps rather than being flattened into a bare reference.
+  TestValidator.predicate(
+    "an import role becomes an import edge",
+    edge("imports", "File", "Handle"),
+  );
+  TestValidator.predicate(
+    "…and is not also published as the access its mask carries",
+    !edge("accesses", "File", "Handle"),
   );
   TestValidator.predicate(
     "a relationship to an undeclared symbol emits nothing",

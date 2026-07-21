@@ -20,17 +20,23 @@ import { scipSymbol } from "./scipSymbol";
  * from a type reference, or say what an annotation means — those are different
  * facts in different languages, and the schema has no common field for them.
  *
- * So `calls`, `instantiates`, `imports`, `overrides`, `decorates`, and `tests`
- * are absent here and stay absent unless a language enrichment proves them.
- * The alternative — reading the source at the occurrence and looking for a `(`
- * — is not a weaker version of proving a call; it is a different thing wearing
+ * So `calls`, `instantiates`, `overrides`, `decorates`, and `tests` are absent
+ * here and stay absent unless a language enrichment proves them. The
+ * alternative — reading the source at the occurrence and looking for a `(` —
+ * is not a weaker version of proving a call; it is a different thing wearing
  * its name, and it is wrong on every function value, every macro, and every
  * language whose call syntax is not juxtaposition with parentheses.
+ *
+ * `imports` is here because SCIP does state it: the import role is one of the
+ * few facts every indexer records the same way. What the role does not say is
+ * how the module resolved, so an import edge here means the boundary was
+ * crossed at this occurrence, not that a particular module topology holds.
  */
 const SCIP_EDGE_KINDS: readonly GraphEdgeKind[] = [
   "contains",
   "references",
   "accesses",
+  "imports",
   "implements",
   "type_ref",
 ];
@@ -233,12 +239,21 @@ export function adaptScipIndex(
       const owner = scopes.find((scope) => contains(scope.range, occurrence.range));
       if (owner === undefined) continue;
       if (owner.id === target.id) continue;
-      // Read and write roles are the one access distinction SCIP states
-      // universally, so they map; everything else is a reference and says only
+      // Import, read, and write are the role distinctions SCIP states
+      // universally, so they map. Everything else is a reference and says only
       // that the name appeared, which is exactly what the index proved.
-      const kind: GraphEdgeKind =
-        hasRole(occurrence, IScipIndex.SymbolRole.ReadAccess) ||
-        hasRole(occurrence, IScipIndex.SymbolRole.WriteAccess)
+      //
+      // Import is checked first because a role mask can carry more than one
+      // bit: an imported symbol that is also read at the same occurrence is an
+      // import, and calling it an access would lose the fact that the module
+      // boundary was crossed here — which is the fact nothing else records.
+      const kind: GraphEdgeKind = hasRole(
+        occurrence,
+        IScipIndex.SymbolRole.Import,
+      )
+        ? "imports"
+        : hasRole(occurrence, IScipIndex.SymbolRole.ReadAccess) ||
+            hasRole(occurrence, IScipIndex.SymbolRole.WriteAccess)
           ? "accesses"
           : "references";
       edges.push({

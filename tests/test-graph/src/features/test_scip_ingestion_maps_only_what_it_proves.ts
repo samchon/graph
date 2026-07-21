@@ -461,8 +461,9 @@ function assertRelationshipsAndExternals(): void {
               // An enclosing symbol nothing declares cannot own anything.
               enclosingSymbol: "scip-go gomod example v1 `main`/Missing#",
             },
-            // A kind this graph does not model publishes no node.
-            { symbol: `${base}/T#[X]`, displayName: "X", kind: "TypeParameter" },
+            // A kind this graph does not model publishes no node, and neither
+            // does the type-parameter descriptor it falls back to.
+            { symbol: `${base}/T#[X]`, displayName: "X", kind: "SomethingNewer" },
             // A symbol string the parser cannot read is reported, not guessed.
             { symbol: "!!unreadable!!", displayName: "junk", kind: "Function" },
             // A declaration with no name to show.

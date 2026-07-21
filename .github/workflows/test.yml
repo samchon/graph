@@ -11,6 +11,18 @@ on:
   pull_request:
     branches: [master]
 
+# One live run per branch. Without this, a branch under active review queues a
+# fresh three-platform run per push while every superseded one still holds
+# runners — and the verdict that matters, the one for the current head, waits
+# behind results nobody can merge on, because a green check belonging to an
+# older SHA proves nothing about this one.
+#
+# `master` is excluded from cancellation: a push there is the verdict on what
+# actually landed, and each commit needs its own.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
 jobs:
   test:
     name: ${{ matrix.os }} / node ${{ matrix.node }}

@@ -16,6 +16,17 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
 
+# Sixteen jobs per run, so a branch under active review can hold most of the
+# available runners in superseded work. Only the current head's real-server
+# result is usable — the earlier ones describe code that has already been
+# replaced — and keeping them alive delays the one verdict that can gate a
+# merge.
+#
+# A manual dispatch is left alone: somebody asked for that specific run.
+concurrency:
+  group: experiment-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   experiment:
     name: ${{ matrix.language }} LSP

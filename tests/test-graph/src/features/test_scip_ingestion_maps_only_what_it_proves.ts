@@ -499,10 +499,11 @@ function assertRelationshipsAndExternals(): void {
               enclosingRange: [2, 2, 2, 40],
             },
             // A dependency leaf, created at the moment a document names it and
-            // taking that document's language. It sits on the line its
-            // enclosing scope opens on, so containment has to compare columns
-            // instead of stopping once the line numbers match.
-            { range: [2, 20, 26], symbol: external },
+            // taking that document's language. It sits on the line two scopes
+            // open on, past the column where the narrower one ends — so
+            // attribution has to compare columns rather than stopping once the
+            // line numbers match, and lands on the enclosing method.
+            { range: [2, 50, 56], symbol: external },
             // A reference with no enclosing definition has nothing to
             // attribute it to.
             { range: [20, 0, 4], symbol: iface },

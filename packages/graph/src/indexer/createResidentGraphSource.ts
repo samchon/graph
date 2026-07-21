@@ -282,19 +282,26 @@ export function createResidentGraphSource(
       );
     }
 
+    // Written out rather than spread from the previous dump, because a spread
+    // carries forward whatever this refresh did not replace — and `provenance`
+    // is the field where that is worst. Its manifest and content digests are a
+    // *proof* about one generation, so an inherited row states that a
+    // generation nobody produced is still current, and a reader comparing
+    // digests concludes nothing moved. The same reasoning already retired the
+    // carried-forward `diagnostics` array above.
+    //
+    // Only the three facts a refresh cannot change survive: this is the same
+    // project, and `sameLanguages` gated the call, so its language set and
+    // indexing strategy are the ones the build established.
     const dump: ISamchonGraphDump = {
-      ...current.dump,
+      project: current.dump.project,
+      languages: current.dump.languages,
+      indexer: current.dump.indexer,
       nodes: wireNodes(finalized.nodes),
       edges: wireEdges(finalized.edges, finalized.nodes),
       diagnostics,
       warnings,
-      ...(provenance.length === 0
-        ? {}
-        : {
-            provenance: provenance.sort((left, right) =>
-              compareOrdinal(left.provider, right.provider),
-            ),
-          }),
+      ...dumpProvenanceOf.fieldOf(provenance),
     };
     // One replacement, after the fence closed. Nothing above this line is
     // visible to a reader, so a throw anywhere in the transaction leaves the

@@ -1,3 +1,5 @@
+import { compareOrdinal } from "@samchon/graph-sitter";
+
 import { ISamchonGraphDump } from "../structures";
 import { graphSnapshotDigests } from "./graphSnapshotDigests";
 import { IBulkGraphSession } from "./IBulkGraphSession";
@@ -33,4 +35,33 @@ export function dumpProvenanceOf(
     manifest: graphSnapshotDigests.manifestOf(snapshot),
     content: graphSnapshotDigests.contentOf(snapshot),
   };
+}
+
+export namespace dumpProvenanceOf {
+  /**
+   * The dump's whole `provenance` field for one build's rows, or nothing.
+   *
+   * Sorted by provider name rather than left in selection order, so the dump
+   * stays a pure function of its source: registry order is a property of the
+   * build, not of the code it describes, and a reordering there must not change
+   * the bytes of a dump taken from an unedited checkout.
+   *
+   * Omitted entirely when empty, because an empty array would claim a provider
+   * was asked and proved nothing.
+   *
+   * Both publishers call this rather than each deciding the rule again. A
+   * one-shot build and a resident refresh disagreeing about ordering or about
+   * what an empty set means would make one checkout publish two different
+   * dumps, which is the one property this structure's contract rests on.
+   */
+  export function fieldOf(
+    rows: readonly ISamchonGraphDump.IProvenance[],
+  ): { provenance?: ISamchonGraphDump.IProvenance[] } {
+    if (rows.length === 0) return {};
+    return {
+      provenance: [...rows].sort((left, right) =>
+        compareOrdinal(left.provider, right.provider),
+      ),
+    };
+  }
 }

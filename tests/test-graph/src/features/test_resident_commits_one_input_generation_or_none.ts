@@ -24,7 +24,64 @@ export const test_resident_commits_one_input_generation_or_none = async () => {
   await assertALaterGenerationIsStillHeldToItsContract();
   await assertAMultiLanguageSessionIsMergedOnce();
   await assertAProviderThatMovedMidTransactionIsDiscarded();
+  await assertProvenanceDescribesThePublishedGeneration();
 };
+
+/**
+ * A refresh republishes its own provenance rather than inheriting one.
+ *
+ * The row carries manifest and content digests, which are a *proof* about one
+ * generation. Carrying a previous one forward states that a generation nobody
+ * produced is still current, and a reader comparing digests concludes nothing
+ * moved — the same hazard that retired the carried-forward diagnostics array.
+ */
+async function assertProvenanceDescribesThePublishedGeneration(): Promise<void> {
+  const root = GraphPaths.createTempDirectory("samchon-graph-provenance-gen-");
+  const file = path.join(root, "a.ts");
+  fs.writeFileSync(file, "export const value = 1;\n");
+
+  const provider = ProviderFixtures.provider({ name: "moving" });
+  const session = ProviderFixtures.session({
+    root,
+    snapshots: [
+      ProviderFixtures.snapshot({
+        provider: "moving",
+        sources: new Map([["a.ts", { checkerDigest: "one", diskDigest: "one" }]]),
+      }),
+      ProviderFixtures.snapshot({
+        provider: "moving",
+        sources: new Map([["a.ts", { checkerDigest: "two", diskDigest: "two" }]]),
+      }),
+    ],
+  });
+
+  const source = createResidentGraphSource(
+    { cwd: root },
+    {
+      buildLspGraph: async () => ({
+        ...resultOf(root, file, fs.readFileSync(file, "utf8")),
+        sessions: new Map([["typescript", session]]),
+        providers: new Map([["typescript", provider]]),
+      }),
+    },
+  );
+
+  const first = await source.load();
+  const before = first.provenance?.[0]?.manifest;
+  TestValidator.predicate(
+    "the first generation publishes a manifest digest",
+    before !== undefined,
+  );
+
+  fs.writeFileSync(file, "export const value = 2;\n");
+  const second = await source.load();
+  TestValidator.notEquals(
+    "a later generation publishes its own manifest digest, not the one before",
+    second.provenance?.[0]?.manifest,
+    before,
+  );
+  await source.close();
+}
 
 /**
  * A provider that rebuilt mid-transaction does not get committed beside the

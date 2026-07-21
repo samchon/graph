@@ -326,7 +326,7 @@ export async function buildLspGraph(
         edges: wireEdges(finalized.edges, finalized.nodes),
         diagnostics,
         warnings,
-        ...provenanceField(provenance),
+        ...dumpProvenanceOf.fieldOf(provenance),
       },
       warnings,
       source: snapshotSource(),
@@ -436,26 +436,6 @@ function appendSources(
   source: ReadonlyMap<string, string>,
 ): void {
   for (const [file, text] of source) target.set(file, text);
-}
-
-/**
- * The dump's provenance rows, sorted, or nothing when no provider contributed.
- *
- * Sorted rather than left in selection order so the dump stays a pure function
- * of its source: registry order is a property of the build, not of the code it
- * describes, and a reordering there must not change the bytes of a dump taken
- * from an unedited checkout. Omitted entirely when empty, because an empty
- * array would claim a provider was asked and proved nothing.
- */
-function provenanceField(
-  provenance: readonly ISamchonGraphDump.IProvenance[],
-): { provenance?: ISamchonGraphDump.IProvenance[] } {
-  if (provenance.length === 0) return {};
-  return {
-    provenance: [...provenance].sort((left, right) =>
-      compareOrdinal(left.provider, right.provider),
-    ),
-  };
 }
 
 // Opens a fresh LSP connection and hands back BOTH the extracted graph slice

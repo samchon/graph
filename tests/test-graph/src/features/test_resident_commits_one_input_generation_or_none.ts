@@ -159,8 +159,18 @@ async function assertALaterGenerationIsStillHeldToItsContract(): Promise<void> {
     },
   );
 
+  // The build that opens the session does not poll it, so the honest snapshot
+  // is what the *second* load commits. The third is the one that drifts, which
+  // is the point: a session checked only when it was opened would never have
+  // been asked again.
   await source.load();
-  fs.writeFileSync(file, "export const value = 2;\n");
+  const honest = await source.load();
+  TestValidator.equals(
+    "the session's first generation is published",
+    honest.nodes.length,
+    1,
+  );
+
   let refused: string | undefined;
   try {
     await source.load();

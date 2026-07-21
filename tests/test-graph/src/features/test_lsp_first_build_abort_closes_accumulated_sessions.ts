@@ -144,6 +144,89 @@ async function assertStrictProviderCancellationBoundary(): Promise<void> {
         warning.includes(fallbackError.message),
       ),
   );
+
+  await assertAnUnpublishedLanguageIsReported();
+}
+
+/**
+ * A provider that owns a language and publishes no slice for it says so.
+ *
+ * A Clang provider asked for C and C++ can legitimately answer with only the
+ * translation units it found. What it must not do is leave the rest to the
+ * generic lane in silence: a caller who selected a compiler-owned provider for
+ * C would be handed navigation facts for it with nothing to tell them apart.
+ */
+async function assertAnUnpublishedLanguageIsReported(): Promise<void> {
+  const root = GraphPaths.createTempDirectory("samchon-graph-partial-slice-");
+  fs.writeFileSync(path.join(root, "tsconfig.json"), "{}\n");
+  fs.writeFileSync(path.join(root, "index.ts"), "export const value = 1;\n");
+  fs.writeFileSync(path.join(root, "main.go"), "package main\nfunc main() {}\n");
+  installCommand(root, "gopls");
+
+  const generic = {
+    client: { close: async () => undefined },
+    root,
+    language: "go",
+    opened: new Map(),
+    diagnostics: new Map(),
+  } as ILspSession;
+
+  const snapshot = ProviderFixtures.snapshot({
+    languages: ["typescript"],
+    nodes: [graphNode("typescript", "index.ts", "value", "variable")],
+  });
+  const result = await buildLspGraph(
+    { cwd: root, languages: ["typescript", "go"] },
+    {
+      // Owns both, answers for only one — which is legitimate, and must be
+      // said rather than left to the generic lane in silence.
+      providers: [
+        ProviderFixtures.provider({
+          name: "partial",
+          languages: ["typescript", "go"],
+        }),
+      ],
+      collectProviderGraph: async () => ({
+        refresh: { changed: true, generation: 1, mode: "initial", snapshot },
+        session: {
+          kind: "bulk",
+          languages: ["typescript", "go"],
+          root,
+          generation: 1,
+          current: snapshot,
+          refresh: async () => ({
+            changed: false,
+            generation: 1,
+            mode: "unchanged" as const,
+            snapshot,
+          }),
+          close: async () => undefined,
+        },
+      }),
+      collectLanguageGraph: async () => ({
+        result: {
+          nodes: [graphNode("go", "main.go", "main")],
+          edges: [],
+          diagnostics: [],
+          warnings: [],
+        },
+        session: generic,
+      }),
+    },
+  );
+  TestValidator.predicate(
+    "a language a provider owns but does not publish is reported",
+    result.warnings.some(
+      (warning) =>
+        warning.startsWith("go:") &&
+        warning.includes("partial") &&
+        warning.includes("published no slice"),
+    ),
+  );
+  TestValidator.predicate(
+    "…and the generic lane really did serve it",
+    result.dump.nodes.some((node) => node.language === "go"),
+  );
 }
 
 async function runAbortedBuild(

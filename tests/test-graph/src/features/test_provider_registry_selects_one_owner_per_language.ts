@@ -218,6 +218,9 @@ async function assertSnapshotContract(): Promise<void> {
     languages: ["cpp", "c"],
     facts: ["calls"],
   });
+  // A candidate may publish fewer languages than it owns: a Clang provider
+  // asked for C and C++ can answer with only the translation units it found.
+  // That is admitted here and reported by the indexer, not rejected.
   const valid = ProviderFixtures.snapshot({
     languages: ["cpp"],
     provider: "fake",

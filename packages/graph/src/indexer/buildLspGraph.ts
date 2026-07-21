@@ -152,6 +152,21 @@ export async function buildLspGraph(
         provenance.push(dumpProvenanceOf(snapshot));
         modes.set(candidate.provider.name, refresh.mode);
         lspNodeCount += snapshot.nodes.length;
+        // A candidate may own more languages than its snapshot published — a
+        // Clang provider asked for C and C++ can answer with only the
+        // translation units it found. Whatever it did not publish falls to the
+        // generic lane, and that has to be said: a caller who selected a
+        // compiler-owned provider for C would otherwise be handed navigation
+        // facts for it with nothing to distinguish them.
+        const published = new Set(snapshot.languages);
+        const unpublished = candidate.languages.filter(
+          (language) => !published.has(language),
+        );
+        if (unpublished.length > 0) {
+          warnings.push(
+            `${unpublished.join(", ")}: the ${candidate.provider.name} ${candidate.provider.authority} provider owns these languages but published no slice for them, so they fall through to the generic language-server lane.`,
+          );
+        }
         for (const language of snapshot.languages) {
           strictLanguages.add(language);
           // A multi-language provider is one session under several keys. The

@@ -72,10 +72,17 @@ function indexOf(generation) {
   // facts can be tied to the bytes they were computed from, so both shapes are
   // producible here.
   const withText = options.has("with-text");
+  // Both shapes are real: the SCIP CLI writes a `file://` URI, while some
+  // indexers put a plain absolute path there. And `toolInfo` is optional, so a
+  // snapshot has to name the provider itself when the index does not.
+  const plainRoot = options.has("plain-root");
+  const bare = options.has("no-tool-info");
   return {
     metadata: {
-      projectRoot: `file://${root.startsWith("/") ? "" : "/"}${root.replace(/\\/g, "/")}`,
-      toolInfo: { name: "fake-scip", version: "1.2.3" },
+      projectRoot: plainRoot
+        ? root
+        : `file://${root.startsWith("/") ? "" : "/"}${root.replace(/\\/g, "/")}`,
+      ...(bare ? {} : { toolInfo: { name: "fake-scip", version: "1.2.3" } }),
     },
     documents: [
       {

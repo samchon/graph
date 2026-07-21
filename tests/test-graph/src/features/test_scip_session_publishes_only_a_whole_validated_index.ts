@@ -226,6 +226,49 @@ async function assertGenerations(): Promise<void> {
   );
   await textual.close();
 
+  // `toolInfo` is optional, and a plain absolute project root is as legal as a
+  // `file://` URI. Neither may make the snapshot say less than it knows: it
+  // names the provider itself when the index does not name a tool.
+  const bare = sessionOf(root, { bare: true, plainRoot: true });
+  const anonymous = await bare.refresh();
+  TestValidator.equals(
+    "a toolless index is attributed to the provider that ran it",
+    [
+      anonymous.snapshot.provenance.tool,
+      anonymous.snapshot.provenance.toolVersion,
+    ],
+    ["scip-fake", ""],
+  );
+  await bare.close();
+
+  // A failure that is not an Error still has to arrive as one: a caller cannot
+  // read `.message` off a string.
+  const rethrown = new ScipSession({
+    root,
+    languages: ["go"],
+    provider: "scip-fake",
+    authority: "semantic-index",
+    command: { command: process.execPath, args: [] },
+    decode: { command: process.execPath, args: [] },
+    indexArgs: () => [],
+    inputs: () => {
+      throw "not an error object";
+    },
+    languageOf: () => "go",
+  });
+  let message: string | undefined;
+  try {
+    await rethrown.refresh();
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  TestValidator.equals(
+    "a non-Error failure is normalized before it reaches the caller",
+    message,
+    "not an error object",
+  );
+  await rethrown.close();
+
   // A build input outside the language's own extensions still moves the file
   // set, which is the whole reason the fingerprint covers it.
   fs.writeFileSync(path.join(root, "go.mod"), "module example\n");
@@ -381,6 +424,8 @@ interface IFixtureOptions {
   decodeMode?: string;
   indexRoot?: string;
   withText?: boolean;
+  bare?: boolean;
+  plainRoot?: boolean;
   language?: "go" | "rust";
   languages?: ("go" | "rust")[];
 }
@@ -409,6 +454,8 @@ function sessionOf(root: string, options: IFixtureOptions = {}): ScipSession {
       `--root=${options.indexRoot ?? root}`,
       ...(options.mode === undefined ? [] : [`--mode=${options.mode}`]),
       ...(options.withText === true ? ["--with-text"] : []),
+      ...(options.bare === true ? ["--no-tool-info"] : []),
+      ...(options.plainRoot === true ? ["--plain-root"] : []),
       ...(options.state === undefined ? [] : [`--state=${options.state}`]),
     ],
     inputs: () =>

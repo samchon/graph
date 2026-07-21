@@ -18,6 +18,21 @@ const version = verifyReleaseInputs({
 });
 const order = publicationOrder(packages);
 
+// The workflow publishes in fixed, named jobs, because two packages do not
+// justify generating them. That makes the job order a claim about the
+// dependency graph, and a claim nobody checks is one that silently stops being
+// true — a third package, or a dependency reversed between the two, would
+// publish a dependent before its dependency exactly as v0.2.0 did.
+const expected = (process.env.RELEASE_ORDER ?? "")
+  .split(",")
+  .map((name) => name.trim())
+  .filter((name) => name !== "");
+if (expected.length > 0 && expected.join(",") !== order.join(",")) {
+  throw new Error(
+    `release: the workflow publishes ${expected.join(" -> ")} but the manifests require ${order.join(" -> ")}`,
+  );
+}
+
 process.stdout.write(`release: ${version} verified\n`);
 process.stdout.write(`release: publication order ${order.join(" -> ")}\n`);
 appendOutput(`version=${version}`);

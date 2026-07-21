@@ -51,6 +51,10 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_SHA: ${{ github.sha }}
+          # The order the publish jobs below are wired in. Checked against what
+          # the manifests actually require, so a third package or a reversed
+          # dependency cannot leave these jobs quietly wrong.
+          RELEASE_ORDER: "@samchon/graph-sitter,@samchon/graph"
 
       - name: Install with the committed lockfile
         run: pnpm install --frozen-lockfile

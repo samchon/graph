@@ -351,6 +351,8 @@ function assertMapping(): void {
     [],
   );
 
+  assertRelationshipsAndExternals();
+
   // A document in a language this session does not own is reported, not
   // silently absorbed.
   const foreign = adaptScipIndex({
@@ -364,6 +366,194 @@ function assertMapping(): void {
   TestValidator.predicate(
     "a foreign document is reported",
     foreign.warnings.some((warning) => warning.includes("does not own")),
+  );
+}
+
+/**
+ * Typed relationships, dependency leaves, diagnostics, and the shapes the
+ * adapter drops rather than approximates.
+ */
+function assertRelationshipsAndExternals(): void {
+  const base = "scip-go gomod example v1 `main`";
+  const iface = `${base}/Reader#`;
+  const impl = `${base}/File#`;
+  const typed = `${base}/Handle#`;
+  const external = "scip-go gomod dep v1 `dep`/Client#";
+  const unnamed = "scip-go gomod dep v1 `dep`/";
+
+  const adapted = adaptScipIndex({
+    index: parseScipIndex({
+      metadata: { projectRoot: "file:///r" },
+      documents: [
+        {
+          relativePath: "main.go",
+          symbols: [
+            { symbol: iface, displayName: "Reader", kind: "Interface" },
+            {
+              symbol: impl,
+              displayName: "File",
+              kind: "Struct",
+              // Both flags on one relationship are two separate claims; a
+              // reader that treats the record as a tagged union drops the
+              // second.
+              relationships: [
+                { symbol: iface, isImplementation: true, isTypeDefinition: true },
+                // A relationship naming a symbol nothing declares has no
+                // endpoint to land on.
+                { symbol: "scip-go gomod example v1 `main`/Absent#", isImplementation: true },
+                // A self-relationship is not an edge.
+                { symbol: impl, isImplementation: true },
+              ],
+            },
+            {
+              symbol: typed,
+              displayName: "Handle",
+              kind: "TypeAlias",
+              // An enclosing symbol nothing declares cannot own anything.
+              enclosingSymbol: "scip-go gomod example v1 `main`/Missing#",
+            },
+            // A kind this graph does not model publishes no node.
+            { symbol: `${base}/T#[X]`, displayName: "X", kind: "TypeParameter" },
+            // A symbol string the parser cannot read is reported, not guessed.
+            { symbol: "!!unreadable!!", displayName: "junk", kind: "Function" },
+            // A declaration with no name to show.
+            { symbol: `${base}/anon.`, displayName: "", kind: "Variable" },
+          ],
+          occurrences: [
+            { range: [0, 5, 11], symbol: iface, symbolRoles: 1 },
+            {
+              range: [2, 5, 9],
+              symbol: impl,
+              symbolRoles: 1,
+              enclosingRange: [2, 0, 9, 1],
+            },
+            // A dependency leaf, created at the moment a document names it and
+            // taking that document's language.
+            { range: [4, 2, 8], symbol: external },
+            // A reference with no enclosing definition has nothing to
+            // attribute it to.
+            { range: [20, 0, 4], symbol: iface },
+            // A write access is an access, not a bare reference.
+            { range: [5, 2, 8], symbol: iface, symbolRoles: 4 },
+            // An occurrence naming a symbol nothing declares is dropped.
+            { range: [6, 0, 4], symbol: `${base}/Nowhere#` },
+            // …and one this parser cannot read.
+            { range: [7, 0, 4], symbol: "!!unreadable!!" },
+          ],
+          diagnostics: [
+            { severity: "Error", code: "E1", message: "broken" },
+            { severity: "Warning", message: "suspicious" },
+            { severity: "Information", message: "noted" },
+            { severity: "Hint", message: "consider" },
+            // An unspecified severity is kept without one rather than
+            // defaulted to error.
+            { message: "unattributed", source: "vet" },
+          ],
+        },
+      ],
+      externalSymbols: [
+        { symbol: external, displayName: "Client", kind: "Class" },
+        // A dependency leaf nothing ever references is never materialized.
+        { symbol: "scip-go gomod dep v1 `dep`/Unused#", displayName: "Unused" },
+        // …and one with no name to show cannot be.
+        { symbol: unnamed, displayName: "" },
+      ],
+    }),
+    root: "/r",
+    provider: "scip-go",
+    languages: ["go"],
+    languageOf: () => "go",
+  });
+
+  const named = (name: string): string | undefined =>
+    adapted.nodes.find((node) => node.name === name)?.id;
+
+  TestValidator.equals(
+    "only declarations this graph models become nodes",
+    adapted.nodes.map((node) => node.name).sort(),
+    ["Client", "File", "Handle", "Reader"],
+  );
+  TestValidator.predicate(
+    "a dependency leaf is external and fileless",
+    adapted.nodes.some(
+      (node) => node.name === "Client" && node.external && node.file === "",
+    ),
+  );
+  TestValidator.predicate(
+    "an unreferenced dependency leaf is never materialized",
+    !adapted.nodes.some((node) => node.name === "Unused"),
+  );
+  TestValidator.predicate(
+    "an unreadable symbol is reported",
+    adapted.warnings.some((warning) => warning.includes("cannot name")),
+  );
+
+  const edge = (kind: string, from: string, to: string): boolean =>
+    adapted.edges.some(
+      (candidate) =>
+        candidate.kind === kind &&
+        candidate.from === named(from) &&
+        candidate.to === named(to),
+    );
+  TestValidator.predicate(
+    "an implementation relationship maps",
+    edge("implements", "File", "Reader"),
+  );
+  TestValidator.predicate(
+    "…and a type-definition flag on the same record is its own claim",
+    edge("type_ref", "File", "Reader"),
+  );
+  TestValidator.predicate(
+    "a write access is an access",
+    edge("accesses", "File", "Reader"),
+  );
+  TestValidator.predicate(
+    "a reference to a dependency leaf lands on it",
+    edge("references", "File", "Client"),
+  );
+  TestValidator.predicate(
+    "a relationship to an undeclared symbol emits nothing",
+    !adapted.edges.some((candidate) => candidate.to === undefined),
+  );
+  TestValidator.predicate(
+    "an unowned enclosing symbol emits no containment",
+    !adapted.edges.some((candidate) => candidate.kind === "contains"),
+  );
+
+  TestValidator.equals(
+    "every diagnostic severity the index states is carried",
+    adapted.diagnostics.map((diagnostic) => diagnostic.severity),
+    ["error", "warning", "info", "hint", undefined],
+  );
+  TestValidator.equals(
+    "a diagnostic without a code falls back to its source",
+    adapted.diagnostics[4]?.code,
+    "vet",
+  );
+
+  // One symbol cannot be defined in two documents; keeping the first is
+  // reported rather than silently overwriting.
+  const duplicated = adaptScipIndex({
+    index: parseScipIndex({
+      metadata: { projectRoot: "file:///r" },
+      documents: ["a.go", "b.go"].map((relativePath) => ({
+        relativePath,
+        symbols: [{ symbol: iface, displayName: "Reader", kind: "Interface" }],
+      })),
+    }),
+    root: "/r",
+    provider: "scip-go",
+    languages: ["go"],
+    languageOf: () => "go",
+  });
+  TestValidator.equals(
+    "a symbol defined twice keeps one node",
+    duplicated.nodes.length,
+    1,
+  );
+  TestValidator.predicate(
+    "…and says which definition it kept",
+    duplicated.warnings.some((warning) => warning.includes("keeping the first")),
   );
 }
 

@@ -1,5 +1,5 @@
 import { TestValidator } from "@nestia/e2e";
-import { ScipSession } from "@samchon/graph";
+import { ScipSession, scipProvider } from "@samchon/graph";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -20,7 +20,114 @@ export const test_scip_session_publishes_only_a_whole_validated_index =
     await assertGenerations();
     await assertFailuresRetainTheGeneration();
     await assertCloseOwnsItsChildren();
+    await assertTheRegistryEntryItBuilds();
   };
+
+/**
+ * A SCIP indexer becomes a registry entry through one description.
+ *
+ * The ingestion, validation, and lifecycle are identical for every SCIP
+ * indexer; only the executable, its arguments, and its build inputs differ. So
+ * a language provider is a description rather than a class, and the entries
+ * built from it cannot drift apart in the parts meant to be the same.
+ */
+async function assertTheRegistryEntryItBuilds(): Promise<void> {
+  const root = GraphPaths.createTempDirectory("samchon-graph-scip-provider-");
+  fs.writeFileSync(path.join(root, "main.go"), "package main\n");
+
+  const provider = scipProvider({
+    name: "scip-fake",
+    languages: ["go"],
+    buildInputs: ["go.mod"],
+    resolve: () => ({
+      command: process.execPath,
+      args: [GraphPaths.fakeScipIndexer],
+    }),
+    decode: () => ({
+      command: process.execPath,
+      args: [GraphPaths.fakeScipDecoder],
+    }),
+    indexArgs: (artifact) => [`--output=${artifact}`, `--root=${root}`],
+    inputs: () => ["main.go"],
+    languageOf: () => "go",
+  });
+
+  TestValidator.equals(
+    "a SCIP entry claims only what a bare index proves",
+    [...provider.facts].sort(),
+    ["accesses", "contains", "implements", "references", "type_ref"],
+  );
+  TestValidator.equals(
+    "…and grounds them in a semantic index by default",
+    provider.authority,
+    "semantic-index",
+  );
+
+  // A whole-workspace artifact has no bounded mode, so a cap is refused rather
+  // than approximated — the same refusal the compiler-owned lane makes.
+  TestValidator.equals(
+    "an unbounded build is served",
+    provider.refuse({}),
+    undefined,
+  );
+  for (const bounded of [
+    { maxFiles: 10 },
+    { lspReferenceLimit: 5 },
+    { server: "other" },
+  ]) {
+    TestValidator.predicate(
+      `a bounded build is refused with its reason: ${Object.keys(bounded)[0]!}`,
+      (provider.refuse(bounded) ?? "").includes(Object.keys(bounded)[0]!),
+    );
+  }
+  TestValidator.predicate(
+    "several refused options are named in one sentence",
+    (provider.refuse({ maxFiles: 1, lspReferenceLimit: 2 }) ?? "").includes(
+      "those options",
+    ),
+  );
+
+  const session = provider.open({
+    root,
+    command: provider.resolve(root, process.env)!,
+    languages: ["go"],
+    options: {},
+  });
+  const refresh = await session.refresh();
+  TestValidator.equals(
+    "the entry's session publishes the index",
+    refresh.snapshot.nodes.map((node) => node.name),
+    ["first"],
+  );
+  TestValidator.equals(
+    "the snapshot is attributed to the registered entry",
+    refresh.snapshot.provenance.provider,
+    "scip-fake",
+  );
+  await session.close();
+
+  // An entry whose project needs preparing declines with the reason rather
+  // than failing the build.
+  const unprepared = scipProvider({
+    name: "scip-unprepared",
+    languages: ["rust"],
+    resolve: () => ({ command: process.execPath, args: [] }),
+    prepare: () => {
+      throw new Error("no manifest");
+    },
+    decode: () => ({ command: process.execPath, args: [] }),
+    indexArgs: () => [],
+    inputs: () => [],
+    languageOf: () => "rust",
+  });
+  TestValidator.predicate(
+    "a preparation failure is a declared prepare hook",
+    unprepared.prepare !== undefined,
+  );
+  TestValidator.error("…and it reports rather than swallowing", () =>
+    unprepared.prepare!(root, {}),
+  );
+}
 
 async function assertGenerations(): Promise<void> {
   const root = GraphPaths.createTempDirectory("samchon-graph-scip-session-");

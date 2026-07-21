@@ -4,12 +4,14 @@ import {
   assertGraphSnapshotContract,
   dumpProvenanceOf,
   graphSnapshotDigests,
-  mergeGraphSlices,
   selectGraphProviders,
   type IGraphProvider,
   type ISamchonGraphNode,
 } from "@samchon/graph";
 
+// `mergeGraphSlices` is the indexer's own merge step, not part of the package
+// surface, so it is reached by path like every other internal.
+import { mergeGraphSlices } from "../../../../packages/graph/src/provider/mergeGraphSlices";
 import { ProviderFixtures } from "../internal/ProviderFixtures";
 
 /**

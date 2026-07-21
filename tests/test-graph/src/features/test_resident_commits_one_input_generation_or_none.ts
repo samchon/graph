@@ -140,7 +140,19 @@ async function assertALaterGenerationIsStillHeldToItsContract(): Promise<void> {
   const session = ProviderFixtures.session({
     root,
     snapshots: [
-      ProviderFixtures.snapshot({ provider: "drifting" }),
+      ProviderFixtures.snapshot({
+        provider: "drifting",
+        nodes: [
+          {
+            id: "a.ts#strict:function",
+            kind: "function",
+            language: "typescript",
+            name: "strict",
+            file: "a.ts",
+            external: false,
+          },
+        ],
+      }),
       ProviderFixtures.snapshot({
         provider: "drifting",
         edges: [{ kind: "decorates", from: "x", to: "y" }],
@@ -167,8 +179,8 @@ async function assertALaterGenerationIsStillHeldToItsContract(): Promise<void> {
   const honest = await source.load();
   TestValidator.equals(
     "the session's first generation is published",
-    honest.nodes.length,
-    1,
+    honest.nodes.map((node) => node.name),
+    ["strict"],
   );
 
   let refused: string | undefined;

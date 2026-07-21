@@ -173,6 +173,9 @@ async function assertAnUnpublishedLanguageIsReported(): Promise<void> {
 
   const snapshot = ProviderFixtures.snapshot({
     languages: ["typescript"],
+    // Attributed to the registered entry, or the contract check rejects it
+    // before the unpublished-language report is ever reached.
+    provider: "partial",
     nodes: [graphNode("typescript", "index.ts", "value", "variable")],
   });
   const result = await buildLspGraph(

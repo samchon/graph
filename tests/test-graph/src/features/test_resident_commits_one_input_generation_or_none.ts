@@ -33,12 +33,14 @@ async function assertAMovedSourceDiscardsTheCandidate(): Promise<void> {
   // moved from inside it exactly once: the candidate it just produced now
   // describes source nobody has. The retry then finds the project still.
   let edits = 0;
+  let parses = 0;
   const source = createResidentGraphSource(
     { cwd: root },
     {
       buildLspGraph: async () =>
         resultOf(root, file, fs.readFileSync(file, "utf8")),
       staticGraphParts: (options, files) => {
+        parses += 1;
         const parts = realStaticGraphParts(options, files);
         if (edits === 0) {
           edits += 1;
@@ -67,6 +69,15 @@ async function assertAMovedSourceDiscardsTheCandidate(): Promise<void> {
     refreshed.nodes.length,
     1,
   );
+  // The retry is the point of the case, so assert it happened. Without this
+  // the assertions above pass just as well when the fence never fires — which
+  // is exactly how an earlier version of this test passed while proving
+  // nothing.
+  TestValidator.equals(
+    "the candidate really was discarded and prepared a second time",
+    parses,
+    2,
+  );
   await source.close();
 }
 
@@ -83,10 +94,16 @@ async function assertAPersistentlyMovingProjectIsReported(): Promise<void> {
         resultOf(root, file, fs.readFileSync(file, "utf8")),
       staticGraphParts: (options, files) => {
         const parts = realStaticGraphParts(options, files);
-        // Every attempt is overtaken. The bound is what keeps this from
-        // never returning.
+        // Every attempt is overtaken. The bound is what keeps this from never
+        // returning. The written text must differ from every earlier one,
+        // including the original: a project edited back to a state it already
+        // had is genuinely unchanged, and the next attempt would rightly stop
+        // rather than retry.
         revision += 1;
-        fs.writeFileSync(file, `export const value = ${String(revision)};\n`);
+        fs.writeFileSync(
+          file,
+          `export const value = 1; // revision ${String(revision)}\n`,
+        );
         return parts;
       },
     },

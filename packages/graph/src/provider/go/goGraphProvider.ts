@@ -47,12 +47,12 @@ export const goGraphProvider = Object.assign(
     resolve: resolveGoGraphCommand,
     indexArgs: goIndexArgs,
     inputs: goInputs,
-    configuration: goConfiguration,
+    configuration: (root) => goConfiguration(root, process.env),
   }),
   {
     indexArgs: goIndexArgs,
     inputs: goInputs,
-    configuration: goConfiguration,
+    effectiveConfiguration: goConfiguration,
   },
 );
 

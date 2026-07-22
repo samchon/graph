@@ -59,7 +59,7 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
             : [],
           goGraphProvider.inputs(root),
           goGraphProvider.indexArgs("snapshot.json"),
-          goGraphProvider.configuration().some((row) =>
+          goGraphProvider.configuration(root, ["go"]).some((row) =>
             row.startsWith("GOOS="),
           ),
         ],
@@ -91,7 +91,7 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
       TestValidator.predicate(
         "an unavailable Go toolchain is part of the effective configuration",
         goGraphProvider
-          .configuration(root, pathEnvironment(""))
+          .effectiveConfiguration(root, pathEnvironment(""))
           .includes("go-env=unavailable"),
       );
 
@@ -107,7 +107,7 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
       TestValidator.predicate(
         "a failing Go environment probe is part of the effective configuration",
         goGraphProvider
-          .configuration(root, {
+          .effectiveConfiguration(root, {
             ...emptyPath,
             SAMCHON_GRAPH_GO_TOOLCHAIN: failingGo,
           })

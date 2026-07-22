@@ -50,6 +50,8 @@ Include the following when relevant:
   audit text, and `next` truthfulness;
 - 100 percent coverage without test-only branches or unjustified ignore
   directives;
+- expected values traced to an oracle outside the code under test rather than
+  to current output, and lanes whose only evidence is a round trip;
 - deterministic fake-server tests versus real-server experiment ownership; and
 - benchmark fixture isolation, prompt and commit hashes, comparator fairness,
   raw traces, sample counts, and tracked publication assets.

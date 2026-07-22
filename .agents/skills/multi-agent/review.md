@@ -53,7 +53,9 @@ Use this mode only through the multi-agent issue-campaign procedure.
 2. Each reviewer independently audits source, tests, documentation, CI,
    packaging, generated artifacts, public schemas, LSP/static parity,
    consumers, fixtures, real-server experiments, benchmark traces, platform
-   behavior, and open and closed issue or pull-request history.
+   behavior, and open and closed issue or pull-request history. Each also
+   audits the current implementation and history against the development
+   skill's [Forbidden](../development/SKILL.md#forbidden) section.
 3. Each reviewer records its own evidence-backed raw candidates without seeing
    or negotiating a shared candidate list.
 4. The lead reopens every candidate from primary evidence, reproduces it,

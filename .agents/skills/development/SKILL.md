@@ -56,6 +56,16 @@ A regression test must fail for the reported behavior before the fix and pass af
 - empty, singleton, exact-limit, ambiguous-name, missing-server, and recovery boundaries that apply; and
 - both source-of-truth lanes when the invariant is shared by LSP and static indexing.
 
+Open each new or modified case with a doc comment naming what it pins. The filename already states the assertion, so spend the comment on the non-obvious reason the case exists: the branch it locks, the regression it replays, or the invariant that would otherwise be invisible.
+
+### Expectations Come From An Oracle
+
+Take every expected value from an authority outside the code under test: the language server's own response, the semantics of the language being indexed, a pinned upstream reference, or the documented public contract. Never take it from what the current implementation happens to emit.
+
+An expectation copied from current output cannot fail for the defect it already contains. It converts a wrong result into the specification, and the next reviewer who checks the test against the code finds agreement that proves nothing. The checked-in application-contract canonical shows the shape to follow: it is reproduced from the pinned `ttsc` reference, and `--diff` previews a candidate instead of overwriting the file.
+
+A case that feeds a component its own output and asserts nothing changed proves stability, not correctness. Idempotency and round-trip cases are worth keeping for the property they actually cover, but a lane whose only evidence is round-trip has no evidence of correctness: the input must differ from the expected output somewhere, or nothing in the test can distinguish a working indexer from a broken one.
+
 ## Validation
 
 Run the narrowest command that proves the change first, then the broader gates required by its consequence surface. Report every command that could not run.

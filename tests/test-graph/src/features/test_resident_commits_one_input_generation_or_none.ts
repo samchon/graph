@@ -140,11 +140,21 @@ async function assertAProviderThatMovedMidTransactionIsDiscarded(): Promise<void
     {
       buildLspGraph: async () => {
         const result = resultOf(root, file, fs.readFileSync(file, "utf8"));
+        const go = path.join(root, "b.go");
         return {
           ...result,
           // Go is reported but has no session, which is what makes it the
           // static lane's and gives the transaction a second phase.
           dump: { ...result.dump, languages: ["typescript", "go"] },
+          // Both consumed files, because the resident source derives the
+          // language set it guards from these keys. Naming only the TypeScript
+          // one would make discovery see a language the state does not, and
+          // the load would rebuild from scratch instead of refreshing — past
+          // the transaction this case is about.
+          sources: new Map([
+            [file, fs.readFileSync(file, "utf8")],
+            [go, fs.readFileSync(go, "utf8")],
+          ]),
           sessions: new Map([["typescript", session]]),
           providers: new Map([["typescript", provider]]),
         };

@@ -23,9 +23,10 @@ Four rules govern implementation:
   pull-request count.
 - Use the current checkout and one topic branch. Do not create a clone or
   worktree for a solo campaign or its Self-Review.
-- Every ordinary pull-request check is evidence. Do not cancel a campaign run,
-  and repair every red CI lane in the same pull request even when it predates
-  the campaign or is unrelated to its original issues.
+- The pull request's ordinary CI and a clean solo Self-Review are the acceptance
+  gates. Never cancel a campaign run or disable a workflow yourself, and repair
+  every red CI lane in the same pull request even when it predates the campaign
+  or is unrelated to its original issues.
 
 ## Plan One Cycle Pull Request
 
@@ -91,8 +92,10 @@ Work through the DAG on the claimed topic branch. Analyze the full consequence
 and case surface across every issue before editing, then implement the complete
 cycle and its tests.
 
-Write each piece's tests as that piece lands instead of leaving the tests for
-the end of the cycle, and keep committing as each unit becomes coherent.
+Implement without interruption. Write each piece's tests as that piece lands
+instead of leaving the tests for the end of the cycle, and keep committing as
+each unit becomes coherent. Do not pause the sequence for a check run;
+[CI is read once per settled head](#validate-with-ci-and-self-review).
 
 Close each issue from the commit that earns it. End the commit message with one
 `Close #n: <issue title>` line per resolved issue, so a commit that resolves
@@ -100,10 +103,23 @@ several issues carries several lines. GitHub matches the keyword and the number
 and ignores the title tail, so the line closes the issue normally while the log
 stays legible without opening each number.
 
-Once a commit reaches the pull request, post a comment naming what it landed and
-which issues it resolved. The comment is the running ledger for a reader who
-does not read the diff, not a closing mechanism: GitHub closes an issue only
-from a commit message or the pull-request body.
+A revert inside the pull request must not carry the closing keyword forward:
+`git revert` quotes the original subject, so rewrite its default
+`Revert "Close #n: ..."` without the closing phrase, and drop any `Closes #n`
+line for that issue from the pull-request body. That does not spare the issue by
+itself. A squash merge concatenates every commit message into the merge commit
+body, where the reverted commit's own `Close #n` line still sits, so the merge
+closes an issue whose fix no longer exists at `HEAD` and
+[the merge gate](#merge-and-clean-up) has to reopen it.
+
+After each pushed commit, submit a formal GitHub pull-request review with the
+`COMMENT` event naming the commit, what it landed, and which issues it resolved.
+The review is the running ledger for a reader who does not read the diff, not a
+closing mechanism: GitHub closes an issue only from a commit message or the
+pull-request body. Follow the
+[pull-request skill](../pull-request/SKILL.md#write-the-pull-request) for inline
+comments, review bodies, and self-review restrictions; do not replace this
+ledger with ordinary issue-style pull-request comments.
 
 The main agent may also spawn one read-only subagent as a commit early-warning
 pass over a landed commit and keep implementing while it runs. The pass reads
@@ -142,6 +158,19 @@ Commit and push the integrated snapshot, then let every ordinary pull-request
 check run. Start solo Self-Review immediately over that exact base-to-head diff
 while CI executes.
 
+Submit every Self-Review finding round and the final clean round as a formal
+GitHub pull-request review with the `COMMENT` event. Attach line-specific
+findings as inline review comments and summarize round-wide findings or the
+clean conclusion in the review body; do not post ordinary issue-style
+pull-request comments for Self-Review.
+
+Read CI once per settled head. It gates the cycle, not each commit:
+`.github/workflows/test.yml` and `.github/workflows/experiment.yml` both set
+`cancel-in-progress` for a pull request, so the next push cancels an
+intermediate commit's run and waiting on that run stalls implementation for a
+discarded result. This governs which head to read, not whether to read: the
+settled head still needs every ordinary check green before merge.
+
 CI and review are independent gates:
 
 - CI must prove every configured build, test, coverage, packaging, platform,
@@ -173,10 +202,17 @@ improvement.
 Merge only with user authorization, including a campaign-local standing
 authorization that explicitly covers merge.
 
+Before merging, reconcile the closing keywords against what survives at `HEAD`.
+`git log origin/master..HEAD` shows every message the squash will concatenate,
+including commits a later one reverted, so read the whole range and confirm each
+issue the merge will close has a surviving fix.
+
 After merge:
 
 1. Verify GitHub records the pull request as merged into the intended target and
-   every linked issue has the correct final state.
+   every linked issue has the correct final state. Reopen any issue the squash
+   merge closed without a surviving fix, and comment that the merge closed it
+   mechanically.
 2. Confirm the checkout has no unpushed or uncommitted work worth preserving.
 3. Switch back to the target branch, pull with `git pull --ff-only`, and delete
    the local topic branch.

@@ -9,12 +9,13 @@ description: Defines exhaustive solo @samchon/graph Self-Review, unqualified rev
 
 One reviewer performs every review in this skill from scratch over the entire
 declared surface. Do not spawn a subagent, delegate a concern, or load the
-discussion skill.
+discussion skill. Do not create a clone or worktree for solo review or
+Self-Review.
 
-Choose the principled conclusion. Review duration, difficulty, and consequence
-surface are reasons to inspect more deeply and verify more carefully, never
-reasons to overlook a sound improvement, accept an unsupported claim, or lower
-the completion standard.
+Apply
+[AGENTS.md's **Choose the principled course** rule](../../../AGENTS.md#attitude)
+to every review decision. Review duration, difficulty, and consequence surface
+never lower the completion standard.
 
 A complete round must satisfy all four rules:
 
@@ -63,7 +64,7 @@ Self-Review and an unqualified review request use this solo workflow:
    Review Surface.
 3. Reproduce every suspected defect before accepting it.
 4. Apply every sound in-scope improvement and run the narrowest verification
-   that proves it.
+   the owning workflow authorizes.
 5. If anything changed, restart at step 1 as a fresh full round.
 6. Finish only when a complete round finds nothing to improve. Report the final
    clean round and every verification that could not run.
@@ -95,7 +96,9 @@ Use these rounds only through the solo issue-campaign skill.
 1. Audit the entire declared campaign scope yourself. Inspect source, tests,
    documentation, CI, packaging, generated artifacts, platform behavior,
    experiments, benchmark validity, upstream or downstream provenance, and open
-   and closed issue or pull-request history.
+   and closed issue or pull-request history. Audit the current implementation
+   and history against the development skill's
+   [Forbidden](../development/SKILL.md#forbidden) section.
 2. Record every raw candidate and its evidence in the campaign knowledge base
    before adjudication. Do not silently discard a suspicion because it looks
    duplicative or inconvenient.
@@ -119,6 +122,7 @@ than treating it as a clean round.
 ## Explicit Multi-Agent Reviews
 
 When the user explicitly asks for a team, parallel, or multi-agent review, load
-the [multi-agent skill](../multi-agent/SKILL.md) and its review procedure instead
-of this workflow. It inherits the same whole-surface and fresh-round law while
-defining independent parallel reviewers and lead adjudication.
+the [multi-agent skill](../multi-agent/SKILL.md) and its
+[review procedure](../multi-agent/review.md) instead of this workflow. It
+inherits the same whole-surface and fresh-round law while defining independent
+parallel reviewers and lead adjudication.

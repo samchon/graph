@@ -141,10 +141,24 @@ export const test_conformance_harness_rejects_a_text_heuristic_provider =
           sources: new Map([
             ["a.ts", { checkerDigest: "", diskDigest: "abc" }],
           ]),
+          capabilities: ["sourceDigests"],
         }),
         provider,
         ["typescript"],
       ).failures.some((failure) => failure.includes("without a checker digest")),
+    );
+    TestValidator.equals(
+      "a provider that does not claim source digests may publish its textless manifest",
+      Conformance.structure(
+        snapshotOf({
+          sources: new Map([
+            ["a.ts", { checkerDigest: "", diskDigest: "abc" }],
+          ]),
+        }),
+        provider,
+        ["typescript"],
+      ).failures,
+      [],
     );
     TestValidator.predicate(
       "an edge family the provider never claimed is caught",
@@ -272,6 +286,7 @@ function snapshotOf(props: {
   nodes?: ISamchonGraphNode[];
   edges?: ISamchonGraphEdge[];
   sources?: Map<string, IBulkGraphSession.ISourceDigest>;
+  capabilities?: string[];
 }): IBulkGraphSession.ISnapshot {
   return ProviderFixtures.snapshot({
     provider: "conformance",
@@ -279,6 +294,7 @@ function snapshotOf(props: {
     nodes: props.nodes ?? [],
     edges: props.edges ?? [],
     sources: props.sources ?? new Map(),
+    capabilities: props.capabilities,
   });
 }
 

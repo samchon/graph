@@ -222,8 +222,11 @@ export namespace Conformance {
       keys.add(key);
     }
 
+    const provesSourceDigests = snapshot.provenance.capabilities.includes(
+      "sourceDigests",
+    );
     for (const [file, digest] of snapshot.sources) {
-      if (digest.checkerDigest === "") {
+      if (provesSourceDigests && digest.checkerDigest === "") {
         failures.push(`${file} is in the manifest without a checker digest`);
       }
     }

@@ -41,7 +41,8 @@ func TestBuildSnapshotProvesWorkspaceSemantics(t *testing.T) {
 		t.Fatalf("unexpected snapshot identity: %#v", first)
 	}
 	for _, name := range []string{
-		"Greeter", "Box", "Base", "Service", "NewService", "Run", "TestRun",
+		"Greeter", "Transformer", "Input", "Left", "Right", "Box", "Base",
+		"Service", "NewService", "ReadLeft", "Run", "TestRun",
 	} {
 		if findNode(first, name) == nil {
 			t.Errorf("missing declaration %s", name)
@@ -63,6 +64,15 @@ func TestBuildSnapshotProvesWorkspaceSemantics(t *testing.T) {
 	if service == nil || greeter == nil || !hasEdge(first, service.ID, greeter.ID, "implements") {
 		t.Error("promoted Go method did not prove Service implements Greeter")
 	}
+	transformer := findQualifiedNode(first, "example.com/api.Transformer")
+	if transformer == nil || !hasEdge(first, service.ID, transformer.ID, "implements") {
+		t.Error("cross-module named signature identity lost Service's implementation")
+	}
+	leftField := findQualifiedNode(first, "example.com/api.Left.Value")
+	readLeft := findQualifiedNode(first, "example.com/impl.ReadLeft")
+	if leftField == nil || readLeft == nil || !hasEdge(first, readLeft.ID, leftField.ID, "accesses") {
+		t.Error("same-named fields across modules made an exact selector ambiguous")
+	}
 	localResolve := findQualifiedNode(first, "example.com/impl.Resolve")
 	apiResolve := findQualifiedNode(first, "example.com/api.Resolve")
 	run := findQualifiedNode(first, "example.com/impl.Run")
@@ -74,6 +84,17 @@ func TestBuildSnapshotProvesWorkspaceSemantics(t *testing.T) {
 	}
 	if len(first.Sources) == 0 || first.Tool.CompilerVersion != "go1.25.0" {
 		t.Error("snapshot omitted source or toolchain evidence")
+	}
+	if countNamedExternalTargets(first, run.ID, "Len", "references") != 1 {
+		t.Error("one external selector did not normalize to one reference endpoint")
+	}
+	for _, falseTest := range []string{"Testhelper", "TestMethod", "ExampleNotRun"} {
+		if node := findNode(first, falseTest); node == nil || countEdgesFrom(first, node.ID, "tests") != 0 {
+			t.Errorf("non-entrypoint %s was classified as an executable Go test", falseTest)
+		}
+	}
+	if example := findNode(first, "ExampleRun"); example == nil || countEdgesFrom(first, example.ID, "tests") == 0 {
+		t.Error("a runnable Go example did not publish its tested call")
 	}
 	if len(first.Warnings) != 1 || !strings.Contains(first.Warnings[0], "unresolved") {
 		t.Fatalf("dynamic call was not audited conservatively: %v", first.Warnings)
@@ -128,15 +149,36 @@ func TestBuildSnapshotProvesWorkspaceSemantics(t *testing.T) {
 func TestScipBoundaryRejectsForeignAndMalformedArtifacts(t *testing.T) {
 	root := t.TempDir()
 	valid := &scip.Index{
-		Metadata:  &scip.Metadata{ProjectRoot: fileURI(root)},
-		Documents: []*scip.Document{{Language: "go", RelativePath: "main.go"}},
+		Metadata: &scip.Metadata{
+			ProjectRoot: fileURI(root),
+			ToolInfo: &scip.ToolInfo{
+				Name: "scip-go", Version: "0.2.7", Arguments: []string{"--module-root=" + root},
+			},
+		},
+		Documents: []*scip.Document{{
+			Language: "go", RelativePath: "main.go",
+			Occurrences: []*scip.Occurrence{{Symbol: "scip-go gomod example.com/test  main().", SymbolRoles: 1}},
+		}},
 	}
 	body, err := proto.Marshal(valid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if count, err := validateScipIndex(root, body); err != nil || count != 1 {
-		t.Fatalf("valid SCIP boundary failed: count=%d err=%v", count, err)
+	artifact, err := validateScipIndex(root, body)
+	if err != nil || len(artifact.Documents) != 1 {
+		t.Fatalf("valid SCIP boundary failed: artifact=%#v err=%v", artifact, err)
+	}
+	otherRoot := t.TempDir()
+	other := proto.Clone(valid).(*scip.Index)
+	other.Metadata.ProjectRoot = fileURI(otherRoot)
+	other.Metadata.ToolInfo.Arguments = []string{"--module-root=" + otherRoot}
+	otherBody, err := proto.Marshal(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherArtifact, err := validateScipIndex(otherRoot, otherBody)
+	if err != nil || artifact.Digest != otherArtifact.Digest {
+		t.Error("SCIP digest retained checkout or invocation paths")
 	}
 	invalid := []*scip.Index{
 		{},
@@ -159,6 +201,38 @@ func TestScipBoundaryRejectsForeignAndMalformedArtifacts(t *testing.T) {
 	}
 }
 
+func TestScipDigestAndUniverseIgnoreCheckoutLocations(t *testing.T) {
+	left := copyFixture(t)
+	right := copyFixture(t)
+	leftSnapshot, err := buildSnapshot(context.Background(), left, fixtureScipIndexer{}, fixtureEnvironment(left))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightSnapshot, err := buildSnapshot(context.Background(), right, fixtureScipIndexer{}, fixtureEnvironment(right))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leftSnapshot.Universe != rightSnapshot.Universe {
+		t.Error("equivalent checkouts produced location-dependent Go universes")
+	}
+	if _, err := buildSnapshot(
+		context.Background(),
+		left,
+		missingScipDocumentIndexer{},
+		fixtureEnvironment(left),
+	); err == nil {
+		t.Error("a SCIP artifact that omitted checker-owned sources was accepted")
+	}
+	if _, err := buildSnapshot(
+		context.Background(),
+		left,
+		emptyScipDefinitionsIndexer{},
+		fixtureEnvironment(left),
+	); err == nil {
+		t.Error("a SCIP artifact with no semantic definitions was accepted")
+	}
+}
+
 func TestModuleAndProcessBoundariesFailClosed(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.work"), []byte("not a work file"), 0o644); err != nil {
@@ -166,6 +240,67 @@ func TestModuleAndProcessBoundariesFailClosed(t *testing.T) {
 	}
 	if _, err := moduleRoots(root); err == nil {
 		t.Error("malformed go.work was accepted")
+	}
+	outside := t.TempDir()
+	workspaceRoot := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(workspaceRoot, "go.work"),
+		[]byte("go 1.25\nuse "+filepath.ToSlash(outside)+"\n"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := moduleRoots(workspaceRoot); err == nil {
+		t.Error("a go.work module outside the indexed project was accepted")
+	}
+	moduleRoot := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(moduleRoot, "go.mod"),
+		[]byte("module example.com/root\n\ngo 1.25\n\nreplace example.com/dep => "+filepath.ToSlash(outside)+"\n"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := moduleRoots(moduleRoot); err == nil {
+		t.Error("a local replacement outside the indexed project was accepted")
+	}
+	inputRoot := t.TempDir()
+	for file, body := range map[string]string{
+		"go.mod":                          "module example.com/inputs\n\ngo 1.25\n",
+		"native.h":                        "#define VALUE 1\n",
+		"vendor/modules.txt":              "# pinned\n",
+		"vendor/example.com/dep/dep.go":   "package dep\n",
+		"vendor/example.com/dep/data.bin": "vendored build data\n",
+		"vendor/.git/ignored.go":          "ignored\n",
+	} {
+		absolute := filepath.Join(inputRoot, filepath.FromSlash(file))
+		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(absolute, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inputs, err := buildInputs(inputRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := range inputs {
+		relative, relativeErr := filepath.Rel(inputRoot, inputs[index])
+		if relativeErr != nil {
+			t.Fatal(relativeErr)
+		}
+		inputs[index] = filepath.ToSlash(relative)
+	}
+	wantInputs := []string{
+		"go.mod",
+		"native.h",
+		"vendor/example.com/dep/data.bin",
+		"vendor/example.com/dep/dep.go",
+		"vendor/modules.txt",
+	}
+	if !reflect.DeepEqual(inputs, wantInputs) {
+		t.Fatalf("Go build inputs do not fence auxiliary and vendored bytes: got %v want %v", inputs, wantInputs)
 	}
 	buffer := &limitedBuffer{limit: 3}
 	if count, err := buffer.Write([]byte("abcdef")); err != nil ||
@@ -208,6 +343,8 @@ func (indexer fixtureScipIndexer) Version(context.Context) (string, error) {
 
 func (fixtureScipIndexer) Index(_ context.Context, moduleRoot string) (scipArtifact, error) {
 	var parts []string
+	var documents []string
+	definitions := map[string]int{}
 	err := filepath.WalkDir(moduleRoot, func(file string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -217,7 +354,13 @@ func (fixtureScipIndexer) Index(_ context.Context, moduleRoot string) (scipArtif
 			if err != nil {
 				return err
 			}
-			parts = append(parts, filepath.ToSlash(file), digestBytes(body))
+			relative, err := filepath.Rel(moduleRoot, file)
+			if err != nil {
+				return err
+			}
+			parts = append(parts, filepath.ToSlash(relative), digestBytes(body))
+			documents = append(documents, file)
+			definitions[pathKey(file)] = 1
 		}
 		return nil
 	})
@@ -225,7 +368,38 @@ func (fixtureScipIndexer) Index(_ context.Context, moduleRoot string) (scipArtif
 		return scipArtifact{}, err
 	}
 	sort.Strings(parts)
-	return scipArtifact{Digest: digestStrings(parts...), DocumentCount: len(parts)}, nil
+	sort.Strings(documents)
+	return scipArtifact{
+		Digest: digestStrings(parts...), Documents: documents, Definitions: definitions,
+	}, nil
+}
+
+type missingScipDocumentIndexer struct{ fixtureScipIndexer }
+
+func (missingScipDocumentIndexer) Index(
+	ctx context.Context,
+	moduleRoot string,
+) (scipArtifact, error) {
+	artifact, err := (fixtureScipIndexer{}).Index(ctx, moduleRoot)
+	if err != nil {
+		return scipArtifact{}, err
+	}
+	if len(artifact.Documents) > 0 {
+		delete(artifact.Definitions, pathKey(artifact.Documents[0]))
+		artifact.Documents = artifact.Documents[1:]
+	}
+	return artifact, nil
+}
+
+type emptyScipDefinitionsIndexer struct{ fixtureScipIndexer }
+
+func (emptyScipDefinitionsIndexer) Index(
+	ctx context.Context,
+	moduleRoot string,
+) (scipArtifact, error) {
+	artifact, err := (fixtureScipIndexer{}).Index(ctx, moduleRoot)
+	artifact.Definitions = map[string]int{}
+	return artifact, err
 }
 
 type failingScipIndexer struct{}
@@ -245,6 +419,17 @@ func copyFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return root
+}
+
+func fixtureEnvironment(root string) map[string]string {
+	return map[string]string{
+		"GOVERSION":   "go1.25.0",
+		"GOOS":        "fixture",
+		"GOARCH":      "fixture",
+		"CGO_ENABLED": "0",
+		"GOFLAGS":     "",
+		"GOWORK":      filepath.Join(root, "go.work"),
+	}
 }
 
 func findNode(value snapshot, name string) *node {
@@ -269,6 +454,32 @@ func countEdges(value snapshot, kind string) int {
 	count := 0
 	for _, relation := range value.Edges {
 		if relation.Kind == kind {
+			count++
+		}
+	}
+	return count
+}
+
+func countEdgesFrom(value snapshot, from, kind string) int {
+	count := 0
+	for _, relation := range value.Edges {
+		if relation.From == from && relation.Kind == kind {
+			count++
+		}
+	}
+	return count
+}
+
+func countNamedExternalTargets(value snapshot, from, name, kind string) int {
+	external := map[string]bool{}
+	for _, candidate := range value.Nodes {
+		if candidate.External && candidate.Name == name {
+			external[candidate.ID] = true
+		}
+	}
+	count := 0
+	for _, relation := range value.Edges {
+		if relation.From == from && relation.Kind == kind && external[relation.To] {
 			count++
 		}
 	}

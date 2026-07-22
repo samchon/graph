@@ -6,7 +6,7 @@
 
 `@samchon/graph` is an MCP server that gives AI agents a code graph instead of source files.
 
-It indexes a codebase in 16 languages into a graph of declarations and their relationships, and answers an agent's code questions from that index through a single tool. Semantic edges come from each language's language server when one is installed; otherwise the separately packaged `@samchon/graph-sitter` best-effort fallback takes over.
+It indexes a codebase in 16 languages into a graph of declarations and their relationships, and answers an agent's code questions from that index through a single tool. A compiler-owned provider supplies semantic edges where one is available, then the language server, and finally the separately packaged `@samchon/graph-sitter` best-effort fallback.
 
 Coding agents normally answer a code question by grepping the repository and reading file after file into context, and that reading is most of the token bill. The graph removes the need for it, and its own answers stay small in turn: they carry names, signatures, relationships, and source spans, never file bodies.
 
@@ -64,6 +64,8 @@ Before the generic lane runs, indexing asks a registry of strict providers which
 The dump carries one `provenance` row per contributing provider: its authority, the fact families it proves, the producing tool and versions, a fingerprint of the inputs that decided the file set, and digests over the manifest and the published facts. Absent when no strict provider served the build. What a provider *did* to compute a generation is deliberately not recorded there — that belongs to one refresh rather than to the facts, and writing it down would make two dumps of the same unedited checkout differ.
 
 TypeScript's provider is the compiler-owned `ttscgraph` snapshot. The binary is resolved from the target project's `ttsc` installation; `TTSC_GRAPH_BINARY` can point to an exact absolute binary for development or release verification. If the binary is unavailable, its schema/provenance cannot be trusted, or the requested build is deliberately capped, indexing states the reason and falls back to `ttscserver`, then to the static indexer when no server is available. `ttscgraph` schema 5 is the complete contract; older schema 3 producers are refused because their source manifests cannot prove every declaration fact, then indexing falls back honestly to `ttscserver`.
+
+Go's compiler-owned provider is shipped with this package and runs through Go 1.25 or newer. Its navigation corroboration is pinned to `scip-go` 0.2.7; install that exact producer with `go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.7`. A project-local or `PATH` `samchon-graph-go` binary takes precedence over the bundled source runner, `SAMCHON_GRAPH_GO` can select an absolute development build, and `SAMCHON_GRAPH_SCIP_GO` can select an absolute `scip-go` binary. Without the required Go toolchain or pinned indexer, indexing reports the strict-provider decline and retains the generic `gopls` fallback.
 
 JavaScript is intentionally not indexed. In an arbitrary repository, `.js`/`.jsx`/`.mjs`/`.cjs` files are as often build output or vendored bundles as handwritten source, and the graph cannot tell which without project-specific provenance.
 
@@ -137,7 +139,7 @@ One-time cost per repository. The server re-scans only changed files after that 
 
 kotlin-language-server, jdtls, and csharp-ls are particularly slow: each resolves the whole project before answering anything.
 
-TypeScript already closes that gap through the compiler-owned `ttscgraph` snapshot. The remaining languages use their listed language servers until their compiler-owned bulk providers land.
+TypeScript and Go already close that gap through compiler-owned snapshots. The remaining languages use their listed language servers until their compiler-owned bulk providers land.
 
 ### Reproduction
 

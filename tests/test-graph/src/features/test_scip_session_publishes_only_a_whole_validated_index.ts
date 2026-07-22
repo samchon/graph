@@ -114,6 +114,27 @@ async function assertTheRegistryEntryItBuilds(): Promise<void> {
   );
   await session.close();
 
+  const unconfigured = scipProvider({
+    name: "scip-unconfigured",
+    languages: ["go"],
+    resolve: provider.resolve,
+    decode: () => ({
+      command: process.execPath,
+      args: [GraphPaths.fakeScipDecoder],
+    }),
+    indexArgs: (artifact) => [`--output=${artifact}`, `--root=${root}`],
+    inputs: () => ["main.go"],
+    languageOf: () => "go",
+  });
+  const unconfiguredSession = unconfigured.open({
+    root,
+    command: unconfigured.resolve(root, process.env)!,
+    languages: ["go"],
+    options: {},
+  });
+  await unconfiguredSession.refresh();
+  await unconfiguredSession.close();
+
   // An entry whose project needs preparing declines with the reason rather
   // than failing the build.
   const unprepared = scipProvider({

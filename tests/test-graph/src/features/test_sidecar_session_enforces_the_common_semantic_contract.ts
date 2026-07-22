@@ -208,6 +208,31 @@ export const test_sidecar_session_enforces_the_common_semantic_contract =
       );
       await opened.close();
 
+      const configured = sidecarProvider({
+        name: "configured-go-sidecar",
+        languages: ["go"],
+        authority: "compiler",
+        facts: ["contains", "calls"],
+        resolve: () => ({
+          command: process.execPath,
+          args: [GraphPaths.fakeSidecar],
+        }),
+        indexArgs: (artifact) => [
+          `--output=${artifact}`,
+          `--input=${payload}`,
+        ],
+        inputs: () => ["main.go"],
+        configuration: () => ["GOOS=fixture"],
+      });
+      const configuredSession = configured.open({
+        root,
+        command: configured.resolve(root, process.env)!,
+        languages: ["go"],
+        options: { cwd: root },
+      });
+      await configuredSession.refresh();
+      await configuredSession.close();
+
       const prepared = sidecarProvider({
         name: "prepared-sidecar",
         languages: ["go"],

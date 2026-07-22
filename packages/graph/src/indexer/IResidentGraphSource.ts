@@ -30,9 +30,6 @@ export interface IResidentGraphSource {
   /** Source display reader belonging to the dump returned by the last load. */
   source?(): SamchonGraphSourceReader | undefined;
 
-  /** Latest computation mode observed from each resident strict provider. */
-  modes(): ReadonlyMap<string, IBulkGraphSession.Mode>;
-
   /**
    * End every language-server connection this source opened. Safe to call on a
    * source that never loaded -- an MCP server that exits before its first tool
@@ -42,4 +39,12 @@ export interface IResidentGraphSource {
    * available and disposes it before resolving.
    */
   close(): Promise<void>;
+}
+
+export namespace IResidentGraphSource {
+  /** The source returned by the built-in factory, with provider observability. */
+  export interface IObservable extends IResidentGraphSource {
+    /** Latest computation mode observed from each resident strict provider. */
+    modes(): ReadonlyMap<string, IBulkGraphSession.Mode>;
+  }
 }

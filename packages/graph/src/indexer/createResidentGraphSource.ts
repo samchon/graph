@@ -89,7 +89,7 @@ const DEFAULT_DEPENDENCIES: IResidentDependencies = {
 export function createResidentGraphSource(
   options: IBuildGraphOptions = {},
   dependencies: IResidentDependencies = DEFAULT_DEPENDENCIES,
-): IResidentGraphSource {
+): IResidentGraphSource.IObservable {
   const root = path.resolve(options.cwd ?? process.cwd());
   let state: IResidentState | undefined;
   let queue: Promise<void> = Promise.resolve();

@@ -21,6 +21,7 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
       });
       fs.mkdirSync(path.join(root, "foreign", ".git"), { recursive: true });
       fs.writeFileSync(path.join(root, "main.go"), "package main\n");
+      fs.writeFileSync(path.join(root, "native.h"), "#define VALUE 1\n");
       fs.writeFileSync(path.join(root, "src", "nested", "worker.go"), "package nested\n");
       fs.writeFileSync(path.join(root, "go.mod"), "module example.com/main\n");
       fs.writeFileSync(path.join(root, "src", "nested", "go.mod"), "module example.com/nested\n");
@@ -34,8 +35,17 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
         ["go.mod", "main.go", "src/nested/go.mod", "src/nested/worker.go"],
       );
       fs.mkdirSync(path.join(root, "vendor"), { recursive: true });
+      fs.mkdirSync(path.join(root, "vendor", "example.com", "dep"), {
+        recursive: true,
+      });
+      fs.mkdirSync(path.join(root, "vendor", ".git"), { recursive: true });
       fs.mkdirSync(path.join(root, "a", "vendor"), { recursive: true });
       fs.writeFileSync(path.join(root, "vendor", "modules.txt"), "# pinned\n");
+      fs.writeFileSync(
+        path.join(root, "vendor", "example.com", "dep", "dep.go"),
+        "package dep\n",
+      );
+      fs.writeFileSync(path.join(root, "vendor", ".git", "ignored.go"), "ignored\n");
       fs.writeFileSync(path.join(root, "a", "go.mod"), "module example.com/a\n");
       fs.writeFileSync(
         path.join(root, "a", "vendor", "modules.txt"),
@@ -58,7 +68,9 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
             "a/go.mod",
             "a/vendor/modules.txt",
             "go.mod",
+            "native.h",
             "src/nested/go.mod",
+            "vendor/example.com/dep/dep.go",
             "vendor/modules.txt",
           ],
           [
@@ -66,13 +78,21 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
             "a/vendor/modules.txt",
             "go.mod",
             "main.go",
+            "native.h",
             "src/nested/go.mod",
             "src/nested/worker.go",
+            "vendor/example.com/dep/dep.go",
             "vendor/modules.txt",
           ],
           ["--output=snapshot.json"],
           true,
         ],
+      );
+      TestValidator.predicate(
+        "an unavailable Go toolchain is part of the effective configuration",
+        goGraphProvider
+          .configuration(root, pathEnvironment(""))
+          .includes("go-env=unavailable"),
       );
 
       const command = "samchon-provider-resolution-fixture";
@@ -102,6 +122,19 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
         "the shipped Go provider uses the common project-local resolver",
         goGraphProvider.resolve(root, emptyPath),
         expectedCommand(goCommand),
+      );
+      fs.rmSync(goCommand, { force: true });
+      const bundledGo = goGraphProvider.resolve(root, process.env);
+      TestValidator.predicate(
+        "the packaged Go source sidecar runs through the available toolchain",
+        bundledGo !== undefined &&
+          bundledGo.args.includes("-C") &&
+          bundledGo.args.slice(-2).join(" ") === "run .",
+      );
+      TestValidator.equals(
+        "the packaged Go source sidecar declines without a Go toolchain",
+        goGraphProvider.resolve(root, emptyPath),
+        undefined,
       );
 
       fs.rmSync(local, { force: true });

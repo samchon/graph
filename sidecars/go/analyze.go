@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"go/doc"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -13,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -26,7 +29,6 @@ type collector struct {
 	objectKeyIDs      map[string]string
 	packageIDs        map[string]string
 	workspacePackages map[string]bool
-	named             map[string]namedType
 	checkerDigests    map[string]string
 	checkerConflicts  map[string]bool
 	checkerMu         sync.Mutex
@@ -56,12 +58,12 @@ func analyzeGo(ctx context.Context, projectRoot string, roots []string) (*collec
 		objectKeyIDs:      map[string]string{},
 		packageIDs:        map[string]string{},
 		workspacePackages: map[string]bool{},
-		named:             map[string]namedType{},
 		checkerDigests:    map[string]string{},
 		checkerConflicts:  map[string]bool{},
 	}
 
 	var loaded []*packages.Package
+	var groups [][]*packages.Package
 	for _, root := range roots {
 		packagesAtRoot, err := packages.Load(&packages.Config{
 			Context:   ctx,
@@ -82,23 +84,75 @@ func analyzeGo(ctx context.Context, projectRoot string, roots []string) (*collec
 		if err != nil {
 			return nil, fmt.Errorf("load Go packages at %s: %w", root, err)
 		}
-		loaded = append(loaded, packagesAtRoot...)
+		group := packageClosure(projectRoot, packagesAtRoot)
+		groups = append(groups, group)
+		loaded = append(loaded, group...)
 	}
 	sort.Slice(loaded, func(i, j int) bool { return loaded[i].ID < loaded[j].ID })
 	if err := rejectPackageErrors(loaded); err != nil {
 		return nil, err
 	}
 
-	units, err := result.units(loaded)
-	if err != nil {
-		return nil, err
+	unitGroups := make([][]unit, 0, len(groups))
+	var units []unit
+	for _, group := range groups {
+		current, unitErr := result.units(group)
+		if unitErr != nil {
+			return nil, unitErr
+		}
+		unitGroups = append(unitGroups, current)
+		units = append(units, current...)
 	}
 	result.addContainers(units)
 	result.addDeclarations(units)
 	result.addImports(units)
 	result.addRelationships(units)
-	result.addImplementations()
+	for _, group := range unitGroups {
+		result.addImplementations(namedTypes(group))
+	}
 	return result, nil
+}
+
+func packageClosure(projectRoot string, roots []*packages.Package) []*packages.Package {
+	seen := map[*packages.Package]bool{}
+	var output []*packages.Package
+	var visit func(*packages.Package)
+	visit = func(pkg *packages.Package) {
+		if pkg == nil || seen[pkg] {
+			return
+		}
+		seen[pkg] = true
+		if packageWithin(projectRoot, pkg) {
+			output = append(output, pkg)
+		}
+		paths := make([]string, 0, len(pkg.Imports))
+		for imported := range pkg.Imports {
+			paths = append(paths, imported)
+		}
+		sort.Strings(paths)
+		for _, imported := range paths {
+			visit(pkg.Imports[imported])
+		}
+	}
+	for _, root := range roots {
+		visit(root)
+	}
+	sort.Slice(output, func(i, j int) bool { return output[i].ID < output[j].ID })
+	return output
+}
+
+func packageWithin(root string, pkg *packages.Package) bool {
+	for _, file := range pkg.GoFiles {
+		if within(root, file) {
+			return true
+		}
+	}
+	for _, file := range pkg.CompiledGoFiles {
+		if within(root, file) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *collector) parseFile(
@@ -266,9 +320,6 @@ func (c *collector) addType(current *unit, spec *ast.TypeSpec) {
 	}
 	qualified := current.pkg.PkgPath + "." + spec.Name.Name
 	id := c.addObjectNode(current, object, kind, spec.Name.Name, qualified, spec, nil)
-	if named, ok := object.Type().(*types.Named); ok {
-		c.named[id] = namedType{typeValue: named, id: id}
-	}
 	c.addTypeParameters(current, id, qualified, spec.TypeParams)
 	switch body := spec.Type.(type) {
 	case *ast.StructType:
@@ -381,7 +432,7 @@ func (c *collector) addObjectNode(
 		Modifiers: modifiers, Evidence: c.evidence(current.pkg, positioned),
 	})
 	c.objectIDs[object] = id
-	key := objectKey(object)
+	key := declarationObjectKey(object, qualified)
 	if existing, ok := c.objectKeyIDs[key]; !ok {
 		c.objectKeyIDs[key] = id
 	} else if existing != id {
@@ -427,7 +478,7 @@ func (c *collector) addRelationships(units []unit) {
 				if sourceID != "" {
 					visitor := &semanticVisitor{
 						collector: c, unit: &current, sourceID: sourceID,
-						test:   isTestFunction(current.fileName, value.Name.Name),
+						test:   isTestFunction(current.pkg, current.fileName, current.file, value),
 						called: map[ast.Node]bool{},
 					}
 					ast.Walk(visitor, value.Type)
@@ -460,11 +511,43 @@ func (c *collector) addRelationships(units []unit) {
 	}
 }
 
-func (c *collector) addImplementations() {
-	values := make([]namedType, 0, len(c.named))
-	for _, value := range c.named {
-		values = append(values, value)
+func namedTypes(units []unit) []namedType {
+	var values []namedType
+	for _, current := range units {
+		for _, declaration := range current.file.Decls {
+			generic, ok := declaration.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, raw := range generic.Specs {
+				spec, ok := raw.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				object, ok := current.pkg.TypesInfo.Defs[spec.Name].(*types.TypeName)
+				if !ok {
+					continue
+				}
+				named, ok := object.Type().(*types.Named)
+				if !ok {
+					continue
+				}
+				values = append(values, namedType{typeValue: named})
+			}
+		}
 	}
+	return values
+}
+
+func (c *collector) addImplementations(values []namedType) {
+	kept := values[:0]
+	for index := range values {
+		values[index].id = c.targetForObject(values[index].typeValue.Obj())
+		if values[index].id != "" {
+			kept = append(kept, values[index])
+		}
+	}
+	values = kept
 	sort.Slice(values, func(i, j int) bool { return values[i].id < values[j].id })
 	for _, candidate := range values {
 		if _, isInterface := candidate.typeValue.Underlying().(*types.Interface); isInterface {
@@ -527,6 +610,7 @@ func (visitor *semanticVisitor) Visit(raw ast.Node) ast.Visitor {
 	case *ast.SelectorExpr:
 		if !visitor.called[value] && !visitor.called[value.Sel] {
 			visitor.addSelectorUse(value)
+			visitor.called[value.Sel] = true
 		}
 	case *ast.Ident:
 		if !visitor.called[value] {
@@ -718,17 +802,17 @@ func (c *collector) targetForObject(object types.Object) string {
 
 func (c *collector) targetForSelection(selection *types.Selection) string {
 	object := selection.Obj()
-	if id := c.knownObjectID(object); id != "" {
+	if id := c.objectIDs[object]; id != "" {
+		return id
+	}
+	key := selectionObjectKey(selection)
+	if id := c.objectKeyIDs[key]; id != "" && id != ambiguousObjectID {
 		return id
 	}
 	if object.Pkg() != nil && c.workspacePackages[object.Pkg().Path()] {
 		return ""
 	}
-	receiver := types.TypeString(selection.Recv(), packageQualifier)
-	return c.externalObject(
-		object,
-		"external-selection:"+receiver+"::"+objectKey(object),
-	)
+	return c.externalObject(object, "external:"+key)
 }
 
 func (c *collector) knownObjectID(object types.Object) string {
@@ -831,6 +915,48 @@ func objectKey(object types.Object) string {
 	return packagePath + "::" + fmt.Sprintf("%T", object) + "::" + object.Name()
 }
 
+func declarationObjectKey(object types.Object, qualified string) string {
+	if variable, ok := object.(*types.Var); ok && variable.IsField() {
+		return "field::" + qualified
+	}
+	return objectKey(object)
+}
+
+func selectionObjectKey(selection *types.Selection) string {
+	object := selection.Obj()
+	variable, isField := object.(*types.Var)
+	if !isField || !variable.IsField() {
+		return objectKey(object)
+	}
+	owner := selectionOwner(selection)
+	if owner != nil && owner.Obj() != nil && owner.Obj().Pkg() != nil {
+		return "field::" + owner.Obj().Pkg().Path() + "." + owner.Obj().Name() + "." + object.Name()
+	}
+	return "field::" + types.TypeString(selection.Recv(), packageQualifier) + "." + object.Name()
+}
+
+func selectionOwner(selection *types.Selection) *types.Named {
+	current := selection.Recv()
+	indices := selection.Index()
+	for index := range indices {
+		if index == len(indices)-1 {
+			return namedFromType(current)
+		}
+		value := current
+		if named := namedFromType(value); named != nil {
+			value = named.Underlying()
+		} else if pointer, ok := value.(*types.Pointer); ok {
+			value = pointer.Elem()
+		}
+		structure, ok := value.Underlying().(*types.Struct)
+		if !ok || indices[index] >= structure.NumFields() {
+			return nil
+		}
+		current = structure.Field(indices[index]).Type()
+	}
+	return nil
+}
+
 func packageQualifier(pkg *types.Package) string {
 	if pkg == nil {
 		return ""
@@ -890,12 +1016,68 @@ func namedFromType(value types.Type) *types.Named {
 	return nil
 }
 
-func isTestFunction(file, name string) bool {
+func isTestFunction(
+	pkg *packages.Package,
+	file string,
+	syntax *ast.File,
+	declaration *ast.FuncDecl,
+) bool {
 	if !strings.HasSuffix(file, "_test.go") {
 		return false
 	}
-	return strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Benchmark") ||
-		strings.HasPrefix(name, "Fuzz") || strings.HasPrefix(name, "Example")
+	object, ok := pkg.TypesInfo.Defs[declaration.Name].(*types.Func)
+	if !ok {
+		return false
+	}
+	signature, ok := object.Type().(*types.Signature)
+	if !ok || signature.Recv() != nil || signature.Results().Len() != 0 {
+		return false
+	}
+	if parameters := signature.TypeParams(); parameters != nil && parameters.Len() != 0 {
+		return false
+	}
+	name := declaration.Name.Name
+	if validTestName(name, "Example") {
+		if signature.Params().Len() != 0 {
+			return false
+		}
+		for _, example := range doc.Examples(syntax) {
+			if example.F == declaration && (example.Output != "" || example.EmptyOutput) {
+				return true
+			}
+		}
+		return false
+	}
+	expected := ""
+	switch {
+	case name == "TestMain":
+		expected = "M"
+	case validTestName(name, "Test"):
+		expected = "T"
+	case validTestName(name, "Benchmark"):
+		expected = "B"
+	case validTestName(name, "Fuzz"):
+		expected = "F"
+	default:
+		return false
+	}
+	if signature.Params().Len() != 1 {
+		return false
+	}
+	parameter := namedFromType(signature.Params().At(0).Type())
+	return parameter != nil && parameter.Obj() != nil && parameter.Obj().Pkg() != nil &&
+		parameter.Obj().Pkg().Path() == "testing" && parameter.Obj().Name() == expected
+}
+
+func validTestName(name, prefix string) bool {
+	if !strings.HasPrefix(name, prefix) {
+		return false
+	}
+	if len(name) == len(prefix) {
+		return true
+	}
+	first, _ := utf8.DecodeRuneInString(name[len(prefix):])
+	return !unicode.IsLower(first)
 }
 
 func within(root, file string) bool {

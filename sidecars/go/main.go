@@ -54,7 +54,10 @@ func buildSnapshot(
 	indexer scipIndexer,
 	environment map[string]string,
 ) (snapshot, error) {
-	roots, err := moduleRoots(root)
+	if err := validateEffectiveWorkspace(root, environment["GOWORK"]); err != nil {
+		return snapshot{}, err
+	}
+	roots, err := moduleRoots(root, environment["GOWORK"])
 	if err != nil {
 		return snapshot{}, err
 	}
@@ -73,7 +76,7 @@ func buildSnapshot(
 			return snapshot{}, indexErr
 		}
 		artifacts = append(artifacts, artifact)
-		documents += artifact.DocumentCount
+		documents += len(artifact.Documents)
 	}
 	if documents == 0 {
 		return snapshot{}, errors.New("scip-go published no Go documents")
@@ -83,6 +86,9 @@ func buildSnapshot(
 		return snapshot{}, err
 	}
 	sources, nodes, edges := graph.snapshotParts()
+	if err := validateScipCoverage(root, sources, nodes, artifacts); err != nil {
+		return snapshot{}, err
+	}
 	inputs, err := buildInputs(root)
 	if err != nil {
 		return snapshot{}, err
@@ -94,10 +100,14 @@ func buildSnapshot(
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		universeParts = append(universeParts, key, environment[key])
+		universeParts = append(universeParts, key, normalizedEnvironmentValue(root, key, environment[key]))
 	}
 	for index, moduleRoot := range roots {
-		universeParts = append(universeParts, moduleRoot, artifacts[index].Digest)
+		identity, relativeErr := filepath.Rel(root, moduleRoot)
+		if relativeErr != nil {
+			return snapshot{}, fmt.Errorf("name Go module root %s: %w", moduleRoot, relativeErr)
+		}
+		universeParts = append(universeParts, filepath.ToSlash(identity), artifacts[index].Digest)
 	}
 	for _, input := range inputs {
 		body, readErr := os.ReadFile(input)
@@ -136,13 +146,72 @@ func buildSnapshot(
 		Universe: digestStrings(universeParts...),
 		Capabilities: []string{
 			"universe", "sourceDigests", "diskDigests", "diagnostics",
-			"scipNavigation", "goPackages", "fullRebuild",
+			"goPackages", "fullRebuild",
 		},
 		Sources: sources, Nodes: nodes, Edges: edges,
 		Diagnostics: []diagnostic{}, Warnings: warnings,
 	}
 	sortSnapshot(&value)
 	return value, nil
+}
+
+func validateEffectiveWorkspace(root, workspace string) error {
+	if workspace == "" || workspace == "off" {
+		return nil
+	}
+	expected := filepath.Join(root, "go.work")
+	if !samePath(workspace, expected) {
+		return fmt.Errorf(
+			"effective GOWORK %s is not the indexed project's %s; use the generic Go lane or open the workspace root",
+			workspace,
+			expected,
+		)
+	}
+	return nil
+}
+
+func normalizedEnvironmentValue(root, key, value string) string {
+	if key == "GOWORK" && value != "" && value != "off" && samePath(value, filepath.Join(root, "go.work")) {
+		return "go.work"
+	}
+	return value
+}
+
+func validateScipCoverage(root string, sources []source, nodes []node, artifacts []scipArtifact) error {
+	indexed := map[string]bool{}
+	definitions := map[string]int{}
+	for _, artifact := range artifacts {
+		for _, document := range artifact.Documents {
+			indexed[pathKey(document)] = true
+		}
+		for file, count := range artifact.Definitions {
+			definitions[file] += count
+		}
+	}
+	requiresDefinition := map[string]bool{}
+	for _, declaration := range nodes {
+		if declaration.External || declaration.Kind == "file" || declaration.Kind == "package" {
+			continue
+		}
+		requiresDefinition[pathKey(filepath.Join(root, filepath.FromSlash(declaration.File)))] = true
+	}
+	for _, input := range sources {
+		absolute := filepath.Join(root, filepath.FromSlash(input.File))
+		key := pathKey(absolute)
+		if !indexed[key] {
+			return fmt.Errorf(
+				"scip-go omitted checker-owned source %s; its navigation artifact cannot corroborate this generation",
+				input.File,
+			)
+		}
+		if requiresDefinition[key] && definitions[key] == 0 {
+			return fmt.Errorf(
+				"scip-go published no definition occurrence for checker-owned source %s; its navigation artifact cannot corroborate this generation",
+				input.File,
+			)
+		}
+	}
+	return nil
 }
 
 func matchesPinnedScipGoVersion(version string) bool {
@@ -166,10 +235,33 @@ func probeGoEnvironment(ctx context.Context, root string) (map[string]string, er
 		"GOOS",
 		"GOARCH",
 		"CGO_ENABLED",
+		"CGO_CFLAGS",
+		"CGO_CPPFLAGS",
+		"CGO_CXXFLAGS",
+		"CGO_FFLAGS",
+		"CGO_LDFLAGS",
+		"CC",
+		"CXX",
+		"FC",
+		"GO111MODULE",
 		"GOFLAGS",
+		"GO386",
+		"GOAMD64",
+		"GOARM",
+		"GOARM64",
+		"GODEBUG",
+		"GOEXPERIMENT",
+		"GOFIPS140",
+		"GOMIPS",
+		"GOMIPS64",
+		"GOPPC64",
+		"GORISCV64",
+		"GOWASM",
+		"GOTOOLCHAIN",
 		"GOWORK",
 		"GOPROXY",
 		"GOPRIVATE",
+		"PKG_CONFIG",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query Go build environment: %w%s", err, stderrSuffix(stderr))

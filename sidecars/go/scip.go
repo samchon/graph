@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/scip-code/scip/bindings/go/scip"
@@ -18,8 +19,9 @@ import (
 )
 
 type scipArtifact struct {
-	Digest        string
-	DocumentCount int
+	Digest      string
+	Documents   []string
+	Definitions map[string]int
 }
 
 type scipIndexer interface {
@@ -90,44 +92,66 @@ func (runner commandScipIndexer) Index(ctx context.Context, moduleRoot string) (
 	if err != nil {
 		return scipArtifact{}, fmt.Errorf("read scip-go artifact: %w", err)
 	}
-	documents, err := validateScipIndex(moduleRoot, body)
+	artifact, err := validateScipIndex(moduleRoot, body)
 	if err != nil {
 		return scipArtifact{}, err
 	}
-	return scipArtifact{Digest: digestBytes(body), DocumentCount: documents}, nil
+	return artifact, nil
 }
 
-func validateScipIndex(moduleRoot string, body []byte) (int, error) {
+func validateScipIndex(moduleRoot string, body []byte) (scipArtifact, error) {
 	index := &scip.Index{}
 	if err := proto.Unmarshal(body, index); err != nil {
-		return 0, fmt.Errorf("decode scip-go artifact: %w", err)
+		return scipArtifact{}, fmt.Errorf("decode scip-go artifact: %w", err)
 	}
 	if index.Metadata == nil {
-		return 0, errors.New("scip-go artifact has no metadata")
+		return scipArtifact{}, errors.New("scip-go artifact has no metadata")
 	}
 	declared, err := fileURIPath(index.Metadata.ProjectRoot)
 	if err != nil {
-		return 0, fmt.Errorf("decode scip-go project root: %w", err)
+		return scipArtifact{}, fmt.Errorf("decode scip-go project root: %w", err)
 	}
 	if !samePath(declared, moduleRoot) {
-		return 0, fmt.Errorf("scip-go artifact belongs to %s, not %s", declared, moduleRoot)
+		return scipArtifact{}, fmt.Errorf("scip-go artifact belongs to %s, not %s", declared, moduleRoot)
 	}
 	seen := make(map[string]bool, len(index.Documents))
+	documents := make([]string, 0, len(index.Documents))
+	definitions := make(map[string]int, len(index.Documents))
 	for _, document := range index.Documents {
 		relative := filepath.FromSlash(document.RelativePath)
 		if document.RelativePath == "" || filepath.IsAbs(relative) || escapesRoot(relative) {
-			return 0, fmt.Errorf("scip-go emitted an unsafe document path: %q", document.RelativePath)
+			return scipArtifact{}, fmt.Errorf("scip-go emitted an unsafe document path: %q", document.RelativePath)
 		}
 		cleaned := filepath.Clean(relative)
-		if seen[cleaned] {
-			return 0, fmt.Errorf("scip-go duplicated document path: %s", document.RelativePath)
+		key := pathKey(cleaned)
+		if seen[key] {
+			return scipArtifact{}, fmt.Errorf("scip-go duplicated document path: %s", document.RelativePath)
 		}
-		seen[cleaned] = true
+		seen[key] = true
 		if document.Language != "" && document.Language != "go" {
-			return 0, fmt.Errorf("scip-go emitted a %s document: %s", document.Language, document.RelativePath)
+			return scipArtifact{}, fmt.Errorf("scip-go emitted a %s document: %s", document.Language, document.RelativePath)
+		}
+		absolute := filepath.Join(moduleRoot, cleaned)
+		documents = append(documents, absolute)
+		for _, occurrence := range document.Occurrences {
+			if occurrence.SymbolRoles&int32(scip.SymbolRole_Definition) != 0 {
+				definitions[pathKey(absolute)]++
+			}
 		}
 	}
-	return len(index.Documents), nil
+	canonical := proto.Clone(index).(*scip.Index)
+	canonical.Metadata.ProjectRoot = ""
+	if canonical.Metadata.ToolInfo != nil {
+		canonical.Metadata.ToolInfo.Arguments = nil
+	}
+	canonicalBody, err := proto.MarshalOptions{Deterministic: true}.Marshal(canonical)
+	if err != nil {
+		return scipArtifact{}, fmt.Errorf("canonicalize scip-go artifact: %w", err)
+	}
+	sort.Strings(documents)
+	return scipArtifact{
+		Digest: digestBytes(canonicalBody), Documents: documents, Definitions: definitions,
+	}, nil
 }
 
 func fileURIPath(value string) (string, error) {
@@ -227,6 +251,14 @@ func samePath(left, right string) bool {
 		return strings.EqualFold(left, right)
 	}
 	return left == right
+}
+
+func pathKey(value string) string {
+	cleaned := filepath.Clean(value)
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(cleaned)
+	}
+	return cleaned
 }
 
 func stderrSuffix(stderr string) string {

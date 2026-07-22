@@ -12,10 +12,15 @@ export function providerInputFiles(
   root: string,
   languages: readonly GraphLanguage[],
   buildFileNames: readonly string[],
+  extraExtensions: readonly string[] = [],
 ): string[] {
   const resolved = path.resolve(root);
+  const extensions = allExtensions(languages);
+  for (const extension of extraExtensions) {
+    extensions.add(extension.toLowerCase());
+  }
   const inputs = new Set(
-    walkSourceFiles(resolved, { extensions: allExtensions(languages) }).map(
+    walkSourceFiles(resolved, { extensions }).map(
       (file) => normalizePath(path.relative(resolved, file)),
     ),
   );

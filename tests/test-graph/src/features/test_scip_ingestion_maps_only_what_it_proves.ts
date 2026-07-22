@@ -21,6 +21,7 @@ export const test_scip_ingestion_maps_only_what_it_proves = async () => {
   assertSymbolParsing();
   assertIndexValidation();
   assertMapping();
+  assertForwardDefinitionOrdering();
 };
 
 function assertSymbolParsing(): void {
@@ -91,11 +92,18 @@ function assertSymbolParsing(): void {
   for (const malformed of [
     "",
     "local ",
+    "local  4",
+    "local bad id",
+    "local `bad`",
+    " scip-go gomod example v1 `pkg`/Server#",
+    "local-scip gomod example v1 `pkg`/Server#",
     "scip-go gomod example",
     "scip-go gomod example v1 ",
     "scip-go gomod example v1 `pkg`/unterminated",
     "scip-go gomod example v1 `unclosed",
     "scip-go gomod example v1 `pkg`/run(unclosed.",
+    "scip-go gomod example v1 `pkg`/run(bad disambiguator).",
+    "scip-go gomod example v1 `pkg`/naïve#",
     // A suffix that closes a descriptor it never opened denotes nothing.
     "scip-go gomod example v1 `pkg`/bad)",
     "scip-go gomod example v1 `pkg`/bad]",
@@ -104,6 +112,7 @@ function assertSymbolParsing(): void {
     "scip-java maven example v1 `pkg`/run().()",
     "scip-java maven example v1 `pkg`/Box#[`T`x",
     "scip-java maven example v1 `pkg`/run().(`arg`x",
+    "scip-go gomod example v1 ``#",
     // A descriptor that is only a suffix has no name to read.
     "scip-go gomod example v1 #",
   ]) {
@@ -113,6 +122,17 @@ function assertSymbolParsing(): void {
       undefined,
     );
   }
+
+  TestValidator.equals(
+    "escaped spaces in package coordinates do not consume the descriptor tail",
+    scipSymbol("scip-go gomod example  package v1 `pkg`/Server#")?.displayName,
+    "Server",
+  );
+  TestValidator.equals(
+    "a valid method disambiguator is accepted",
+    scipSymbol("scip-go gomod example v1 `pkg`/run(+1).")?.displayName,
+    "run",
+  );
 
   // The index's own kind wins; the descriptor is the fallback; neither
   // mapping means no node, because a guessed kind is read as fact downstream.
@@ -129,7 +149,7 @@ function assertSymbolParsing(): void {
   TestValidator.equals(
     "an unmapped kind falls back to the descriptor",
     scipSymbol.nodeKind("SelfParameterButNotReally", "type"),
-    "class",
+    "type",
   );
   TestValidator.equals(
     "a namespace descriptor maps",
@@ -402,6 +422,34 @@ function assertMapping(): void {
     !adapted.edges.some((edge) => edge.kind === "calls"),
   );
 
+  const descriptorOnly = adaptScipIndex({
+    index: parseScipIndex({
+      metadata: { projectRoot: "file:///r" },
+      documents: [
+        {
+          relativePath: "kind.go",
+          symbols: [
+            {
+              symbol: "scip-go gomod example v1 `main`/Unknown#",
+              displayName: "Unknown",
+            },
+          ],
+        },
+      ],
+    }),
+    root: "/r",
+    provider: "scip-go",
+    languages: ["go"],
+    languageOf: () => "go",
+  });
+  TestValidator.predicate(
+    "a descriptor-only type stays generic and reports the derivation",
+    descriptorOnly.nodes[0]?.kind === "type" &&
+      descriptorOnly.warnings.some((warning) =>
+        warning.includes("derived from generic SCIP descriptor"),
+      ),
+  );
+
   // A range is an offset in code units, and which code unit is the document's
   // to declare. Graph columns are UTF-16, so a UTF-8 indexer disagrees on every
   // line holding a non-ASCII character — silently, and only there.
@@ -440,6 +488,18 @@ function assertMapping(): void {
       languageOf: () => "go",
     }).warnings.filter((warning) => warning.includes("UTF-16")),
     [],
+  );
+  TestValidator.predicate(
+    "an explicitly unspecified encoding reports its ambiguity",
+    adaptScipIndex({
+      index: parseScipIndex(
+        rawIndex({ positionEncoding: "UnspecifiedPositionEncoding" }),
+      ),
+      root: "/r",
+      provider: "scip-go",
+      languages: ["go"],
+      languageOf: () => "go",
+    }).warnings.some((warning) => warning.includes("UTF-16")),
   );
   const metadataUtf8 = adaptScipIndex({
     index: parseScipIndex(
@@ -534,6 +594,76 @@ function assertLongLineScopeSelection(): void {
   );
 }
 
+/** Forward declarations win the declaration slot regardless of file order. */
+function assertForwardDefinitionOrdering(): void {
+  const symbol = "scip-clang . example . `api`/run().";
+  const adapted = adaptScipIndex({
+    index: parseScipIndex({
+      metadata: { projectRoot: "file:///r" },
+      documents: [
+        {
+          // The implementation deliberately precedes its header in the index.
+          relativePath: "src/api.c",
+          symbols: [{ symbol, displayName: "run", kind: "Function" }],
+          occurrences: [
+            { range: [10, 2, 5], symbol, symbolRoles: 0x1 },
+            // A malformed duplicate must not replace the first implementation.
+            { range: [20, 2, 5], symbol, symbolRoles: 0x1 },
+          ],
+        },
+        {
+          relativePath: "include/api.h",
+          occurrences: [
+            { range: [1, 0, 3], symbol, symbolRoles: 0x40 },
+            // Multiple prototypes keep the first declaration span.
+            { range: [2, 0, 3], symbol, symbolRoles: 0x40 },
+          ],
+        },
+      ],
+    }),
+    root: "/r",
+    provider: "scip-clang",
+    languages: ["c"],
+    languageOf: () => "c",
+  });
+  const node = adapted.nodes[0];
+  TestValidator.equals(
+    "a later header still supplies evidence and the source supplies implementation",
+    [
+      node?.evidence?.file,
+      node?.evidence?.startLine,
+      node?.implementation?.file,
+      node?.implementation?.startLine,
+    ],
+    ["include/api.h", 2, "src/api.c", 11],
+  );
+
+  const ordinary = adaptScipIndex({
+    index: parseScipIndex({
+      metadata: { projectRoot: "file:///r" },
+      documents: [
+        {
+          relativePath: "ordinary.c",
+          symbols: [{ symbol, displayName: "run", kind: "Function" }],
+          occurrences: [
+            { range: [3, 0, 3], symbol, symbolRoles: 0x1 },
+            { range: [4, 0, 3], symbol, symbolRoles: 0x1 },
+          ],
+        },
+      ],
+    }),
+    root: "/r",
+    provider: "scip-clang",
+    languages: ["c"],
+    languageOf: () => "c",
+  }).nodes[0];
+  TestValidator.equals(
+    "duplicate ordinary definitions do not invent a declaration/implementation pair",
+    [ordinary?.evidence?.startLine, ordinary?.implementation],
+    [4, undefined],
+  );
+}
+
 /**
  * Typed relationships, dependency leaves, diagnostics, and the shapes the
  * adapter drops rather than approximates.
@@ -594,6 +724,11 @@ function assertRelationshipsAndExternals(): void {
               // enclosing definition owns a reference, and with one scope the
               // ranking never runs.
               enclosingRange: [0, 0, 30, 0],
+            },
+            {
+              range: [1, 0, 4],
+              symbol: impl,
+              symbolRoles: 0x40 | 0x10 | 0x20,
             },
             {
               range: [2, 5, 9],
@@ -715,6 +850,20 @@ function assertRelationshipsAndExternals(): void {
       adapted.warnings.some((warning) =>
         warning.includes("implementation relationship"),
       ),
+  );
+  const fileNode = adapted.nodes.find((node) => node.name === "File");
+  TestValidator.equals(
+    "a forward declaration and definition share one node with two spans",
+    [
+      fileNode?.evidence?.startLine,
+      fileNode?.implementation?.startLine,
+    ],
+    [2, 3],
+  );
+  TestValidator.predicate(
+    "generated and test roles are reported until language enrichment maps them",
+    adapted.warnings.some((warning) => warning.includes("generated role")) &&
+      adapted.warnings.some((warning) => warning.includes("test role")),
   );
   TestValidator.predicate(
     "…and a type-definition flag on the same record is its own claim",

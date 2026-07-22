@@ -84,6 +84,7 @@ export function adaptScipIndex(
   const warnings: string[] = [];
   const unsupportedRoles = new Set<string>();
   const files: string[] = [];
+  let derivedKinds = 0;
 
   // Every definition in the index, so a reference in one document can resolve
   // to a declaration in another. Built before any edge is emitted: an endpoint
@@ -121,8 +122,10 @@ export function adaptScipIndex(
         );
         continue;
       }
-      const kind = scipSymbol.nodeKind(symbol.kind, parsed.descriptor);
+      const statedKind = scipSymbol.nodeKind(symbol.kind, undefined);
+      const kind = statedKind ?? scipSymbol.nodeKind(undefined, parsed.descriptor);
       if (kind === undefined) continue;
+      if (statedKind === undefined) derivedKinds += 1;
       const displayName = symbol.displayName ?? parsed.displayName;
       if (displayName === "") continue;
       const id = semanticGraphNodeId(
@@ -214,6 +217,27 @@ export function adaptScipIndex(
     return definition;
   };
 
+  // Forward declarations and implementations can live in different
+  // documents, and document order has no semantic meaning. Collect every
+  // forward-declaration span before visiting any ordinary definition so a
+  // source file listed before its header cannot steal the declaration slot.
+  const forwardDefinitions = new Set<string>();
+  for (const document of props.index.documents) {
+    const file = normalizeFile(document.relativePath);
+    if (!files.includes(file)) continue;
+    for (const occurrence of document.occurrences ?? []) {
+      if (!hasRole(occurrence, IScipIndex.SymbolRole.ForwardDefinition)) {
+        continue;
+      }
+      const parsed = scipSymbol(occurrence.symbol);
+      const definition =
+        parsed === undefined ? undefined : resolve(definitions, parsed, file);
+      if (definition === undefined) continue;
+      forwardDefinitions.add(definition.id);
+      definition.node.evidence ??= spanOf(file, occurrence.range);
+    }
+  }
+
   for (const document of props.index.documents) {
     const file = normalizeFile(document.relativePath);
     if (!files.includes(file)) continue;
@@ -230,7 +254,12 @@ export function adaptScipIndex(
       const definition =
         parsed === undefined ? undefined : resolve(definitions, parsed, file);
       if (definition === undefined) continue;
-      definition.node.evidence = spanOf(file, occurrence.range);
+      const evidence = spanOf(file, occurrence.range);
+      if (forwardDefinitions.has(definition.id)) {
+        definition.node.implementation ??= evidence;
+      } else {
+        definition.node.evidence ??= evidence;
+      }
       if (occurrence.enclosingRange !== undefined) {
         scopes.push({
           id: definition.id,
@@ -253,7 +282,24 @@ export function adaptScipIndex(
     });
 
     for (const occurrence of occurrences) {
-      if (hasRole(occurrence, IScipIndex.SymbolRole.Definition)) continue;
+      recordUnsupportedRole(
+        unsupportedRoles,
+        occurrence,
+        IScipIndex.SymbolRole.Generated,
+        "generated",
+      );
+      recordUnsupportedRole(
+        unsupportedRoles,
+        occurrence,
+        IScipIndex.SymbolRole.Test,
+        "test",
+      );
+      if (
+        hasRole(occurrence, IScipIndex.SymbolRole.Definition) ||
+        hasRole(occurrence, IScipIndex.SymbolRole.ForwardDefinition)
+      ) {
+        continue;
+      }
       const parsed = scipSymbol(occurrence.symbol);
       if (parsed === undefined) continue;
       const target =
@@ -341,6 +387,11 @@ export function adaptScipIndex(
       `${props.provider}: SCIP ${role} data is not promoted to a stronger graph fact until this language provider proves a typed mapping for its pinned indexer`,
     );
   }
+  if (derivedKinds > 0) {
+    warnings.push(
+      `${props.provider}: ${String(derivedKinds)} node kind(s) were derived from generic SCIP descriptor suffixes because the producer supplied no mapped SymbolInformation.kind; language enrichment is required for a more specific kind`,
+    );
+  }
 
   return {
     nodes: [...nodes.values()],
@@ -386,10 +437,10 @@ export namespace adaptScipIndex {
 /**
  * The one position encoding whose offsets are already graph columns.
  *
- * `UnspecifiedPositionEncoding` and an absent field are left alone rather than
- * warned about: they are what an older indexer emits, and treating "did not
- * say" as "said something wrong" would put a warning on every well-behaved
- * ASCII project.
+ * An absent field is left alone because older JSON encodings omit the proto
+ * default. An explicit `UnspecifiedPositionEncoding` is reported: SCIP marks
+ * it ambiguous for consumers, so treating it as UTF-16 would overstate the
+ * precision of every non-ASCII span.
  */
 const UTF16_POSITION_ENCODING = "UTF16CodeUnitOffsetFromLineStart";
 

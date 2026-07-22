@@ -125,10 +125,10 @@ export namespace IScipIndex {
   /**
    * The bitmask values SCIP defines for {@link IOccurrence.symbolRoles}.
    *
-   * `ForwardDefinition` is deliberately absent from the graph's mapping: it
-   * marks a declaration that is not the definition, which the graph already
-   * models through declaration and implementation spans rather than through a
-   * second node.
+   * `ForwardDefinition` marks a declaration that is not the implementation.
+   * The adapter retains that occurrence as the node's declaration evidence and
+   * a later `Definition` occurrence as its implementation span; it never mints
+   * a second node for the same symbol.
    */
   export enum SymbolRole {
     Definition = 0x1,

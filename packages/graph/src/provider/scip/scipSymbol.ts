@@ -69,8 +69,8 @@ namespace IParsedSymbol {
 export function scipSymbol(symbol: string): IParsedSymbol | undefined {
   if (symbol === "") return undefined;
   if (symbol.startsWith("local ")) {
-    const id = symbol.slice("local ".length).trim();
-    if (id === "") return undefined;
+    const id = symbol.slice("local ".length);
+    if (!SIMPLE_IDENTIFIER.test(id)) return undefined;
     return {
       stability: "generation",
       key: symbol,
@@ -132,7 +132,10 @@ function scipNodeKindImpl(
     case "namespace":
       return "namespace";
     case "type":
-      return "class";
+      // `#` says only "type": stock C#, Kotlin, Python, Ruby, and PHP
+      // producers omit SymbolInformation.kind, so class/interface/enum/struct
+      // cannot be recovered from this suffix. Preserve the generic fact.
+      return "type";
     case "method":
       return "method";
     case "term":
@@ -198,11 +201,28 @@ const SCIP_KINDS = new Map<string, GraphNodeKind>([
 /** Everything after the fifth space-separated field, or `undefined`. */
 function splitPackage(symbol: string): string | undefined {
   let index = 0;
+  let scheme = "";
   for (let field = 0; field < 4; field++) {
-    const next = symbol.indexOf(" ", index);
-    if (next === -1) return undefined;
-    index = next + 1;
+    let value = "";
+    while (index < symbol.length) {
+      const character = symbol[index]!;
+      if (character !== " ") {
+        value += character;
+        index += 1;
+        continue;
+      }
+      if (symbol[index + 1] === " ") {
+        value += " ";
+        index += 2;
+        continue;
+      }
+      break;
+    }
+    if (value === "" || symbol[index] !== " ") return undefined;
+    if (field === 0) scheme = value;
+    index += 1;
   }
+  if (scheme.startsWith("local")) return undefined;
   const tail = symbol.slice(index);
   return tail === "" ? undefined : tail;
 }
@@ -238,7 +258,7 @@ function parseOne(
   const opener = tail[start]!;
   if (opener === "[" || opener === "(") {
     const closer = opener === "[" ? "]" : ")";
-    const name = readName(tail, start + 1, closer);
+    const name = readName(tail, start + 1);
     if (name === undefined || tail[name.next] !== closer) return undefined;
     return {
       descriptor: {
@@ -248,7 +268,7 @@ function parseOne(
       next: name.next + 1,
     };
   }
-  const name = readName(tail, start, undefined);
+  const name = readName(tail, start);
   if (name === undefined) return undefined;
   const suffix = tail[name.next];
   if (suffix === undefined) return undefined;
@@ -283,6 +303,10 @@ function parseOne(
       // is part of the provider key, not of the display name.
       const close = tail.indexOf(")", name.next + 1);
       if (close === -1 || tail[close + 1] !== ".") return undefined;
+      const disambiguator = tail.slice(name.next + 1, close);
+      if (disambiguator !== "" && !SIMPLE_IDENTIFIER.test(disambiguator)) {
+        return undefined;
+      }
       return {
         descriptor: { name: name.value, descriptor: "method" },
         next: close + 2,
@@ -303,7 +327,6 @@ function parseOne(
 function readName(
   tail: string,
   start: number,
-  closer: string | undefined,
 ): { value: string; next: number } | undefined {
   if (tail[start] === "`") {
     let value = "";
@@ -317,19 +340,15 @@ function readName(
         continue;
       }
       value += tail.slice(index, at);
-      return { value, next: at + 1 };
+      return value === "" ? undefined : { value, next: at + 1 };
     }
   }
   let index = start;
-  while (index < tail.length) {
-    const character = tail[index]!;
-    if (closer !== undefined ? character === closer : SUFFIXES.has(character)) {
-      break;
-    }
+  while (index < tail.length && SIMPLE_IDENTIFIER_CHARACTER.test(tail[index]!))
     index += 1;
-  }
   if (index === start) return undefined;
   return { value: tail.slice(start, index), next: index };
 }
 
-const SUFFIXES = new Set(["/", "#", ".", ":", "!", "(", ")", "[", "]"]);
+const SIMPLE_IDENTIFIER_CHARACTER = /^[A-Za-z0-9_+$-]$/;
+const SIMPLE_IDENTIFIER = /^[A-Za-z0-9_+$-]+$/;

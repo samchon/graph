@@ -514,8 +514,12 @@ function assertBulkSessionContract(
       `${label} opened a session for ${session.root}, not the selected project ${root}`,
     );
   }
-  const actual = JSON.stringify([...new Set(session.languages)].sort());
-  const expected = JSON.stringify([...candidate.languages].sort());
+  const actual = JSON.stringify(
+    [...new Set(session.languages)].sort(compareOrdinal),
+  );
+  const expected = JSON.stringify(
+    [...candidate.languages].sort(compareOrdinal),
+  );
   if (actual !== expected) {
     throw new Error(
       `${label} opened a session for [${session.languages.join(", ")}] after the registry selected [${candidate.languages.join(", ")}]`,
@@ -531,6 +535,11 @@ function samePath(left: string, right: string): boolean {
   return process.platform === "win32"
     ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
     : normalizedLeft === normalizedRight;
+}
+
+function compareOrdinal(left: string, right: string): number {
+  /* c8 ignore next 2 -- compared language names are distinct set members. */
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 /** Every language fell back to the static parser: the dump is that parse. */

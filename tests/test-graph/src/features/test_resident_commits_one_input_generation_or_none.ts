@@ -5,6 +5,7 @@ import path from "node:path";
 import { createResidentGraphSource } from "../../../../packages/graph/src/indexer/createResidentGraphSource";
 import type { IIndexerResult } from "../../../../packages/graph/src/indexer/IIndexerResult";
 import type { IBulkGraphSession } from "../../../../packages/graph/src/provider/IBulkGraphSession";
+import { graphSnapshotDigests } from "../../../../packages/graph/src/provider/graphSnapshotDigests";
 import { staticGraphParts as realStaticGraphParts } from "../../../../packages/graph/src/indexer/staticGraphParts";
 import { GraphPaths } from "../internal/GraphPaths";
 import { ProviderFixtures } from "../internal/ProviderFixtures";
@@ -99,6 +100,12 @@ async function assertAProviderThatMovedMidTransactionIsDiscarded(): Promise<void
   const root = GraphPaths.createTempDirectory("samchon-graph-provider-moved-");
   const file = path.join(root, "a.ts");
   fs.writeFileSync(file, "export const value = 1;\n");
+  // A mixed project, which is the shape this fence exists for: the provider
+  // answers for TypeScript and the static lane parses Go afterwards. With one
+  // language and one session there is no static lane at all, so the window
+  // between the provider's answer and the commit — the window being tested —
+  // never opens.
+  fs.writeFileSync(path.join(root, "b.go"), "package main\nfunc main() {}\n");
 
   const provider = ProviderFixtures.provider({ name: "restless" });
   // Hand-rolled rather than scripted, because the rebuild has to be observable
@@ -127,15 +134,23 @@ async function assertAProviderThatMovedMidTransactionIsDiscarded(): Promise<void
   };
 
   let rebuilds = 0;
+  let parses = 0;
   const source = createResidentGraphSource(
     { cwd: root },
     {
-      buildLspGraph: async () => ({
-        ...resultOf(root, file, fs.readFileSync(file, "utf8")),
-        sessions: new Map([["typescript", session]]),
-        providers: new Map([["typescript", provider]]),
-      }),
+      buildLspGraph: async () => {
+        const result = resultOf(root, file, fs.readFileSync(file, "utf8"));
+        return {
+          ...result,
+          // Go is reported but has no session, which is what makes it the
+          // static lane's and gives the transaction a second phase.
+          dump: { ...result.dump, languages: ["typescript", "go"] },
+          sessions: new Map([["typescript", session]]),
+          providers: new Map([["typescript", provider]]),
+        };
+      },
       staticGraphParts: (options, files) => {
+        parses += 1;
         const parts = realStaticGraphParts(options, files);
         // The provider moves after this transaction already took its snapshot.
         if (rebuilds === 0) {
@@ -148,16 +163,22 @@ async function assertAProviderThatMovedMidTransactionIsDiscarded(): Promise<void
   );
 
   await source.load();
-  fs.writeFileSync(file, "export const value = 2;\n");
-  let reported: string | undefined;
-  try {
-    await source.load();
-  } catch (error) {
-    reported = (error as Error).message;
-  }
-  TestValidator.predicate(
-    "a provider that replaced its snapshot mid-transaction is refused",
-    reported !== undefined && reported.includes("restless"),
+  const before = parses;
+  const dump = await source.load();
+
+  // The candidate holding the superseded snapshot is discarded and the refresh
+  // prepares again — which is the retry doing its job, not a failure. What
+  // must not happen is committing that candidate beside lanes that read after
+  // the provider had already moved.
+  TestValidator.equals(
+    "a superseded provider snapshot forces the candidate to be prepared again",
+    parses - before,
+    2,
+  );
+  TestValidator.equals(
+    "and what finally commits is the generation the provider actually holds",
+    dump.provenance?.[0]?.content,
+    graphSnapshotDigests.contentOf(rebuilt),
   );
   await source.close();
 }

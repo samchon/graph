@@ -31,9 +31,9 @@ Do not rewrite the body after every follow-up push. Record later CI fixes, newly
 
 Push only the topic branch with upstream tracking. Use a file-backed body for multiline Markdown when opening through `gh`.
 
-## Watch Checks After Every Push
+## Watch Checks After Every Ordinary Push
 
-After each ordinary push, monitor the pull-request checks until every relevant check settles. A solo issue-campaign implementation wave is the one exception: it reads checks once per settled head under `.agents/skills/issue-campaign/development.md`, because a further push cancels the run in progress. `.github/workflows/test.yml` builds, tests, and enforces coverage on Ubuntu, Windows, and macOS. Changes under `packages/graph`, `tests/experiment`, the experiment workflow, or workspace lock/config files can also trigger the real-language-server matrix in `.github/workflows/experiment.yml`.
+After each ordinary push, monitor the pull-request checks until every relevant check settles. A solo issue-campaign implementation wave is the one exception: it reads checks once per settled head under the [solo campaign development document](../issue-campaign/development.md#validate-with-ci-and-self-review), because a further push cancels the run in progress. `.github/workflows/test.yml` builds, tests, and enforces coverage on Ubuntu, Windows, and macOS. Changes under `packages/graph`, `tests/experiment`, the experiment workflow, or workspace lock/config files can also trigger the real-language-server matrix in `.github/workflows/experiment.yml`.
 
 On failure, fetch the relevant job log, diagnose the real cause, fix it in place, push a coherent follow-up commit, and resume monitoring. Do not treat a green unrelated job as acceptance for a failed platform, coverage, or language lane.
 

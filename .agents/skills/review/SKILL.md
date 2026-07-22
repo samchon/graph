@@ -112,8 +112,9 @@ Use these rounds only through the solo issue-campaign skill.
    Keep the disposition and reason in the knowledge base so later passes do not
    rediscover a rejected premise as new.
 5. If the round produced any meaningful candidate, start another complete fresh
-   full-scope round now, before publication and before implementation. Repeat
-   until one round adds no meaningful candidate after fact-checking.
+   full-scope round now, before publication and before implementation: restart
+   at step 1 and repeat until one round adds no meaningful candidate after
+   fact-checking.
 6. Publish only the surviving adjudicated form when the campaign is authorized
    to publish, then complete the authorized implementation flow.
 7. After that flow lands, begin another fresh full-scope round over the

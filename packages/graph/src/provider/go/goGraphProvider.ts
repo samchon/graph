@@ -12,7 +12,8 @@ function goIndexArgs(artifact: string): string[] {
 }
 
 function goInputs(root: string): string[] {
-  return providerInputFiles(root, ["go"], GO_BUILD_FILE_NAMES).concat(
+  return mergeInputs(
+    providerInputFiles(root, ["go"], GO_BUILD_FILE_NAMES),
     vendorManifests(root),
   );
 }
@@ -53,9 +54,14 @@ export namespace goGraphProvider {
 }
 
 function goBuildInputs(root: string): string[] {
-  return providerInputFiles(root, [], GO_BUILD_FILE_NAMES).concat(
+  return mergeInputs(
+    providerInputFiles(root, [], GO_BUILD_FILE_NAMES),
     vendorManifests(root),
   );
+}
+
+function mergeInputs(...groups: readonly (readonly string[])[]): string[] {
+  return [...new Set(groups.flat())].sort(compareOrdinal);
 }
 
 function vendorManifests(root: string): string[] {
@@ -69,7 +75,7 @@ function vendorManifests(root: string): string[] {
 }
 
 function compareOrdinal(left: string, right: string): number {
-  /* c8 ignore next 2 -- vendor manifests are distinct normalized paths. */
+  /* c8 ignore next 2 -- input sets contain distinct normalized paths. */
   return left < right ? -1 : left > right ? 1 : 0;
 }
 

@@ -34,7 +34,13 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
         ["go.mod", "main.go", "src/nested/go.mod", "src/nested/worker.go"],
       );
       fs.mkdirSync(path.join(root, "vendor"), { recursive: true });
+      fs.mkdirSync(path.join(root, "a", "vendor"), { recursive: true });
       fs.writeFileSync(path.join(root, "vendor", "modules.txt"), "# pinned\n");
+      fs.writeFileSync(path.join(root, "a", "go.mod"), "module example.com/a\n");
+      fs.writeFileSync(
+        path.join(root, "a", "vendor", "modules.txt"),
+        "# nested pinned\n",
+      );
       TestValidator.equals(
         "the Go provider fences module, workspace, source, and vendor inputs",
         [
@@ -48,8 +54,16 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
           ),
         ],
         [
-          ["go.mod", "src/nested/go.mod", "vendor/modules.txt"],
           [
+            "a/go.mod",
+            "a/vendor/modules.txt",
+            "go.mod",
+            "src/nested/go.mod",
+            "vendor/modules.txt",
+          ],
+          [
+            "a/go.mod",
+            "a/vendor/modules.txt",
             "go.mod",
             "main.go",
             "src/nested/go.mod",

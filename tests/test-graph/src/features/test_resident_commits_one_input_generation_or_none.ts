@@ -43,18 +43,17 @@ async function assertProvenanceDescribesThePublishedGeneration(): Promise<void> 
   fs.writeFileSync(file, "export const value = 1;\n");
 
   const provider = ProviderFixtures.provider({ name: "moving" });
+  const firstSnapshot = ProviderFixtures.snapshot({
+    provider: "moving",
+    sources: new Map([["a.ts", { checkerDigest: "one", diskDigest: "one" }]]),
+  });
+  const secondSnapshot = ProviderFixtures.snapshot({
+    provider: "moving",
+    sources: new Map([["a.ts", { checkerDigest: "two", diskDigest: "two" }]]),
+  });
   const session = ProviderFixtures.session({
     root,
-    snapshots: [
-      ProviderFixtures.snapshot({
-        provider: "moving",
-        sources: new Map([["a.ts", { checkerDigest: "one", diskDigest: "one" }]]),
-      }),
-      ProviderFixtures.snapshot({
-        provider: "moving",
-        sources: new Map([["a.ts", { checkerDigest: "two", diskDigest: "two" }]]),
-      }),
-    ],
+    snapshots: [firstSnapshot, secondSnapshot],
   });
 
   const source = createResidentGraphSource(
@@ -68,19 +67,25 @@ async function assertProvenanceDescribesThePublishedGeneration(): Promise<void> 
     },
   );
 
+  // This fixture supplies a resident session directly, whereas the production
+  // builder polls one before it returns its first dump. The opening load
+  // therefore establishes the resident state; the next one publishes the
+  // first strict generation.
+  await source.load();
   const first = await source.load();
   const before = first.provenance?.[0]?.manifest;
-  TestValidator.predicate(
-    "the first generation publishes a manifest digest",
-    before !== undefined,
+  TestValidator.equals(
+    "the first bulk generation publishes its own manifest digest",
+    before,
+    graphSnapshotDigests.manifestOf(firstSnapshot),
   );
 
   fs.writeFileSync(file, "export const value = 2;\n");
   const second = await source.load();
-  TestValidator.notEquals(
+  TestValidator.equals(
     "a later generation publishes its own manifest digest, not the one before",
     second.provenance?.[0]?.manifest,
-    before,
+    graphSnapshotDigests.manifestOf(secondSnapshot),
   );
   await source.close();
 }

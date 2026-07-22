@@ -229,7 +229,7 @@ export function adaptScipIndex(
       if (!hasRole(occurrence, IScipIndex.SymbolRole.ForwardDefinition)) {
         continue;
       }
-      const parsed = scipSymbol(occurrence.symbol);
+      const parsed = scipSymbol(occurrence.symbol ?? "");
       const definition =
         parsed === undefined ? undefined : resolve(definitions, parsed, file);
       if (definition === undefined) continue;
@@ -250,7 +250,7 @@ export function adaptScipIndex(
     const scopes: IScope[] = [];
     for (const occurrence of occurrences) {
       if (!hasRole(occurrence, IScipIndex.SymbolRole.Definition)) continue;
-      const parsed = scipSymbol(occurrence.symbol);
+      const parsed = scipSymbol(occurrence.symbol ?? "");
       const definition =
         parsed === undefined ? undefined : resolve(definitions, parsed, file);
       if (definition === undefined) continue;
@@ -282,6 +282,7 @@ export function adaptScipIndex(
     });
 
     for (const occurrence of occurrences) {
+      const unknownRoles = recordUnknownRoles(unsupportedRoles, occurrence);
       recordUnsupportedRole(
         unsupportedRoles,
         occurrence,
@@ -295,12 +296,13 @@ export function adaptScipIndex(
         "test",
       );
       if (
+        unknownRoles ||
         hasRole(occurrence, IScipIndex.SymbolRole.Definition) ||
         hasRole(occurrence, IScipIndex.SymbolRole.ForwardDefinition)
       ) {
         continue;
       }
-      const parsed = scipSymbol(occurrence.symbol);
+      const parsed = scipSymbol(occurrence.symbol ?? "");
       if (parsed === undefined) continue;
       const target =
         resolve(definitions, parsed, file) ??
@@ -364,6 +366,18 @@ export function adaptScipIndex(
       }
     }
     for (const relationship of definition.relationships) {
+      // Support is a property of the relationship field, not of whether this
+      // particular target can be resolved. Record unsupported claims before
+      // endpoint lookup so an absent dependency cannot make them disappear.
+      if (relationship.isReference === true) {
+        unsupportedRoles.add("reference relationship");
+      }
+      if (relationship.isImplementation === true) {
+        unsupportedRoles.add("implementation relationship");
+      }
+      if (relationship.isDefinition === true) {
+        unsupportedRoles.add("definition relationship");
+      }
       const parsed = scipSymbol(relationship.symbol);
       const target =
         parsed === undefined
@@ -373,9 +387,6 @@ export function adaptScipIndex(
       // Each flag is its own claim; a relationship can be both an
       // implementation and a type definition, and checking them as if they
       // were alternatives drops whichever was tested second.
-      if (relationship.isImplementation === true) {
-        unsupportedRoles.add("implementation relationship");
-      }
       if (relationship.isTypeDefinition === true) {
         edges.push({ kind: "type_ref", from: definition.id, to: target.id });
       }
@@ -576,6 +587,26 @@ function recordUnsupportedRole(
 ): void {
   if (hasRole(occurrence, role)) roles.add(`${label} role`);
 }
+
+/** Report future role bits and prevent treating them as ordinary references. */
+function recordUnknownRoles(
+  roles: Set<string>,
+  occurrence: IScipIndex.IOccurrence,
+): boolean {
+  const unknown = (occurrence.symbolRoles ?? 0) & ~KNOWN_SYMBOL_ROLES;
+  if (unknown === 0) return false;
+  roles.add(`unknown role bits 0x${unknown.toString(16)}`);
+  return true;
+}
+
+const KNOWN_SYMBOL_ROLES =
+  IScipIndex.SymbolRole.Definition |
+  IScipIndex.SymbolRole.Import |
+  IScipIndex.SymbolRole.WriteAccess |
+  IScipIndex.SymbolRole.ReadAccess |
+  IScipIndex.SymbolRole.Generated |
+  IScipIndex.SymbolRole.Test |
+  IScipIndex.SymbolRole.ForwardDefinition;
 
 function compare(left: [number, number], right: [number, number]): number {
   if (left[0] !== right[0]) return left[0] - right[0];

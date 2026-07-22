@@ -324,6 +324,10 @@ export class ScipSession implements IBulkGraphSession {
     args: readonly string[],
     signal: AbortSignal | undefined,
   ): Promise<string> {
+    // A previous child may have exited just before close() observed the owned
+    // set. Re-check at the actual spawn boundary so shutdown cannot settle and
+    // then let the next pipeline process escape behind it.
+    this.assertOpen();
     if (signal?.aborted === true) {
       return Promise.reject(abortedProcessError(this.options.provider, command));
     }

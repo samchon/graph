@@ -80,7 +80,9 @@ export namespace IScipIndex {
    */
   export interface IOccurrence {
     range: number[];
-    symbol: string;
+
+    /** Absent for diagnostics or syntax highlighting with no symbol. */
+    symbol?: string;
 
     /** A bitmask of {@link SymbolRole} values, absent when it is zero. */
     symbolRoles?: number;

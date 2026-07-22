@@ -231,15 +231,64 @@ function assertIndexValidation(): void {
         ],
       },
     ],
-    ["an empty occurrence symbol", withOccurrence({ range: [0, 0, 1], symbol: "" })],
+    ["a non-string occurrence symbol", withOccurrence({ range: [0, 0, 1], symbol: 1 })],
+    ["an occurrence without any range", withOccurrence({ symbol: "s" })],
     ["a two-element range", withOccurrence({ range: [0, 1], symbol: "s" })],
     ["a five-element range", withOccurrence({ range: [0, 1, 2, 3, 4], symbol: "s" })],
     ["a negative range value", withOccurrence({ range: [0, -1, 2], symbol: "s" })],
     ["a fractional range value", withOccurrence({ range: [0, 1.5, 2], symbol: "s" })],
+    [
+      "a range coordinate outside SCIP's int32 field",
+      withOccurrence({ range: [0, 0, 0x80000000], symbol: "s" }),
+    ],
     ["a range that ends before it starts", withOccurrence({ range: [3, 0, 1, 0], symbol: "s" })],
     [
       "a single-line range that ends before it starts",
       withOccurrence({ range: [0, 5, 2], symbol: "s" }),
+    ],
+    [
+      "both members of the typed-range choice",
+      withOccurrence({
+        symbol: "s",
+        singleLineRange: { line: 0, startCharacter: 0, endCharacter: 1 },
+        multiLineRange: {
+          startLine: 0,
+          startCharacter: 0,
+          endLine: 1,
+          endCharacter: 0,
+        },
+      }),
+    ],
+    [
+      "a typed range contradicting its legacy twin",
+      withOccurrence({
+        range: [0, 0, 1],
+        symbol: "s",
+        singleLineRange: { line: 1, startCharacter: 0, endCharacter: 1 },
+      }),
+    ],
+    [
+      "a typed range with a missing coordinate",
+      withOccurrence({
+        symbol: "s",
+        singleLineRange: { line: 0, startCharacter: 0 },
+      }),
+    ],
+    [
+      "an enclosing range that does not enclose the occurrence",
+      withOccurrence({
+        range: [2, 0, 3],
+        symbol: "s",
+        enclosingRange: [0, 0, 1, 0],
+      }),
+    ],
+    [
+      "an enclosing range that starts after the occurrence",
+      withOccurrence({
+        range: [0, 0, 3],
+        symbol: "s",
+        enclosingRange: [1, 0, 2, 0],
+      }),
     ],
     [
       "a non-integer role mask",
@@ -248,6 +297,14 @@ function assertIndexValidation(): void {
     [
       "a negative role mask",
       withOccurrence({ range: [0, 0, 1], symbol: "s", symbolRoles: -1 }),
+    ],
+    [
+      "a role mask outside SCIP's int32 field",
+      withOccurrence({
+        range: [0, 0, 1],
+        symbol: "s",
+        symbolRoles: 0x80000000,
+      }),
     ],
     ["an empty symbol identity", withSymbol({ symbol: "" })],
     ["a non-string display name", withSymbol({ symbol: "s", displayName: 1 })],
@@ -287,6 +344,97 @@ function assertIndexValidation(): void {
     parseScipIndex(withOccurrence({ range: [4, 2, 9], symbol: "s" })).documents[0]!
       .occurrences![0]!.range,
     [4, 2, 9],
+  );
+  const symbolLess = parseScipIndex(
+    withOccurrence({
+      range: [3, 4, 8],
+      symbol: "",
+      diagnostics: [{ message: "syntax-only finding" }],
+    }),
+  ).documents[0]!.occurrences![0]!;
+  TestValidator.equals(
+    "a diagnostic or highlighting occurrence may carry no symbol",
+    [symbolLess.symbol, symbolLess.diagnostics?.[0]?.message],
+    ["", "syntax-only finding"],
+  );
+  const symbolLessAdapted = adaptScipIndex({
+    index: parseScipIndex(
+      withDocument({
+        relativePath: "a.go",
+        occurrences: [
+          { range: [0, 0, 1], symbolRoles: 0x40 },
+          { range: [1, 0, 1], symbolRoles: 0x1 },
+          {
+            range: [2, 3, 7],
+            diagnostics: [{ message: "syntax-only finding" }],
+          },
+        ],
+      }),
+    ),
+    root: "/r",
+    provider: "scip-go",
+    languages: ["go"],
+    languageOf: () => "go",
+  });
+  TestValidator.equals(
+    "symbol-less occurrences retain diagnostics without inventing graph facts",
+    [
+      symbolLessAdapted.nodes,
+      symbolLessAdapted.edges,
+      symbolLessAdapted.diagnostics.map((diagnostic) => [
+        diagnostic.message,
+        diagnostic.line,
+        diagnostic.column,
+      ]),
+    ],
+    [[], [], [["syntax-only finding", 3, 4]]],
+  );
+  const typedSingleLine = parseScipIndex(
+    withOccurrence({
+      symbol: "s",
+      singleLineRange: { line: 4, startCharacter: 2, endCharacter: 9 },
+      singleLineEnclosingRange: {
+        line: 4,
+        startCharacter: 0,
+        endCharacter: 10,
+      },
+    }),
+  ).documents[0]!.occurrences![0]!;
+  TestValidator.equals(
+    "typed single-line ranges are normalized without deprecated twins",
+    [typedSingleLine.range, typedSingleLine.enclosingRange],
+    [
+      [4, 2, 9],
+      [4, 0, 10],
+    ],
+  );
+  const typedMultiLine = parseScipIndex(
+    withOccurrence({
+      range: [2, 3, 4, 5],
+      symbol: "s",
+      multiLineRange: {
+        startLine: 2,
+        startCharacter: 3,
+        endLine: 4,
+        endCharacter: 5,
+      },
+      multiLineEnclosingRange: {
+        startLine: 1,
+        startCharacter: 0,
+        endLine: 5,
+        endCharacter: 9,
+      },
+    }),
+  ).documents[0]!.occurrences![0]!;
+  TestValidator.equals(
+    "an equivalent typed range takes precedence over its legacy twin",
+    typedMultiLine.range,
+    [2, 3, 4, 5],
+  );
+  TestValidator.equals(
+    "a typed enclosing range is normalized",
+    typedMultiLine.enclosingRange,
+    [1, 0, 5, 9],
   );
   // Optional records the graph does not read are still validated, because a
   // malformed one is evidence the index was not produced the way it claims.
@@ -337,6 +485,70 @@ function assertIndexValidation(): void {
   TestValidator.error("a malformed enclosing range is refused", () =>
     parseScipIndex(
       withOccurrence({ range: [0, 0, 1], symbol: "s", enclosingRange: [0, 0] }),
+    ),
+  );
+
+  const optionalRecords = parseScipIndex({
+    metadata: {
+      projectRoot: "file:///r",
+      toolInfo: {
+        name: "scip-go",
+        version: "1",
+        arguments: ["--index", "./..."],
+      },
+    },
+    documents: [
+      {
+        relativePath: "a.go",
+        diagnostics: [
+          { message: "deprecated", tags: ["Deprecated", "Unnecessary"] },
+        ],
+      },
+    ],
+  });
+  TestValidator.equals(
+    "optional tool arguments and diagnostic tags are validated and kept",
+    [
+      optionalRecords.metadata.toolInfo?.arguments,
+      optionalRecords.documents[0]?.diagnostics?.[0]?.tags,
+    ],
+    [
+      ["--index", "./..."],
+      ["Deprecated", "Unnecessary"],
+    ],
+  );
+  TestValidator.error("non-array tool arguments are refused", () =>
+    parseScipIndex({
+      metadata: {
+        projectRoot: "file:///r",
+        toolInfo: { name: "scip-go", arguments: "--index" },
+      },
+      documents: [],
+    }),
+  );
+  TestValidator.error("a non-string tool argument is refused", () =>
+    parseScipIndex({
+      metadata: {
+        projectRoot: "file:///r",
+        toolInfo: { name: "scip-go", arguments: [1] },
+      },
+      documents: [],
+    }),
+  );
+  TestValidator.error("non-array diagnostic tags are refused", () =>
+    parseScipIndex(
+      withDocument({
+        relativePath: "a.go",
+        diagnostics: [{ message: "finding", tags: "Deprecated" }],
+      }),
+    ),
+  );
+  TestValidator.error("a non-string diagnostic tag is refused", () =>
+    parseScipIndex(
+      withDocument({
+        relativePath: "a.go",
+        diagnostics: [{ message: "finding", tags: [1] }],
+      }),
     ),
   );
 
@@ -391,6 +603,7 @@ function assertMapping(): void {
         edge.to === id("Server"),
     ),
   );
+
   TestValidator.predicate(
     "an unproven read-role promotion is reported",
     adapted.warnings.some((warning) => warning.includes("read role")),
@@ -674,6 +887,7 @@ function assertRelationshipsAndExternals(): void {
   const impl = `${base}/File#`;
   const typed = `${base}/Handle#`;
   const external = "scip-go gomod dep v1 `dep`/Client#";
+  const future = "scip-go gomod dep v1 `dep`/Future#";
   const unnamed = "scip-go gomod dep v1 `dep`/";
 
   const adapted = adaptScipIndex({
@@ -692,10 +906,20 @@ function assertRelationshipsAndExternals(): void {
               // reader that treats the record as a tagged union drops the
               // second.
               relationships: [
-                { symbol: iface, isImplementation: true, isTypeDefinition: true },
+                {
+                  symbol: iface,
+                  isImplementation: true,
+                  isTypeDefinition: true,
+                },
                 // A relationship naming a symbol nothing declares has no
-                // endpoint to land on.
-                { symbol: "scip-go gomod example v1 `main`/Absent#", isImplementation: true },
+                // endpoint to land on, but its unsupported claims must still
+                // be reported independently of endpoint resolution.
+                {
+                  symbol: "scip-go gomod example v1 `main`/Absent#",
+                  isReference: true,
+                  isImplementation: true,
+                  isDefinition: true,
+                },
                 // A self-relationship is not an edge.
                 { symbol: impl, isImplementation: true },
               ],
@@ -756,6 +980,9 @@ function assertRelationshipsAndExternals(): void {
             // both bits, and calling this an access would lose the one fact
             // nothing else records: the module boundary was crossed here.
             { range: [3, 50, 56], symbol: typed, symbolRoles: 2 | 8 },
+            // A future role may change how this occurrence is classified. It
+            // is reported and dropped rather than guessed to be a reference.
+            { range: [4, 20, 26], symbol: future, symbolRoles: 0x80 },
             // A reference with no enclosing definition has nothing to
             // attribute it to.
             { range: [20, 0, 4], symbol: iface },
@@ -797,6 +1024,7 @@ function assertRelationshipsAndExternals(): void {
       ],
       externalSymbols: [
         { symbol: external, displayName: "Client", kind: "Class" },
+        { symbol: future, displayName: "Future", kind: "Class" },
         // A dependency leaf nothing ever references is never materialized.
         { symbol: "scip-go gomod dep v1 `dep`/Unused#", displayName: "Unused" },
         // …and one with no name to show cannot be.
@@ -825,7 +1053,9 @@ function assertRelationshipsAndExternals(): void {
   );
   TestValidator.predicate(
     "an unreferenced dependency leaf is never materialized",
-    !adapted.nodes.some((node) => node.name === "Unused"),
+    !adapted.nodes.some(
+      (node) => node.name === "Unused" || node.name === "Future",
+    ),
   );
   TestValidator.predicate(
     "an unreadable symbol is reported",
@@ -864,6 +1094,18 @@ function assertRelationshipsAndExternals(): void {
     "generated and test roles are reported until language enrichment maps them",
     adapted.warnings.some((warning) => warning.includes("generated role")) &&
       adapted.warnings.some((warning) => warning.includes("test role")),
+  );
+  TestValidator.predicate(
+    "relationship aliases and unknown occurrence roles are reported, not guessed",
+    adapted.warnings.some((warning) =>
+      warning.includes("reference relationship"),
+    ) &&
+      adapted.warnings.some((warning) =>
+        warning.includes("definition relationship"),
+      ) &&
+      adapted.warnings.some((warning) =>
+        warning.includes("unknown role bits 0x80"),
+      ),
   );
   TestValidator.predicate(
     "…and a type-definition flag on the same record is its own claim",

@@ -132,9 +132,14 @@ function documentOf(value: unknown, label: string): IScipIndex.IDocument {
 
 function occurrenceOf(value: unknown, label: string): IScipIndex.IOccurrence {
   const occurrence = objectOf(value, label);
+  const range = occurrenceRangeOf(occurrence, label, false)!;
+  const enclosingRange = occurrenceRangeOf(occurrence, label, true);
+  if (enclosingRange !== undefined && !rangeContains(enclosingRange, range)) {
+    throw new Error(`scip: ${label}.enclosingRange does not enclose its range`);
+  }
   return {
-    range: rangeOf(occurrence.range, `${label}.range`),
-    symbol: nonEmptyString(occurrence.symbol, `${label}.symbol`),
+    range,
+    ...optionalString(occurrence.symbol, `${label}.symbol`, "symbol"),
     ...(occurrence.symbolRoles === undefined
       ? {}
       : {
@@ -144,14 +149,7 @@ function occurrenceOf(value: unknown, label: string): IScipIndex.IOccurrence {
           ),
         }),
     ...optionalString(occurrence.syntaxKind, `${label}.syntaxKind`, "syntaxKind"),
-    ...(occurrence.enclosingRange === undefined
-      ? {}
-      : {
-          enclosingRange: rangeOf(
-            occurrence.enclosingRange,
-            `${label}.enclosingRange`,
-          ),
-        }),
+    ...(enclosingRange === undefined ? {} : { enclosingRange }),
     // Kept, because this is where a diagnostic gets a position. Dropping it
     // left the adapter with nothing but document-level findings, every one of
     // which it then had to report at the top of the file.
@@ -166,6 +164,97 @@ function occurrenceOf(value: unknown, label: string): IScipIndex.IOccurrence {
           ),
         }),
   };
+}
+
+/** Prefer SCIP's typed range while validating any legacy twin it accompanies. */
+function occurrenceRangeOf(
+  occurrence: Record<string, unknown>,
+  label: string,
+  enclosing: boolean,
+): number[] | undefined {
+  const legacyKey = enclosing ? "enclosingRange" : "range";
+  const singleKey = enclosing
+    ? "singleLineEnclosingRange"
+    : "singleLineRange";
+  const multiKey = enclosing
+    ? "multiLineEnclosingRange"
+    : "multiLineRange";
+  const single = occurrence[singleKey];
+  const multi = occurrence[multiKey];
+  if (single !== undefined && multi !== undefined) {
+    throw new Error(
+      `scip: ${label} sets both ${singleKey} and ${multiKey} in one typed-range choice`,
+    );
+  }
+  const typed =
+    single !== undefined
+      ? singleLineRangeOf(single, `${label}.${singleKey}`)
+      : multi !== undefined
+        ? multiLineRangeOf(multi, `${label}.${multiKey}`)
+        : undefined;
+  const legacy =
+    occurrence[legacyKey] === undefined
+      ? undefined
+      : rangeOf(occurrence[legacyKey], `${label}.${legacyKey}`);
+  if (typed !== undefined && legacy !== undefined && !sameRange(typed, legacy)) {
+    throw new Error(
+      `scip: ${label}.${legacyKey} contradicts its typed range`,
+    );
+  }
+  if (typed !== undefined) return typed;
+  if (legacy !== undefined || enclosing) return legacy;
+  throw new Error(`scip: ${label} has no source range`);
+}
+
+function singleLineRangeOf(value: unknown, label: string): number[] {
+  const range = objectOf(value, label);
+  return rangeOf(
+    [range.line, range.startCharacter, range.endCharacter],
+    label,
+  );
+}
+
+function multiLineRangeOf(value: unknown, label: string): number[] {
+  const range = objectOf(value, label);
+  return rangeOf(
+    [range.startLine, range.startCharacter, range.endLine, range.endCharacter],
+    label,
+  );
+}
+
+function sameRange(left: readonly number[], right: readonly number[]): boolean {
+  const expanded = (range: readonly number[]): readonly number[] =>
+    range.length === 3
+      ? [range[0]!, range[1]!, range[0]!, range[2]!]
+      : range;
+  const a = expanded(left);
+  const b = expanded(right);
+  return a.every((entry, index) => entry === b[index]);
+}
+
+function rangeContains(
+  outer: readonly number[],
+  inner: readonly number[],
+): boolean {
+  const start = (range: readonly number[]): readonly [number, number] => [
+    range[0]!,
+    range[1]!,
+  ];
+  const end = (range: readonly number[]): readonly [number, number] =>
+    range.length === 3
+      ? [range[0]!, range[2]!]
+      : [range[2]!, range[3]!];
+  return (
+    comparePosition(start(outer), start(inner)) <= 0 &&
+    comparePosition(end(outer), end(inner)) >= 0
+  );
+}
+
+function comparePosition(
+  left: readonly [number, number],
+  right: readonly [number, number],
+): number {
+  return left[0] !== right[0] ? left[0] - right[0] : left[1] - right[1];
 }
 
 function symbolInformationOf(
@@ -232,6 +321,13 @@ function diagnosticOf(value: unknown, label: string): IScipIndex.IDiagnostic {
     ...optionalString(diagnostic.severity, `${label}.severity`, "severity"),
     ...optionalString(diagnostic.code, `${label}.code`, "code"),
     ...optionalString(diagnostic.source, `${label}.source`, "source"),
+    ...(diagnostic.tags === undefined
+      ? {}
+      : {
+          tags: arrayOf(diagnostic.tags, `${label}.tags`).map((tag, at) =>
+            stringOf(tag, `${label}.tags[${String(at)}]`),
+          ),
+        }),
   };
 }
 
@@ -240,6 +336,14 @@ function toolInfoOf(value: unknown, label: string): IScipIndex.IToolInfo {
   return {
     name: stringOf(info.name, `${label}.name`),
     ...optionalString(info.version, `${label}.version`, "version"),
+    ...(info.arguments === undefined
+      ? {}
+      : {
+          arguments: arrayOf(info.arguments, `${label}.arguments`).map(
+            (argument, at) =>
+              stringOf(argument, `${label}.arguments[${String(at)}]`),
+          ),
+        }),
   };
 }
 
@@ -263,10 +367,11 @@ function rangeOf(value: unknown, label: string): number[] {
     if (
       typeof entry !== "number" ||
       !Number.isSafeInteger(entry) ||
-      entry < 0
+      entry < 0 ||
+      entry > 0x7fffffff
     ) {
       throw new Error(
-        `scip: ${label}[${String(index)}] must be a non-negative integer`,
+        `scip: ${label}[${String(index)}] must be a non-negative int32`,
       );
     }
     return entry;
@@ -284,8 +389,13 @@ function rangeOf(value: unknown, label: string): number[] {
 }
 
 function roleMaskOf(value: unknown, label: string): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
-    throw new Error(`scip: ${label} must be a non-negative integer bitmask`);
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 0 ||
+    value > 0x7fffffff
+  ) {
+    throw new Error(`scip: ${label} must be a non-negative int32 bitmask`);
   }
   return value;
 }

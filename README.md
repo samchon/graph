@@ -41,7 +41,7 @@ A language server improves the graph with semantically resolved edges. Install t
 
 | Language | Server | Install |
 |---|---|---|
-| TypeScript | `ttscgraph` / `ttscserver` | `npm i -D ttsc@^0.19.4 typescript` |
+| TypeScript | `ttscgraph` / `ttscserver` | `npm i -D ttsc@^0.19.3 typescript` |
 | Python | `pyright-langserver` | `npm i -D pyright` |
 | Go | `gopls` | `go install golang.org/x/tools/gopls@latest` |
 | Rust | `rust-analyzer` | `rustup component add rust-analyzer` |

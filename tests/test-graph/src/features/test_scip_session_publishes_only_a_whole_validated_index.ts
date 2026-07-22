@@ -467,6 +467,26 @@ async function assertCloseOwnsItsChildren(): Promise<void> {
   );
   await preAborted.close();
 
+  // Cancellation can land after refresh admitted the transaction but while it
+  // is still forming the first child invocation. The spawn-boundary check must
+  // refuse that child just as decisively as an already-cancelled refresh.
+  const boundaryController = new AbortController();
+  const boundary = sessionOf(root, {
+    onIndexArgs: () => boundaryController.abort(),
+  });
+  let boundaryName: string | undefined;
+  try {
+    await boundary.refresh({ signal: boundaryController.signal });
+  } catch (error) {
+    boundaryName = (error as Error).name;
+  }
+  TestValidator.equals(
+    "an abort at the process handoff spawns no indexer",
+    [boundaryName, boundary.generation, boundary.current],
+    ["AbortError", 0, undefined],
+  );
+  await boundary.close();
+
   const unchangedAborted = sessionOf(root);
   await unchangedAborted.refresh();
   const unchangedController = new AbortController();
@@ -544,6 +564,7 @@ interface IFixtureOptions {
   languages?: ("go" | "rust")[];
   mutateInput?: string;
   maxStdoutBytes?: number;
+  onIndexArgs?: () => void;
 }
 
 function sessionOf(root: string, options: IFixtureOptions = {}): ScipSession {
@@ -565,18 +586,21 @@ function sessionOf(root: string, options: IFixtureOptions = {}): ScipSession {
           : [`--mode=${options.decodeMode}`]),
       ],
     },
-    indexArgs: (artifact) => [
-      `--output=${artifact}`,
-      `--root=${options.indexRoot ?? root}`,
-      ...(options.mode === undefined ? [] : [`--mode=${options.mode}`]),
-      ...(options.withText === true ? ["--with-text"] : []),
-      ...(options.bare === true ? ["--no-tool-info"] : []),
-      ...(options.plainRoot === true ? ["--plain-root"] : []),
-      ...(options.state === undefined ? [] : [`--state=${options.state}`]),
-      ...(options.mutateInput === undefined
-        ? []
-        : [`--mutate=${options.mutateInput}`]),
-    ],
+    indexArgs: (artifact) => {
+      options.onIndexArgs?.();
+      return [
+        `--output=${artifact}`,
+        `--root=${options.indexRoot ?? root}`,
+        ...(options.mode === undefined ? [] : [`--mode=${options.mode}`]),
+        ...(options.withText === true ? ["--with-text"] : []),
+        ...(options.bare === true ? ["--no-tool-info"] : []),
+        ...(options.plainRoot === true ? ["--plain-root"] : []),
+        ...(options.state === undefined ? [] : [`--state=${options.state}`]),
+        ...(options.mutateInput === undefined
+          ? []
+          : [`--mutate=${options.mutateInput}`]),
+      ];
+    },
     inputs: () =>
       options.inputs ??
       fs

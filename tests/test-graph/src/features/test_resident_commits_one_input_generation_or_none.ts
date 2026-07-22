@@ -29,6 +29,7 @@ export const test_resident_commits_one_input_generation_or_none = async () => {
   await assertAProviderThatMovedMidTransactionIsDiscarded();
   await assertProvenanceDescribesThePublishedGeneration();
   await assertADeclaredBuildInputInvalidatesTheProject();
+  await assertAMovedBuildInputDiscardsTheCandidate();
 };
 
 async function assertADeclaredBuildInputInvalidatesTheProject(): Promise<void> {
@@ -58,6 +59,42 @@ async function assertADeclaredBuildInputInvalidatesTheProject(): Promise<void> {
     "a provider-declared generated/config input invalidates the whole project",
     parses,
     1,
+  );
+  await source.close();
+}
+
+async function assertAMovedBuildInputDiscardsTheCandidate(): Promise<void> {
+  const root = GraphPaths.createTempDirectory(
+    "samchon-graph-build-input-fence-",
+  );
+  const file = path.join(root, "a.ts");
+  const config = path.join(root, "project.generated");
+  fs.writeFileSync(file, "export const value = 1;\n");
+  fs.writeFileSync(config, "first\n");
+
+  let parses = 0;
+  const source = createResidentGraphSource(
+    { cwd: root },
+    {
+      buildLspGraph: async () => ({
+        ...resultOf(root, file, fs.readFileSync(file, "utf8")),
+        buildInputs: ["project.generated"],
+      }),
+      staticGraphParts: (options, files) => {
+        parses += 1;
+        const parts = realStaticGraphParts(options, files);
+        if (parses === 1) fs.writeFileSync(config, "third\n");
+        return parts;
+      },
+    },
+  );
+  await source.load();
+  fs.writeFileSync(config, "second\n");
+  await source.load();
+  TestValidator.equals(
+    "a build input that moves during refresh discards and rebuilds the candidate",
+    parses,
+    2,
   );
   await source.close();
 }

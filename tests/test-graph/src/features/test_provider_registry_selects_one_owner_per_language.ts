@@ -2,16 +2,20 @@ import { TestValidator } from "@nestia/e2e";
 import {
   GRAPH_PROVIDERS,
   assertGraphSnapshotContract,
+  buildLspGraph,
   dumpProvenanceOf,
   graphSnapshotDigests,
   selectGraphProviders,
   type IGraphProvider,
   type ISamchonGraphNode,
 } from "@samchon/graph";
+import fs from "node:fs";
+import path from "node:path";
 
 // `mergeGraphSlices` is the indexer's own merge step, not part of the package
 // surface, so it is reached by path like every other internal.
 import { mergeGraphSlices } from "../../../../packages/graph/src/provider/mergeGraphSlices";
+import { GraphPaths } from "../internal/GraphPaths";
 import { ProviderFixtures } from "../internal/ProviderFixtures";
 
 /**
@@ -31,7 +35,50 @@ export const test_provider_registry_selects_one_owner_per_language =
     await assertSnapshotContract();
     await assertCrossProviderCollisions();
     await assertDigestsAndProvenance();
+    await assertStrictBuildCanonicalizesMultiProviderState();
   };
+
+async function assertStrictBuildCanonicalizesMultiProviderState(): Promise<void> {
+  const root = GraphPaths.createTempDirectory("samchon-graph-provider-order-");
+  fs.writeFileSync(path.join(root, "index.ts"), "export const value = 1;\n");
+  fs.writeFileSync(path.join(root, "main.go"), "package main\n");
+  fs.writeFileSync(path.join(root, "main.py"), "value = 1\n");
+
+  // One multi-language session exercises the coordinator's normalized session
+  // contract. A second provider makes the published provenance order observable
+  // rather than relying on registry order.
+  const result = await buildLspGraph(
+    {
+      cwd: root,
+      languages: ["typescript", "go", "python"],
+      keepAlive: true,
+    },
+    {
+      providers: [
+        ProviderFixtures.provider({
+          name: "z-both",
+          languages: ["typescript", "go"],
+        }),
+        ProviderFixtures.provider({ name: "a-python", languages: ["python"] }),
+      ],
+    },
+  );
+  TestValidator.equals(
+    "strict provenance is canonical rather than registry-ordered",
+    result.dump.provenance?.map((row) => row.provider),
+    ["a-python", "z-both"],
+  );
+  TestValidator.equals(
+    "one multi-language provider remains one live session",
+    new Set(result.sessions?.values()).size,
+    2,
+  );
+  for (const session of new Set(result.sessions?.values())) {
+    if (session === undefined) continue;
+    if ("kind" in session) await session.close();
+    else await session.client.close();
+  }
+}
 
 async function assertSelection(): Promise<void> {
   const typescript = ProviderFixtures.provider({
@@ -390,6 +437,24 @@ async function assertSnapshotContract(): Promise<void> {
           facts: ["calls", "calls"],
         }),
         twoFamilyProvider,
+        ["cpp"],
+      ),
+  );
+  const duplicateRegistryFacts = ProviderFixtures.provider({
+    name: "duplicate-registry-facts",
+    languages: ["cpp"],
+    facts: ["calls", "calls"],
+  });
+  TestValidator.error(
+    "a duplicate registry family cannot make distinct provenance look equal",
+    () =>
+      assertGraphSnapshotContract(
+        ProviderFixtures.snapshot({
+          languages: ["cpp"],
+          provider: "duplicate-registry-facts",
+          facts: ["calls", "imports"],
+        }),
+        duplicateRegistryFacts,
         ["cpp"],
       ),
   );

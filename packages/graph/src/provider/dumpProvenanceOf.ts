@@ -37,6 +37,11 @@ export function dumpProvenanceOf(
   };
 }
 
+/* c8 ignore start -- merging a namespace onto a function compiles to an
+ * `X || (X = {})` initialiser, emitted at the closing brace, whose falsy arm
+ * cannot run: the function declaration above it is always evaluated first.
+ * The alias inside runs unconditionally; its implementation below remains
+ * covered through both publishers. */
 export namespace dumpProvenanceOf {
   /**
    * The dump's whole `provenance` field for one build's rows, or nothing.
@@ -54,14 +59,17 @@ export namespace dumpProvenanceOf {
    * what an empty set means would make one checkout publish two different
    * dumps, which is the one property this structure's contract rests on.
    */
-  export function fieldOf(
-    rows: readonly ISamchonGraphDump.IProvenance[],
-  ): { provenance?: ISamchonGraphDump.IProvenance[] } {
-    if (rows.length === 0) return {};
-    return {
-      provenance: [...rows].sort((left, right) =>
-        compareOrdinal(left.provider, right.provider),
-      ),
-    };
-  }
+  export const fieldOf = dumpProvenanceFieldOf;
+}
+/* c8 ignore stop */
+
+function dumpProvenanceFieldOf(
+  rows: readonly ISamchonGraphDump.IProvenance[],
+): { provenance?: ISamchonGraphDump.IProvenance[] } {
+  if (rows.length === 0) return {};
+  return {
+    provenance: [...rows].sort((left, right) =>
+      compareOrdinal(left.provider, right.provider),
+    ),
+  };
 }

@@ -140,17 +140,24 @@ export function adaptScipIndex(
         );
         continue;
       }
-      // Two documents can still derive one id — a name and kind that digest
-      // identically under different `local N` counters. Publishing both would
-      // duplicate an id, which `mergeGraphSlices` rejects, taking the whole
-      // slice with it.
+      // A semantic id is hash-derived, so retain a final collision defense.
+      // Current v2 identities include the parsed symbol key and a local's
+      // document generation; ordinary distinct definitions therefore cannot
+      // reach it. If that invariant or the digest ever fails, publishing both
+      // would duplicate an id and make `mergeGraphSlices` reject the whole
+      // slice.
       const colliding = nodes.get(id);
+      /* c8 ignore start -- an earlier definition with the same parsed key is
+       * rejected above. Every remaining SCIP identity includes that key and,
+       * for locals, its document generation, so reaching this guard requires a
+       * SHA-256 collision rather than a constructible index fixture. */
       if (colliding !== undefined) {
         warnings.push(
           `${props.provider}: ${parsed.key} in ${file} derives the same identity as ${colliding.file}'s; keeping the first, because a graph cannot hold one id twice`,
         );
         continue;
       }
+      /* c8 ignore stop */
       const node: ISamchonGraphNode = {
         id,
         kind,

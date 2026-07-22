@@ -220,6 +220,41 @@ async function assertARejectedStrictSnapshotClosesItsUnpublishedSession(): Promi
       result.dump.nodes.some((node) => node.id === "index.ts#value:variable") &&
       !result.dump.nodes.some((node) => node.id === "index.ts#strict:function"),
   );
+
+  const closeError = new Error("invalid strict cleanup failed");
+  const failedClose: IBulkGraphSession = {
+    ...bulk,
+    close: async () => {
+      throw closeError;
+    },
+  };
+  const retained = await buildLspGraph(
+    { cwd: root, languages: ["typescript"], keepAlive: true },
+    {
+      providers: [provider],
+      collectProviderGraph: async () => ({
+        refresh: { changed: true, generation: 1, mode: "initial", snapshot },
+        session: failedClose,
+      }),
+      collectLanguageGraph: async () => ({
+        result: {
+          nodes: [graphNode("typescript", "index.ts", "value", "variable")],
+          edges: [],
+          diagnostics: [],
+          warnings: [],
+        },
+        session: generic,
+      }),
+    },
+  );
+  TestValidator.predicate(
+    "a refused strict snapshot reports its unpublished-session cleanup failure",
+    retained.warnings.some((warning) =>
+      warning.includes(
+        "strict provider snapshot was refused and its unpublished session could not close",
+      ),
+    ),
+  );
   await generic.client.close();
 }
 

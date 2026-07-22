@@ -19,39 +19,40 @@ function goInputs(root: string): string[] {
 }
 
 /** Compiler-owned Go workspace snapshots enriched through go/packages. */
-export const goGraphProvider = sidecarProvider({
-  name: "samchon-graph-go",
-  languages: ["go"],
-  authority: "compiler",
-  facts: [
-    "contains",
-    "exports",
-    "imports",
-    "calls",
-    "accesses",
-    "instantiates",
-    "type_ref",
-    "implements",
-    "dispatches",
-    "tests",
-    "references",
-  ] satisfies readonly GraphEdgeKind[],
-  buildInputs: goBuildInputs,
-  resolve: (root, env) =>
-    resolveProviderCommand(root, env, {
-      command: "samchon-graph-go",
-      override: "SAMCHON_GRAPH_GO",
-    }),
-  indexArgs: goIndexArgs,
-  inputs: goInputs,
-  configuration: goConfiguration,
-});
-
-export namespace goGraphProvider {
-  export const indexArgs = goIndexArgs;
-  export const inputs = goInputs;
-  export const configuration = goConfiguration;
-}
+export const goGraphProvider = Object.assign(
+  sidecarProvider({
+    name: "samchon-graph-go",
+    languages: ["go"],
+    authority: "compiler",
+    facts: [
+      "contains",
+      "exports",
+      "imports",
+      "calls",
+      "accesses",
+      "instantiates",
+      "type_ref",
+      "implements",
+      "dispatches",
+      "tests",
+      "references",
+    ] satisfies readonly GraphEdgeKind[],
+    buildInputs: goBuildInputs,
+    resolve: (root, env) =>
+      resolveProviderCommand(root, env, {
+        command: "samchon-graph-go",
+        override: "SAMCHON_GRAPH_GO",
+      }),
+    indexArgs: goIndexArgs,
+    inputs: goInputs,
+    configuration: goConfiguration,
+  }),
+  {
+    indexArgs: goIndexArgs,
+    inputs: goInputs,
+    configuration: goConfiguration,
+  },
+);
 
 function goBuildInputs(root: string): string[] {
   return mergeInputs(
@@ -60,7 +61,7 @@ function goBuildInputs(root: string): string[] {
   );
 }
 
-function mergeInputs(...groups: readonly (readonly string[])[]): string[] {
+function mergeInputs(...groups: (readonly string[])[]): string[] {
   return [...new Set(groups.flat())].sort(compareOrdinal);
 }
 

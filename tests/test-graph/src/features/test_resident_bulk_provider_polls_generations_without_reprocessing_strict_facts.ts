@@ -86,7 +86,9 @@ export const test_resident_bulk_provider_polls_generations_without_reprocessing_
             // The session must remain authoritative even before it has exposed
             // a source-text snapshot.
             sources: new Map(),
-            modes: new Map([["ttscgraph", "initial"]]),
+            modes: new Map<string, IBulkGraphSession.Mode>([
+              ["ttscgraph", "initial"],
+            ]),
           } as IIndexerResult;
         },
       },

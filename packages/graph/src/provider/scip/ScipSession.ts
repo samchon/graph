@@ -24,10 +24,19 @@ export class ScipSession implements IBulkGraphSession {
   public readonly root: string;
 
   private readonly options: ScipSession.IOptions;
+  private readonly maxArtifactBytes: number;
   private readonly batch: BatchGraphSession;
 
   public constructor(options: ScipSession.IOptions) {
+    const maxArtifactBytes =
+      options.maxArtifactBytes ?? DEFAULT_MAX_ARTIFACT_BYTES;
+    if (!Number.isSafeInteger(maxArtifactBytes) || maxArtifactBytes < 1) {
+      throw new TypeError(
+        `${options.provider}: maxArtifactBytes must be a positive safe integer`,
+      );
+    }
     this.options = options;
+    this.maxArtifactBytes = maxArtifactBytes;
     this.batch = new BatchGraphSession({
       root: options.root,
       languages: options.languages,
@@ -69,6 +78,12 @@ export class ScipSession implements IBulkGraphSession {
   private async load(
     props: BatchGraphSession.ILoadProps,
   ): Promise<IBulkGraphSession.ISnapshot> {
+    const size = fs.statSync(props.artifact).size;
+    if (size > this.maxArtifactBytes) {
+      throw new Error(
+        `${this.options.provider}: SCIP artifact exceeded the ${String(this.maxArtifactBytes)} byte artifact limit`,
+      );
+    }
     const json = await props.run(this.options.decode.command, [
       ...this.options.decode.args,
       props.artifact,
@@ -184,9 +199,11 @@ export namespace ScipSession {
     sourceText?: boolean;
     languageOf: (file: string) => GraphLanguage;
     maxStdoutBytes?: number;
+    maxArtifactBytes?: number;
   }
 }
 
+const DEFAULT_MAX_ARTIFACT_BYTES = 256 * 1024 * 1024;
 const SCIP_SCHEMA_VERSION = 5;
 const SCIP_PROTOCOL_VERSION = 0;
 const SCIP_CAPABILITIES: readonly string[] = ["universe", "diskDigests"];

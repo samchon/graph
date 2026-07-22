@@ -446,6 +446,12 @@ async function assertCloseOwnsItsChildren(): Promise<void> {
   TestValidator.error("a fractional output bound is refused", () =>
     sessionOf(root, { maxStdoutBytes: 1.5 }),
   );
+  TestValidator.error("a zero artifact bound is refused", () =>
+    sessionOf(root, { maxArtifactBytes: 0 }),
+  );
+  TestValidator.error("a fractional artifact bound is refused", () =>
+    sessionOf(root, { maxArtifactBytes: 1.5 }),
+  );
 
   // An executable that is not there fails to spawn rather than exiting.
   const missing = new ScipSession({
@@ -473,6 +479,18 @@ async function assertCloseOwnsItsChildren(): Promise<void> {
     [0, undefined],
   );
   await bounded.close();
+
+  const artifactBounded = sessionOf(root, { maxArtifactBytes: 1 });
+  await rejects(
+    artifactBounded.refresh(),
+    "a SCIP artifact larger than the configured bound is refused before decoding",
+  );
+  TestValidator.equals(
+    "an oversized artifact publishes no generation",
+    [artifactBounded.generation, artifactBounded.current],
+    [0, undefined],
+  );
+  await artifactBounded.close();
 
   // A signal can already be cancelled before a refresh reaches the session.
   // Starting a child in that state is wrong on its own, and a hanging indexer
@@ -640,6 +658,7 @@ interface IFixtureOptions {
   languages?: ("go" | "rust")[];
   mutateInput?: string;
   maxStdoutBytes?: number;
+  maxArtifactBytes?: number;
   onIndexArgs?: () => void;
 }
 
@@ -686,6 +705,9 @@ function sessionOf(root: string, options: IFixtureOptions = {}): ScipSession {
     ...(options.maxStdoutBytes === undefined
       ? {}
       : { maxStdoutBytes: options.maxStdoutBytes }),
+    ...(options.maxArtifactBytes === undefined
+      ? {}
+      : { maxArtifactBytes: options.maxArtifactBytes }),
   });
 }
 

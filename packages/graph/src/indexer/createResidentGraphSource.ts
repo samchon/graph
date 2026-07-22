@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { compareOrdinal } from "@samchon/graph-sitter";
 import {
   ISamchonGraphDiagnostic,
   ISamchonGraphDump,

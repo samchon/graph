@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { compareOrdinal } from "@samchon/graph-sitter";
 import { IDiagnostic, LspClient } from "../lsp";
 import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import {

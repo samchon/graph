@@ -81,6 +81,12 @@ function sameFacts(
   right: readonly string[],
 ): boolean {
   if (left.length !== right.length) return false;
+  // These are fact families, so a repeated member is not a second fact. Without
+  // rejecting it, ["calls", "calls"] could replace ["calls", "imports"]:
+  // the old membership-only check saw two entries that each appeared in the
+  // registry and missed the family the provider had silently stopped claiming.
+  if (new Set(left).size !== left.length) return false;
   const expected = new Set(right);
+  if (expected.size !== right.length) return false;
   return left.every((fact) => expected.has(fact));
 }

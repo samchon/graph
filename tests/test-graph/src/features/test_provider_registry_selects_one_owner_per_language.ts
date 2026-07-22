@@ -335,6 +335,24 @@ async function assertSnapshotContract(): Promise<void> {
       ["cpp"],
     ),
   );
+  const twoFamilyProvider = ProviderFixtures.provider({
+    name: "two-family",
+    languages: ["cpp"],
+    facts: ["calls", "imports"],
+  });
+  TestValidator.error(
+    "a duplicate provenance family cannot hide one the provider declared",
+    () =>
+      assertGraphSnapshotContract(
+        ProviderFixtures.snapshot({
+          languages: ["cpp"],
+          provider: "two-family",
+          facts: ["calls", "calls"],
+        }),
+        twoFamilyProvider,
+        ["cpp"],
+      ),
+  );
 }
 
 /**

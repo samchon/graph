@@ -54,6 +54,7 @@ export const test_lsp_first_build_abort_closes_accumulated_sessions = async () =
   );
 
   await assertStrictProviderCancellationBoundary();
+  await assertARejectedStrictSnapshotClosesItsUnpublishedSession();
 };
 
 async function assertStrictProviderCancellationBoundary(): Promise<void> {
@@ -146,6 +147,79 @@ async function assertStrictProviderCancellationBoundary(): Promise<void> {
   );
 
   await assertAnUnpublishedLanguageIsReported();
+}
+
+async function assertARejectedStrictSnapshotClosesItsUnpublishedSession(): Promise<void> {
+  const root = GraphPaths.createTempDirectory(
+    "samchon-graph-rejected-strict-close-",
+  );
+  fs.writeFileSync(path.join(root, "index.ts"), "export const value = 1;\n");
+
+  const provider = ProviderFixtures.provider({
+    name: "invalid",
+    facts: ["calls"],
+  });
+  const snapshot = ProviderFixtures.snapshot({
+    provider: "invalid",
+    facts: ["imports"],
+    nodes: [graphNode("typescript", "index.ts", "strict")],
+  });
+  let bulkCloseCalls = 0;
+  const bulk: IBulkGraphSession = {
+    kind: "bulk",
+    languages: ["typescript"],
+    root,
+    generation: 1,
+    current: snapshot,
+    refresh: async () => ({
+      changed: false,
+      generation: 1,
+      mode: "unchanged",
+      snapshot,
+    }),
+    close: async () => {
+      bulkCloseCalls += 1;
+    },
+  };
+  const generic = {
+    client: { close: async () => undefined },
+    root,
+    language: "typescript",
+    opened: new Map(),
+    diagnostics: new Map(),
+  } as ILspSession;
+
+  const result = await buildLspGraph(
+    { cwd: root, languages: ["typescript"], keepAlive: true },
+    {
+      providers: [provider],
+      collectProviderGraph: async () => ({
+        refresh: { changed: true, generation: 1, mode: "initial", snapshot },
+        session: bulk,
+      }),
+      collectLanguageGraph: async () => ({
+        result: {
+          nodes: [graphNode("typescript", "index.ts", "value", "variable")],
+          edges: [],
+          diagnostics: [],
+          warnings: [],
+        },
+        session: generic,
+      }),
+    },
+  );
+  TestValidator.equals(
+    "a rejected strict snapshot closes the session that never reached state",
+    bulkCloseCalls,
+    1,
+  );
+  TestValidator.predicate(
+    "a refused strict snapshot falls back without retaining its facts",
+    result.warnings.some((warning) => warning.includes("not registered")) &&
+      result.dump.nodes.some((node) => node.id === "index.ts#value:variable") &&
+      !result.dump.nodes.some((node) => node.id === "index.ts#strict:function"),
+  );
+  await generic.client.close();
 }
 
 /**

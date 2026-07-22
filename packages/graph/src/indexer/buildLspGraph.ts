@@ -132,11 +132,31 @@ export async function buildLspGraph(
             options,
           );
         const snapshot = refresh.snapshot;
-        assertGraphSnapshotContract(
-          snapshot,
-          candidate.provider,
-          candidate.languages,
-        );
+        try {
+          assertGraphSnapshotContract(
+            snapshot,
+            candidate.provider,
+            candidate.languages,
+          );
+        } catch (error) {
+          // `collectProviderGraph` has handed this live session to the
+          // coordinator, but a rejected snapshot never enters `sessions`.
+          // Close it here: otherwise a resident build falls through to the
+          // generic lane while the invalid provider's child remains orphaned.
+          try {
+            await session.close();
+          } catch (closeError) {
+            throw new AggregateError(
+              [error, closeError],
+              "@samchon/graph: strict provider snapshot was refused and its unpublished session could not close",
+            );
+          }
+          throw error;
+        }
+        // One-shot callers do not retain the session. Close it before adding
+        // the slice, so a shutdown failure declines this candidate whole rather
+        // than leaving its facts beside a fallback warning.
+        if (!options.keepAlive) await session.close();
         appendAll(strictNodes, snapshot.nodes);
         appendAll(strictEdges, snapshot.edges);
         appendAll(diagnostics, snapshot.diagnostics);
@@ -375,10 +395,10 @@ async function closeKeptSessions(
 /**
  * Open one strict provider candidate and take its first snapshot.
  *
- * The session is closed on any failure and on a one-shot build, so a provider
- * that dies before its first snapshot leaves no child behind: only this
- * function ever holds the session between construction and the caller's
- * decision to keep it.
+ * The session is closed if refresh itself fails; after a successful refresh
+ * the caller owns it until validation either rejects it or retains its slice.
+ * That split keeps an invalid first snapshot from escaping cleanup before it
+ * has ever reached the resident state.
  */
 async function collectProviderGraph(
   root: string,
@@ -396,7 +416,6 @@ async function collectProviderGraph(
   });
   try {
     const refresh = await session.refresh({ signal: options.signal });
-    if (!options.keepAlive) await session.close();
     return { refresh, session };
   } catch (error) {
     await session.close();

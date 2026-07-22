@@ -183,6 +183,10 @@ function assertIndexValidation(): void {
       withDocument({ relativePath: "C:/x.go" }),
     ],
     [
+      "a drive-relative Windows document path",
+      withDocument({ relativePath: "C:x.go" }),
+    ],
+    [
       "a parent-escaping document path",
       withDocument({ relativePath: "../out.go" }),
     ],

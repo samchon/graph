@@ -66,7 +66,7 @@ function documentOf(value: unknown, label: string): IScipIndex.IDocument {
   // A document path is workspace-relative by definition. An absolute or
   // parent-escaping path would attribute facts to a file outside the program
   // this index claims to describe.
-  if (/^([a-zA-Z]:[\\/]|[\\/])/.test(rawPath)) {
+  if (/^[a-zA-Z]:|^[\\/]/.test(rawPath)) {
     throw new Error(
       `scip: ${label}.relativePath must be workspace-relative: ${rawPath}`,
     );

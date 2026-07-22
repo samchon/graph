@@ -232,6 +232,24 @@ async function assertGenerations(): Promise<void> {
   );
   await textual.close();
 
+  // `""` is document text too: its SHA-256 is the proof for an empty source
+  // file. Treating the empty string as if the indexer omitted the field makes
+  // an otherwise complete snapshot quietly lose its source-digest capability.
+  const emptyRoot = GraphPaths.createTempDirectory("samchon-graph-scip-empty-");
+  fs.writeFileSync(path.join(emptyRoot, "main.go"), "");
+  const emptyTextual = sessionOf(emptyRoot, { withText: true });
+  const empty = await emptyTextual.refresh();
+  TestValidator.equals(
+    "an index carrying empty document text proves the empty-file digest",
+    empty.snapshot.sources.get(path.join(emptyRoot, "main.go"))?.checkerDigest,
+    createHash("sha256").update("", "utf8").digest("hex"),
+  );
+  TestValidator.predicate(
+    "and licenses a reader to use that empty-file proof",
+    empty.snapshot.provenance.capabilities.includes("sourceDigests"),
+  );
+  await emptyTextual.close();
+
   // `toolInfo` is optional, and a plain absolute project root is as legal as a
   // `file://` URI. Neither may make the snapshot say less than it knows: it
   // names the provider itself when the index does not name a tool.

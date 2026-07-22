@@ -233,7 +233,7 @@ export class ScipSession implements IBulkGraphSession {
     const indexed = new Map<string, string>();
     for (const document of index.documents) {
       const text = document.text;
-      if (text !== undefined && text !== "") {
+      if (text !== undefined) {
         indexed.set(
           path.resolve(this.root, document.relativePath),
           createHash("sha256").update(text, "utf8").digest("hex"),

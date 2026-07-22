@@ -100,12 +100,25 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
       const packageBin = path.join(root, "node_modules", ".bin");
       fs.mkdirSync(privateBin, { recursive: true });
       fs.mkdirSync(packageBin, { recursive: true });
+      const emptyPath = pathEnvironment("");
+
+      const failingGo = platformExecutable(privateBin, "go");
+      writeExecutable(failingGo, 1);
+      TestValidator.predicate(
+        "a failing Go environment probe is part of the effective configuration",
+        goGraphProvider
+          .configuration(root, {
+            ...emptyPath,
+            SAMCHON_GRAPH_GO_TOOLCHAIN: failingGo,
+          })
+          .includes("go-env=unavailable"),
+      );
+      fs.rmSync(failingGo, { force: true });
 
       const local = platformExecutable(privateBin, command);
       const dependency = platformExecutable(packageBin, command);
       writeExecutable(local);
       writeExecutable(dependency);
-      const emptyPath = pathEnvironment("");
       TestValidator.equals(
         "the graph-owned project executable wins over package shims and PATH",
         resolveProviderCommand(root, emptyPath, {
@@ -131,6 +144,26 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
           bundledGo.args.includes("-C") &&
           bundledGo.args.slice(-2).join(" ") === "run .",
       );
+      if (bundledGo === undefined) {
+        throw new Error("the packaged Go source sidecar was not resolved");
+      }
+      const sourceFlag = bundledGo.args.indexOf("-C");
+      const bundledSource = bundledGo.args[sourceFlag + 1];
+      if (sourceFlag < 0 || bundledSource === undefined) {
+        throw new Error("the packaged Go source directory was not resolved");
+      }
+      const bundledManifest = path.join(bundledSource, "go.mod");
+      const hiddenManifest = `${bundledManifest}.test-hidden`;
+      fs.renameSync(bundledManifest, hiddenManifest);
+      try {
+        TestValidator.equals(
+          "a malformed package without its Go source sidecar declines cleanly",
+          goGraphProvider.resolve(root, process.env),
+          undefined,
+        );
+      } finally {
+        fs.renameSync(hiddenManifest, bundledManifest);
+      }
       TestValidator.equals(
         "the packaged Go source sidecar declines without a Go toolchain",
         goGraphProvider.resolve(root, emptyPath),
@@ -240,12 +273,12 @@ function platformExecutable(directory: string, command: string): string {
   );
 }
 
-function writeExecutable(file: string): void {
+function writeExecutable(file: string, exitCode: number = 0): void {
   fs.writeFileSync(
     file,
     process.platform === "win32"
-      ? "@exit /b 0\r\n"
-      : "#!/bin/sh\nexit 0\n",
+      ? `@exit /b ${exitCode}\r\n`
+      : `#!/bin/sh\nexit ${exitCode}\n`,
   );
   fs.chmodSync(file, 0o755);
 }

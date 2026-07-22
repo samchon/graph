@@ -47,7 +47,7 @@ export const goGraphProvider = Object.assign(
     resolve: resolveGoGraphCommand,
     indexArgs: goIndexArgs,
     inputs: goInputs,
-    configuration: (root) => goConfiguration(root, process.env),
+    configuration: goConfiguration,
   }),
   {
     indexArgs: goIndexArgs,
@@ -66,9 +66,6 @@ function resolveGoGraphCommand(
   });
   if (installed !== undefined) return installed;
   const source = path.resolve(__dirname, "..", "..", "..", "sidecars", "go");
-  /* c8 ignore next -- the package build copies this checked-in source tree;
-   * a missing copy is a malformed installation, not a runtime branch a
-   * hermetic source test can create without racing every provider test. */
   if (!fs.existsSync(path.join(source, "go.mod"))) return undefined;
   const go = resolveProviderCommand(root, env, {
     command: "go",

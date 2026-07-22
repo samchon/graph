@@ -1,10 +1,19 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 
 import { findExperiment } from "./catalog.mjs";
-import { appendGithubPath, ensureDir, parseArgs, run, shell, workRoot } from "./process.mjs";
+import {
+  appendGithubPath,
+  ensureDir,
+  parseArgs,
+  repositoryRoot,
+  run,
+  shell,
+  workRoot,
+} from "./process.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 const experiment = findExperiment(args.language);
@@ -62,6 +71,13 @@ const downloadFile = async (url, file) => {
     write.on("finish", () => write.close(resolve));
     write.on("error", reject);
   });
+};
+
+const verifySha256 = (file, expected) => {
+  const actual = createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  if (actual !== expected) {
+    throw new Error(`${file} has SHA-256 ${actual}, expected ${expected}`);
+  }
 };
 
 // Unauthenticated requests to api.github.com share a 60/hour rate limit across
@@ -126,11 +142,38 @@ const findFile = (dir, name) => {
 switch (experiment.language) {
   case "typescript":
     break;
-  case "go":
-    apt(["golang-go"]);
-    shell("go install golang.org/x/tools/gopls@latest");
-    appendGithubPath(path.join(os.homedir(), "go", "bin"));
+  case "go": {
+    const archive = path.join(
+      toolsRoot,
+      "scip-go-v0.2.7-linux-amd64.tar.gz",
+    );
+    const extracted = path.join(toolsRoot, "scip-go-v0.2.7");
+    await downloadFile(
+      "https://github.com/scip-code/scip-go/releases/download/v0.2.7/scip-go-linux-amd64.tar.gz",
+      archive,
+    );
+    verifySha256(
+      archive,
+      "5bfe39016ca04f5b3b1cce41d1b63ea120a7d7e93b55407bfb17a6b02d18135a",
+    );
+    fs.rmSync(extracted, { force: true, recursive: true });
+    ensureDir(extracted);
+    run("tar", ["-xzf", archive, "-C", extracted]);
+    const scipGo = findFile(extracted, "scip-go");
+    if (scipGo === undefined) {
+      throw new Error("scip-go binary not found after extraction");
+    }
+    fs.chmodSync(scipGo, 0o755);
+    const scipLink = path.join(binRoot, "scip-go");
+    fs.rmSync(scipLink, { force: true });
+    fs.symlinkSync(scipGo, scipLink);
+    run(
+      "go",
+      ["build", "-trimpath", "-o", path.join(binRoot, "samchon-graph-go"), "."],
+      { cwd: path.join(repositoryRoot, "sidecars", "go") },
+    );
     break;
+  }
   case "rust":
     shell("curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal");
     appendGithubPath(path.join(os.homedir(), ".cargo", "bin"));

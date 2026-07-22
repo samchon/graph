@@ -171,6 +171,13 @@ export class BatchGraphSession implements IBulkGraphSession {
 
   private fingerprint(): string {
     const hash = createHash("sha256");
+    for (const value of [
+      ...(this.options.configuration?.() ?? []),
+    ].sort(compareOrdinalPath)) {
+      hash.update(`configuration\0${String(Buffer.byteLength(value, "utf8"))}\0`);
+      hash.update(value);
+      hash.update("\n");
+    }
     for (const file of [...this.options.inputs()].sort(compareOrdinalPath)) {
       hash.update(`${file}\0`);
       try {
@@ -330,6 +337,8 @@ export namespace BatchGraphSession {
     artifactName: string;
     indexArgs: (artifact: string) => string[];
     inputs: () => string[];
+    /** Non-file build settings whose change invalidates the complete artifact. */
+    configuration?: () => readonly string[];
     load: (props: ILoadProps) => Promise<IBulkGraphSession.ISnapshot>;
     maxStdoutBytes?: number;
   }

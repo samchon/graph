@@ -36,6 +36,9 @@ export class ScipSession implements IBulkGraphSession {
       artifactName: "index.scip",
       indexArgs: options.indexArgs,
       inputs: options.inputs,
+      ...(options.configuration === undefined
+        ? {}
+        : { configuration: options.configuration }),
       load: (props) => this.load(props),
       ...(options.maxStdoutBytes === undefined
         ? {}
@@ -169,6 +172,7 @@ export namespace ScipSession {
     decode: { command: string; args: readonly string[] };
     indexArgs: (artifact: string) => string[];
     inputs: () => string[];
+    configuration?: () => readonly string[];
     languageOf: (file: string) => GraphLanguage;
     maxStdoutBytes?: number;
   }

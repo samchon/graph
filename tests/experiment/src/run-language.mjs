@@ -14,12 +14,17 @@ const cwd = cloneRepository(experiment, { refresh: args.refresh === "true" });
 if (experiment.prepare !== undefined) shell(experiment.prepare, { cwd });
 
 const started = performance.now();
+const strict = experiment.strictProvider !== undefined;
 const dump = await buildGraphDump({
   cwd,
   mode: "lsp",
   languages: [experiment.language],
-  maxFiles: experiment.maxFiles,
-  lspReferenceLimit: experiment.referenceLimit ?? 250,
+  ...(strict
+    ? {}
+    : {
+        maxFiles: experiment.maxFiles,
+        lspReferenceLimit: experiment.referenceLimit ?? 250,
+      }),
   lspTimeoutMs: experiment.timeoutMs ?? 60_000,
   lspReadyTimeoutMs: experiment.readyTimeoutMs ?? 180_000,
   lspWarmupTimeoutMs: experiment.warmupTimeoutMs ?? 180_000,
@@ -33,12 +38,61 @@ if (dump.indexer === "static") {
 if (dump.languages.includes(experiment.language) === false) {
   throw new Error(`${experiment.language}: dump languages did not include ${experiment.language}`);
 }
-if (dump.nodes.length < experiment.minNodes) {
+if (!strict && dump.nodes.length < experiment.minNodes) {
   throw new Error(`${experiment.language}: expected at least ${experiment.minNodes} nodes, got ${dump.nodes.length}`);
 }
 const minEdges = experiment.minEdges ?? 0;
-if (dump.edges.length < minEdges) {
+if (!strict && dump.edges.length < minEdges) {
   throw new Error(`${experiment.language}: expected at least ${minEdges} relationship edges, got ${dump.edges.length}`);
+}
+const provenance = strict
+  ? dump.provenance?.find((row) => row.provider === experiment.strictProvider)
+  : undefined;
+if (strict && provenance === undefined) {
+  throw new Error(
+    `${experiment.language}: strict provider ${experiment.strictProvider} did not publish provenance: ${warnings.join("; ")}`,
+  );
+}
+if (
+  provenance !== undefined &&
+  (provenance.authority !== "compiler" ||
+    provenance.producer.tool !== experiment.strictProvider ||
+    provenance.producer.version === "" ||
+    provenance.producer.compiler === "" ||
+    !provenance.capabilities.includes("sourceDigests") ||
+    !provenance.capabilities.includes("fullRebuild"))
+) {
+  throw new Error(
+    `${experiment.language}: strict provenance is incomplete: ${JSON.stringify(provenance)}`,
+  );
+}
+const edgeKindCounts = Object.fromEntries(
+  [...new Set(dump.edges.map((edge) => edge.kind))]
+    .sort()
+    .map((kind) => [
+      kind,
+      dump.edges.filter((edge) => edge.kind === kind).length,
+    ]),
+);
+for (const kind of experiment.semanticEdges ?? []) {
+  if ((edgeKindCounts[kind] ?? 0) === 0) {
+    throw new Error(
+      `${experiment.language}: strict corpus produced no ${kind} semantic edge`,
+    );
+  }
+}
+const nodeFiles = new Map(dump.nodes.map((node) => [node.id, node.file]));
+const crossFileCalls = dump.edges.filter(
+  (edge) =>
+    edge.kind === "calls" &&
+    nodeFiles.get(edge.from) !== undefined &&
+    nodeFiles.get(edge.to) !== undefined &&
+    nodeFiles.get(edge.from) !== nodeFiles.get(edge.to),
+).length;
+if (strict && crossFileCalls === 0) {
+  throw new Error(
+    `${experiment.language}: strict corpus produced no cross-file call`,
+  );
 }
 console.log(`${experiment.language}: ${dump.nodes.length} nodes, ${dump.edges.length} edges (indexer=${dump.indexer}).`);
 if (warnings.some((warning) => /LSP indexing failed|LSP returned no symbols|server not found/.test(warning))) {
@@ -55,6 +109,10 @@ const result = {
   nodeCount: dump.nodes.length,
   edgeCount: dump.edges.length,
   diagnosticCount: dump.diagnostics?.length ?? 0,
+  strictProvider: experiment.strictProvider,
+  provenance,
+  edgeKindCounts,
+  crossFileCalls,
   warnings,
   sampleNodes: dump.nodes.slice(0, 20).map((node) => ({
     id: node.id,

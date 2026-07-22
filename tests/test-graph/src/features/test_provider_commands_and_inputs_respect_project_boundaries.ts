@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  goGraphProvider,
   providerInputFiles,
   resolveProviderCommand,
 } from "@samchon/graph";
@@ -32,6 +33,33 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
         providerInputFiles(root, ["go"], ["go.mod", "go.work"]),
         ["go.mod", "main.go", "src/nested/go.mod", "src/nested/worker.go"],
       );
+      fs.mkdirSync(path.join(root, "vendor"), { recursive: true });
+      fs.writeFileSync(path.join(root, "vendor", "modules.txt"), "# pinned\n");
+      TestValidator.equals(
+        "the Go provider fences module, workspace, source, and vendor inputs",
+        [
+          typeof goGraphProvider.buildInputs === "function"
+            ? goGraphProvider.buildInputs(root)
+            : [],
+          goGraphProvider.inputs(root),
+          goGraphProvider.indexArgs("snapshot.json"),
+          goGraphProvider.configuration().some((row) =>
+            row.startsWith("GOOS="),
+          ),
+        ],
+        [
+          ["go.mod", "src/nested/go.mod", "vendor/modules.txt"],
+          [
+            "go.mod",
+            "main.go",
+            "src/nested/go.mod",
+            "src/nested/worker.go",
+            "vendor/modules.txt",
+          ],
+          ["--output=snapshot.json"],
+          true,
+        ],
+      );
 
       const command = "samchon-provider-resolution-fixture";
       const privateBin = path.join(root, ".samchon-graph", "bin");
@@ -52,6 +80,14 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
           args: ["serve"],
         }),
         expectedCommand(local, ["serve"]),
+      );
+
+      const goCommand = platformExecutable(privateBin, "samchon-graph-go");
+      writeExecutable(goCommand);
+      TestValidator.equals(
+        "the shipped Go provider uses the common project-local resolver",
+        goGraphProvider.resolve(root, emptyPath),
+        expectedCommand(goCommand),
       );
 
       fs.rmSync(local, { force: true });

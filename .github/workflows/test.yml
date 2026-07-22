@@ -47,6 +47,12 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: 1.26.5
+          cache-dependency-path: sidecars/go/go.sum
+
       - name: Configure pnpm
         run: |
           pnpm config set fetch-retries 5
@@ -74,6 +80,10 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+      - name: Test Go sidecar
+        working-directory: sidecars/go
+        run: go test ./...
 
       - name: Test
         run: pnpm test

@@ -22,7 +22,7 @@ export const test_workflows_use_current_core_action_runtimes = () => {
   );
   const actual = workflows.flatMap((workflow) => {
     const matches = workflow.matchAll(
-      /uses:\s+actions\/(checkout|setup-node|upload-artifact|download-artifact)@v(\d+)/g,
+      /uses:\s+actions\/(checkout|setup-go|setup-node|upload-artifact|download-artifact)@v(\d+)/g,
     );
     return [...matches].map((match) => `${match[1]}@v${match[2]}`);
   });
@@ -33,6 +33,7 @@ export const test_workflows_use_current_core_action_runtimes = () => {
     [
       ...Array(6).fill("checkout@v7"),
       ...Array(2).fill("download-artifact@v8"),
+      ...Array(2).fill("setup-go@v7"),
       ...Array(5).fill("setup-node@v7"),
       ...Array(2).fill("upload-artifact@v7"),
     ].sort(),

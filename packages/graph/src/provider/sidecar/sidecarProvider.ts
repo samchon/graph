@@ -10,6 +10,7 @@ import { SidecarSession } from "./SidecarSession";
 export function sidecarProvider(
   props: sidecarProvider.IProps,
 ): IGraphProvider {
+  const configuration = props.configuration;
   return {
     name: props.name,
     languages: props.languages,
@@ -48,6 +49,12 @@ export function sidecarProvider(
         indexArgs: (artifact) =>
           props.indexArgs(artifact, open.root, open.languages),
         inputs: () => props.inputs(open.root, open.languages),
+        ...(configuration === undefined
+          ? {}
+          : {
+              configuration: () =>
+                configuration(open.root, open.languages),
+            }),
       }),
   };
 }
@@ -67,5 +74,9 @@ export namespace sidecarProvider {
       languages: readonly GraphLanguage[],
     ) => string[];
     inputs: (root: string, languages: readonly GraphLanguage[]) => string[];
+    configuration?: (
+      root: string,
+      languages: readonly GraphLanguage[],
+    ) => readonly string[];
   }
 }

@@ -16,9 +16,14 @@ export const LANGUAGE_EXPERIMENTS = [
   {
     language: "go",
     repository: "https://github.com/gorilla/mux.git",
-    maxFiles: 120,
-    minNodes: 1,
-    minEdges: 1,
+    strictProvider: "samchon-graph-go",
+    semanticEdges: [
+      "imports",
+      "calls",
+      "instantiates",
+      "implements",
+      "tests",
+    ],
   },
   {
     language: "rust",

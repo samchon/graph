@@ -3,6 +3,7 @@ export * from "./dumpProvenanceOf";
 export * from "./BatchGraphSession";
 export * from "./GRAPH_PROVIDERS";
 export * from "./graphSnapshotDigests";
+export * from "./go";
 export * from "./IBulkGraphSession";
 export * from "./IGraphProvider";
 export * from "./providerInputFiles";

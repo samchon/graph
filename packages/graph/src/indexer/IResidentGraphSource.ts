@@ -1,5 +1,6 @@
 import { ISamchonGraphDump } from "../structures";
 import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
+import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 
 /**
  * A resident indexer: builds once, keeps every language's LSP connection open,
@@ -28,6 +29,9 @@ export interface IResidentGraphSource {
 
   /** Source display reader belonging to the dump returned by the last load. */
   source?(): SamchonGraphSourceReader | undefined;
+
+  /** Latest computation mode observed from each resident strict provider. */
+  modes(): ReadonlyMap<string, IBulkGraphSession.Mode>;
 
   /**
    * End every language-server connection this source opened. Safe to call on a

@@ -39,6 +39,9 @@ export class SidecarSession implements IBulkGraphSession {
       artifactName: "snapshot.json",
       indexArgs: options.indexArgs,
       inputs: options.inputs,
+      ...(options.configuration === undefined
+        ? {}
+        : { configuration: options.configuration }),
       load: (props) => this.load(props),
       ...(options.maxStdoutBytes === undefined
         ? {}
@@ -153,6 +156,7 @@ export namespace SidecarSession {
     command: { command: string; args: readonly string[] };
     indexArgs: (artifact: string) => string[];
     inputs: () => string[];
+    configuration?: () => readonly string[];
     maxStdoutBytes?: number;
     maxArtifactBytes?: number;
   }

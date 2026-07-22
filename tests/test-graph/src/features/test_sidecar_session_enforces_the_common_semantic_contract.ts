@@ -22,6 +22,8 @@ export const test_sidecar_session_enforces_the_common_semantic_contract =
       write(payload, snapshotOf(root, source));
 
       const session = sessionOf(root, payload);
+      TestValidator.equals("a new sidecar has no current snapshot", session.current, undefined);
+      TestValidator.equals("a new sidecar starts at generation zero", session.generation, 0);
       const initial = await session.refresh();
       TestValidator.equals("the first sidecar artifact is initial", initial.mode, "initial");
       TestValidator.equals(
@@ -52,10 +54,17 @@ export const test_sidecar_session_enforces_the_common_semantic_contract =
         mode: "unchanged",
         snapshot: initial.snapshot,
       });
+      configuration = "GOOS=windows";
+      const reconfigured = await session.refresh();
+      TestValidator.equals(
+        "a non-file build setting replaces the complete artifact",
+        [reconfigured.mode, reconfigured.generation],
+        ["rebuild", 2],
+      );
       fs.appendFileSync(path.join(root, "main.go"), "// edit\n");
       const rebuilt = await session.refresh();
       TestValidator.equals("moved input rebuilds one whole artifact", rebuilt.mode, "rebuild");
-      TestValidator.equals("a rebuild advances one generation", rebuilt.generation, 2);
+      TestValidator.equals("a rebuild advances one generation", rebuilt.generation, 3);
       await session.close();
       await session.close();
 
@@ -191,6 +200,12 @@ export const test_sidecar_session_enforces_the_common_semantic_contract =
         languages: ["go"],
         options: { cwd: root },
       });
+      const openedRefresh = await opened.refresh();
+      TestValidator.equals(
+        "the provider factory routes its input and output arguments",
+        [opened.generation, opened.current],
+        [1, openedRefresh.snapshot],
+      );
       await opened.close();
 
       const prepared = sidecarProvider({
@@ -247,9 +262,12 @@ function sessionOf(
     command: { command: process.execPath, args: [GraphPaths.fakeSidecar] },
     indexArgs: (artifact) => [`--output=${artifact}`, `--input=${payload}`],
     inputs: () => ["main.go"],
+    configuration: () => [configuration],
     ...options,
   });
 }
+
+let configuration = "GOOS=linux";
 
 function snapshotOf(root: string, source: string): ISidecarSnapshot {
   return {

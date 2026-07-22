@@ -413,6 +413,7 @@ export function createResidentGraphSource(
         sameProjectInputManifest(current.inputManifest, inputManifest) &&
         !isStale(current.hashes, root, options, bulkLanguagesOf(current.sessions))
       ) {
+        current.modes = bulkModesOf(prefetched);
         return;
       }
       const discovered = discoverLanguages(root, options);
@@ -468,6 +469,9 @@ export function createResidentGraphSource(
     },
     source(): SamchonGraphSourceReader | undefined {
       return state?.source;
+    },
+    modes(): ReadonlyMap<string, IBulkGraphSession.Mode> {
+      return new Map(state?.modes ?? []);
     },
     close(): Promise<void> {
       if (closing !== undefined) return closing;
@@ -528,6 +532,16 @@ export function createResidentGraphSource(
   function assertOpen(): void {
     if (closed) throw closedError();
   }
+}
+
+function bulkModesOf(
+  refreshed: ReadonlyMap<GraphLanguage, IBulkGraphSession.IRefresh>,
+): Map<string, IBulkGraphSession.Mode> {
+  const modes = new Map<string, IBulkGraphSession.Mode>();
+  for (const refresh of refreshed.values()) {
+    modes.set(refresh.snapshot.provenance.provider, refresh.mode);
+  }
+  return modes;
 }
 
 function sourceReaderOf(

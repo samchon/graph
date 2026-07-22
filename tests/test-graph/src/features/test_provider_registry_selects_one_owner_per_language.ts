@@ -290,6 +290,16 @@ async function assertSelection(): Promise<void> {
         provider.languages.includes("typescript"),
     ),
   );
+  const go = GRAPH_PROVIDERS.find(
+    (provider) => provider.name === "samchon-graph-go",
+  );
+  TestValidator.predicate(
+    "the shipped registry declares the Go compiler sidecar",
+    go?.authority === "compiler" &&
+      go.languages.length === 1 &&
+      go.languages[0] === "go" &&
+      typeof go.buildInputs === "function",
+  );
 }
 
 async function assertSnapshotContract(): Promise<void> {

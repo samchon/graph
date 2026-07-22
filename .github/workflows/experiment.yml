@@ -12,6 +12,7 @@ on:
     paths:
       - ".github/workflows/experiment.yml"
       - "packages/graph/**"
+      - "sidecars/**"
       - "tests/experiment/**"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -73,6 +74,13 @@ jobs:
           node-version: 22.x
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Go
+        if: ${{ matrix.language == 'go' && (github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language) }}
+        uses: actions/setup-go@v7
+        with:
+          go-version: 1.26.5
+          cache-dependency-path: sidecars/go/go.sum
 
       - name: Setup Swift
         if: ${{ matrix.language == 'swift' && (github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language) }}

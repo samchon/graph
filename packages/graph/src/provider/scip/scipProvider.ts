@@ -19,6 +19,7 @@ import { ScipSession } from "./ScipSession";
  * more does it through typed enrichment, not by widening this list.
  */
 export function scipProvider(props: scipProvider.IProps): IGraphProvider {
+  const configuration = props.configuration;
   return {
     name: props.name,
     languages: props.languages,
@@ -65,6 +66,12 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
         decode: props.decode(open.root),
         indexArgs: props.indexArgs,
         inputs: () => props.inputs(open.root, open.languages),
+        ...(configuration === undefined
+          ? {}
+          : {
+              configuration: () =>
+                configuration(open.root, open.languages),
+            }),
         languageOf: props.languageOf,
       }),
   };
@@ -100,6 +107,12 @@ export namespace scipProvider {
 
     /** Every project-relative input whose change invalidates the artifact. */
     inputs: (root: string, languages: readonly GraphLanguage[]) => string[];
+
+    /** Non-file build settings whose change invalidates the artifact. */
+    configuration?: (
+      root: string,
+      languages: readonly GraphLanguage[],
+    ) => readonly string[];
 
     languageOf: (file: string) => GraphLanguage;
   }

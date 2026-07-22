@@ -50,6 +50,7 @@ async function assertTheRegistryEntryItBuilds(): Promise<void> {
     }),
     indexArgs: (artifact) => [`--output=${artifact}`, `--root=${root}`],
     inputs: () => ["main.go"],
+    configuration: () => ["GOOS=fixture"],
     languageOf: () => "go",
   });
 

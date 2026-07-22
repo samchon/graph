@@ -410,6 +410,7 @@ export const test_resident_graph_source_serializes_lifecycle = async () => {
       memoryLoads += 1;
       return memoryLoads < 3 ? dumpA : dumpB;
     },
+    modes: () => new Map(),
     async close() {},
   });
   const memoryA = await memorySource();

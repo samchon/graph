@@ -273,7 +273,7 @@ export class ScipSession implements IBulkGraphSession {
    */
   private fingerprint(): string {
     const hash = createHash("sha256");
-    for (const file of this.options.inputs().sort(compareOrdinalPath)) {
+    for (const file of [...this.options.inputs()].sort(compareOrdinalPath)) {
       hash.update(`${file}\0`);
       try {
         hash.update(fs.readFileSync(path.resolve(this.root, file)));

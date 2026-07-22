@@ -250,6 +250,24 @@ async function assertGenerations(): Promise<void> {
   );
   await emptyTextual.close();
 
+  // A provider may retain and reuse its input list. The session needs a sorted
+  // view for a stable fingerprint, but sorting that returned array changes the
+  // provider's own declaration of its build inputs behind its back.
+  const orderedRoot = GraphPaths.createTempDirectory(
+    "samchon-graph-scip-order-",
+  );
+  fs.writeFileSync(path.join(orderedRoot, "main.go"), "package main\n");
+  fs.writeFileSync(path.join(orderedRoot, "b.go"), "package second\n");
+  const orderedInputs = ["main.go", "b.go"];
+  const ordered = sessionOf(orderedRoot, { inputs: orderedInputs });
+  await ordered.refresh();
+  TestValidator.equals(
+    "fingerprinting does not reorder the provider's retained input list",
+    orderedInputs,
+    ["main.go", "b.go"],
+  );
+  await ordered.close();
+
   // `toolInfo` is optional, and a plain absolute project root is as legal as a
   // `file://` URI. Neither may make the snapshot say less than it knows: it
   // names the provider itself when the index does not name a tool.
@@ -448,6 +466,7 @@ interface IFixtureOptions {
   decodeMode?: string;
   indexRoot?: string;
   withText?: boolean;
+  inputs?: string[];
   bare?: boolean;
   plainRoot?: boolean;
   language?: "go" | "rust";
@@ -483,6 +502,7 @@ function sessionOf(root: string, options: IFixtureOptions = {}): ScipSession {
       ...(options.state === undefined ? [] : [`--state=${options.state}`]),
     ],
     inputs: () =>
+      options.inputs ??
       fs
         .readdirSync(root)
         .filter((entry) => entry.endsWith(".go") || entry === "go.mod"),

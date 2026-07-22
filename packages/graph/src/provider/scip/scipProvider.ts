@@ -14,7 +14,7 @@ import { ScipSession } from "./ScipSession";
  *
  * Every entry built this way inherits {@link adaptScipIndex.EDGE_KINDS} as its
  * provable facts, which is the point: a bare SCIP index cannot prove a call, a
- * construction, an import, or a decorator, and a provider that claimed one
+ * construction, or a decorator, and a provider that claimed one
  * would be rejected by its own snapshot contract. A language that can prove
  * more does it through typed enrichment, not by widening this list.
  */

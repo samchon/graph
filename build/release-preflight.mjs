@@ -41,14 +41,15 @@ export function releaseVersionOf(tag) {
  * is exactly how a `@samchon/graph` depending on a `@samchon/graph-sitter`
  * version that was never published gets released.
  *
- * "Approved" is reachability from the release branch rather than a SHA written
- * down somewhere. A tag on an unmerged branch publishes code that no review
- * gate saw, and it is the one form of unapproved release that a workflow can
- * detect on its own.
+ * Reachability and explicit approval are separate gates. Reachability proves
+ * the commit passed through the release branch; `approvedSha` proves the
+ * maintainer authorized these exact bytes rather than merely some future tag
+ * on that branch.
  */
 export function verifyReleaseInputs({
   tag,
   sha,
+  approvedSha,
   onReleaseBranch,
   releaseBranch,
   packages,
@@ -56,6 +57,14 @@ export function verifyReleaseInputs({
   const version = releaseVersionOf(tag);
   if (typeof sha !== "string" || sha === "") {
     throw new Error("release: the released commit SHA is missing");
+  }
+  if (typeof approvedSha !== "string" || approvedSha === "") {
+    throw new Error("release: the approved release SHA is missing");
+  }
+  if (sha !== approvedSha) {
+    throw new Error(
+      `release: tag ${tag} points at ${sha}, but the approved release SHA is ${approvedSha}`,
+    );
   }
   if (onReleaseBranch !== true) {
     throw new Error(
@@ -87,6 +96,17 @@ export function verifyReleaseInputs({
     }
   }
   return version;
+}
+
+/** A finite, positive registry-read deadline that cannot wait forever. */
+export function releaseAwaitMsOf(value) {
+  const parsed = Number(value ?? 180_000);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 2_147_483_647) {
+    throw new Error(
+      "release: RELEASE_AWAIT_MS must be an integer between 1 and 2147483647",
+    );
+  }
+  return parsed;
 }
 
 /**

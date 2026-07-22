@@ -12,6 +12,7 @@ const packages = readPackages(root);
 const version = verifyReleaseInputs({
   tag: process.env.RELEASE_TAG ?? "",
   sha: process.env.RELEASE_SHA ?? "",
+  approvedSha: process.env.RELEASE_APPROVED_SHA ?? "",
   onReleaseBranch: reachableFromReleaseBranch(process.env.RELEASE_SHA ?? ""),
   releaseBranch: RELEASE_BRANCH,
   packages,

@@ -15,6 +15,7 @@ jobs:
   # install in somebody else's project.
   verify:
     runs-on: ubuntu-latest
+    environment: npm
     outputs:
       version: ${{ steps.preflight.outputs.version }}
     steps:
@@ -51,6 +52,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_SHA: ${{ github.sha }}
+          RELEASE_APPROVED_SHA: ${{ vars.RELEASE_APPROVED_SHA }}
           # The order the publish jobs below are wired in. Checked against what
           # the manifests actually require, so a third package or a reversed
           # dependency cannot leave these jobs quietly wrong.
@@ -96,20 +98,21 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
-      - run: corepack enable
       - uses: actions/setup-node@v4
         with:
           node-version: 22.x
           registry-url: https://registry.npmjs.org/
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run build
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarballs
+          path: .release
 
       - name: Publish @samchon/graph-sitter
-        run: pnpm --filter @samchon/graph-sitter publish --no-git-checks --tag latest
+        run: node build/release-publish.mjs
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_PACKAGE: "@samchon/graph-sitter"
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
 
       # The registry is eventually consistent, and the next job installs from
       # it. Publishing and assuming availability is what makes a two-package
@@ -129,20 +132,21 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
-      - run: corepack enable
       - uses: actions/setup-node@v4
         with:
           node-version: 22.x
           registry-url: https://registry.npmjs.org/
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run build
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarballs
+          path: .release
 
       - name: Publish @samchon/graph
-        run: pnpm --filter @samchon/graph publish --no-git-checks --tag latest
+        run: node build/release-publish.mjs
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_PACKAGE: "@samchon/graph"
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
 
       - name: Wait for the registry to serve it
         run: node build/release-await.mjs

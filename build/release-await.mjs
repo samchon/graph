@@ -1,3 +1,5 @@
+import { releaseAwaitMsOf } from "./release-preflight.mjs";
+
 /**
  * Block until the registry actually serves a version it has been told about.
  *
@@ -10,7 +12,7 @@
  */
 const packageName = process.env.RELEASE_PACKAGE ?? "";
 const version = process.env.RELEASE_VERSION ?? "";
-const deadlineMs = Number(process.env.RELEASE_AWAIT_MS ?? 180_000);
+const deadlineMs = releaseAwaitMsOf(process.env.RELEASE_AWAIT_MS);
 
 if (packageName === "" || version === "") {
   throw new Error(

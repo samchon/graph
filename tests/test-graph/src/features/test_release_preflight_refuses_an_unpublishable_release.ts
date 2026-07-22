@@ -6,6 +6,7 @@ import { TestValidator } from "@nestia/e2e";
 // proved by tests rather than by pushing tags at the registry.
 import {
   publicationOrder,
+  releaseAwaitMsOf,
   releaseVersionOf,
   verifyReleaseInputs,
   verifyTarballContents,
@@ -45,6 +46,7 @@ export const test_release_preflight_refuses_an_unpublishable_release =
       verifyReleaseInputs({
         tag: "v0.2.0",
         sha: "abc",
+        approvedSha: "abc",
         onReleaseBranch: true,
         releaseBranch: "master",
         packages,
@@ -55,6 +57,7 @@ export const test_release_preflight_refuses_an_unpublishable_release =
       verifyReleaseInputs({
         tag: "v0.3.0",
         sha: "abc",
+        approvedSha: "abc",
         onReleaseBranch: true,
         releaseBranch: "master",
         packages,
@@ -64,6 +67,7 @@ export const test_release_preflight_refuses_an_unpublishable_release =
       verifyReleaseInputs({
         tag: "v0.2.0",
         sha: "abc",
+        approvedSha: "abc",
         onReleaseBranch: true,
         releaseBranch: "master",
         packages: [graphSitter({ version: "0.1.0" }), graph()],
@@ -73,6 +77,7 @@ export const test_release_preflight_refuses_an_unpublishable_release =
       verifyReleaseInputs({
         tag: "v0.2.0",
         sha: "abc",
+        approvedSha: "abc",
         onReleaseBranch: false,
         releaseBranch: "master",
         packages,
@@ -82,6 +87,7 @@ export const test_release_preflight_refuses_an_unpublishable_release =
       verifyReleaseInputs({
         tag: "v0.2.0",
         sha: "",
+        approvedSha: "abc",
         onReleaseBranch: true,
         releaseBranch: "master",
         packages,
@@ -91,6 +97,7 @@ export const test_release_preflight_refuses_an_unpublishable_release =
       verifyReleaseInputs({
         tag: "v0.2.0",
         sha: "abc",
+        approvedSha: "abc",
         onReleaseBranch: true,
         releaseBranch: "master",
         packages: [],
@@ -100,6 +107,7 @@ export const test_release_preflight_refuses_an_unpublishable_release =
       verifyReleaseInputs({
         tag: "v0.2.0",
         sha: "abc",
+        approvedSha: "abc",
         onReleaseBranch: true,
         releaseBranch: "master",
         packages: [graphSitter({ private: true }), graph()],
@@ -111,11 +119,43 @@ export const test_release_preflight_refuses_an_unpublishable_release =
       verifyReleaseInputs({
         tag: "v0.2.0",
         sha: "abc",
+        approvedSha: "abc",
         onReleaseBranch: true,
         releaseBranch: "master",
         packages: [graphSitter({ access: undefined }), graph()],
       }),
     );
+    TestValidator.error("a missing approved SHA is refused", () =>
+      verifyReleaseInputs({
+        tag: "v0.2.0",
+        sha: "abc",
+        approvedSha: "",
+        onReleaseBranch: true,
+        releaseBranch: "master",
+        packages,
+      }),
+    );
+    TestValidator.error("a different approved SHA is refused", () =>
+      verifyReleaseInputs({
+        tag: "v0.2.0",
+        sha: "abc",
+        approvedSha: "def",
+        onReleaseBranch: true,
+        releaseBranch: "master",
+        packages,
+      }),
+    );
+
+    TestValidator.equals(
+      "the default registry deadline is finite",
+      releaseAwaitMsOf(undefined),
+      180_000,
+    );
+    for (const deadline of ["", "NaN", "0", "1.5", "2147483648"]) {
+      TestValidator.error(`an invalid registry deadline is refused: ${deadline}`, () =>
+        releaseAwaitMsOf(deadline),
+      );
+    }
 
     // --- publication order ---------------------------------------------
     TestValidator.equals(

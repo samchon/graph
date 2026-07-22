@@ -20,6 +20,7 @@ import { ScipSession } from "./ScipSession";
  */
 export function scipProvider(props: scipProvider.IProps): IGraphProvider {
   const configuration = props.configuration;
+  const compilerVersion = props.compilerVersion;
   return {
     name: props.name,
     languages: props.languages,
@@ -72,6 +73,15 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
               configuration: () =>
                 configuration(open.root, open.languages),
             }),
+        ...(compilerVersion === undefined
+          ? {}
+          : {
+              compilerVersion: () =>
+                compilerVersion(open.root, open.languages),
+            }),
+        ...(props.sourceText === undefined
+          ? {}
+          : { sourceText: props.sourceText }),
         languageOf: props.languageOf,
       }),
   };
@@ -113,6 +123,15 @@ export namespace scipProvider {
       root: string,
       languages: readonly GraphLanguage[],
     ) => readonly string[];
+
+    /** The compiler/toolchain revision that the indexer's analysis targets. */
+    compilerVersion?: (
+      root: string,
+      languages: readonly GraphLanguage[],
+    ) => string;
+
+    /** Whether this producer's document text is exact source evidence. */
+    sourceText?: boolean;
 
     languageOf: (file: string) => GraphLanguage;
   }

@@ -82,7 +82,11 @@ export class ScipSession implements IBulkGraphSession {
       languages: this.languages,
       languageOf: this.options.languageOf,
     });
-    const manifest = this.manifest(index, adapted.files);
+    const manifest = this.manifest(
+      index,
+      adapted.files,
+      this.options.sourceText !== false,
+    );
     return {
       languages: [...this.languages],
       nodes: adapted.nodes,
@@ -96,7 +100,7 @@ export class ScipSession implements IBulkGraphSession {
         schemaVersion: SCIP_SCHEMA_VERSION,
         tool: index.metadata.toolInfo?.name ?? this.options.provider,
         toolVersion: index.metadata.toolInfo?.version ?? "",
-        compilerVersion: "",
+        compilerVersion: this.options.compilerVersion?.() ?? "",
         protocolVersion: SCIP_PROTOCOL_VERSION,
         universe: props.universe,
         capabilities: manifest.proven
@@ -116,15 +120,18 @@ export class ScipSession implements IBulkGraphSession {
   private manifest(
     index: IScipIndex,
     files: readonly string[],
+    sourceText: boolean,
   ): { sources: Map<string, IBulkGraphSession.ISourceDigest>; proven: boolean } {
     const indexed = new Map<string, string>();
-    for (const document of index.documents) {
-      const text = document.text;
-      if (text !== undefined) {
-        indexed.set(
-          path.resolve(this.root, document.relativePath),
-          createHash("sha256").update(text, "utf8").digest("hex"),
-        );
+    if (sourceText) {
+      for (const document of index.documents) {
+        const text = document.text;
+        if (text !== undefined) {
+          indexed.set(
+            path.resolve(this.root, document.relativePath),
+            createHash("sha256").update(text, "utf8").digest("hex"),
+          );
+        }
       }
     }
 
@@ -173,6 +180,8 @@ export namespace ScipSession {
     indexArgs: (artifact: string) => string[];
     inputs: () => string[];
     configuration?: () => readonly string[];
+    compilerVersion?: () => string;
+    sourceText?: boolean;
     languageOf: (file: string) => GraphLanguage;
     maxStdoutBytes?: number;
   }

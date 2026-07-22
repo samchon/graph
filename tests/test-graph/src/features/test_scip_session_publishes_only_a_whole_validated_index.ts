@@ -51,6 +51,7 @@ async function assertTheRegistryEntryItBuilds(): Promise<void> {
     indexArgs: (artifact) => [`--output=${artifact}`, `--root=${root}`],
     inputs: () => ["main.go"],
     configuration: () => ["GOOS=fixture"],
+    compilerVersion: () => "rustc fixture; cargo fixture",
     languageOf: () => "go",
   });
 
@@ -109,8 +110,11 @@ async function assertTheRegistryEntryItBuilds(): Promise<void> {
   );
   TestValidator.equals(
     "the snapshot is attributed to the registered entry",
-    refresh.snapshot.provenance.provider,
-    "scip-fake",
+    [
+      refresh.snapshot.provenance.provider,
+      refresh.snapshot.provenance.compilerVersion,
+    ],
+    ["scip-fake", "rustc fixture; cargo fixture"],
   );
   await session.close();
 

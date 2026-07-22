@@ -8,6 +8,7 @@ export * from "./IBulkGraphSession";
 export * from "./IGraphProvider";
 export * from "./providerInputFiles";
 export * from "./resolveProviderCommand";
+export * from "./rust";
 export * from "./scip";
 export * from "./sidecar";
 export * from "./selectGraphProviders";

@@ -1,0 +1,257 @@
+import { TestValidator } from "@nestia/e2e";
+import fs from "node:fs";
+import path from "node:path";
+
+import { rustScipProvider } from "@samchon/graph";
+
+import { GraphPaths } from "../internal/GraphPaths";
+
+/** The stock Rust SCIP lane remains a complete, truthful navigation slice. */
+export const test_rust_scip_provider_preserves_cargo_and_toolchain_boundaries =
+  async () => {
+    const root = GraphPaths.createTempDirectory("graph-rust-scip-provider-");
+    try {
+      writeFixture(root);
+      const privateBin = path.join(root, ".samchon-graph", "bin");
+      fs.mkdirSync(privateBin, { recursive: true });
+      const tools = new Map([
+        ["rust-analyzer", "fixture rust-analyzer"],
+        ["rustc", "fixture rustc"],
+        ["cargo", "fixture cargo"],
+      ]);
+      for (const [tool, output] of tools) {
+        writeTool(platformExecutable(privateBin, tool), output);
+      }
+      const decoder = platformExecutable(privateBin, "scip");
+      writeDecoder(decoder);
+      const environment = pathEnvironment("");
+
+      TestValidator.equals(
+        "the Rust bulk provider fingerprints Cargo inputs without foreign checkouts",
+        [
+          typeof rustScipProvider.buildInputs === "function"
+            ? rustScipProvider.buildInputs(root)
+            : [],
+          rustScipProvider.inputs(root),
+          rustScipProvider.indexArgs("snapshot.scip"),
+        ],
+        [
+          [
+            ".cargo/config.toml",
+            "Cargo.lock",
+            "Cargo.toml",
+            "nested/Cargo.toml",
+            "rust-toolchain.toml",
+          ],
+          [
+            ".cargo/config.toml",
+            "Cargo.lock",
+            "Cargo.toml",
+            "nested/Cargo.toml",
+            "nested/src/lib.rs",
+            "rust-toolchain.toml",
+            "src/main.rs",
+          ],
+          ["--output", "snapshot.scip"],
+        ],
+      );
+
+      const analyzer = platformExecutable(privateBin, "rust-analyzer");
+      TestValidator.equals(
+        "Rust requires its analyzer, SCIP decoder, rustc, and Cargo together",
+        rustScipProvider.resolve(root, environment),
+        expectedCommand(analyzer, [
+          "scip",
+          ".",
+          "--exclude-vendored-libraries",
+        ]),
+      );
+      TestValidator.equals(
+        "the decoder is the JSON-only SCIP CLI contract",
+        rustScipProvider.decodeCommand(root, environment),
+        expectedCommand(decoder, ["print", "--json"]),
+      );
+      TestValidator.error(
+        "a vanished decoder is not treated as a successful Rust provider",
+        () =>
+          rustScipProvider.decodeCommand(
+            path.join(root, "missing"),
+            pathEnvironment(""),
+          ),
+      );
+
+      const configuration = rustScipProvider.effectiveConfiguration(root, {
+        ...environment,
+        CARGO_CFG_TARGET_OS: "fixture",
+        CARGO_FEATURE_EXPERIMENTAL: "1",
+        RUSTFLAGS: "--cfg fixture",
+      });
+      TestValidator.predicate(
+        "Cargo cfg and feature settings are generation inputs",
+        configuration.includes("CARGO_CFG_TARGET_OS=fixture") &&
+          configuration.includes("CARGO_FEATURE_EXPERIMENTAL=1") &&
+          configuration.includes("RUSTFLAGS=--cfg fixture"),
+      );
+      TestValidator.equals(
+        "the selected Rust toolchain versions are captured",
+        [
+          configuration.filter((row) => row.startsWith("rust-analyzer=")),
+          rustScipProvider.effectiveCompilerVersion(root, environment),
+        ],
+        [
+          ["rust-analyzer=fixture rust-analyzer"],
+          "rustc=fixture rustc; cargo=fixture cargo",
+        ],
+      );
+
+      const rustc = platformExecutable(privateBin, "rustc");
+      writeTool(rustc, "");
+      TestValidator.predicate(
+        "a tool that cannot report its version is an unavailable configuration",
+        rustScipProvider
+          .effectiveConfiguration(root, environment)
+          .includes("rustc=unavailable"),
+      );
+      writeTool(rustc, "fixture rustc");
+
+      for (const [tool, output] of [...tools.entries(), ["scip", ""]] as const) {
+        const executable = platformExecutable(privateBin, tool);
+        fs.rmSync(executable, { force: true });
+        TestValidator.equals(
+          `the missing ${tool} companion declines the whole provider`,
+          rustScipProvider.resolve(root, environment),
+          undefined,
+        );
+        if (tool === "scip") writeDecoder(executable);
+        else writeTool(executable, output);
+      }
+
+      await assertProviderSnapshot(root);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  };
+
+async function assertProviderSnapshot(root: string): Promise<void> {
+  const indexer = path.join(root, "fake-rust-analyzer.cjs");
+  fs.writeFileSync(
+    indexer,
+    [
+      '"use strict";',
+      'const fs = require("node:fs");',
+      'const output = process.argv[process.argv.indexOf("--output") + 1];',
+      'const root = process.cwd().replaceAll("\\\\", "/");',
+      'const projectRoot = root.startsWith("/") ? "file://" + root : "file:///" + root;',
+      "fs.writeFileSync(output, JSON.stringify({",
+      "  metadata: { projectRoot, toolInfo: { name: \"rust-analyzer\", version: \"fixture\" } },",
+      "  documents: [{",
+      "    language: \"rust\",",
+      "    relativePath: \"src/main.rs\",",
+      "    text: \"\",",
+      '    symbols: [{ symbol: "scip-rust cargo fixture v1 `crate`/main().", displayName: "main", kind: "Function" }],',
+      '    occurrences: [{ range: [0, 3, 7], symbol: "scip-rust cargo fixture v1 `crate`/main().", symbolRoles: 1 }],',
+      "  }],",
+      "}));",
+    ].join("\n"),
+  );
+  const session = rustScipProvider.open({
+    root,
+    command: { command: process.execPath, args: [indexer] },
+    languages: ["rust"],
+    options: {},
+  });
+  try {
+    const refresh = await session.refresh();
+    TestValidator.equals(
+      "the stock provider publishes its declared semantic-index facts only",
+      [
+        refresh.snapshot.provenance.provider,
+        refresh.snapshot.provenance.authority,
+        refresh.snapshot.provenance.facts,
+        refresh.snapshot.provenance.compilerVersion,
+        refresh.snapshot.provenance.capabilities.includes("sourceDigests"),
+        refresh.snapshot.sources.get(path.join(root, "src", "main.rs"))
+          ?.checkerDigest,
+        refresh.snapshot.nodes.map((node) => node.name),
+      ],
+      [
+        "rust-analyzer-scip",
+        "semantic-index",
+        ["contains", "references", "type_ref"],
+        "rustc=fixture rustc; cargo=fixture cargo",
+        false,
+        "",
+        ["main"],
+      ],
+    );
+  } finally {
+    await session.close();
+  }
+}
+
+function writeFixture(root: string): void {
+  fs.mkdirSync(path.join(root, ".cargo"), { recursive: true });
+  fs.mkdirSync(path.join(root, "nested", "src"), { recursive: true });
+  fs.mkdirSync(path.join(root, "src"), { recursive: true });
+  fs.mkdirSync(path.join(root, "foreign", ".git"), { recursive: true });
+  fs.mkdirSync(path.join(root, "node_modules", "ignored"), {
+    recursive: true,
+  });
+  fs.writeFileSync(path.join(root, ".cargo", "config.toml"), "[build]\n");
+  fs.writeFileSync(path.join(root, "Cargo.toml"), "[workspace]\n");
+  fs.writeFileSync(path.join(root, "Cargo.lock"), "# fixture\n");
+  fs.writeFileSync(path.join(root, "rust-toolchain.toml"), "[toolchain]\n");
+  fs.writeFileSync(path.join(root, "src", "main.rs"), "fn main() {}\n");
+  fs.writeFileSync(path.join(root, "nested", "Cargo.toml"), "[package]\n");
+  fs.writeFileSync(path.join(root, "nested", "src", "lib.rs"), "pub fn nested() {}\n");
+  fs.writeFileSync(path.join(root, "foreign", "Cargo.toml"), "[package]\n");
+  fs.writeFileSync(path.join(root, "foreign", "src.rs"), "fn foreign() {}\n");
+  fs.writeFileSync(path.join(root, "node_modules", "ignored", "Cargo.toml"), "[package]\n");
+}
+
+function writeTool(file: string, output: string): void {
+  fs.writeFileSync(
+    file,
+    process.platform === "win32"
+      ? output === ""
+        ? "@exit /b 0\r\n"
+        : `@echo ${output}\r\n@exit /b 0\r\n`
+      : `#!/bin/sh\nprintf '%s\\n' '${output}'\n`,
+  );
+  fs.chmodSync(file, 0o755);
+}
+
+function writeDecoder(file: string): void {
+  fs.writeFileSync(
+    file,
+    process.platform === "win32"
+      ? `@"${process.execPath}" "${GraphPaths.fakeScipDecoder}" %*\r\n`
+      : `#!/bin/sh\n"${process.execPath}" "${GraphPaths.fakeScipDecoder}" "$@"\n`,
+  );
+  fs.chmodSync(file, 0o755);
+}
+
+function platformExecutable(directory: string, command: string): string {
+  return path.join(
+    directory,
+    process.platform === "win32" ? `${command}.cmd` : command,
+  );
+}
+
+function expectedCommand(
+  executable: string,
+  args: readonly string[] = [],
+): { command: string; args: string[] } {
+  return process.platform === "win32"
+    ? { command: "cmd.exe", args: ["/d", "/s", "/c", executable, ...args] }
+    : { command: executable, args: [...args] };
+}
+
+function pathEnvironment(value: string): NodeJS.ProcessEnv {
+  return {
+    PATH: value,
+    Path: value,
+    PATHEXT: ".EXE;.CMD;.BAT",
+    SystemRoot: process.env.SystemRoot,
+  };
+}

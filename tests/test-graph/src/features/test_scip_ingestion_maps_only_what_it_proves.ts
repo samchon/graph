@@ -1014,6 +1014,9 @@ function assertRelationshipsAndExternals(): void {
             // A dependency with no explicit display name takes the semantic
             // name from its symbol string when first referenced.
             { range: [9, 6, 12], symbol: externalFallback },
+            // A referenced external with neither an explicit nor parsed name
+            // remains absent rather than publishing an empty graph handle.
+            { range: [10, 6, 12], symbol: unnamed },
             // An occurrence-level diagnostic has a range, and it is used.
             // Pinning it to 1:1 would send a reader to the top of the file for
             // a problem twelve lines down.

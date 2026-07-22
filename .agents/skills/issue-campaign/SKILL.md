@@ -7,9 +7,9 @@ description: Defines the default solo @samchon/graph repository-wide issue campa
 
 An issue campaign is a repeatable solo sequence of exhaustive discovery, issue
 publication, one integrated implementation pull request, and renewed discovery.
-The main agent owns every phase and spawns no subagent other than the read-only
-commit early-warning pass that
-[development.md](development.md#implement-and-write-tests) defines.
+The main agent owns every phase. The read-only commit early-warning pass that
+[development.md](development.md#implement-and-write-tests) requires on every
+pushed commit is the only subagent the campaign spawns.
 
 Use the [multi-agent skill](../multi-agent/SKILL.md) and its issue-campaign
 procedure instead only when the user explicitly asks for a parallel or

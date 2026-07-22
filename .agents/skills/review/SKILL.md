@@ -76,9 +76,13 @@ pull-request skill.
 ## Commit Early-Warning Pass
 
 A commit early-warning pass is not a review under this skill. It is the
-read-only per-commit reader a solo campaign author may run while still
-implementing, defined by the
+read-only per-commit reader a solo campaign author runs on every pushed commit
+while still implementing, required by the
 [solo campaign development document](../issue-campaign/development.md#implement-and-write-tests).
+
+Being mandatory there gives it no standing here. It is an extra early reader,
+not a stage of the review this skill defines, so completing it satisfies nothing
+the law below requires.
 
 It delegates nothing the Non-Negotiable Review Law governs. The law governs the
 author's own round, which still runs alone over the whole surface before merge

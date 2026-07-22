@@ -961,7 +961,7 @@ function assertRelationshipsAndExternals(): void {
               enclosingRange: [2, 0, 9, 1],
             },
             {
-              range: [3, 4, 10],
+              range: [2, 4, 10],
               symbol: typed,
               symbolRoles: 1,
               // Starts on the same line its owner does, so containment has to

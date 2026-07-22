@@ -487,6 +487,34 @@ async function assertCloseOwnsItsChildren(): Promise<void> {
   );
   await boundary.close();
 
+  let admissionName: string | undefined;
+  const admission = sessionOf(root);
+  try {
+    await admission.refresh({ signal: abortsOnRead(2) });
+  } catch (error) {
+    admissionName = (error as Error).name;
+  }
+  TestValidator.equals(
+    "an abort after queue admission stops before fingerprinting",
+    [admissionName, admission.generation],
+    ["AbortError", 0],
+  );
+  await admission.close();
+
+  let listenerRaceName: string | undefined;
+  const listenerRace = sessionOf(root);
+  try {
+    await listenerRace.refresh({ signal: abortsOnRead(4) });
+  } catch (error) {
+    listenerRaceName = (error as Error).name;
+  }
+  TestValidator.equals(
+    "an abort between spawn and listener registration retires the child",
+    [listenerRaceName, listenerRace.generation],
+    ["AbortError", 0],
+  );
+  await listenerRace.close();
+
   const unchangedAborted = sessionOf(root);
   await unchangedAborted.refresh();
   const unchangedController = new AbortController();
@@ -520,6 +548,28 @@ async function assertCloseOwnsItsChildren(): Promise<void> {
   }
   TestValidator.equals("an aborted refresh rejects as an abort", name, "AbortError");
   await abortedClose;
+
+  const queued = sessionOf(root, { mode: "hang" });
+  const blocker = queued.refresh().catch(() => undefined);
+  await settle();
+  const queuedController = new AbortController();
+  const cancelled = queued.refresh({ signal: queuedController.signal });
+  queuedController.abort();
+  let queuedName: string | undefined;
+  try {
+    await cancelled;
+  } catch (error) {
+    queuedName = (error as Error).name;
+  }
+  const queuedClose = queued.close();
+  await blocker;
+  await queuedClose;
+  await settle();
+  TestValidator.equals(
+    "a queued refresh cancelled before its task starts stays cancelled",
+    queuedName,
+    "AbortError",
+  );
 
   const movingRoot = GraphPaths.createTempDirectory(
     "samchon-graph-scip-moving-input-",
@@ -625,4 +675,17 @@ async function rejects(task: Promise<unknown>, label: string): Promise<void> {
 
 function settle(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 50));
+}
+
+/** A deterministic signal for the two synchronous cancellation handoffs. */
+function abortsOnRead(abortedAt: number): AbortSignal {
+  let reads = 0;
+  return {
+    get aborted() {
+      reads += 1;
+      return reads >= abortedAt;
+    },
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  } as unknown as AbortSignal;
 }

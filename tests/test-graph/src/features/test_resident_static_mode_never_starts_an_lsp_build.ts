@@ -44,4 +44,22 @@ export const test_resident_static_mode_never_starts_an_lsp_build = async () => {
     staticBuilds,
     2,
   );
+
+  let fallbackLspBuilds = 0;
+  const fallback = createResidentGraphSource(
+    { cwd: root, mode: "static", languages: ["typescript"] },
+    {
+      buildLspGraph: async () => {
+        fallbackLspBuilds += 1;
+        throw new Error("the default static builder must bypass LSP");
+      },
+    },
+  );
+  const fallbackDump = await fallback.load();
+  await fallback.close();
+  TestValidator.equals(
+    "an omitted static dependency uses the canonical static builder",
+    [fallbackDump.indexer, fallbackLspBuilds],
+    ["static", 0],
+  );
 };

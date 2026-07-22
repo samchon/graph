@@ -886,7 +886,11 @@ function assertRelationshipsAndExternals(): void {
   const iface = `${base}/Reader#`;
   const impl = `${base}/File#`;
   const typed = `${base}/Handle#`;
+  const fallback = `${base}/Fallback#`;
   const external = "scip-go gomod dep v1 `dep`/Client#";
+  const externalFallback =
+    "scip-go gomod dep v1 `dep`/FallbackDependency#";
+  const ownerless = "scip-go gomod dep v1 `dep`/Ownerless#";
   const future = "scip-go gomod dep v1 `dep`/Future#";
   const unnamed = "scip-go gomod dep v1 `dep`/";
 
@@ -930,6 +934,14 @@ function assertRelationshipsAndExternals(): void {
               kind: "TypeAlias",
               // An enclosing symbol nothing declares cannot own anything.
               enclosingSymbol: "scip-go gomod example v1 `main`/Missing#",
+            },
+            {
+              symbol: fallback,
+              kind: "Class",
+              enclosingSymbol: "!!unreadable!!",
+              relationships: [
+                { symbol: "!!unreadable!!", isTypeDefinition: true },
+              ],
             },
             // A kind this graph does not model publishes no node, and neither
             // does the type-parameter descriptor it falls back to.
@@ -996,6 +1008,12 @@ function assertRelationshipsAndExternals(): void {
             // declaration to attach the span to, and inventing one would put a
             // node in the graph named after a string nobody could parse.
             { range: [8, 0, 4], symbol: "!!unreadable!!", symbolRoles: 1 },
+            // A multi-line definition that takes its display name from the
+            // parsed symbol rather than SymbolInformation.
+            { range: [9, 0, 10, 4], symbol: fallback, symbolRoles: 1 },
+            // A dependency with no explicit display name takes the semantic
+            // name from its symbol string when first referenced.
+            { range: [9, 6, 12], symbol: externalFallback },
             // An occurrence-level diagnostic has a range, and it is used.
             // Pinning it to 1:1 would send a reader to the top of the file for
             // a problem twelve lines down.
@@ -1004,6 +1022,9 @@ function assertRelationshipsAndExternals(): void {
               symbol: iface,
               diagnostics: [{ severity: "Warning", message: "shadowed here" }],
             },
+            // Outside every declared enclosing range, so it has a target but
+            // no owner from which a graph edge could start.
+            { range: [31, 0, 4], symbol: ownerless },
           ],
           diagnostics: [
             // Document-level: no range of its own, so the file's first
@@ -1023,7 +1044,13 @@ function assertRelationshipsAndExternals(): void {
         { relativePath: "empty.go" },
       ],
       externalSymbols: [
+        // Already declared internally and therefore not a dependency leaf.
+        { symbol: iface, displayName: "Reader", kind: "Interface" },
+        // An external identity that cannot be parsed is ignored.
+        { symbol: "!!unreadable!!", displayName: "junk" },
         { symbol: external, displayName: "Client", kind: "Class" },
+        { symbol: externalFallback, kind: "Class" },
+        { symbol: ownerless, displayName: "Ownerless", kind: "Class" },
         { symbol: future, displayName: "Future", kind: "Class" },
         // A dependency leaf nothing ever references is never materialized.
         { symbol: "scip-go gomod dep v1 `dep`/Unused#", displayName: "Unused" },
@@ -1043,7 +1070,15 @@ function assertRelationshipsAndExternals(): void {
   TestValidator.equals(
     "only declarations this graph models become nodes",
     adapted.nodes.map((node) => node.name).sort(),
-    ["Client", "File", "Handle", "Reader"],
+    [
+      "Client",
+      "Fallback",
+      "FallbackDependency",
+      "File",
+      "Handle",
+      "Ownerless",
+      "Reader",
+    ],
   );
   TestValidator.predicate(
     "a dependency leaf is external and fileless",
@@ -1132,7 +1167,13 @@ function assertRelationshipsAndExternals(): void {
   );
   TestValidator.predicate(
     "a relationship to an undeclared symbol emits nothing",
-    !adapted.edges.some((candidate) => candidate.to === undefined),
+    !adapted.edges.some((candidate) => candidate.to === undefined) &&
+      !adapted.edges.some((candidate) => candidate.from === named("Fallback")),
+  );
+  TestValidator.predicate(
+    "an external target outside every scope is materialized without an edge",
+    named("Ownerless") !== undefined &&
+      !adapted.edges.some((candidate) => candidate.to === named("Ownerless")),
   );
   TestValidator.predicate(
     "an unowned enclosing symbol emits no containment",

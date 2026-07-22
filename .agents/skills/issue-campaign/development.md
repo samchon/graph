@@ -233,7 +233,9 @@ After merge:
 ## Repeat Until A Clean Round
 
 After every merged cycle, return to the parent skill's Discover Issues phase and
-perform another complete fresh round over the entire declared scope.
+run it again in full over the entire declared scope. That phase is itself a
+loop: it keeps producing fresh full-scope rounds until one of them comes up
+empty, so a single round after the merge does not discharge it.
 
 If any meaningful candidate survives fact-checking, adjudicate and publish it
 when authorized, then claim the next single cycle pull request containing every

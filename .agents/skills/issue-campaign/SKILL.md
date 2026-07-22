@@ -54,8 +54,9 @@ published issue must stand alone without access to `.wiki`.
 
 ## Discover Issues
 
-Perform one complete Solo Issue Discovery Round over the entire declared
-campaign scope. Source is only one evidence layer. Exercise real workflows and
+Run complete Solo Issue Discovery Rounds over the entire declared campaign
+scope until one of them comes up empty. One round is a unit of the phase, never
+the phase itself. Source is only one evidence layer. Exercise real workflows and
 inspect relevant upstream behavior, history, generated artifacts, public
 schemas, LSP/static parity, consumers, fixtures, CI, experiments, benchmark
 traces, and documentation.
@@ -85,15 +86,26 @@ the same rule for every round and review the campaign runs.
 
 ### Discovery Ends Only On An Empty Round
 
-A merged cycle does not end the campaign. It produces one more round: begin a
-fresh full-scope round against the integrated repository. Discovery continues
-cycle after cycle, with no round limit, and ends only when one complete fresh
-round produces no meaningful candidate after fact-checking and no accepted issue
-remains unresolved.
+The empty round governs the phase before it governs the campaign, and both
+levels apply.
 
-Report the campaign complete only from a round that actually came up empty.
-Ending after a cycle that merely felt thorough leaves the issues the next round
-would have found unrecorded.
+Inside one cycle, a round that produces a candidate is not the last round.
+Adjudicate what it found, then run another complete fresh full-scope round, and
+keep going until one round adds no meaningful candidate after fact-checking.
+Only that empty round closes discovery for the cycle and releases publication
+and implementation. A round that found something proves the scope still had
+unread evidence when it started, and a first round that reaches a publishable
+pile is the most likely of all to have left more behind it.
+
+Across cycles, a merged cycle does not end the campaign. It reopens discovery:
+run the phase again in full against the integrated repository, under the same
+empty-round rule. Discovery continues cycle after cycle, with no round limit,
+and the campaign ends only when a complete fresh round produces no meaningful
+candidate and no accepted issue remains unresolved.
+
+Report discovery or the campaign complete only from a round that actually came
+up empty. Ending after a round that merely felt thorough leaves the issues the
+next round would have found unrecorded.
 
 ## Vet And Publish Issues
 

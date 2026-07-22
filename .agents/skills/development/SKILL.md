@@ -45,6 +45,8 @@ Fix the verified class without broadening the user's product goal.
 
 Each deterministic feature test lives in `tests/test-graph/src/features/test_<snake_case>.ts` and exports exactly one matching `test_<snake_case>` function. The dynamic runner discovers that prefix and rejects files with zero or multiple test exports.
 
+Open each new or modified case with a doc comment naming what it pins. The filename already states the assertion, so spend the comment on the non-obvious reason the case exists: the branch it locks, the regression it replays, or the invariant that would otherwise be invisible.
+
 Use `@nestia/e2e`'s `TestValidator` and the shared fixtures in `tests/test-graph/src/internal`. Extend a nearby fixture or fake process rather than creating an unrelated harness. Keep real language-server installation and network-heavy project smoke tests in `tests/experiment`; the deterministic suite must not depend on globally installed servers or network access.
 
 Coverage is a specification, not a reason for artificial branches. The root `pnpm coverage` command enforces 100 percent line, function, and branch coverage. Use `c8 ignore` only for a genuinely untestable platform/process boundary and keep the ignored span as narrow as possible.
@@ -55,8 +57,6 @@ A regression test must fail for the reported behavior before the fix and pass af
 - a negative twin one property away where it must not occur;
 - empty, singleton, exact-limit, ambiguous-name, missing-server, and recovery boundaries that apply; and
 - both source-of-truth lanes when the invariant is shared by LSP and static indexing.
-
-Open each new or modified case with a doc comment naming what it pins. The filename already states the assertion, so spend the comment on the non-obvious reason the case exists: the branch it locks, the regression it replays, or the invariant that would otherwise be invisible.
 
 ### Expectations Come From An Oracle
 

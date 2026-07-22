@@ -124,9 +124,9 @@ ledger with ordinary issue-style pull-request comments.
 
 Every pushed commit also gets one read-only subagent as a commit early-warning
 pass, spawned as soon as that commit is pushed. The main agent keeps
-implementing while the pass runs and does not wait for it. The pass reads that one commit and reports
-candidates. It never edits, commits, pushes, or makes an implementation
-decision.
+implementing while the pass runs and does not wait for it. The pass reads that
+one commit and reports candidates. It never edits, commits, pushes, or makes an
+implementation decision.
 
 The pass is required, not discretionary. Its value is timing: a defect named
 while that code is the newest thing written costs little to correct, and nothing

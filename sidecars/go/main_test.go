@@ -330,6 +330,30 @@ func TestModuleAndProcessBoundariesFailClosed(t *testing.T) {
 	}
 }
 
+func TestProjectBoundaryAllowsOnlySharedSymlinkPrefixes(t *testing.T) {
+	realRoot := t.TempDir()
+	module := filepath.Join(realRoot, "module")
+	if err := os.Mkdir(module, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "root")
+	if err := os.Symlink(realRoot, alias); err != nil {
+		t.Skipf("create project-root symlink: %v", err)
+	}
+	if !withinProjectBoundary(alias, filepath.Join(alias, "module")) {
+		t.Error("a module below a shared project-root symlink was rejected")
+	}
+
+	outside := t.TempDir()
+	escape := filepath.Join(alias, "escape")
+	if err := os.Symlink(outside, escape); err != nil {
+		t.Skipf("create nested escape symlink: %v", err)
+	}
+	if withinProjectBoundary(alias, escape) {
+		t.Error("a nested symlink that escapes the project was accepted")
+	}
+}
+
 type fixtureScipIndexer struct {
 	version string
 }

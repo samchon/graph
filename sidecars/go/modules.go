@@ -125,18 +125,31 @@ func validateLocalReplacements(root, manifest string, replacements []*modfile.Re
 }
 
 func withinProjectBoundary(root, candidate string) bool {
-	if !within(root, candidate) {
-		return false
-	}
-	resolved, err := filepath.EvalSymlinks(candidate)
-	if err != nil || !samePath(resolved, candidate) {
-		return false
-	}
-	relative, err := filepath.Rel(root, candidate)
+	absoluteRoot, err := filepath.Abs(root)
 	if err != nil {
 		return false
 	}
-	cursor := filepath.Clean(root)
+	absoluteCandidate, err := filepath.Abs(candidate)
+	if err != nil || !within(absoluteRoot, absoluteCandidate) {
+		return false
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(absoluteRoot)
+	if err != nil {
+		return false
+	}
+	resolvedCandidate, err := filepath.EvalSymlinks(absoluteCandidate)
+	if err != nil || !within(resolvedRoot, resolvedCandidate) {
+		return false
+	}
+	relative, err := filepath.Rel(absoluteRoot, absoluteCandidate)
+	if err != nil {
+		return false
+	}
+	resolvedRelative, err := filepath.Rel(resolvedRoot, resolvedCandidate)
+	if err != nil || !samePath(relative, resolvedRelative) {
+		return false
+	}
+	cursor := filepath.Clean(absoluteRoot)
 	for _, segment := range strings.Split(filepath.Clean(relative), string(filepath.Separator)) {
 		if segment == "." || segment == "" {
 			continue

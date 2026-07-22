@@ -108,7 +108,14 @@ function assertOneOwnerPerLanguage(
   registry: readonly IGraphProvider[],
 ): void {
   const owners = new Map<GraphLanguage, IGraphProvider>();
+  const names = new Set<string>();
   for (const provider of registry) {
+    if (names.has(provider.name)) {
+      throw new Error(
+        `@samchon/graph: provider "${provider.name}" is registered more than once; provenance needs one stable provider identity`,
+      );
+    }
+    names.add(provider.name);
     if (provider.languages.length === 0) {
       throw new Error(
         `@samchon/graph: provider "${provider.name}" owns no language, so nothing can select it`,

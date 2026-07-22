@@ -198,6 +198,21 @@ async function assertSelection(): Promise<void> {
       [ProviderFixtures.provider({ name: "empty", languages: [] })],
     ),
   );
+  TestValidator.error("a provider identity cannot name two entries", () =>
+    selectGraphProviders(
+      "/root",
+      ["typescript", "go"],
+      {},
+      {},
+      [
+        ProviderFixtures.provider({
+          name: "duplicate",
+          languages: ["typescript"],
+        }),
+        ProviderFixtures.provider({ name: "duplicate", languages: ["go"] }),
+      ],
+    ),
+  );
 
   // The shipped registry must satisfy its own rule.
   TestValidator.equals(

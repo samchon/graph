@@ -5,28 +5,13 @@ import { createResidentGraphSource } from "../../../../packages/graph/src/indexe
 import type { IIndexerResult } from "../../../../packages/graph/src/indexer/IIndexerResult";
 import type { IBulkGraphSession } from "../../../../packages/graph/src/provider/IBulkGraphSession";
 import { GraphPaths } from "../internal/GraphPaths";
+import { ProviderFixtures } from "../internal/ProviderFixtures";
 
 export const test_resident_close_reaches_a_stalled_bulk_refresh = async () => {
   const root = GraphPaths.createTempDirectory("samchon-graph-stalled-bulk-");
   fs.writeFileSync(`${root}/a.ts`, "export const answer = 1;\n");
 
-  const snapshot: IBulkGraphSession.ISnapshot = {
-    language: "typescript",
-    nodes: [],
-    edges: [],
-    diagnostics: [],
-    sources: new Map(),
-    provenance: {
-      schemaVersion: 5,
-      tool: "fake-ttscgraph",
-      toolVersion: "test",
-      compilerVersion: "test",
-      protocolVersion: 1,
-      universe: "test",
-      capabilities: [],
-    },
-    warnings: [],
-  };
+  const snapshot: IBulkGraphSession.ISnapshot = ProviderFixtures.snapshot();
   let closeCalls = 0;
   let announceRefresh!: () => void;
   const refreshStarted = new Promise<void>((resolve) => {
@@ -35,7 +20,7 @@ export const test_resident_close_reaches_a_stalled_bulk_refresh = async () => {
   let rejectRefresh: ((error: Error) => void) | undefined;
   const session: IBulkGraphSession = {
     kind: "bulk",
-    language: "typescript",
+    languages: ["typescript"],
     root,
     generation: 1,
     current: snapshot,
@@ -100,7 +85,7 @@ export const test_resident_close_reaches_a_stalled_bulk_refresh = async () => {
   let failedCloseCalls = 0;
   const unpublished: IBulkGraphSession = {
     kind: "bulk",
-    language: "typescript",
+    languages: ["typescript"],
     root,
     generation: 0,
     current: undefined,

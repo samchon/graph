@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
+import { ProviderFixtures } from "../internal/ProviderFixtures";
 
 type BuildDependencies = NonNullable<Parameters<typeof buildLspGraph>[1]>;
 
@@ -29,12 +30,17 @@ export const test_requested_languages_are_normalized_before_global_source_select
   await assertStrictDuplicatesAreNotOpenedTwice(root);
   await assertFallbackDuplicatesAndStaticResidentCap(root);
   await assertUnsupportedExplicitLanguageFailsBeforeIndexing(root);
+  await assertEmptyStrictSliceRemainsStrict(root);
+  await assertSessionCannotWidenItsCandidate(root);
+  await assertInitialBuildInputFence();
 };
 
 async function assertGenericDuplicatesAndGlobalCap(root: string): Promise<void> {
   const calls: GraphLanguage[] = [];
   const dependencies: BuildDependencies = {
-    resolveTtscGraphCommand: () => undefined,
+    // No strict provider is registered, so every language reaches the generic
+    // lane and this case measures what it was written to measure.
+    providers: [],
     collectLanguageGraph: async (_root, language) => {
       calls.push(language);
       return {
@@ -88,17 +94,18 @@ async function assertGenericDuplicatesAndGlobalCap(root: string): Promise<void> 
 async function assertStrictDuplicatesAreNotOpenedTwice(root: string): Promise<void> {
   let calls = 0;
   let closes = 0;
+  const snapshot = strictSnapshot();
   const session: IBulkGraphSession = {
     kind: "bulk",
-    language: "typescript",
+    languages: ["typescript"],
     root,
     generation: 1,
-    current: strictSnapshot(root),
+    current: snapshot,
     refresh: async () => ({
       changed: false,
       generation: 1,
       mode: "unchanged",
-      snapshot: strictSnapshot(root),
+      snapshot,
     }),
     close: async () => {
       closes += 1;
@@ -111,10 +118,18 @@ async function assertStrictDuplicatesAreNotOpenedTwice(root: string): Promise<vo
       keepAlive: true,
     },
     {
-      resolveTtscGraphCommand: () => ({ command: process.execPath, args: [] }),
-      collectTtscGraph: async () => {
+      providers: [ProviderFixtures.provider()],
+      collectProviderGraph: async () => {
         calls += 1;
-        return { result: strictSnapshot(root), session };
+        return {
+          refresh: {
+            changed: true,
+            generation: 1,
+            mode: "initial",
+            snapshot,
+          },
+          session,
+        };
       },
     },
   );
@@ -184,6 +199,333 @@ async function assertUnsupportedExplicitLanguageFailsBeforeIndexing(
   );
 }
 
+async function assertEmptyStrictSliceRemainsStrict(root: string): Promise<void> {
+  const snapshot = ProviderFixtures.snapshot({ provider: "empty-strict" });
+  const session = ProviderFixtures.session({ root, snapshots: [snapshot] });
+  const result = await buildLspGraph(
+    { cwd: root, languages: ["typescript"], keepAlive: true },
+    {
+      providers: [
+        ProviderFixtures.provider({
+          name: "empty-strict",
+          open: () => session,
+        }),
+      ],
+    },
+  );
+  TestValidator.predicate(
+    "a valid declaration-free strict slice keeps its authority and language",
+    result.dump.indexer === "lsp" &&
+      result.dump.languages.includes("typescript") &&
+      result.dump.nodes.length === 0 &&
+      result.dump.provenance?.[0]?.provider === "empty-strict" &&
+      result.sessions?.get("typescript") === session,
+  );
+  await session.close();
+}
+
+async function assertSessionCannotWidenItsCandidate(root: string): Promise<void> {
+  let closes = 0;
+  let genericCalls = 0;
+  const snapshot = ProviderFixtures.snapshot({ provider: "widening" });
+  const widening = ProviderFixtures.session({
+    root,
+    languages: ["go"],
+    snapshots: [snapshot],
+    onClose: () => {
+      closes += 1;
+    },
+  });
+  const generic = genericSession("typescript");
+  const result = await buildLspGraph(
+    { cwd: root, languages: ["typescript"] },
+    {
+      providers: [
+        ProviderFixtures.provider({
+          name: "widening",
+          open: () => widening,
+        }),
+      ],
+      collectLanguageGraph: async () => {
+        genericCalls += 1;
+        return {
+          result: {
+            nodes: [graphNode("typescript", "b.ts")],
+            edges: [],
+            diagnostics: [],
+            warnings: [],
+          },
+          session: generic,
+        };
+      },
+    },
+  );
+  TestValidator.predicate(
+    "a provider-controlled language widening is refused, closed, and reported",
+    closes === 1 &&
+      genericCalls === 1 &&
+      result.warnings.some((warning) => warning.includes("opened a session for")),
+  );
+  await generic.client.close();
+
+  await assertRejectedStrictSession(root, "wrong-root", (snapshot) => ({
+    kind: "bulk",
+    languages: ["typescript"],
+    root: path.join(root, "another-project"),
+    generation: 1,
+    current: snapshot,
+    refresh: async () => ({
+      changed: true,
+      generation: 1,
+      mode: "initial",
+      snapshot,
+    }),
+    close: async () => undefined,
+  }), "not the selected project");
+  await assertRejectedStrictSession(root, "wrong-current", (snapshot) => ({
+    kind: "bulk",
+    languages: ["typescript"],
+    root,
+    generation: 1,
+    current: undefined,
+    refresh: async () => ({
+      changed: true,
+      generation: 1,
+      mode: "initial",
+      snapshot,
+    }),
+    close: async () => undefined,
+  }), "not its current generation");
+  await assertRejectedStrictSession(root, "wrong-generation", (snapshot) => ({
+    kind: "bulk",
+    languages: ["typescript"],
+    root,
+    generation: 2,
+    current: snapshot,
+    refresh: async () => ({
+      changed: true,
+      generation: 1,
+      mode: "initial",
+      snapshot,
+    }),
+    close: async () => undefined,
+  }), "session reports 2");
+}
+
+async function assertRejectedStrictSession(
+  root: string,
+  name: string,
+  sessionOf: (snapshot: IBulkGraphSession.ISnapshot) => IBulkGraphSession,
+  warning: string,
+): Promise<void> {
+  const snapshot = ProviderFixtures.snapshot({ provider: name });
+  const session = sessionOf(snapshot);
+  const generic = genericSession("typescript");
+  const result = await buildLspGraph(
+    { cwd: root, languages: ["typescript"] },
+    {
+      providers: [ProviderFixtures.provider({ name, open: () => session })],
+      collectLanguageGraph: async () => ({
+        result: {
+          nodes: [graphNode("typescript", "b.ts")],
+          edges: [],
+          diagnostics: [],
+          warnings: [],
+        },
+        session: generic,
+      }),
+    },
+  );
+  TestValidator.predicate(
+    `${name} is refused before publication`,
+    result.warnings.some((entry) => entry.includes(warning)),
+  );
+  await generic.client.close();
+}
+
+async function assertInitialBuildInputFence(): Promise<void> {
+  const root = GraphPaths.createTempDirectory("samchon-graph-initial-fence-");
+  const source = path.join(root, "a.ts");
+  const config = path.join(root, "generated.inputs");
+  fs.writeFileSync(source, "export const value = 1;\n");
+  fs.writeFileSync(config, "first\n");
+  installCommand(root, "ttscserver");
+
+  let builds = 0;
+  let staleCloses = 0;
+  const result = await buildLspGraph(
+    { cwd: root, languages: ["typescript"], keepAlive: true },
+    {
+      providers: [
+        ProviderFixtures.provider({
+          name: "declared-inputs",
+          buildInputs: ["generated.inputs"],
+          refuse: () => "use the generic lane for this fence fixture",
+        }),
+      ],
+      collectLanguageGraph: async () => {
+        builds += 1;
+        const session = genericSession("typescript");
+        session.client.close = async () => {
+          staleCloses += 1;
+        };
+        if (builds === 1) fs.writeFileSync(config, "second\n");
+        return {
+          result: {
+            nodes: [graphNode("typescript", "a.ts")],
+            edges: [],
+            diagnostics: [],
+            warnings: [],
+          },
+          session,
+        };
+      },
+    },
+  );
+  TestValidator.predicate(
+    "an initial build retries a moved provider-declared input and closes its candidate",
+    builds === 2 && staleCloses === 1,
+  );
+  const kept = result.sessions?.get("typescript");
+  if (kept !== undefined && !("kind" in kept)) await kept.client.close();
+
+  fs.writeFileSync(config, "one-shot first\n");
+  let oneShotBuilds = 0;
+  let oneShotCloses = 0;
+  await buildLspGraph(
+    { cwd: root, languages: ["typescript"] },
+    {
+      providers: [
+        ProviderFixtures.provider({
+          name: "one-shot-inputs",
+          buildInputs: ["generated.inputs"],
+          refuse: () => "use the generic lane for this fence fixture",
+        }),
+      ],
+      collectLanguageGraph: async () => {
+        oneShotBuilds += 1;
+        const session = genericSession("typescript");
+        session.client.close = async () => {
+          oneShotCloses += 1;
+        };
+        if (oneShotBuilds === 1) {
+          fs.writeFileSync(config, "one-shot second\n");
+        }
+        // The production collector closes a one-shot session before returning
+        // it. This dependency preserves that contract while staging the input
+        // move at the seam the commit helper must detect.
+        await session.client.close();
+        return {
+          result: {
+            nodes: [graphNode("typescript", "a.ts")],
+            edges: [],
+            diagnostics: [],
+            warnings: [],
+          },
+          session,
+        };
+      },
+    },
+  );
+  TestValidator.equals(
+    "a stale one-shot build retries after its collector closed each session",
+    [oneShotBuilds, oneShotCloses],
+    [2, 2],
+  );
+
+  const busyRoot = GraphPaths.createTempDirectory(
+    "samchon-graph-initial-fence-busy-",
+  );
+  const busyConfig = path.join(busyRoot, "generated.inputs");
+  fs.writeFileSync(path.join(busyRoot, "a.ts"), "export const value = 1;\n");
+  fs.writeFileSync(busyConfig, "revision 0\n");
+  installCommand(busyRoot, "ttscserver");
+  let attempts = 0;
+  let closes = 0;
+  let busyFailure: unknown;
+  try {
+    await buildLspGraph(
+      { cwd: busyRoot, languages: ["typescript"], keepAlive: true },
+      {
+        providers: [
+          ProviderFixtures.provider({
+            name: "busy-inputs",
+            buildInputs: ["generated.inputs"],
+            refuse: () => "use the generic lane for this fence fixture",
+          }),
+        ],
+        collectLanguageGraph: async () => {
+          attempts += 1;
+          const session = genericSession("typescript");
+          session.client.close = async () => {
+            closes += 1;
+          };
+          fs.writeFileSync(busyConfig, `revision ${String(attempts)}\n`);
+          return {
+            result: {
+              nodes: [graphNode("typescript", "a.ts")],
+              edges: [],
+              diagnostics: [],
+              warnings: [],
+            },
+            session,
+          };
+        },
+      },
+    );
+  } catch (error) {
+    busyFailure = error;
+  }
+  TestValidator.predicate(
+    "a continuously moving initial manifest exhausts a bounded retry",
+    busyFailure instanceof Error &&
+      busyFailure.message.includes("bounded attempts") &&
+      attempts === 3 &&
+      closes === 3,
+  );
+
+  let cleanupFailure: unknown;
+  try {
+    await buildLspGraph(
+      { cwd: busyRoot, languages: ["typescript"], keepAlive: true },
+      {
+        providers: [
+          ProviderFixtures.provider({
+            name: "failed-cleanup",
+            buildInputs: ["generated.inputs"],
+            refuse: () => "use the generic lane for this fence fixture",
+          }),
+        ],
+        collectLanguageGraph: async () => {
+          const session = genericSession("typescript");
+          session.client.close = async () => {
+            throw new Error("candidate cleanup failed");
+          };
+          fs.writeFileSync(busyConfig, `cleanup ${Date.now()}\n`);
+          return {
+            result: {
+              nodes: [graphNode("typescript", "a.ts")],
+              edges: [],
+              diagnostics: [],
+              warnings: [],
+            },
+            session,
+          };
+        },
+      },
+    );
+  } catch (error) {
+    cleanupFailure = error;
+  }
+  TestValidator.predicate(
+    "a stale candidate cleanup failure is retained instead of retried away",
+    cleanupFailure instanceof AggregateError &&
+      cleanupFailure.errors.some(
+        (error) => error instanceof Error && error.message === "candidate cleanup failed",
+      ),
+  );
+}
+
 function genericSession(language: GraphLanguage): ILspSession {
   return {
     client: { close: async () => undefined } as ILspSession["client"],
@@ -205,24 +547,10 @@ function graphNode(language: GraphLanguage, file: string): ISamchonGraphNode {
   };
 }
 
-function strictSnapshot(root: string): IBulkGraphSession.ISnapshot {
-  return {
-    language: "typescript",
+function strictSnapshot(): IBulkGraphSession.ISnapshot {
+  return ProviderFixtures.snapshot({
     nodes: [graphNode("typescript", "b.ts")],
-    edges: [],
-    diagnostics: [],
-    sources: new Map(),
-    provenance: {
-      schemaVersion: 5,
-      tool: "test",
-      toolVersion: "1",
-      compilerVersion: "1",
-      protocolVersion: 1,
-      universe: root,
-      capabilities: [],
-    },
-    warnings: [],
-  };
+  });
 }
 
 async function closeSessions(

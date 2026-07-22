@@ -1,4 +1,5 @@
 import { ISamchonGraphEdge, ISamchonGraphNode } from "../structures";
+import { GraphLanguage } from "../typings";
 import { dedupeEdges } from "../indexer/dedupeEdges";
 import { dedupeNodes } from "../indexer/dedupeNodes";
 import { finalizeGraph } from "../indexer/finalizeGraph";
@@ -14,6 +15,12 @@ import {
  * cleanup. Strict providers already resolved those facts and must pass through
  * unchanged. Cross-lane identity collisions are rejected rather than allowing
  * either lane to overwrite compiler truth.
+ *
+ * Endpoint closure is checked over the strict facts as a whole rather than per
+ * provider, and deliberately: a provider that owns C and C++ resolves calls
+ * that cross between them, and #66 exists precisely so those edges can be
+ * published. Requiring each slice to close over itself would reject exactly the
+ * cross-language facts a shared compilation universe is worth having.
  */
 export function mergeGraphSlices(options: {
   root: string;
@@ -95,15 +102,29 @@ function assertStrictSlice(
   nodes: readonly ISamchonGraphNode[],
   edges: readonly ISamchonGraphEdge[],
 ): void {
-  const nodeIds = new Set<string>();
+  // These arrays are now every strict provider's slices concatenated, not one
+  // provider's output. A duplicate can therefore mean two things, and the two
+  // need different answers: one provider publishing an id twice is that
+  // provider's defect, while two providers publishing the same id means the
+  // registry let both own the same declaration — a collision no merge can
+  // resolve, because neither slice is wrong on its own and picking either one
+  // silently discards facts the other proved.
+  //
+  // Both are refused. Distinguishing them in the message is what makes the
+  // second diagnosable: a reader who is only told "duplicated node" will look
+  // for the bug inside one provider and not find it.
+  const nodeIds = new Map<string, GraphLanguage>();
   for (const node of nodes) {
     validateSemanticGraphNode(node);
-    if (nodeIds.has(node.id)) {
+    const owner = nodeIds.get(node.id);
+    if (owner !== undefined) {
       throw new Error(
-        `@samchon/graph: strict provider duplicated node: ${node.id}`,
+        owner === node.language
+          ? `@samchon/graph: strict provider duplicated node: ${node.id}`
+          : `@samchon/graph: strict ${owner} and ${node.language} slices both publish node ${node.id}; one declaration cannot have two owners`,
       );
     }
-    nodeIds.add(node.id);
+    nodeIds.set(node.id, node.language);
   }
   const edgeKeys = new Set<string>();
   for (const edge of edges) {

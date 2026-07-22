@@ -29,7 +29,7 @@ interface Pending {
 /** Resident, restartable NDJSON client for `ttscgraph serve`. */
 export class TtscGraphClient implements IBulkGraphSession {
   public readonly kind = "bulk" as const;
-  public readonly language = "typescript" as const;
+  public readonly languages = ["typescript"] as const;
   public readonly root: string;
 
   private readonly command: string;
@@ -119,7 +119,7 @@ export class TtscGraphClient implements IBulkGraphSession {
           );
         }
         const next: IBulkGraphSession.ISnapshot = {
-          language: "typescript",
+          languages: ["typescript"],
           nodes: adapted.nodes,
           edges: adapted.edges,
           diagnostics: adapted.diagnostics,

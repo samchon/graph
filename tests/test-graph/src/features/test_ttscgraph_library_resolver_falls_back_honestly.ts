@@ -37,9 +37,17 @@ export const test_ttscgraph_library_resolver_falls_back_honestly =
       const result = await buildLspGraph({ cwd: root, languages: ["typescript"] });
       TestValidator.predicate(
         "a missing strict binary is reported honestly, not resolved to a phantom command",
-        result.warnings.some((warning) =>
-          warning.includes("ttscgraph bulk provider was not found"),
+        result.warnings.some(
+          (warning) =>
+            warning.includes("ttscgraph") && warning.includes("was not found"),
         ),
+      );
+      // The sentence also has to say what was lost. A reader who is told only
+      // that something was not found cannot tell whether the facts they are
+      // now holding came from a compiler or from a best-effort text scan.
+      TestValidator.predicate(
+        "the fallback names the authority the build gave up",
+        result.warnings.some((warning) => warning.includes("compiler provider")),
       );
       TestValidator.predicate(
         "the build still produces a dump via fallback rather than crashing",

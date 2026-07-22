@@ -2,6 +2,7 @@ import { ISamchonGraphDump } from "../structures";
 import { GraphLanguage } from "../typings";
 import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
+import { IGraphProvider } from "../provider/IGraphProvider";
 import { ILspSession } from "./ILspSession";
 
 export interface IIndexerResult {
@@ -27,4 +28,39 @@ export interface IIndexerResult {
 
   /** Immutable source-display evidence captured with this exact dump. */
   source?: SamchonGraphSourceReader;
+
+  /**
+   * What each contributing provider did to compute this build, by provider
+   * name.
+   *
+   * Reported here rather than in the dump because computation mode is a
+   * property of one refresh, not of the facts: a session that reused its
+   * resident program and a cold build that loaded it from scratch can publish
+   * identical facts, and recording the difference inside the dump would make
+   * two dumps of the same unedited checkout differ. Experiments and the
+   * conformance harness measure incrementality from this; a generation counter
+   * cannot, because a reuse and a full rebuild both move it by one.
+   */
+  modes?: Map<string, IBulkGraphSession.Mode>;
+
+  /**
+   * The registry entry behind each kept strict session, by language.
+   *
+   * Present only with `keepAlive`, and only so a resident source can hold every
+   * *later* snapshot to the same contract as the first. Without it the
+   * contract check would run once, on the initial build, and a provider whose
+   * second generation published an unclaimed edge family or a foreign
+   * language's nodes would be merged into the dump unexamined — which is
+   * exactly the generation a long-lived session spends all its time in.
+   */
+  providers?: Map<GraphLanguage, IGraphProvider>;
+
+  /** Project-wide source/config/build inputs fenced around this build. */
+  inputManifest?: Map<string, string>;
+
+  /** Languages whose source contents remain opaque to the coordinator. */
+  inputManifestLanguages?: GraphLanguage[];
+
+  /** Provider-declared non-source inputs retained for resident recapture. */
+  buildInputs?: string[];
 }

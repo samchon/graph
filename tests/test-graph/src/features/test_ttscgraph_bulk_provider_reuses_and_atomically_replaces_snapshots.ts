@@ -7,6 +7,7 @@ import { SamchonGraphMemory } from "../../../../packages/graph/src/SamchonGraphM
 import { buildLspGraph } from "../../../../packages/graph/src/indexer/buildLspGraph";
 import { TtscGraphClient } from "../../../../packages/graph/src/provider/ttscgraph/TtscGraphClient";
 import { resolveTtscGraphCommand } from "../../../../packages/graph/src/provider/ttscgraph/resolveTtscGraphCommand";
+import { ttscGraphProvider } from "../../../../packages/graph/src/provider/ttscgraph/ttscGraphProvider";
 import { ISamchonGraphDump } from "../../../../packages/graph/src/structures";
 import { GraphPaths } from "../internal/GraphPaths";
 
@@ -181,10 +182,19 @@ export const test_ttscgraph_bulk_provider_reuses_and_atomically_replaces_snapsho
         languages: ["typescript"],
       },
       {
-        resolveTtscGraphCommand: () => ({
-          command: process.execPath,
-          args: [GraphPaths.fakeTtscGraphServer],
-        }),
+        // Only the command is substituted. The registered provider's refusal,
+        // authority, provable fact families, and session construction all run
+        // as shipped, so this exercises the integration rather than a stub
+        // standing where it belongs.
+        providers: [
+          {
+            ...ttscGraphProvider,
+            resolve: () => ({
+              command: process.execPath,
+              args: [GraphPaths.fakeTtscGraphServer],
+            }),
+          },
+        ],
       },
     );
     TestValidator.equals(

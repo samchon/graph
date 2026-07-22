@@ -9,7 +9,11 @@ import {
   ISamchonGraphEvidence,
   ISamchonGraphNode,
 } from "../../structures";
-import { GraphEdgeKind, GraphNodeKind } from "../../typings";
+import {
+  GraphEdgeKind,
+  GraphNodeKind,
+  GraphProviderAuthority,
+} from "../../typings";
 import { IBulkGraphSession } from "../IBulkGraphSession";
 import { ITtscGraphSnapshot } from "./ITtscGraphSnapshot";
 
@@ -424,6 +428,14 @@ function provenanceOf(
   }
   const producer = objectOf(provenance.producer, "dump.provenance.producer");
   return {
+    // Stated here rather than read from the wire: which registered provider
+    // this is, what its facts are grounded in, and which families it may
+    // publish are the graph's own claims about a producer, not the producer's
+    // claims about itself. A snapshot that could name its own authority could
+    // name any authority.
+    provider: adaptTtscGraphDump.PROVIDER,
+    authority: adaptTtscGraphDump.AUTHORITY,
+    facts: [...adaptTtscGraphDump.EDGE_KINDS],
     schemaVersion,
     tool: stringOf(producer.tool, "dump.provenance.producer.tool"),
     toolVersion: stringOf(producer.version, "dump.provenance.producer.version"),
@@ -526,17 +538,42 @@ const NODE_KINDS = new Set<GraphNodeKind>([
   "method",
   "module",
 ]);
-const EDGE_KINDS = new Set<GraphEdgeKind>([
-  "exports",
-  "calls",
-  "accesses",
-  "instantiates",
-  "type_ref",
-  "extends",
-  "implements",
-  "overrides",
-  "renders",
-]);
+/* c8 ignore start -- merging a namespace onto a function compiles to an
+ * `X || (X = {})` initialiser, emitted at the closing brace, whose falsy arm
+ * cannot run: the function declaration above it is always evaluated first.
+ * The constants inside run unconditionally, so nothing testable is hidden. */
+export namespace adaptTtscGraphDump {
+  /** The registry identity every `ttscgraph` snapshot is published under. */
+  export const PROVIDER = "ttscgraph";
+
+  /** What these facts are grounded in: the TypeScript checker itself. */
+  export const AUTHORITY: GraphProviderAuthority = "compiler";
+
+  /**
+   * The edge families a `ttscgraph` snapshot may carry.
+   *
+   * Published here because the registry entry declares the same list as this
+   * provider's proven facts, and the two must be one statement. A second copy
+   * beside the provider would let the adapter accept a family the registry
+   * never claimed — or refuse one it did — and a reader comparing a dump's
+   * declared facts against its edges would be comparing against the wrong
+   * list.
+   */
+  export const EDGE_KINDS: readonly GraphEdgeKind[] = [
+    "exports",
+    "calls",
+    "accesses",
+    "instantiates",
+    "type_ref",
+    "extends",
+    "implements",
+    "overrides",
+    "renders",
+  ];
+}
+/* c8 ignore stop */
+
+const EDGE_KINDS = new Set<GraphEdgeKind>(adaptTtscGraphDump.EDGE_KINDS);
 const MODIFIERS = new Set<NonNullable<ISamchonGraphNode["modifiers"]>[number]>([
   "export",
   "default",

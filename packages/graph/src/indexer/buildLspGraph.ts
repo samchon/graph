@@ -12,13 +12,16 @@ import {
 import { GraphLanguage } from "../typings";
 import { projectRelative, readText } from "../utils/fs";
 import { fileFromUri, fileUri, isSubPath } from "../utils/path";
+import { assertGraphSnapshotContract } from "../provider/assertGraphSnapshotContract";
+import { dumpProvenanceOf } from "../provider/dumpProvenanceOf";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { isBulkGraphSession } from "../provider/isBulkGraphSession";
 import { mergeGraphSlices } from "../provider/mergeGraphSlices";
-import { TtscGraphClient } from "../provider/ttscgraph/TtscGraphClient";
-import { resolveTtscGraphCommand } from "../provider/ttscgraph/resolveTtscGraphCommand";
-import { ttscGraphStrictRefusal } from "../provider/ttscgraph/ttscGraphStrictRefusal";
+import { GRAPH_PROVIDERS } from "../provider/GRAPH_PROVIDERS";
+import { IGraphProvider } from "../provider/IGraphProvider";
+import { selectGraphProviders } from "../provider/selectGraphProviders";
 import { appendAll } from "./appendAll";
+import { commitProjectInputGeneration } from "./commitProjectInputGeneration";
 import { dedupeEdges } from "./dedupeEdges";
 import { dedupeNodes } from "./dedupeNodes";
 import { ensureCompileCommands } from "./ensureCompileCommands";
@@ -38,14 +41,24 @@ import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
 
 interface IBuildLspGraphDependencies {
-  resolveTtscGraphCommand: typeof resolveTtscGraphCommand;
-  collectTtscGraph: typeof collectTtscGraph;
+  /**
+   * The registry discovery reads.
+   *
+   * The seam is the registry, not the selection. Letting a caller replace
+   * `selectGraphProviders` itself would mean that refusal, command resolution,
+   * project preparation, and the one-owner-per-language check never run on any
+   * path a test exercises — the integration would be proved by a stub standing
+   * exactly where the logic under test belongs. Substituting an entry instead
+   * leaves every one of those steps running against it.
+   */
+  providers: readonly IGraphProvider[];
+  collectProviderGraph: typeof collectProviderGraph;
   collectLanguageGraph: typeof collectLanguageGraph;
 }
 
 const DEFAULT_DEPENDENCIES: IBuildLspGraphDependencies = {
-  resolveTtscGraphCommand,
-  collectTtscGraph,
+  providers: GRAPH_PROVIDERS,
+  collectProviderGraph,
   collectLanguageGraph,
 };
 
@@ -57,6 +70,27 @@ export async function buildLspGraph(
     ...DEFAULT_DEPENDENCIES,
     ...dependencies,
   };
+  const committed = await commitProjectInputGeneration(
+    options,
+    resolvedDependencies.providers,
+    () => buildLspGraphAttempt(options, resolvedDependencies),
+    async (result) =>
+      // A one-shot attempt has already closed its own sessions; only resident
+      // candidates hand any back for this discard path to retire.
+      result.sessions === undefined
+        ? []
+        : closeKeptSessions(result.sessions),
+  );
+  if (options.keepAlive) return committed;
+  const { sources: _consumedSources, ...result } = committed;
+  void _consumedSources;
+  return result;
+}
+
+async function buildLspGraphAttempt(
+  options: IBuildGraphOptions,
+  resolvedDependencies: IBuildLspGraphDependencies,
+): Promise<IIndexerResult> {
   const root = path.resolve(options.cwd ?? process.cwd());
   const selected = selectGraphSources(root, options);
   const languages = selected.languages;
@@ -78,7 +112,11 @@ export async function buildLspGraph(
       texts: sources,
       digests: strictDigests,
     });
-  let lspNodeCount = 0;
+  const provenance: ISamchonGraphDump.IProvenance[] = [];
+  const modes = new Map<string, IBulkGraphSession.Mode>();
+  const providers = new Map<GraphLanguage, IGraphProvider>();
+  const servedLanguages = new Set<GraphLanguage>();
+  let semanticSliceCount = 0;
   try {
     // Computed once (not per-language) since cpp and c share the same clangd
     // compilation database and root.
@@ -88,56 +126,119 @@ export async function buildLspGraph(
         : undefined;
     if (languages.includes("dart")) ensurePubDeps(root, options.pubCommand);
 
+    // Every strict provider runs before the generic loop, and the loop then
+    // serves whatever they did not claim. The selection this replaces was an
+    // `if (language === "typescript")` arm in the middle of that loop: adding a
+    // provider meant adding a branch, nothing could enumerate the set, and a
+    // caller whose options disqualified the compiler-owned lane fell through
+    // without a word — a fallback success indistinguishable from the strict
+    // result it had silently replaced.
+    const strictLanguages = new Set<GraphLanguage>();
+    const withSources = languages.filter(
+      (language) => (selected.byLanguage.get(language) ?? []).length > 0,
+    );
+    const selection = selectGraphProviders(
+      root,
+      withSources,
+      options,
+      process.env,
+      resolvedDependencies.providers,
+    );
+    appendAll(warnings, selection.warnings);
+    for (const candidate of selection.candidates) {
+      try {
+        const { refresh, session } =
+          await resolvedDependencies.collectProviderGraph(
+            root,
+            candidate,
+            options,
+          );
+        const snapshot = refresh.snapshot;
+        try {
+          assertGraphSnapshotContract(
+            snapshot,
+            candidate.provider,
+            candidate.languages,
+          );
+        } catch (error) {
+          // `collectProviderGraph` has handed this live session to the
+          // coordinator, but a rejected snapshot never enters `sessions`.
+          // Close it here: otherwise a resident build falls through to the
+          // generic lane while the invalid provider's child remains orphaned.
+          try {
+            await session.close();
+          } catch (closeError) {
+            throw new AggregateError(
+              [error, closeError],
+              "@samchon/graph: strict provider snapshot was refused and its unpublished session could not close",
+            );
+          }
+          throw error;
+        }
+        // One-shot callers do not retain the session. Close it before adding
+        // the slice, so a shutdown failure declines this candidate whole rather
+        // than leaving its facts beside a fallback warning.
+        if (!options.keepAlive) await session.close();
+        appendAll(strictNodes, snapshot.nodes);
+        appendAll(strictEdges, snapshot.edges);
+        appendAll(diagnostics, snapshot.diagnostics);
+        appendAll(warnings, snapshot.warnings);
+        // The manifest names the files, and the provider owns the fact that it
+        // does. Nothing reads their text here: the strict lane's facts are
+        // already resolved, and the only thing the generic lane wanted text for
+        // — deriving export edges — is work this provider has already done
+        // against the real checker.
+        for (const [file, digest] of snapshot.sources) {
+          strictDigests.set(file, digest);
+        }
+        provenance.push(dumpProvenanceOf(snapshot));
+        modes.set(candidate.provider.name, refresh.mode);
+        // A complete strict slice can legitimately contain no declarations.
+        // The provider still answered for its languages, with provenance,
+        // diagnostics, and an exact manifest. Counting nodes as proof that it
+        // answered relabelled that valid empty slice as static fallback and
+        // let a later resident generation change lane authority underneath the
+        // same kept session.
+        semanticSliceCount += 1;
+        // A candidate may own more languages than its snapshot published — a
+        // Clang provider asked for C and C++ can answer with only the
+        // translation units it found. Whatever it did not publish falls to the
+        // generic lane, and that has to be said: a caller who selected a
+        // compiler-owned provider for C would otherwise be handed navigation
+        // facts for it with nothing to distinguish them.
+        const published = new Set(snapshot.languages);
+        const unpublished = candidate.languages.filter(
+          (language) => !published.has(language),
+        );
+        if (unpublished.length > 0) {
+          warnings.push(
+            `${unpublished.join(", ")}: the ${candidate.provider.name} ${candidate.provider.authority} provider owns these languages but published no slice for them, so they fall through to the generic language-server lane.`,
+          );
+        }
+        for (const language of snapshot.languages) {
+          strictLanguages.add(language);
+          servedLanguages.add(language);
+          // A multi-language provider is one session under several keys. The
+          // map stays keyed by language because every consumer asks it a
+          // language question; deduplication is the consumers' job and they do
+          // it by session identity, not by key.
+          if (options.keepAlive) {
+            sessions.set(language, session);
+            providers.set(language, candidate.provider);
+          }
+        }
+      } catch (error) {
+        if (options.signal?.aborted) throw error;
+        warnings.push(
+          `${candidate.languages.join(", ")}: the ${candidate.provider.name} ${candidate.provider.authority} provider failed, so these languages fall through to the generic language-server lane: ${(error as Error).message}`,
+        );
+      }
+    }
+
     for (const language of languages) {
       const files = selected.byLanguage.get(language) ?? [];
       if (files.length === 0) continue;
-      if (language === "typescript") {
-        // The provider decides whether it can honour these options; this loop only
-        // reports what it decided. The condition used to live here, inline and
-        // without an `else`, which is how the experiment's caps came to disable
-        // the compiler-owned lane on every run without a word of explanation.
-        const refusal = ttscGraphStrictRefusal(options);
-        if (refusal !== undefined) {
-          warnings.push(refusal);
-        } else {
-          const resolved = resolvedDependencies.resolveTtscGraphCommand(root);
-          if (resolved !== undefined) {
-            try {
-              const { result, session } =
-                await resolvedDependencies.collectTtscGraph(
-                  root,
-                  resolved.command,
-                  resolved.args,
-                  options,
-                );
-              appendAll(strictNodes, result.nodes);
-              appendAll(strictEdges, result.edges);
-              appendAll(diagnostics, result.diagnostics);
-              appendAll(warnings, result.warnings);
-              // The manifest names the files, and the compiler owns the fact that
-              // it does. Nothing reads their text here: the strict lane's facts
-              // are already resolved, and the only thing the generic lane wanted
-              // text for — deriving export edges — is work this provider has
-              // already done against the real checker.
-              for (const [file, digest] of result.sources) {
-                strictDigests.set(file, digest);
-              }
-              lspNodeCount += result.nodes.length;
-              if (options.keepAlive) sessions.set(language, session);
-              continue;
-            } catch (error) {
-              if (options.signal?.aborted) throw error;
-              warnings.push(
-                `typescript: ttscgraph bulk indexing failed; using ttscserver LSP: ${(error as Error).message}`,
-              );
-            }
-          } else {
-            warnings.push(
-              "typescript: ttscgraph bulk provider was not found; using ttscserver LSP.",
-            );
-          }
-        }
-      }
+      if (strictLanguages.has(language)) continue;
       const spec = specOf(language);
       if (spec?.lsp === undefined) {
         warnings.push(`${language}: no built-in LSP server is configured.`);
@@ -195,7 +296,8 @@ export async function buildLspGraph(
           appendAll(edges, result.edges);
           appendAll(diagnostics, result.diagnostics);
           appendAll(warnings, result.warnings);
-          lspNodeCount += result.nodes.length;
+          semanticSliceCount += 1;
+          servedLanguages.add(language);
           if (options.keepAlive) sessions.set(language, session);
         }
       } catch (error) {
@@ -221,13 +323,15 @@ export async function buildLspGraph(
         filesForLanguages(selected, staticFallbackLanguages),
       );
       appendSources(sources, fallback.sources);
-      if (lspNodeCount === 0) {
+      for (const language of fallback.languages) servedLanguages.add(language);
+      if (semanticSliceCount === 0) {
         const dump = staticDump(fallback, warnings);
         return {
           dump,
           warnings: dump.warnings,
           source: snapshotSource(),
-          ...(options.keepAlive ? { sessions, sources } : {}),
+          sources,
+          ...(options.keepAlive ? { sessions, providers } : {}),
         };
       }
       appendAll(nodes, fallback.nodes);
@@ -235,7 +339,7 @@ export async function buildLspGraph(
       appendAll(warnings, fallback.warnings);
     }
 
-    if (nodes.length === 0 && strictNodes.length === 0) {
+    if (semanticSliceCount === 0) {
       const fallback = staticGraphParts(options, selected.files);
       appendSources(sources, fallback.sources);
       const dump = staticDump(fallback, warnings);
@@ -243,7 +347,8 @@ export async function buildLspGraph(
         dump,
         warnings: dump.warnings,
         source: snapshotSource(),
-        ...(options.keepAlive ? { sessions, sources } : {}),
+        sources,
+        ...(options.keepAlive ? { sessions, providers } : {}),
       };
     }
 
@@ -262,11 +367,7 @@ export async function buildLspGraph(
     return {
       dump: {
         project: root,
-        languages: [
-          ...new Set(
-            [...strictNodes, ...nodes].map((node) => node.language),
-          ),
-        ],
+        languages: languages.filter((language) => servedLanguages.has(language)),
         // Only a static fallback makes the graph a hybrid; a benign warning (e.g.
         // the reference cap) on a pure-LSP run must not relabel it.
         indexer: staticFallbackLanguages.length > 0 ? "hybrid" : "lsp",
@@ -274,10 +375,13 @@ export async function buildLspGraph(
         edges: wireEdges(finalized.edges, finalized.nodes),
         diagnostics,
         warnings,
+        ...dumpProvenanceOf.fieldOf(provenance),
       },
       warnings,
       source: snapshotSource(),
-      ...(options.keepAlive ? { sessions, sources } : {}),
+      modes,
+      sources,
+      ...(options.keepAlive ? { sessions, providers } : {}),
     };
   } catch (error) {
     const closeErrors = await closeKeptSessions(sessions);
@@ -318,24 +422,93 @@ async function closeKeptSessions(
   return failures;
 }
 
-async function collectTtscGraph(
+/**
+ * Open one strict provider candidate and take its first snapshot.
+ *
+ * The session is closed if refresh itself fails; after a successful refresh
+ * the caller owns it until validation either rejects it or retains its slice.
+ * That split keeps an invalid first snapshot from escaping cleanup before it
+ * has ever reached the resident state.
+ */
+async function collectProviderGraph(
   root: string,
-  command: string,
-  args: readonly string[],
+  candidate: selectGraphProviders.ICandidate,
   options: IBuildGraphOptions,
 ): Promise<{
-  result: IBulkGraphSession.ISnapshot;
+  refresh: IBulkGraphSession.IRefresh;
   session: IBulkGraphSession;
 }> {
-  const session = new TtscGraphClient({ root, command, args });
+  const session = candidate.provider.open({
+    root,
+    command: candidate.command,
+    languages: candidate.languages,
+    options,
+  });
   try {
-    const result = (await session.refresh({ signal: options.signal })).snapshot;
-    if (!options.keepAlive) await session.close();
-    return { result, session };
+    assertBulkSessionContract(root, candidate, session);
+    const refresh = await session.refresh({ signal: options.signal });
+    if (session.current !== refresh.snapshot) {
+      throw new Error(
+        `@samchon/graph: provider "${candidate.provider.name}" returned a snapshot that is not its current generation`,
+      );
+    }
+    if (session.generation !== refresh.generation) {
+      throw new Error(
+        `@samchon/graph: provider "${candidate.provider.name}" returned generation ${String(refresh.generation)} while its session reports ${String(session.generation)}`,
+      );
+    }
+    return { refresh, session };
   } catch (error) {
-    await session.close();
+    try {
+      await session.close();
+    } catch (closeError) {
+      throw new AggregateError(
+        [error, closeError],
+        "@samchon/graph: strict provider refresh failed and its unpublished session could not close",
+      );
+    }
     throw error;
   }
+}
+
+/** A provider may not widen or move the candidate the registry selected. */
+function assertBulkSessionContract(
+  root: string,
+  candidate: selectGraphProviders.ICandidate,
+  session: IBulkGraphSession,
+): void {
+  const label = `@samchon/graph: provider "${candidate.provider.name}"`;
+  if (!samePath(session.root, root)) {
+    throw new Error(
+      `${label} opened a session for ${session.root}, not the selected project ${root}`,
+    );
+  }
+  const actual = JSON.stringify(
+    [...new Set(session.languages)].sort(compareOrdinal),
+  );
+  const expected = JSON.stringify(
+    [...candidate.languages].sort(compareOrdinal),
+  );
+  if (actual !== expected) {
+    throw new Error(
+      `${label} opened a session for [${session.languages.join(", ")}] after the registry selected [${candidate.languages.join(", ")}]`,
+    );
+  }
+}
+
+function samePath(left: string, right: string): boolean {
+  const normalizedLeft = path.resolve(left);
+  const normalizedRight = path.resolve(right);
+  // Only one arm runs on a given operating system.
+  /* c8 ignore next 3 */
+  return process.platform === "win32"
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
+}
+
+function compareOrdinal(left: string, right: string): number {
+  /* c8 ignore next 2 -- compared language names are distinct set members. */
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 /** Every language fell back to the static parser: the dump is that parse. */

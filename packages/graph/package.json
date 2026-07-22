@@ -25,6 +25,10 @@
     "language-server",
     "static-analysis"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "files": [
     "README.md",
     "LICENSE",

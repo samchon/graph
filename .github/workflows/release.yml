@@ -3,18 +3,34 @@ name: release
 on:
   push:
     tags:
-      - "*"
+      - "v*.*.*"
 
 permissions:
-  id-token: write
-  contents: write
+  contents: read
 
 jobs:
-  publish:
+  # Everything that can reject a release runs before anything is published.
+  # The previous workflow built and published in two steps and checked nothing
+  # in between, so the first thing that could notice a bad release was an
+  # install in somebody else's project.
+  verify:
     runs-on: ubuntu-latest
+    environment: npm
+    outputs:
+      version: ${{ steps.preflight.outputs.version }}
     steps:
-      - name: Checkout
+      # Full history and the release branch's ref, because the preflight asks
+      # whether the tagged commit was ever merged there. A shallow checkout has
+      # no `origin/master` to compare against, and the check would then refuse
+      # every release for the same reason it refuses an unmerged one — which is
+      # a gate that reports the same verdict whatever it is given.
+      - name: Checkout the tagged commit
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch the release branch
+        run: git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
 
       - name: Enable pnpm
         run: corepack enable
@@ -23,33 +39,143 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22.x
-          registry-url: https://registry.npmjs.org/
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install
+      # The tag, both manifests, and the commit the tag points at must agree.
+      # Any pair alone leaves a real failure open: matching versions on an
+      # unapproved commit, or an approved commit carrying two packages at
+      # different versions.
+      - name: Verify tag, versions, and commit
+        id: preflight
+        run: node build/release-verify.mjs
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_APPROVED_SHA: ${{ vars.RELEASE_APPROVED_SHA }}
+          # The order the publish jobs below are wired in. Checked against what
+          # the manifests actually require, so a third package or a reversed
+          # dependency cannot leave these jobs quietly wrong.
+          RELEASE_ORDER: "@samchon/graph-sitter,@samchon/graph"
+
+      - name: Install with the committed lockfile
         run: pnpm install --frozen-lockfile
 
       - name: Build
         run: pnpm run build
 
-      - name: Publish to npm
-        run: pnpm run package:latest --no-git-checks --provenance
+      - name: Test
+        run: pnpm run test
 
+      - name: Coverage
+        run: pnpm run coverage
+
+      # A tarball is what consumers actually receive. `files` is only a promise
+      # about it, and a build that silently produced no `lib` still packs,
+      # publishes, and installs — failing at the consumer's first import.
+      - name: Pack and inspect both tarballs
+        run: node build/release-pack.mjs
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+
+      - name: Upload tarballs
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarballs
+          path: .release/*.tgz
+          retention-days: 7
+
+  # Published in dependency order. npm accepts a dependent whose dependency
+  # does not exist — publishing is not resolution — so `@samchon/graph` ahead
+  # of `@samchon/graph-sitter` is exactly how the reported break happened:
+  # graph on the registry, graph-sitter absent, every install failing.
+  publish-graph-sitter:
+    runs-on: ubuntu-latest
+    needs: verify
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          registry-url: https://registry.npmjs.org/
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarballs
+          path: .release
+
+      - name: Publish @samchon/graph-sitter
+        run: node build/release-publish.mjs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_PACKAGE: "@samchon/graph-sitter"
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+
+      # The registry is eventually consistent, and the next job installs from
+      # it. Publishing and assuming availability is what makes a two-package
+      # release fail intermittently rather than reproducibly.
+      - name: Wait for the registry to serve it
+        run: node build/release-await.mjs
+        env:
+          RELEASE_PACKAGE: "@samchon/graph-sitter"
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+
+  publish-graph:
+    runs-on: ubuntu-latest
+    needs: [verify, publish-graph-sitter]
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          registry-url: https://registry.npmjs.org/
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarballs
+          path: .release
+
+      - name: Publish @samchon/graph
+        run: node build/release-publish.mjs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          RELEASE_PACKAGE: "@samchon/graph"
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+
+      - name: Wait for the registry to serve it
+        run: node build/release-await.mjs
+        env:
+          RELEASE_PACKAGE: "@samchon/graph"
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+
+      # Installed from the registry into an empty directory, exactly as a
+      # consumer would. This is the only step that proves the published
+      # artifacts resolve each other; every earlier one ran against the
+      # workspace, where `workspace:*` always resolves.
+      - name: Clean-install smoke test
+        run: node build/release-smoke.mjs
+        env:
+          RELEASE_VERSION: ${{ needs.verify.outputs.version }}
+
+  # Created only after both packages are on the registry and prove installable.
+  # A GitHub release announcing an npm version nobody can install is worse than
+  # no release: it is a claim that the artifact exists.
   release:
     runs-on: ubuntu-latest
-    needs: publish
+    needs: [verify, publish-graph]
     permissions:
       contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Enable pnpm
-        run: corepack enable
-
+      - run: corepack enable
       - name: Generate release notes
         run: pnpm dlx changelogithub
         env:

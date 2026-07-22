@@ -6,6 +6,7 @@ import path from "node:path";
 // `isBulkGraphSession` is internal to the package, so it is reached by path
 // rather than through the public barrel.
 import { isBulkGraphSession } from "../../../../packages/graph/src/provider/isBulkGraphSession";
+import { ttscGraphProvider } from "../../../../packages/graph/src/provider/ttscgraph/ttscGraphProvider";
 import { GraphPaths } from "../internal/GraphPaths";
 
 export const test_ttscgraph_bulk_session_stays_alive_when_kept = async () => {
@@ -51,10 +52,15 @@ export const test_ttscgraph_bulk_session_stays_alive_when_kept = async () => {
         keepAlive: true,
       },
       {
-        resolveTtscGraphCommand: () => ({
-          command: process.execPath,
-          args: [GraphPaths.fakeTtscGraphServer, `--marker=${marker}`],
-        }),
+        providers: [
+          {
+            ...ttscGraphProvider,
+            resolve: () => ({
+              command: process.execPath,
+              args: [GraphPaths.fakeTtscGraphServer, `--marker=${marker}`],
+            }),
+          },
+        ],
       },
     );
   } finally {

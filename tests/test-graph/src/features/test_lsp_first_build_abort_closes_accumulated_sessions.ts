@@ -4,12 +4,14 @@ import {
   type GraphLanguage,
   type IBulkGraphSession,
   type ILspSession,
+  type IGraphProvider,
   type ISamchonGraphNode,
 } from "@samchon/graph";
 import fs from "node:fs";
 import path from "node:path";
 
 import { GraphPaths } from "../internal/GraphPaths";
+import { ProviderFixtures } from "../internal/ProviderFixtures";
 
 type BuildDependencies = NonNullable<Parameters<typeof buildLspGraph>[1]>;
 
@@ -52,6 +54,8 @@ export const test_lsp_first_build_abort_closes_accumulated_sessions = async () =
   );
 
   await assertStrictProviderCancellationBoundary();
+  await assertARejectedStrictSnapshotClosesItsUnpublishedSession();
+  await assertARefreshFailureRetainsItsCloseFailure();
 };
 
 async function assertStrictProviderCancellationBoundary(): Promise<void> {
@@ -81,8 +85,8 @@ async function assertStrictProviderCancellationBoundary(): Promise<void> {
         signal: cancelled.signal,
       },
       {
-        resolveTtscGraphCommand: () => ({ command: process.execPath, args: [] }),
-        collectTtscGraph: async () => {
+        providers: [fakeProvider()],
+        collectProviderGraph: async () => {
           cancelled.abort("strict provider cancelled");
           throw strictError;
         },
@@ -117,8 +121,8 @@ async function assertStrictProviderCancellationBoundary(): Promise<void> {
       signal: live.signal,
     },
     {
-      resolveTtscGraphCommand: () => ({ command: process.execPath, args: [] }),
-      collectTtscGraph: async () => {
+      providers: [fakeProvider()],
+      collectProviderGraph: async () => {
         throw fallbackError;
       },
       collectLanguageGraph: async () => {
@@ -141,6 +145,251 @@ async function assertStrictProviderCancellationBoundary(): Promise<void> {
       fallback.warnings.some((warning) =>
         warning.includes(fallbackError.message),
       ),
+  );
+
+  await assertAnUnpublishedLanguageIsReported();
+}
+
+async function assertARejectedStrictSnapshotClosesItsUnpublishedSession(): Promise<void> {
+  const root = GraphPaths.createTempDirectory(
+    "samchon-graph-rejected-strict-close-",
+  );
+  fs.writeFileSync(path.join(root, "index.ts"), "export const value = 1;\n");
+
+  const provider = ProviderFixtures.provider({
+    name: "invalid",
+    facts: ["calls"],
+  });
+  const snapshot = ProviderFixtures.snapshot({
+    provider: "invalid",
+    facts: ["imports"],
+    nodes: [graphNode("typescript", "index.ts", "strict")],
+  });
+  let bulkCloseCalls = 0;
+  const bulk: IBulkGraphSession = {
+    kind: "bulk",
+    languages: ["typescript"],
+    root,
+    generation: 1,
+    current: snapshot,
+    refresh: async () => ({
+      changed: false,
+      generation: 1,
+      mode: "unchanged",
+      snapshot,
+    }),
+    close: async () => {
+      bulkCloseCalls += 1;
+    },
+  };
+  const generic = {
+    client: { close: async () => undefined },
+    root,
+    language: "typescript",
+    opened: new Map(),
+    diagnostics: new Map(),
+  } as ILspSession;
+
+  const result = await buildLspGraph(
+    { cwd: root, languages: ["typescript"], keepAlive: true },
+    {
+      providers: [provider],
+      collectProviderGraph: async () => ({
+        refresh: { changed: true, generation: 1, mode: "initial", snapshot },
+        session: bulk,
+      }),
+      collectLanguageGraph: async () => ({
+        result: {
+          nodes: [graphNode("typescript", "index.ts", "value", "variable")],
+          edges: [],
+          diagnostics: [],
+          warnings: [],
+        },
+        session: generic,
+      }),
+    },
+  );
+  TestValidator.equals(
+    "a rejected strict snapshot closes the session that never reached state",
+    bulkCloseCalls,
+    1,
+  );
+  TestValidator.predicate(
+    "a refused strict snapshot falls back without retaining its facts",
+    result.warnings.some((warning) => warning.includes("registered to prove")) &&
+      result.dump.nodes.some((node) => node.id === "index.ts#value:variable") &&
+      !result.dump.nodes.some((node) => node.id === "index.ts#strict:function"),
+  );
+
+  const closeError = new Error("invalid strict cleanup failed");
+  const failedClose: IBulkGraphSession = {
+    ...bulk,
+    close: async () => {
+      throw closeError;
+    },
+  };
+  const retained = await buildLspGraph(
+    { cwd: root, languages: ["typescript"], keepAlive: true },
+    {
+      providers: [provider],
+      collectProviderGraph: async () => ({
+        refresh: { changed: true, generation: 1, mode: "initial", snapshot },
+        session: failedClose,
+      }),
+      collectLanguageGraph: async () => ({
+        result: {
+          nodes: [graphNode("typescript", "index.ts", "value", "variable")],
+          edges: [],
+          diagnostics: [],
+          warnings: [],
+        },
+        session: generic,
+      }),
+    },
+  );
+  TestValidator.predicate(
+    "a refused strict snapshot reports its unpublished-session cleanup failure",
+    retained.warnings.some((warning) =>
+      warning.includes(
+        "strict provider snapshot was refused and its unpublished session could not close",
+      ),
+    ),
+  );
+  await generic.client.close();
+}
+
+async function assertARefreshFailureRetainsItsCloseFailure(): Promise<void> {
+  const root = GraphPaths.createTempDirectory(
+    "samchon-graph-strict-refresh-close-",
+  );
+  fs.writeFileSync(path.join(root, "index.ts"), "export const value = 1;\n");
+
+  const refreshError = new Error("strict refresh failed");
+  const closeError = new Error("strict cleanup failed");
+  const cancelled = new AbortController();
+  let closeCalls = 0;
+  const provider = ProviderFixtures.provider({
+    name: "refresh-close",
+    open: (open) => ({
+      kind: "bulk",
+      languages: open.languages,
+      root: open.root,
+      generation: 0,
+      current: undefined,
+      refresh: async () => {
+        cancelled.abort("refresh failed");
+        throw refreshError;
+      },
+      close: async () => {
+        closeCalls += 1;
+        throw closeError;
+      },
+    }),
+  });
+
+  let failure: unknown;
+  try {
+    await buildLspGraph(
+      { cwd: root, languages: ["typescript"], signal: cancelled.signal },
+      { providers: [provider] },
+    );
+  } catch (error) {
+    failure = error;
+  }
+  TestValidator.equals(
+    "a failed strict refresh still closes its unpublished session once",
+    closeCalls,
+    1,
+  );
+  TestValidator.predicate(
+    "strict refresh and cleanup failures are both retained",
+    failure instanceof AggregateError &&
+      failure.errors[0] === refreshError &&
+      failure.errors[1] === closeError,
+  );
+}
+
+/**
+ * A provider that owns a language and publishes no slice for it says so.
+ *
+ * A Clang provider asked for C and C++ can legitimately answer with only the
+ * translation units it found. What it must not do is leave the rest to the
+ * generic lane in silence: a caller who selected a compiler-owned provider for
+ * C would be handed navigation facts for it with nothing to tell them apart.
+ */
+async function assertAnUnpublishedLanguageIsReported(): Promise<void> {
+  const root = GraphPaths.createTempDirectory("samchon-graph-partial-slice-");
+  fs.writeFileSync(path.join(root, "tsconfig.json"), "{}\n");
+  fs.writeFileSync(path.join(root, "index.ts"), "export const value = 1;\n");
+  fs.writeFileSync(path.join(root, "main.go"), "package main\nfunc main() {}\n");
+  installCommand(root, "gopls");
+
+  const generic = {
+    client: { close: async () => undefined },
+    root,
+    language: "go",
+    opened: new Map(),
+    diagnostics: new Map(),
+  } as ILspSession;
+
+  const snapshot = ProviderFixtures.snapshot({
+    languages: ["typescript"],
+    // Attributed to the registered entry, or the contract check rejects it
+    // before the unpublished-language report is ever reached.
+    provider: "partial",
+    nodes: [graphNode("typescript", "index.ts", "value", "variable")],
+  });
+  const result = await buildLspGraph(
+    { cwd: root, languages: ["typescript", "go"] },
+    {
+      // Owns both, answers for only one — which is legitimate, and must be
+      // said rather than left to the generic lane in silence.
+      providers: [
+        ProviderFixtures.provider({
+          name: "partial",
+          languages: ["typescript", "go"],
+        }),
+      ],
+      collectProviderGraph: async () => ({
+        refresh: { changed: true, generation: 1, mode: "initial", snapshot },
+        session: {
+          kind: "bulk",
+          languages: ["typescript", "go"],
+          root,
+          generation: 1,
+          current: snapshot,
+          refresh: async () => ({
+            changed: false,
+            generation: 1,
+            mode: "unchanged" as const,
+            snapshot,
+          }),
+          close: async () => undefined,
+        },
+      }),
+      collectLanguageGraph: async () => ({
+        result: {
+          nodes: [graphNode("go", "main.go", "main")],
+          edges: [],
+          diagnostics: [],
+          warnings: [],
+        },
+        session: generic,
+      }),
+    },
+  );
+  TestValidator.predicate(
+    "a language a provider owns but does not publish is reported",
+    result.warnings.some(
+      (warning) =>
+        warning.startsWith("go:") &&
+        warning.includes("partial") &&
+        warning.includes("published no slice"),
+    ),
+  );
+  TestValidator.predicate(
+    "…and the generic lane really did serve it",
+    result.dump.nodes.some((node) => node.language === "go"),
   );
 }
 
@@ -167,10 +416,10 @@ async function runAbortedBuild(
   const buildError = new Error("later language aborted");
   let bulkCloseCalls = 0;
   let genericCloseCalls = 0;
-  const snapshot = bulkSnapshot(root);
+  const snapshot = bulkSnapshot();
   const bulk: IBulkGraphSession = {
     kind: "bulk",
-    language: "typescript",
+    languages: ["typescript"],
     root,
     generation: 1,
     current: snapshot,
@@ -203,8 +452,16 @@ async function runAbortedBuild(
   } as ILspSession;
 
   const dependencies: BuildDependencies = {
-    resolveTtscGraphCommand: () => ({ command: process.execPath, args: [] }),
-    collectTtscGraph: async () => ({ result: snapshot, session: bulk }),
+    providers: [fakeProvider()],
+    collectProviderGraph: async () => ({
+      refresh: {
+        changed: true,
+        generation: 1,
+        mode: "initial",
+        snapshot,
+      },
+      session: bulk,
+    }),
     collectLanguageGraph: async (_root, language) => {
       if (language === "go") {
         return {
@@ -258,24 +515,21 @@ function installCommand(root: string, command: string): void {
   if (process.platform !== "win32") fs.chmodSync(file, 0o755);
 }
 
-function bulkSnapshot(root: string): IBulkGraphSession.ISnapshot {
-  return {
-    language: "typescript",
+/**
+ * The one registered provider these builds select.
+ *
+ * Registered rather than pre-selected: real discovery runs against it, so the
+ * candidate these tests exercise is one `selectGraphProviders` actually
+ * produced.
+ */
+function fakeProvider(): IGraphProvider {
+  return ProviderFixtures.provider();
+}
+
+function bulkSnapshot(): IBulkGraphSession.ISnapshot {
+  return ProviderFixtures.snapshot({
     nodes: [graphNode("typescript", "index.ts", "value", "variable")],
-    edges: [],
-    diagnostics: [],
-    sources: new Map(),
-    provenance: {
-      schemaVersion: 5,
-      tool: "test",
-      toolVersion: "1",
-      compilerVersion: "1",
-      protocolVersion: 1,
-      universe: root,
-      capabilities: [],
-    },
-    warnings: [],
-  };
+  });
 }
 
 function graphNode(

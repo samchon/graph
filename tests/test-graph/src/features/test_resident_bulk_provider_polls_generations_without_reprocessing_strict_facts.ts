@@ -25,7 +25,7 @@ export const test_resident_bulk_provider_polls_generations_without_reprocessing_
     let builds = 0;
     const session: IBulkGraphSession = {
       kind: "bulk",
-      language: "typescript",
+      languages: ["typescript"],
       root,
       get generation() {
         return generation;
@@ -128,7 +128,7 @@ function snapshot(
 ): IBulkGraphSession.ISnapshot {
   const digest = createHash("sha256").update(text).digest("hex");
   return {
-    language: "typescript",
+    languages: ["typescript"],
     nodes: [
       {
         id: `a.ts#${name}:function`,
@@ -148,6 +148,9 @@ function snapshot(
     // carries their text, so a resident refresh has nothing to re-read either.
     sources: new Map([[file, { checkerDigest: digest, diskDigest: digest }]]),
     provenance: {
+      provider: "ttscgraph",
+      authority: "compiler",
+      facts: ["exports", "calls"],
       schemaVersion: 5,
       tool: "ttscgraph",
       toolVersion: "0.19.3-21-g2b724664e",

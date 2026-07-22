@@ -43,6 +43,16 @@ that does not explicitly request parallel agents.
 - Remove every finished worktree, local branch, process, and assignment-owned
   temporary asset before declaring its assignment complete.
 
+The solo campaign's
+[commit early-warning pass](../review/SKILL.md#commit-early-warning-pass) is a
+different topology and relaxes neither the full-surface rule nor the solo
+Self-Review rule above. A parallel review gives several reviewers the entire
+declared surface independently and the lead adjudicates their findings. The pass
+gives one read-only reader one commit's slice, reports candidates to the author
+who is still implementing, and leaves that author's own whole-surface round as
+the gate. A batch implementation agent here runs no pass, because agents do not
+re-delegate; the carve-out belongs to a solo campaign's main agent.
+
 The user's phase boundary controls the topology. A multi-agent issue campaign
 uses parallel discovery and parallel implementation by default. Switch only its
 implementation to the solo workflow when the user explicitly requests parallel

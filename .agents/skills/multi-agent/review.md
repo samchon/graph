@@ -60,9 +60,13 @@ Use this mode only through the multi-agent issue-campaign procedure.
    checks ownership and provenance, traces the consequence surface, and records
    accept, partial acceptance, rewrite, combine, split, reject, or defer in
    `.wiki`.
-5. If any meaningful candidate survives, complete the authorized campaign cycle
-   and begin another fresh parallel round over the integrated state.
-6. End discovery only when every reviewer completes the whole scope and no
+5. If any meaningful candidate survives lead verification, run another fresh
+   parallel round over the whole scope now, before publication and before
+   implementation. Repeat until one round adds no meaningful candidate.
+6. Publish the surviving adjudicated form when authorized, complete the
+   authorized campaign cycle, then begin another fresh parallel round over the
+   integrated state.
+7. End discovery only when every reviewer completes the whole scope and no
    meaningful candidate survives lead verification.
 
 An unresolved accepted issue or incomplete implementation prevents a successful

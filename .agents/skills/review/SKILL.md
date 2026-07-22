@@ -111,12 +111,14 @@ Use these rounds only through the solo issue-campaign skill.
 4. Record accept, partial acceptance, rewrite, combine, split, reject, or defer.
    Keep the disposition and reason in the knowledge base so later passes do not
    rediscover a rejected premise as new.
-5. Publish only the surviving adjudicated form when the campaign is authorized
-   to publish.
-6. If any meaningful candidate survives, finish the authorized issue and
-   implementation flow, then begin another fresh full-scope round over the
-   integrated state.
-7. End discovery only when one complete fresh round over the entire scope
+5. If the round produced any meaningful candidate, start another complete fresh
+   full-scope round now, before publication and before implementation. Repeat
+   until one round adds no meaningful candidate after fact-checking.
+6. Publish only the surviving adjudicated form when the campaign is authorized
+   to publish, then complete the authorized implementation flow.
+7. After that flow lands, begin another fresh full-scope round over the
+   integrated state and repeat from step 1.
+8. End discovery only when one complete fresh round over the entire scope
    produces no meaningful candidate after fact-checking.
 
 An unresolved accepted issue, external blocker, or incomplete implementation

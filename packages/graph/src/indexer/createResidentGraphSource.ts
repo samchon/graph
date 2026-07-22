@@ -355,17 +355,28 @@ export function createResidentGraphSource(
         ([language, refresh]) =>
           current.generations.get(language) !== refresh.generation,
       );
+      const bulkSliceLanguagesChanged = !sameBulkSliceLanguages(
+        current.sessions,
+        prefetched,
+        current.providers,
+      );
       if (
         !bulkChanged &&
+        !bulkSliceLanguagesChanged &&
         !isStale(current.hashes, root, options, bulkLanguagesOf(current.sessions))
       ) {
         return;
       }
       const discovered = discoverLanguages(root, options);
-      if (!sameLanguages(current.languages, discovered)) {
+      if (
+        !sameLanguages(current.languages, discovered) ||
+        bulkSliceLanguagesChanged
+      ) {
         // A language appearing or disappearing replaces every session, so the
-        // transaction is the fresh build itself: it reads one source selection
-        // and publishes one state.
+        // transaction is the fresh build itself. So does a bulk slice gaining
+        // or losing an already-discovered language: the old state has the
+        // generic/static session topology for the former slice, which cannot
+        // coexist with the provider that now owns it.
         await replaceLanguages(current, signal);
         return;
       }
@@ -606,6 +617,39 @@ function bulkGenerationsOf(
     }
   }
   return generations;
+}
+
+/**
+ * Whether every bulk session still owns exactly the state keys that route to
+ * it.
+ *
+ * A provider is allowed to publish fewer languages than its candidate owns,
+ * with the rest served by a generic or static lane. If a later refresh adds
+ * one of those languages (or withdraws one it did publish), merging it into
+ * the old state would either collide with that fallback lane or leave the
+ * withdrawn language without any lane. Rebuild the resident topology instead.
+ */
+function sameBulkSliceLanguages(
+  sessions: ReadonlyMap<GraphLanguage, ILspSession | IBulkGraphSession>,
+  prefetched: ReadonlyMap<GraphLanguage, IBulkGraphSession.IRefresh>,
+  providers: ReadonlyMap<GraphLanguage, IGraphProvider>,
+): boolean {
+  const owned = new Map<IBulkGraphSession, GraphLanguage[]>();
+  for (const [language, session] of sessions) {
+    if (!isBulkGraphSession(session)) continue;
+    const languages = owned.get(session) ?? [];
+    languages.push(language);
+    owned.set(session, languages);
+  }
+  for (const [session, languages] of owned) {
+    const refresh = prefetched.get(languages[0]!)!;
+    const provider = providers.get(languages[0]!);
+    if (provider !== undefined) {
+      assertGraphSnapshotContract(refresh.snapshot, provider, session.languages);
+    }
+    if (!sameLanguages(languages, refresh.snapshot.languages)) return false;
+  }
+  return true;
 }
 
 /**

@@ -25,6 +25,7 @@ export const test_resident_commits_one_input_generation_or_none = async () => {
   await assertAPersistentlyMovingProjectIsReported();
   await assertALaterGenerationIsStillHeldToItsContract();
   await assertAMultiLanguageSessionIsMergedOnce();
+  await assertABulkSliceLanguageChangeRebuildsTheResidentTopology();
   await assertAProviderThatMovedMidTransactionIsDiscarded();
   await assertProvenanceDescribesThePublishedGeneration();
 };
@@ -259,6 +260,177 @@ async function assertAMultiLanguageSessionIsMergedOnce(): Promise<void> {
     "a two-language session contributes its nodes once",
     dump.nodes.filter((node) => node.name === "shared").length,
     1,
+  );
+  await source.close();
+}
+
+/**
+ * A partial initial bulk slice can gain a language without the filesystem
+ * gaining one. The old state still routes that language through its fallback,
+ * so it must be rebuilt before the new slice is merged beside it.
+ */
+async function assertABulkSliceLanguageChangeRebuildsTheResidentTopology(): Promise<void> {
+  const root = GraphPaths.createTempDirectory("samchon-graph-bulk-topology-");
+  const typescript = path.join(root, "a.ts");
+  const go = path.join(root, "b.go");
+  fs.writeFileSync(typescript, "export const value = 1;\n");
+  fs.writeFileSync(go, "package main\n");
+
+  const provider = ProviderFixtures.provider({
+    name: "expanding",
+    languages: ["typescript", "go"],
+  });
+  const partial = ProviderFixtures.snapshot({
+    languages: ["typescript"],
+    provider: "expanding",
+    nodes: [
+      {
+        id: "a.ts#strict:function",
+        kind: "function",
+        language: "typescript",
+        name: "strict",
+        file: "a.ts",
+        external: false,
+      },
+    ],
+  });
+  const expanded = ProviderFixtures.snapshot({
+    languages: ["typescript", "go"],
+    provider: "expanding",
+    nodes: [
+      {
+        id: "a.ts#strict:function",
+        kind: "function",
+        language: "typescript",
+        name: "strict",
+        file: "a.ts",
+        external: false,
+      },
+      {
+        id: "b.go#strict:function",
+        kind: "function",
+        language: "go",
+        name: "strict",
+        file: "b.go",
+        external: false,
+      },
+    ],
+  });
+  let generation = 1;
+  let current = partial;
+  let partialCloseCalls = 0;
+  const partialSession: IBulkGraphSession = {
+    kind: "bulk",
+    languages: ["typescript", "go"],
+    root,
+    get generation() {
+      return generation;
+    },
+    get current() {
+      return current;
+    },
+    refresh: async () => {
+      generation = 2;
+      current = expanded;
+      return {
+        changed: true,
+        generation,
+        mode: "rebuild",
+        snapshot: expanded,
+      };
+    },
+    close: async () => {
+      partialCloseCalls += 1;
+    },
+  };
+  const replacementSession: IBulkGraphSession = {
+    kind: "bulk",
+    languages: ["typescript", "go"],
+    root,
+    generation: 1,
+    current: expanded,
+    refresh: async () => ({
+      changed: false,
+      generation: 1,
+      mode: "unchanged",
+      snapshot: expanded,
+    }),
+    close: async () => undefined,
+  };
+
+  let builds = 0;
+  const source = createResidentGraphSource(
+    { cwd: root },
+    {
+      buildLspGraph: async () => {
+        builds += 1;
+        if (builds === 1) {
+          return {
+            dump: {
+              project: root,
+              languages: ["typescript", "go"],
+              indexer: "hybrid",
+              nodes: [
+                ...partial.nodes,
+                {
+                  id: "b.go#fallback:function",
+                  kind: "function",
+                  language: "go",
+                  name: "fallback",
+                  file: "b.go",
+                  external: false,
+                },
+              ],
+              edges: [],
+            },
+            warnings: [],
+            sessions: new Map([["typescript", partialSession]]),
+            // The strict provider's TypeScript bytes are in its manifest, not
+            // the generic source map. Only Go is currently on the fallback
+            // lane, so this makes the ordinary freshness check stay quiet.
+            sources: new Map([[go, fs.readFileSync(go, "utf8")]]),
+            providers: new Map([["typescript", provider]]),
+          };
+        }
+        return {
+          dump: {
+            project: root,
+            languages: ["typescript", "go"],
+            indexer: "lsp",
+            nodes: expanded.nodes,
+            edges: [],
+          },
+          warnings: [],
+          sessions: new Map([
+            ["typescript", replacementSession],
+            ["go", replacementSession],
+          ]),
+          sources: new Map(),
+          providers: new Map([
+            ["typescript", provider],
+            ["go", provider],
+          ]),
+        };
+      },
+    },
+  );
+
+  await source.load();
+  const refreshed = await source.load();
+  TestValidator.equals(
+    "a changed bulk slice language set rebuilds the resident state",
+    builds,
+    2,
+  );
+  TestValidator.equals(
+    "the old partial bulk session is closed during replacement",
+    partialCloseCalls,
+    1,
+  );
+  TestValidator.equals(
+    "the replacement has one strict slice for each language",
+    refreshed.nodes.map((node) => `${node.language}:${node.name}`).sort(),
+    ["go:strict", "typescript:strict"],
   );
   await source.close();
 }

@@ -21,6 +21,7 @@ import { GRAPH_PROVIDERS } from "../provider/GRAPH_PROVIDERS";
 import { IGraphProvider } from "../provider/IGraphProvider";
 import { selectGraphProviders } from "../provider/selectGraphProviders";
 import { appendAll } from "./appendAll";
+import { commitProjectInputGeneration } from "./commitProjectInputGeneration";
 import { dedupeEdges } from "./dedupeEdges";
 import { dedupeNodes } from "./dedupeNodes";
 import { ensureCompileCommands } from "./ensureCompileCommands";
@@ -38,11 +39,6 @@ import { IStaticGraphParts } from "./IStaticGraphParts";
 import { staticGraphParts } from "./staticGraphParts";
 import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
-import {
-  projectInputManifest,
-  providerBuildInputs,
-  sameProjectInputManifest,
-} from "./projectInputManifest";
 
 interface IBuildLspGraphDependencies {
   /**
@@ -66,8 +62,6 @@ const DEFAULT_DEPENDENCIES: IBuildLspGraphDependencies = {
   collectLanguageGraph,
 };
 
-const INPUT_COMMIT_ATTEMPTS = 3;
-
 export async function buildLspGraph(
   options: IBuildGraphOptions = {},
   dependencies: Partial<IBuildLspGraphDependencies> = {},
@@ -76,49 +70,21 @@ export async function buildLspGraph(
     ...DEFAULT_DEPENDENCIES,
     ...dependencies,
   };
-  const root = path.resolve(options.cwd ?? process.cwd());
-  let lastMovement = "";
-  for (let attempt = 1; attempt <= INPUT_COMMIT_ATTEMPTS; attempt++) {
-    const beforeLanguages = selectGraphSources(root, options).languages;
-    const buildInputs = providerBuildInputs(
-      beforeLanguages,
-      resolvedDependencies.providers,
-    );
-    const before = projectInputManifest(root, options, buildInputs);
-    const result = await buildLspGraphAttempt(options, resolvedDependencies);
-    const afterLanguages = selectGraphSources(root, options).languages;
-    const afterBuildInputs = providerBuildInputs(
-      afterLanguages,
-      resolvedDependencies.providers,
-    );
-    const after = projectInputManifest(root, options, afterBuildInputs);
-    if (sameProjectInputManifest(before, after)) {
-      return {
-        ...result,
-        inputManifest: after,
-        buildInputs: afterBuildInputs,
-      };
-    }
-
-    lastMovement =
-      "the selected source/config/build input manifest changed while the build was preparing";
-    // A one-shot attempt has already closed its own sessions; only resident
-    // candidates hand any back for this discard path to retire.
-    /* c8 ignore next 3 */
-    const closeErrors =
+  const committed = await commitProjectInputGeneration(
+    options,
+    resolvedDependencies.providers,
+    () => buildLspGraphAttempt(options, resolvedDependencies),
+    async (result) =>
+      // A one-shot attempt has already closed its own sessions; only resident
+      // candidates hand any back for this discard path to retire.
       result.sessions === undefined
         ? []
-        : await closeKeptSessions(result.sessions);
-    if (closeErrors.length > 0) {
-      throw new AggregateError(
-        closeErrors,
-        `@samchon/graph: ${lastMovement}, and the discarded candidate's sessions could not all close`,
-      );
-    }
-  }
-  throw new Error(
-    `@samchon/graph: ${lastMovement} in all ${String(INPUT_COMMIT_ATTEMPTS)} bounded attempts, so no mixed-generation graph was published`,
+        : closeKeptSessions(result.sessions),
   );
+  if (options.keepAlive) return committed;
+  const { sources: _consumedSources, ...result } = committed;
+  void _consumedSources;
+  return result;
 }
 
 async function buildLspGraphAttempt(
@@ -364,7 +330,8 @@ async function buildLspGraphAttempt(
           dump,
           warnings: dump.warnings,
           source: snapshotSource(),
-          ...(options.keepAlive ? { sessions, sources, providers } : {}),
+          sources,
+          ...(options.keepAlive ? { sessions, providers } : {}),
         };
       }
       appendAll(nodes, fallback.nodes);
@@ -380,7 +347,8 @@ async function buildLspGraphAttempt(
         dump,
         warnings: dump.warnings,
         source: snapshotSource(),
-        ...(options.keepAlive ? { sessions, sources, providers } : {}),
+        sources,
+        ...(options.keepAlive ? { sessions, providers } : {}),
       };
     }
 
@@ -412,7 +380,8 @@ async function buildLspGraphAttempt(
       warnings,
       source: snapshotSource(),
       modes,
-      ...(options.keepAlive ? { sessions, sources, providers } : {}),
+      sources,
+      ...(options.keepAlive ? { sessions, providers } : {}),
     };
   } catch (error) {
     const closeErrors = await closeKeptSessions(sessions);

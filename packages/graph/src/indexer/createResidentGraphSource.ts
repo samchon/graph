@@ -17,21 +17,21 @@ import { mergeGraphSlices } from "../provider/mergeGraphSlices";
 import { readText } from "../utils/fs";
 import { buildLspGraph } from "./buildLspGraph";
 import { buildStaticGraphResult } from "./buildStaticGraphResult";
+import { commitProjectInputGeneration } from "./commitProjectInputGeneration";
 import { staticGraphParts } from "./staticGraphParts";
 import { discoverLanguages } from "./discoverLanguages";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { ILspSession } from "./ILspSession";
 import { IResidentGraphSource } from "./IResidentGraphSource";
 import { languageOf } from "./languageOf";
+import { movedConsumedSource } from "./movedConsumedSource";
 import { refreshLanguageSession } from "./refreshLanguageSession";
 import { IGraphSourceSelection } from "./IGraphSourceSelection";
 import { selectGraphSources } from "./selectGraphSources";
 import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
-import {
-  projectInputManifest,
-  sameProjectInputManifest,
-} from "./projectInputManifest";
+import { projectInputManifest } from "./projectInputManifest";
+import { sameProjectInputManifest } from "./sameProjectInputManifest";
 
 /**
  * How many times one `load` may prepare a candidate before giving up on the
@@ -56,6 +56,7 @@ interface IResidentState {
 
   /** Source/config/build inputs that fenced the published dump. */
   inputManifest: Map<string, string>;
+  inputManifestLanguages: GraphLanguage[];
   buildInputs: string[];
 }
 
@@ -105,8 +106,13 @@ export function createResidentGraphSource(
     // sessions map, even an empty one.
     const result =
       options.mode === "static"
-        ? (dependencies.buildStaticGraphResult ?? buildStaticGraphResult)(
-            options,
+        ? await commitProjectInputGeneration(
+            { ...options, signal },
+            [],
+            () =>
+              (dependencies.buildStaticGraphResult ?? buildStaticGraphResult)(
+                options,
+              ),
           )
         : await dependencies.buildLspGraph({
             ...options,
@@ -117,6 +123,8 @@ export function createResidentGraphSource(
     try {
       const texts = result.sources ?? new Map<string, string>();
       const buildInputs = result.buildInputs ?? [];
+      const inputManifestLanguages =
+        result.inputManifestLanguages ?? [...bulkLanguagesOf(sessions)];
       return {
         dump: result.dump,
         sessions,
@@ -131,7 +139,14 @@ export function createResidentGraphSource(
         modes: result.modes ?? new Map(),
         providers: result.providers ?? new Map(),
         inputManifest:
-          result.inputManifest ?? projectInputManifest(root, options, buildInputs),
+          result.inputManifest ??
+          projectInputManifest(
+            root,
+            options,
+            buildInputs,
+            new Set(inputManifestLanguages),
+          ),
+        inputManifestLanguages,
         buildInputs,
       };
     } catch (error) {
@@ -274,7 +289,7 @@ export function createResidentGraphSource(
     // its files behind its back answers a different question with bytes the
     // checker never saw. Their revision token is the manifest digest each
     // candidate carries.
-    const moved = movedSources(sources);
+    const moved = movedConsumedSource(sources);
     if (moved !== undefined) {
       throw new StaleCandidateError(
         `@samchon/graph: ${moved} changed while this refresh was preparing, so no slice of it may be published`,
@@ -298,6 +313,7 @@ export function createResidentGraphSource(
       root,
       options,
       current.buildInputs,
+      new Set(current.inputManifestLanguages),
     );
     if (!sameProjectInputManifest(inputManifest, committedInputs)) {
       throw new StaleCandidateError(
@@ -379,6 +395,7 @@ export function createResidentGraphSource(
         root,
         options,
         current.buildInputs,
+        new Set(current.inputManifestLanguages),
       );
       const prefetched = await refreshBulkSessions(current.sessions, signal);
       const bulkChanged = [...prefetched].some(
@@ -615,17 +632,6 @@ function isStaleCandidate(error: unknown): boolean {
  * timestamp where it was — and the fence would then certify a candidate built
  * from source that had already changed.
  */
-function movedSources(sources: ReadonlyMap<string, string>): string | undefined {
-  for (const [file, text] of sources) {
-    const current = readText(file);
-    // A file consumed by this refresh and deleted before the fence is a change
-    // like any other: whatever was published from it describes source nobody
-    // has any more.
-    if (current !== text) return file;
-  }
-  return undefined;
-}
-
 // A language ended up in the static fallback if the dump reports it but no
 // live session was returned for it (an LSP session is only kept for a
 // language that actually produced real symbols).

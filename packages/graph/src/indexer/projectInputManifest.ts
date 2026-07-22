@@ -3,26 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { GraphLanguage } from "../typings";
-import { IGraphProvider } from "../provider/IGraphProvider";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
+import { languageOf } from "./languageOf";
 import { selectGraphSources } from "./selectGraphSources";
-
-/** Every provider-declared non-source input relevant to these languages. */
-export function providerBuildInputs(
-  languages: readonly GraphLanguage[],
-  providers: readonly IGraphProvider[],
-): string[] {
-  const requested = new Set(languages);
-  return [
-    ...new Set(
-      providers.flatMap((provider) =>
-        provider.languages.some((language) => requested.has(language))
-          ? [...(provider.buildInputs ?? [])]
-          : [],
-      ),
-    ),
-  ].sort(compareOrdinal);
-}
 
 /**
  * Content tokens for the selected source set and declared build inputs.
@@ -35,14 +18,26 @@ export function projectInputManifest(
   root: string,
   options: IBuildGraphOptions,
   buildInputs: readonly string[],
+  opaqueLanguages: ReadonlySet<GraphLanguage> = new Set(),
 ): Map<string, string> {
-  const files = new Set(
-    selectGraphSources(root, options).files.map((file) => path.resolve(file)),
-  );
-  for (const input of buildInputs) files.add(path.resolve(root, input));
+  const files = new Map<string, boolean>();
+  for (const file of selectGraphSources(root, options).files) {
+    const absolute = path.resolve(file);
+    files.set(absolute, opaqueLanguages.has(languageOf(absolute)));
+  }
+  // Declared build inputs are coordinator-owned even if an unusual extension
+  // makes one look like source. Their content decides the project universe and
+  // must therefore be hashed, not hidden behind the provider-owned sentinel.
+  for (const input of buildInputs) files.set(path.resolve(root, input), false);
 
   const manifest = new Map<string, string>();
-  for (const file of [...files].sort(compareOrdinal)) {
+  for (const [file, opaque] of [...files].sort(([left], [right]) =>
+    compareOrdinal(left, right),
+  )) {
+    if (opaque) {
+      manifest.set(file, "provider-owned");
+      continue;
+    }
     try {
       manifest.set(
         file,
@@ -53,17 +48,6 @@ export function projectInputManifest(
     }
   }
   return manifest;
-}
-
-export function sameProjectInputManifest(
-  left: ReadonlyMap<string, string>,
-  right: ReadonlyMap<string, string>,
-): boolean {
-  if (left.size !== right.size) return false;
-  for (const [file, digest] of left) {
-    if (right.get(file) !== digest) return false;
-  }
-  return true;
 }
 
 function compareOrdinal(left: string, right: string): number {

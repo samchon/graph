@@ -389,6 +389,50 @@ async function assertInitialBuildInputFence(): Promise<void> {
   const kept = result.sessions?.get("typescript");
   if (kept !== undefined && !("kind" in kept)) await kept.client.close();
 
+  fs.writeFileSync(config, "one-shot first\n");
+  let oneShotBuilds = 0;
+  let oneShotCloses = 0;
+  await buildLspGraph(
+    { cwd: root, languages: ["typescript"] },
+    {
+      providers: [
+        ProviderFixtures.provider({
+          name: "one-shot-inputs",
+          buildInputs: ["generated.inputs"],
+          refuse: () => "use the generic lane for this fence fixture",
+        }),
+      ],
+      collectLanguageGraph: async () => {
+        oneShotBuilds += 1;
+        const session = genericSession("typescript");
+        session.client.close = async () => {
+          oneShotCloses += 1;
+        };
+        if (oneShotBuilds === 1) {
+          fs.writeFileSync(config, "one-shot second\n");
+        }
+        // The production collector closes a one-shot session before returning
+        // it. This dependency preserves that contract while staging the input
+        // move at the seam the commit helper must detect.
+        await session.client.close();
+        return {
+          result: {
+            nodes: [graphNode("typescript", "a.ts")],
+            edges: [],
+            diagnostics: [],
+            warnings: [],
+          },
+          session,
+        };
+      },
+    },
+  );
+  TestValidator.equals(
+    "a stale one-shot build retries after its collector closed each session",
+    [oneShotBuilds, oneShotCloses],
+    [2, 2],
+  );
+
   const busyRoot = GraphPaths.createTempDirectory(
     "samchon-graph-initial-fence-busy-",
   );

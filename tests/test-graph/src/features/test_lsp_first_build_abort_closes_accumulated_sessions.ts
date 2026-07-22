@@ -216,7 +216,7 @@ async function assertARejectedStrictSnapshotClosesItsUnpublishedSession(): Promi
   );
   TestValidator.predicate(
     "a refused strict snapshot falls back without retaining its facts",
-    result.warnings.some((warning) => warning.includes("not registered")) &&
+    result.warnings.some((warning) => warning.includes("registered to prove")) &&
       result.dump.nodes.some((node) => node.id === "index.ts#value:variable") &&
       !result.dump.nodes.some((node) => node.id === "index.ts#strict:function"),
   );

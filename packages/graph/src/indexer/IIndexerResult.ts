@@ -58,6 +58,9 @@ export interface IIndexerResult {
   /** Project-wide source/config/build inputs fenced around this build. */
   inputManifest?: Map<string, string>;
 
+  /** Languages whose source contents remain opaque to the coordinator. */
+  inputManifestLanguages?: GraphLanguage[];
+
   /** Provider-declared non-source inputs retained for resident recapture. */
   buildInputs?: string[];
 }

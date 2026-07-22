@@ -87,7 +87,7 @@ export namespace scipProvider {
     authority?: GraphProviderAuthority;
 
     /** Inputs outside the language's own extensions that invalidate a build. */
-    buildInputs?: readonly string[];
+    buildInputs?: IGraphProvider["buildInputs"];
 
     resolve: IGraphProvider["resolve"];
     prepare?: IGraphProvider["prepare"];

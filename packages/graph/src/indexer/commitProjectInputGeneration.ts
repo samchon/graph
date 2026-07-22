@@ -26,7 +26,7 @@ export async function commitProjectInputGeneration(
   let lastMovement = "";
   for (let attempt = 1; attempt <= INPUT_COMMIT_ATTEMPTS; attempt++) {
     const beforeLanguages = selectGraphSources(root, options).languages;
-    const buildInputs = providerBuildInputs(beforeLanguages, providers);
+    const buildInputs = providerBuildInputs(beforeLanguages, providers, root);
     const before = projectInputManifest(
       root,
       options,
@@ -35,7 +35,11 @@ export async function commitProjectInputGeneration(
     );
     const result = await build();
     const afterLanguages = selectGraphSources(root, options).languages;
-    const afterBuildInputs = providerBuildInputs(afterLanguages, providers);
+    const afterBuildInputs = providerBuildInputs(
+      afterLanguages,
+      providers,
+      root,
+    );
     const after = projectInputManifest(
       root,
       options,

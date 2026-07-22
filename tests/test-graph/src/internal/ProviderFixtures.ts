@@ -135,7 +135,7 @@ export namespace ProviderFixtures {
     languages?: GraphLanguage[];
     authority?: GraphProviderAuthority;
     facts?: readonly GraphEdgeKind[];
-    buildInputs?: readonly string[];
+    buildInputs?: IGraphProvider["buildInputs"];
     refuse?: IGraphProvider["refuse"];
     resolve?: IGraphProvider["resolve"];
     prepare?: IGraphProvider["prepare"];

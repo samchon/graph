@@ -38,6 +38,13 @@ export const test_project_input_generation_fences_every_owned_input =
       buildInputs: ["rust.generated"],
     });
     const providers = [typescript, goProvider, unrelated];
+    const dynamic = ProviderFixtures.provider({
+      name: "dynamic-owner",
+      languages: ["go"],
+      buildInputs: (projectRoot) => [
+        path.relative(projectRoot, path.join(root, "nested", "go.mod")),
+      ],
+    });
 
     TestValidator.equals(
       "only participating provider inputs are deduplicated and sorted",
@@ -51,6 +58,11 @@ export const test_project_input_generation_fences_every_owned_input =
         [ProviderFixtures.provider({ name: "source-only" })],
       ),
       [],
+    );
+    TestValidator.equals(
+      "dynamic build inputs receive the project root",
+      providerBuildInputs(["go"], [dynamic], root),
+      [path.join("nested", "go.mod")],
     );
 
     const manifest = projectInputManifest(

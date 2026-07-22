@@ -103,7 +103,9 @@ export interface IGraphProvider {
    * set that no `.cpp` or `.go` edit touched, and a freshness check that
    * watched only source extensions would call that project unchanged.
    */
-  readonly buildInputs?: readonly string[];
+  readonly buildInputs?:
+    | readonly string[]
+    | ((root: string) => readonly string[]);
 
   /**
    * Bring the project to the state this provider needs before it can answer —

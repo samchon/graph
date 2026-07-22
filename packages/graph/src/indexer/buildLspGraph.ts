@@ -417,7 +417,14 @@ async function collectProviderGraph(
     const refresh = await session.refresh({ signal: options.signal });
     return { refresh, session };
   } catch (error) {
-    await session.close();
+    try {
+      await session.close();
+    } catch (closeError) {
+      throw new AggregateError(
+        [error, closeError],
+        "@samchon/graph: strict provider refresh failed and its unpublished session could not close",
+      );
+    }
     throw error;
   }
 }

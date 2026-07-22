@@ -55,6 +55,7 @@ export const test_lsp_first_build_abort_closes_accumulated_sessions = async () =
 
   await assertStrictProviderCancellationBoundary();
   await assertARejectedStrictSnapshotClosesItsUnpublishedSession();
+  await assertARefreshFailureRetainsItsCloseFailure();
 };
 
 async function assertStrictProviderCancellationBoundary(): Promise<void> {
@@ -220,6 +221,57 @@ async function assertARejectedStrictSnapshotClosesItsUnpublishedSession(): Promi
       !result.dump.nodes.some((node) => node.id === "index.ts#strict:function"),
   );
   await generic.client.close();
+}
+
+async function assertARefreshFailureRetainsItsCloseFailure(): Promise<void> {
+  const root = GraphPaths.createTempDirectory(
+    "samchon-graph-strict-refresh-close-",
+  );
+  fs.writeFileSync(path.join(root, "index.ts"), "export const value = 1;\n");
+
+  const refreshError = new Error("strict refresh failed");
+  const closeError = new Error("strict cleanup failed");
+  const cancelled = new AbortController();
+  let closeCalls = 0;
+  const provider = ProviderFixtures.provider({
+    name: "refresh-close",
+    open: (open) => ({
+      kind: "bulk",
+      languages: open.languages,
+      root: open.root,
+      generation: 0,
+      current: undefined,
+      refresh: async () => {
+        cancelled.abort("refresh failed");
+        throw refreshError;
+      },
+      close: async () => {
+        closeCalls += 1;
+        throw closeError;
+      },
+    }),
+  });
+
+  let failure: unknown;
+  try {
+    await buildLspGraph(
+      { cwd: root, languages: ["typescript"], signal: cancelled.signal },
+      { providers: [provider] },
+    );
+  } catch (error) {
+    failure = error;
+  }
+  TestValidator.equals(
+    "a failed strict refresh still closes its unpublished session once",
+    closeCalls,
+    1,
+  );
+  TestValidator.predicate(
+    "strict refresh and cleanup failures are both retained",
+    failure instanceof AggregateError &&
+      failure.errors[0] === refreshError &&
+      failure.errors[1] === closeError,
+  );
 }
 
 /**

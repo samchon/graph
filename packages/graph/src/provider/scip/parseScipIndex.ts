@@ -59,21 +59,31 @@ export function parseScipIndex(value: unknown, label = "scip"): IScipIndex {
 
 function documentOf(value: unknown, label: string): IScipIndex.IDocument {
   const document = objectOf(value, label);
-  const relativePath = stringOf(document.relativePath, `${label}.relativePath`);
-  if (relativePath === "") {
+  const rawPath = stringOf(document.relativePath, `${label}.relativePath`);
+  if (rawPath === "") {
     throw new Error(`scip: ${label}.relativePath is empty`);
   }
   // A document path is workspace-relative by definition. An absolute or
   // parent-escaping path would attribute facts to a file outside the program
   // this index claims to describe.
-  if (/^([a-zA-Z]:[\\/]|[\\/])/.test(relativePath)) {
+  if (/^([a-zA-Z]:[\\/]|[\\/])/.test(rawPath)) {
     throw new Error(
-      `scip: ${label}.relativePath must be workspace-relative: ${relativePath}`,
+      `scip: ${label}.relativePath must be workspace-relative: ${rawPath}`,
     );
   }
-  if (relativePath.split(/[\\/]/).includes("..")) {
+  if (rawPath.split(/[\\/]/).includes("..")) {
     throw new Error(
-      `scip: ${label}.relativePath escapes the workspace: ${relativePath}`,
+      `scip: ${label}.relativePath escapes the workspace: ${rawPath}`,
+    );
+  }
+  const relativePath = rawPath.split("\\").join("/");
+  if (
+    relativePath
+      .split("/")
+      .some((segment) => segment === "" || segment === ".")
+  ) {
+    throw new Error(
+      `scip: ${label}.relativePath must be normalized: ${rawPath}`,
     );
   }
   return {

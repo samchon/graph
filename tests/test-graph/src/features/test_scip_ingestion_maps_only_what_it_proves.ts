@@ -174,14 +174,35 @@ function assertIndexValidation(): void {
     ["a missing project root", { metadata: {}, documents: [] }],
     ["non-array documents", { metadata: { projectRoot: "file:///r" }, documents: {} }],
     ["an empty document path", withDocument({ relativePath: "" })],
-    ["an absolute POSIX document path", withDocument({ relativePath: "/etc/passwd" })],
-    ["an absolute Windows document path", withDocument({ relativePath: "C:/x.go" })],
-    ["a parent-escaping document path", withDocument({ relativePath: "../out.go" })],
+    [
+      "an absolute POSIX document path",
+      withDocument({ relativePath: "/etc/passwd" }),
+    ],
+    [
+      "an absolute Windows document path",
+      withDocument({ relativePath: "C:/x.go" }),
+    ],
+    [
+      "a parent-escaping document path",
+      withDocument({ relativePath: "../out.go" }),
+    ],
+    ["a dot-segment document path", withDocument({ relativePath: "./a.go" })],
+    ["a repeated-separator document path", withDocument({ relativePath: "dir//a.go" })],
     [
       "two documents describing one file",
       {
         metadata: { projectRoot: "file:///r" },
         documents: [{ relativePath: "a.go" }, { relativePath: "a.go" }],
+      },
+    ],
+    [
+      "two spellings of one document path",
+      {
+        metadata: { projectRoot: "file:///r" },
+        documents: [
+          { relativePath: "dir/a.go" },
+          { relativePath: "dir\\a.go" },
+        ],
       },
     ],
     ["an empty occurrence symbol", withOccurrence({ range: [0, 0, 1], symbol: "" })],
@@ -275,6 +296,12 @@ function assertIndexValidation(): void {
   );
   TestValidator.error("a non-string position encoding is refused", () =>
     parseScipIndex(withDocument({ relativePath: "a.go", positionEncoding: 1 })),
+  );
+  TestValidator.equals(
+    "a Windows-spelled workspace-relative document is canonicalized",
+    parseScipIndex(withDocument({ relativePath: "dir\\a.go" })).documents[0]
+      ?.relativePath,
+    "dir/a.go",
   );
   TestValidator.error("a non-string syntax kind is refused", () =>
     parseScipIndex(

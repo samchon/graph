@@ -430,6 +430,25 @@ async function assertCloseOwnsItsChildren(): Promise<void> {
   await rejects(missing.refresh(), "an unspawnable indexer rejects");
   await missing.close();
 
+  // A signal can already be cancelled before a refresh reaches the session.
+  // Starting a child in that state is wrong on its own, and a hanging indexer
+  // would never see an event that was dispatched before its listener existed.
+  const preAborted = sessionOf(root, { mode: "hang" });
+  const preAbortedController = new AbortController();
+  preAbortedController.abort();
+  let preAbortedName: string | undefined;
+  try {
+    await preAborted.refresh({ signal: preAbortedController.signal });
+  } catch (error) {
+    preAbortedName = (error as Error).name;
+  }
+  TestValidator.equals(
+    "an already-aborted refresh does not start an indexer",
+    preAbortedName,
+    "AbortError",
+  );
+  await preAborted.close();
+
   // An aborted refresh reaches the child it started, and rejects as an abort
   // rather than as the exit code killing it happens to produce.
   const aborted = sessionOf(root, { mode: "hang" });

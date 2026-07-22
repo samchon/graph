@@ -305,6 +305,9 @@ export class ScipSession implements IBulkGraphSession {
     args: readonly string[],
     signal: AbortSignal | undefined,
   ): Promise<string> {
+    if (signal?.aborted === true) {
+      return Promise.reject(abortedProcessError(this.options.provider, command));
+    }
     const child = spawn(command, [...args], {
       cwd: this.root,
       windowsHide: true,
@@ -332,6 +335,10 @@ export class ScipSession implements IBulkGraphSession {
       child.kill();
     };
     signal?.addEventListener("abort", abort, { once: true });
+    // `abort` dispatches synchronously, so a signal that became aborted after
+    // the first check but before listener registration must still retire this
+    // child instead of letting an already-cancelled refresh run to completion.
+    if (signal?.aborted === true) abort();
 
     return new Promise<string>((resolve, reject) => {
       const finish = (): void => {
@@ -346,11 +353,7 @@ export class ScipSession implements IBulkGraphSession {
       child.on("close", (code) => {
         finish();
         if (signal?.aborted === true) {
-          const error = new Error(
-            `${this.options.provider}: ${command} was aborted`,
-          );
-          error.name = "AbortError";
-          reject(error);
+          reject(abortedProcessError(this.options.provider, command));
           return;
         }
         if (code === 0) {
@@ -476,6 +479,12 @@ const SOURCE_DIGESTS_CAPABILITY = "sourceDigests";
 function fileUriToPath(uri: string): string {
   const withoutScheme = uri.slice("file://".length).replace(/^\/(?=[a-zA-Z]:)/, "");
   return decodeURIComponent(withoutScheme);
+}
+
+function abortedProcessError(provider: string, command: string): Error {
+  const error = new Error(`${provider}: ${command} was aborted`);
+  error.name = "AbortError";
+  return error;
 }
 
 function compareOrdinalPath(left: string, right: string): number {

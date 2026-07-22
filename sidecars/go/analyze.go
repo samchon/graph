@@ -1041,8 +1041,9 @@ func isTestFunction(
 		if signature.Params().Len() != 0 {
 			return false
 		}
+		exampleName := strings.TrimPrefix(name, "Example")
 		for _, example := range doc.Examples(syntax) {
-			if example.F == declaration && (example.Output != "" || example.EmptyOutput) {
+			if example.Name == exampleName && (example.Output != "" || example.EmptyOutput) {
 				return true
 			}
 		}

@@ -9,13 +9,13 @@ import {
  * SCIP ingestion publishes what the index proves and refuses to guess the
  * rest.
  *
- * A SCIP index says where a symbol is defined, referenced, read, and written,
- * and which symbols it implements or is typed by. It has no universal way to
- * say that a reference is an invocation, that a type reference is a
- * construction, or what an annotation means — those are different facts in
- * different languages. The temptation is to recover them by looking at the
- * source around the occurrence, and the whole value of a compiler-owned lane
- * is that it does not.
+ * A SCIP index says where a symbol is defined and referenced, and can carry
+ * role and relationship bits whose meaning still depends on the producing
+ * indexer. It has no universal way to say that a reference is an invocation,
+ * that a type reference is a construction, or what an annotation means —
+ * those are different facts in different languages. The temptation is to
+ * recover them by looking at source or treating all producers alike, and the
+ * whole value of a strict lane is that it does neither.
  */
 export const test_scip_ingestion_maps_only_what_it_proves = async () => {
   assertSymbolParsing();
@@ -102,6 +102,8 @@ function assertSymbolParsing(): void {
     // A bracketed descriptor with nothing inside it names nothing.
     "scip-java maven example v1 `pkg`/Box#[]",
     "scip-java maven example v1 `pkg`/run().()",
+    "scip-java maven example v1 `pkg`/Box#[`T`x",
+    "scip-java maven example v1 `pkg`/run().(`arg`x",
     // A descriptor that is only a suffix has no name to read.
     "scip-go gomod example v1 #",
   ]) {
@@ -361,13 +363,17 @@ function assertMapping(): void {
     ),
   );
   TestValidator.predicate(
-    "a read role becomes an access, not a bare reference",
+    "a common adapter retains a read-labelled occurrence only as a reference",
     adapted.edges.some(
       (edge) =>
-        edge.kind === "accesses" &&
+        edge.kind === "references" &&
         edge.from === id("Serve") &&
         edge.to === id("Server"),
     ),
+  );
+  TestValidator.predicate(
+    "an unproven read-role promotion is reported",
+    adapted.warnings.some((warning) => warning.includes("read role")),
   );
   TestValidator.predicate(
     "an enclosing symbol becomes containment",
@@ -435,7 +441,21 @@ function assertMapping(): void {
     }).warnings.filter((warning) => warning.includes("UTF-16")),
     [],
   );
+  const metadataUtf8 = adaptScipIndex({
+    index: parseScipIndex(
+      rawIndex({}, { textDocumentEncoding: "UTF8CodeUnitOffsetFromLineStart" }),
+    ),
+    root: "/r",
+    provider: "scip-go",
+    languages: ["go"],
+    languageOf: () => "go",
+  });
+  TestValidator.predicate(
+    "the index-level position encoding applies when a document omits one",
+    metadataUtf8.warnings.some((warning) => warning.includes("UTF-16 code units")),
+  );
 
+  assertLongLineScopeSelection();
   assertRelationshipsAndExternals();
 
   // A document in a language this session does not own is reported, not
@@ -451,6 +471,66 @@ function assertMapping(): void {
   TestValidator.predicate(
     "a foreign document is reported",
     foreign.warnings.some((warning) => warning.includes("does not own")),
+  );
+}
+
+/** Nested ranges are ordered by positions, not an invented line width. */
+function assertLongLineScopeSelection(): void {
+  const base = "scip-go gomod example v1 `main`";
+  const outer = `${base}/outer().`;
+  const inner = `${base}/inner().`;
+  const target = `${base}/target().`;
+  const adapted = adaptScipIndex({
+    index: parseScipIndex({
+      metadata: { projectRoot: "file:///r" },
+      documents: [
+        {
+          relativePath: "long.go",
+          symbols: [
+            { symbol: outer, displayName: "outer", kind: "Function" },
+            { symbol: inner, displayName: "inner", kind: "Function" },
+            { symbol: target, displayName: "target", kind: "Function" },
+          ],
+          occurrences: [
+            {
+              range: [0, 0, 1],
+              symbol: outer,
+              symbolRoles: 1,
+              enclosingRange: [0, 0, 2, 0],
+            },
+            {
+              range: [0, 2, 3],
+              symbol: inner,
+              symbolRoles: 1,
+              enclosingRange: [0, 0, 1, 2_000_000],
+            },
+            { range: [1, 10, 16], symbol: target },
+            { range: [3, 0, 6], symbol: target, symbolRoles: 1 },
+          ],
+        },
+      ],
+    }),
+    root: "/r",
+    provider: "scip-go",
+    languages: ["go"],
+    languageOf: () => "go",
+  });
+  const id = (name: string): string | undefined =>
+    adapted.nodes.find((node) => node.name === name)?.id;
+  TestValidator.predicate(
+    "a range beyond one million columns still selects the innermost owner",
+    adapted.edges.some(
+      (edge) =>
+        edge.kind === "references" &&
+        edge.from === id("inner") &&
+        edge.to === id("target"),
+    ) &&
+      !adapted.edges.some(
+        (edge) =>
+          edge.kind === "references" &&
+          edge.from === id("outer") &&
+          edge.to === id("target"),
+      ),
   );
 }
 
@@ -630,30 +710,34 @@ function assertRelationshipsAndExternals(): void {
         candidate.to === named(to),
     );
   TestValidator.predicate(
-    "an implementation relationship maps",
-    edge("implements", "File", "Reader"),
+    "an implementation relationship is not promoted without language proof",
+    !edge("implements", "File", "Reader") &&
+      adapted.warnings.some((warning) =>
+        warning.includes("implementation relationship"),
+      ),
   );
   TestValidator.predicate(
     "…and a type-definition flag on the same record is its own claim",
     edge("type_ref", "File", "Reader"),
   );
   TestValidator.predicate(
-    "a write access is an access",
-    edge("accesses", "File", "Reader"),
+    "a write-labelled occurrence remains a common reference",
+    edge("references", "File", "Reader"),
   );
   TestValidator.predicate(
     "a reference to a dependency leaf lands on it",
     edge("references", "File", "Client"),
   );
-  // The import role is one of the few facts every SCIP indexer records the
-  // same way, so it maps rather than being flattened into a bare reference.
   TestValidator.predicate(
-    "an import role becomes an import edge",
-    edge("imports", "File", "Handle"),
+    "an import-labelled occurrence remains a common reference",
+    edge("references", "File", "Handle"),
   );
   TestValidator.predicate(
-    "…and is not also published as the access its mask carries",
-    !edge("accesses", "File", "Handle"),
+    "unproven import and access promotions are both omitted and reported",
+    !edge("imports", "File", "Handle") &&
+      !edge("accesses", "File", "Handle") &&
+      adapted.warnings.some((warning) => warning.includes("import role")) &&
+      adapted.warnings.some((warning) => warning.includes("read role")),
   );
   TestValidator.predicate(
     "a relationship to an undeclared symbol emits nothing",
@@ -777,7 +861,10 @@ function assertRelationshipsAndExternals(): void {
   );
 }
 
-function rawIndex(document: Record<string, unknown> = {}): unknown {
+function rawIndex(
+  document: Record<string, unknown> = {},
+  metadata: Record<string, unknown> = {},
+): unknown {
   const server = "scip-go gomod example v1 `main`/Server#";
   const serve = "scip-go gomod example v1 `main`/Server#Serve().";
   const helper = "scip-go gomod example v1 `main`/helper().";
@@ -785,6 +872,7 @@ function rawIndex(document: Record<string, unknown> = {}): unknown {
     metadata: {
       projectRoot: "file:///r",
       toolInfo: { name: "scip-go", version: "0.1.0" },
+      ...metadata,
     },
     documents: [
       {

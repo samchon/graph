@@ -233,32 +233,18 @@ export namespace Conformance {
     return { failures };
   }
 
-  /**
-   * A slice is byte-identical to itself when nothing moved.
-   *
-   * Compared through the published digest rather than by deep equality,
-   * because the digest is what the dump and the transaction fence actually
-   * compare; an equality helper could agree while the digest disagreed.
-   */
+  /** A slice is byte-identical to itself when nothing moved. */
   export function deterministic(
     left: IBulkGraphSession.ISnapshot,
     right: IBulkGraphSession.ISnapshot,
   ): IReport {
     const failures: string[] = [];
     if (
-      graphSnapshotDigests.contentOf(left) !==
-      graphSnapshotDigests.contentOf(right)
+      graphSnapshotDigests.snapshotOf(left) !==
+      graphSnapshotDigests.snapshotOf(right)
     ) {
       failures.push(
-        "two indexes of the same unchanged source published different content digests",
-      );
-    }
-    if (
-      graphSnapshotDigests.manifestOf(left) !==
-      graphSnapshotDigests.manifestOf(right)
-    ) {
-      failures.push(
-        "two indexes of the same unchanged source published different manifest digests",
+        "two indexes of the same unchanged source published different normalized snapshot bytes",
       );
     }
     return { failures };

@@ -27,17 +27,17 @@ import { scipSymbol } from "./scipSymbol";
  * its name, and it is wrong on every function value, every macro, and every
  * language whose call syntax is not juxtaposition with parentheses.
  *
- * `imports` is here because SCIP does state it: the import role is one of the
- * few facts every indexer records the same way. What the role does not say is
- * how the module resolved, so an import edge here means the boundary was
- * crossed at this occurrence, not that a particular module topology holds.
+ * Roles and implementation relationships are intentionally not promoted here.
+ * They are fields in the interchange, but their producer semantics are not
+ * uniform: stock Go labels every reference as a read (including writes, calls,
+ * and imports), PHP labels every reference with role zero, and some producers
+ * emit transitive implementation closure where others emit direct parents.
+ * A language provider must opt into those mappings after proving its own
+ * producer contract; the common adapter can prove only the reference itself.
  */
 const SCIP_EDGE_KINDS: readonly GraphEdgeKind[] = [
   "contains",
   "references",
-  "accesses",
-  "imports",
-  "implements",
   "type_ref",
 ];
 
@@ -82,6 +82,7 @@ export function adaptScipIndex(
   const edges: ISamchonGraphEdge[] = [];
   const diagnostics: ISamchonGraphDiagnostic[] = [];
   const warnings: string[] = [];
+  const unsupportedRoles = new Set<string>();
   const files: string[] = [];
 
   // Every definition in the index, so a reference in one document can resolve
@@ -104,7 +105,8 @@ export function adaptScipIndex(
     // there. Spans are display evidence rather than identity, so this reports
     // rather than rejects; what it must not do is say nothing, because the
     // resulting column is wrong in exactly the cases nobody tests.
-    const encoding = document.positionEncoding;
+    const encoding =
+      document.positionEncoding ?? props.index.metadata.textDocumentEncoding;
     if (encoding !== undefined && encoding !== UTF16_POSITION_ENCODING) {
       warnings.push(
         `${props.provider}: ${file} reports ${encoding} positions, but graph columns are UTF-16 code units; columns on lines with non-ASCII characters may be off`,
@@ -236,9 +238,19 @@ export function adaptScipIndex(
         });
       }
     }
-    // Innermost first: a method's body is inside its class's, and a reference
-    // inside the method belongs to the method.
-    scopes.sort((left, right) => rangeSize(left.range) - rangeSize(right.range));
+    // Innermost first: later starts win, and for equal starts earlier ends win.
+    // Comparing line/column positions directly avoids inventing a maximum line
+    // width; the old `lineDelta * 1_000_000 + columnDelta` reversed valid
+    // nesting on source lines longer than that arbitrary boundary.
+    scopes.sort((left, right) => {
+      const start = compare(
+        position(right.range, "start"),
+        position(left.range, "start"),
+      );
+      return start !== 0
+        ? start
+        : compare(position(left.range, "end"), position(right.range, "end"));
+    });
 
     for (const occurrence of occurrences) {
       if (hasRole(occurrence, IScipIndex.SymbolRole.Definition)) continue;
@@ -251,25 +263,26 @@ export function adaptScipIndex(
       const owner = scopes.find((scope) => contains(scope.range, occurrence.range));
       if (owner === undefined) continue;
       if (owner.id === target.id) continue;
-      // Import, read, and write are the role distinctions SCIP states
-      // universally, so they map. Everything else is a reference and says only
-      // that the name appeared, which is exactly what the index proved.
-      //
-      // Import is checked first because a role mask can carry more than one
-      // bit: an imported symbol that is also read at the same occurrence is an
-      // import, and calling it an access would lose the fact that the module
-      // boundary was crossed here — which is the fact nothing else records.
-      const kind: GraphEdgeKind = hasRole(
+      recordUnsupportedRole(
+        unsupportedRoles,
         occurrence,
         IScipIndex.SymbolRole.Import,
-      )
-        ? "imports"
-        : hasRole(occurrence, IScipIndex.SymbolRole.ReadAccess) ||
-            hasRole(occurrence, IScipIndex.SymbolRole.WriteAccess)
-          ? "accesses"
-          : "references";
+        "import",
+      );
+      recordUnsupportedRole(
+        unsupportedRoles,
+        occurrence,
+        IScipIndex.SymbolRole.ReadAccess,
+        "read",
+      );
+      recordUnsupportedRole(
+        unsupportedRoles,
+        occurrence,
+        IScipIndex.SymbolRole.WriteAccess,
+        "write",
+      );
       edges.push({
-        kind,
+        kind: "references",
         from: owner.id,
         to: target.id,
         evidence: spanOf(file, occurrence.range),
@@ -315,16 +328,18 @@ export function adaptScipIndex(
       // implementation and a type definition, and checking them as if they
       // were alternatives drops whichever was tested second.
       if (relationship.isImplementation === true) {
-        edges.push({
-          kind: "implements",
-          from: definition.id,
-          to: target.id,
-        });
+        unsupportedRoles.add("implementation relationship");
       }
       if (relationship.isTypeDefinition === true) {
         edges.push({ kind: "type_ref", from: definition.id, to: target.id });
       }
     }
+  }
+
+  for (const role of unsupportedRoles) {
+    warnings.push(
+      `${props.provider}: SCIP ${role} data is not promoted to a stronger graph fact until this language provider proves a typed mapping for its pinned indexer`,
+    );
   }
 
   return {
@@ -495,17 +510,20 @@ function contains(outer: number[], inner: number[]): boolean {
   );
 }
 
-function rangeSize(range: number[]): number {
-  const start = position(range, "start");
-  const end = position(range, "end");
-  return (end[0] - start[0]) * 1_000_000 + (end[1] - start[1]);
-}
-
 function position(range: number[], edge: "start" | "end"): [number, number] {
   if (edge === "start") return [range[0]!, range[1]!];
   return range.length === 3
     ? [range[0]!, range[2]!]
     : [range[2]!, range[3]!];
+}
+
+function recordUnsupportedRole(
+  roles: Set<string>,
+  occurrence: IScipIndex.IOccurrence,
+  role: IScipIndex.SymbolRole,
+  label: string,
+): void {
+  if (hasRole(occurrence, role)) roles.add(`${label} role`);
 }
 
 function compare(left: [number, number], right: [number, number]): number {

@@ -28,6 +28,10 @@ import { IGraphSourceSelection } from "./IGraphSourceSelection";
 import { selectGraphSources } from "./selectGraphSources";
 import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
+import {
+  projectInputManifest,
+  sameProjectInputManifest,
+} from "./projectInputManifest";
 
 /**
  * How many times one `load` may prepare a candidate before giving up on the
@@ -49,6 +53,10 @@ interface IResidentState {
 
   /** The registry entry behind each kept strict session, by language. */
   providers: Map<GraphLanguage, IGraphProvider>;
+
+  /** Source/config/build inputs that fenced the published dump. */
+  inputManifest: Map<string, string>;
+  buildInputs: string[];
 }
 
 interface IResidentDependencies {
@@ -108,6 +116,7 @@ export function createResidentGraphSource(
     const sessions = result.sessions ?? new Map();
     try {
       const texts = result.sources ?? new Map<string, string>();
+      const buildInputs = result.buildInputs ?? [];
       return {
         dump: result.dump,
         sessions,
@@ -121,6 +130,9 @@ export function createResidentGraphSource(
         source: result.source ?? sourceReaderOf(root, texts, sessions),
         modes: result.modes ?? new Map(),
         providers: result.providers ?? new Map(),
+        inputManifest:
+          result.inputManifest ?? projectInputManifest(root, options, buildInputs),
+        buildInputs,
       };
     } catch (error) {
       // Once the build hands its sessions to this source, every later failure
@@ -133,6 +145,7 @@ export function createResidentGraphSource(
   async function refreshStale(
     current: IResidentState,
     prefetched: ReadonlyMap<GraphLanguage, IBulkGraphSession.IRefresh>,
+    inputManifest: ReadonlyMap<string, string>,
     signal: AbortSignal,
   ): Promise<void> {
     const nodes: ISamchonGraphNode[] = [];
@@ -281,6 +294,17 @@ export function createResidentGraphSource(
       );
     }
 
+    const committedInputs = projectInputManifest(
+      root,
+      options,
+      current.buildInputs,
+    );
+    if (!sameProjectInputManifest(inputManifest, committedInputs)) {
+      throw new StaleCandidateError(
+        "@samchon/graph: the project source/config/build input manifest changed while this refresh was preparing, so none of its language slices may be published",
+      );
+    }
+
     // Written out rather than spread from the previous dump, because a spread
     // carries forward whatever this refresh did not replace — and `provenance`
     // is the field where that is worst. Its manifest and content digests are a
@@ -310,6 +334,7 @@ export function createResidentGraphSource(
     current.generations = generations;
     current.modes = modes;
     current.source = sourceReaderOf(root, sources, current.sessions);
+    current.inputManifest = committedInputs;
   }
 
   async function replaceLanguages(
@@ -350,6 +375,11 @@ export function createResidentGraphSource(
     signal: AbortSignal,
   ): Promise<void> {
     for (let attempt = 1; ; attempt++) {
+      const inputManifest = projectInputManifest(
+        root,
+        options,
+        current.buildInputs,
+      );
       const prefetched = await refreshBulkSessions(current.sessions, signal);
       const bulkChanged = [...prefetched].some(
         ([language, refresh]) =>
@@ -363,6 +393,7 @@ export function createResidentGraphSource(
       if (
         !bulkChanged &&
         !bulkSliceLanguagesChanged &&
+        sameProjectInputManifest(current.inputManifest, inputManifest) &&
         !isStale(current.hashes, root, options, bulkLanguagesOf(current.sessions))
       ) {
         return;
@@ -381,7 +412,7 @@ export function createResidentGraphSource(
         return;
       }
       try {
-        await refreshStale(current, prefetched, signal);
+        await refreshStale(current, prefetched, inputManifest, signal);
         return;
       } catch (error) {
         if (!isStaleCandidate(error)) throw error;

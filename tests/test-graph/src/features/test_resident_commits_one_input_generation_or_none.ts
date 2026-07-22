@@ -28,7 +28,39 @@ export const test_resident_commits_one_input_generation_or_none = async () => {
   await assertABulkSliceLanguageChangeRebuildsTheResidentTopology();
   await assertAProviderThatMovedMidTransactionIsDiscarded();
   await assertProvenanceDescribesThePublishedGeneration();
+  await assertADeclaredBuildInputInvalidatesTheProject();
 };
+
+async function assertADeclaredBuildInputInvalidatesTheProject(): Promise<void> {
+  const root = GraphPaths.createTempDirectory("samchon-graph-build-input-");
+  const file = path.join(root, "a.ts");
+  const config = path.join(root, "project.generated");
+  fs.writeFileSync(file, "export const value = 1;\n");
+  fs.writeFileSync(config, "first\n");
+  let parses = 0;
+  const source = createResidentGraphSource(
+    { cwd: root },
+    {
+      buildLspGraph: async () => ({
+        ...resultOf(root, file, fs.readFileSync(file, "utf8")),
+        buildInputs: ["project.generated"],
+      }),
+      staticGraphParts: (options, files) => {
+        parses += 1;
+        return realStaticGraphParts(options, files);
+      },
+    },
+  );
+  await source.load();
+  fs.writeFileSync(config, "second\n");
+  await source.load();
+  TestValidator.equals(
+    "a provider-declared generated/config input invalidates the whole project",
+    parses,
+    1,
+  );
+  await source.close();
+}
 
 /**
  * A refresh republishes its own provenance rather than inheriting one.

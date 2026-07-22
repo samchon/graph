@@ -54,4 +54,10 @@ export interface IIndexerResult {
    * exactly the generation a long-lived session spends all its time in.
    */
   providers?: Map<GraphLanguage, IGraphProvider>;
+
+  /** Project-wide source/config/build inputs fenced around this build. */
+  inputManifest?: Map<string, string>;
+
+  /** Provider-declared non-source inputs retained for resident recapture. */
+  buildInputs?: string[];
 }

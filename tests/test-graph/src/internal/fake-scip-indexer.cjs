@@ -60,6 +60,10 @@ if (mode === "hang") {
 } else {
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.writeFileSync(output, JSON.stringify(indexOf(generation)));
+  const mutate = options.get("mutate");
+  if (mutate !== undefined) {
+    fs.appendFileSync(path.join(options.get("root") ?? "/", mutate), "// moved\n");
+  }
   process.exit(0);
 }
 

@@ -38,6 +38,11 @@ import { IStaticGraphParts } from "./IStaticGraphParts";
 import { staticGraphParts } from "./staticGraphParts";
 import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
+import {
+  projectInputManifest,
+  providerBuildInputs,
+  sameProjectInputManifest,
+} from "./projectInputManifest";
 
 interface IBuildLspGraphDependencies {
   /**
@@ -61,6 +66,8 @@ const DEFAULT_DEPENDENCIES: IBuildLspGraphDependencies = {
   collectLanguageGraph,
 };
 
+const INPUT_COMMIT_ATTEMPTS = 3;
+
 export async function buildLspGraph(
   options: IBuildGraphOptions = {},
   dependencies: Partial<IBuildLspGraphDependencies> = {},
@@ -69,6 +76,55 @@ export async function buildLspGraph(
     ...DEFAULT_DEPENDENCIES,
     ...dependencies,
   };
+  const root = path.resolve(options.cwd ?? process.cwd());
+  let lastMovement = "";
+  for (let attempt = 1; attempt <= INPUT_COMMIT_ATTEMPTS; attempt++) {
+    const beforeLanguages = selectGraphSources(root, options).languages;
+    const buildInputs = providerBuildInputs(
+      beforeLanguages,
+      resolvedDependencies.providers,
+    );
+    const before = projectInputManifest(root, options, buildInputs);
+    const result = await buildLspGraphAttempt(options, resolvedDependencies);
+    const afterLanguages = selectGraphSources(root, options).languages;
+    const afterBuildInputs = providerBuildInputs(
+      afterLanguages,
+      resolvedDependencies.providers,
+    );
+    const after = projectInputManifest(root, options, afterBuildInputs);
+    if (sameProjectInputManifest(before, after)) {
+      return {
+        ...result,
+        inputManifest: after,
+        buildInputs: afterBuildInputs,
+      };
+    }
+
+    lastMovement =
+      "the selected source/config/build input manifest changed while the build was preparing";
+    // A one-shot attempt has already closed its own sessions; only resident
+    // candidates hand any back for this discard path to retire.
+    /* c8 ignore next 3 */
+    const closeErrors =
+      result.sessions === undefined
+        ? []
+        : await closeKeptSessions(result.sessions);
+    if (closeErrors.length > 0) {
+      throw new AggregateError(
+        closeErrors,
+        `@samchon/graph: ${lastMovement}, and the discarded candidate's sessions could not all close`,
+      );
+    }
+  }
+  throw new Error(
+    `@samchon/graph: ${lastMovement} in all ${String(INPUT_COMMIT_ATTEMPTS)} bounded attempts, so no mixed-generation graph was published`,
+  );
+}
+
+async function buildLspGraphAttempt(
+  options: IBuildGraphOptions,
+  resolvedDependencies: IBuildLspGraphDependencies,
+): Promise<IIndexerResult> {
   const root = path.resolve(options.cwd ?? process.cwd());
   const selected = selectGraphSources(root, options);
   const languages = selected.languages;
@@ -93,7 +149,8 @@ export async function buildLspGraph(
   const provenance: ISamchonGraphDump.IProvenance[] = [];
   const modes = new Map<string, IBulkGraphSession.Mode>();
   const providers = new Map<GraphLanguage, IGraphProvider>();
-  let lspNodeCount = 0;
+  const servedLanguages = new Set<GraphLanguage>();
+  let semanticSliceCount = 0;
   try {
     // Computed once (not per-language) since cpp and c share the same clangd
     // compilation database and root.
@@ -170,7 +227,13 @@ export async function buildLspGraph(
         }
         provenance.push(dumpProvenanceOf(snapshot));
         modes.set(candidate.provider.name, refresh.mode);
-        lspNodeCount += snapshot.nodes.length;
+        // A complete strict slice can legitimately contain no declarations.
+        // The provider still answered for its languages, with provenance,
+        // diagnostics, and an exact manifest. Counting nodes as proof that it
+        // answered relabelled that valid empty slice as static fallback and
+        // let a later resident generation change lane authority underneath the
+        // same kept session.
+        semanticSliceCount += 1;
         // A candidate may own more languages than its snapshot published — a
         // Clang provider asked for C and C++ can answer with only the
         // translation units it found. Whatever it did not publish falls to the
@@ -188,6 +251,7 @@ export async function buildLspGraph(
         }
         for (const language of snapshot.languages) {
           strictLanguages.add(language);
+          servedLanguages.add(language);
           // A multi-language provider is one session under several keys. The
           // map stays keyed by language because every consumer asks it a
           // language question; deduplication is the consumers' job and they do
@@ -266,7 +330,8 @@ export async function buildLspGraph(
           appendAll(edges, result.edges);
           appendAll(diagnostics, result.diagnostics);
           appendAll(warnings, result.warnings);
-          lspNodeCount += result.nodes.length;
+          semanticSliceCount += 1;
+          servedLanguages.add(language);
           if (options.keepAlive) sessions.set(language, session);
         }
       } catch (error) {
@@ -292,7 +357,8 @@ export async function buildLspGraph(
         filesForLanguages(selected, staticFallbackLanguages),
       );
       appendSources(sources, fallback.sources);
-      if (lspNodeCount === 0) {
+      for (const language of fallback.languages) servedLanguages.add(language);
+      if (semanticSliceCount === 0) {
         const dump = staticDump(fallback, warnings);
         return {
           dump,
@@ -306,7 +372,7 @@ export async function buildLspGraph(
       appendAll(warnings, fallback.warnings);
     }
 
-    if (nodes.length === 0 && strictNodes.length === 0) {
+    if (semanticSliceCount === 0) {
       const fallback = staticGraphParts(options, selected.files);
       appendSources(sources, fallback.sources);
       const dump = staticDump(fallback, warnings);
@@ -333,11 +399,7 @@ export async function buildLspGraph(
     return {
       dump: {
         project: root,
-        languages: [
-          ...new Set(
-            [...strictNodes, ...nodes].map((node) => node.language),
-          ),
-        ],
+        languages: languages.filter((language) => servedLanguages.has(language)),
         // Only a static fallback makes the graph a hybrid; a benign warning (e.g.
         // the reference cap) on a pure-LSP run must not relabel it.
         indexer: staticFallbackLanguages.length > 0 ? "hybrid" : "lsp",
@@ -414,7 +476,18 @@ async function collectProviderGraph(
     options,
   });
   try {
+    assertBulkSessionContract(root, candidate, session);
     const refresh = await session.refresh({ signal: options.signal });
+    if (session.current !== refresh.snapshot) {
+      throw new Error(
+        `@samchon/graph: provider "${candidate.provider.name}" returned a snapshot that is not its current generation`,
+      );
+    }
+    if (session.generation !== refresh.generation) {
+      throw new Error(
+        `@samchon/graph: provider "${candidate.provider.name}" returned generation ${String(refresh.generation)} while its session reports ${String(session.generation)}`,
+      );
+    }
     return { refresh, session };
   } catch (error) {
     try {
@@ -427,6 +500,37 @@ async function collectProviderGraph(
     }
     throw error;
   }
+}
+
+/** A provider may not widen or move the candidate the registry selected. */
+function assertBulkSessionContract(
+  root: string,
+  candidate: selectGraphProviders.ICandidate,
+  session: IBulkGraphSession,
+): void {
+  const label = `@samchon/graph: provider "${candidate.provider.name}"`;
+  if (!samePath(session.root, root)) {
+    throw new Error(
+      `${label} opened a session for ${session.root}, not the selected project ${root}`,
+    );
+  }
+  const actual = JSON.stringify([...new Set(session.languages)].sort());
+  const expected = JSON.stringify([...candidate.languages].sort());
+  if (actual !== expected) {
+    throw new Error(
+      `${label} opened a session for [${session.languages.join(", ")}] after the registry selected [${candidate.languages.join(", ")}]`,
+    );
+  }
+}
+
+function samePath(left: string, right: string): boolean {
+  const normalizedLeft = path.resolve(left);
+  const normalizedRight = path.resolve(right);
+  // Only one arm runs on a given operating system.
+  /* c8 ignore next 3 */
+  return process.platform === "win32"
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
 }
 
 /** Every language fell back to the static parser: the dump is that parse. */

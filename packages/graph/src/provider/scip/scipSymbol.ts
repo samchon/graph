@@ -239,7 +239,7 @@ function parseOne(
   if (opener === "[" || opener === "(") {
     const closer = opener === "[" ? "]" : ")";
     const name = readName(tail, start + 1, closer);
-    if (name === undefined) return undefined;
+    if (name === undefined || tail[name.next] !== closer) return undefined;
     return {
       descriptor: {
         name: name.value,

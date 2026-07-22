@@ -56,6 +56,34 @@ export namespace graphSnapshotDigests {
     }
     return hash.digest("hex");
   }
+
+  /**
+   * A digest over the complete normalized snapshot envelope.
+   *
+   * This is the conformance byte-identity check, not the content token used by
+   * the transaction fence. Provenance, capabilities, warnings, and the source
+   * manifest are observable publication bytes too: an unchanged provider that
+   * changes any one of them did not reproduce the same snapshot, even when its
+   * graph facts happened to stay equal.
+   */
+  export function snapshotOf(snapshot: IBulkGraphSession.ISnapshot): string {
+    const sources = [...snapshot.sources]
+      .sort(([left], [right]) => compareOrdinal(left, right))
+      .map(([file, digest]) => ({ file, ...digest }));
+    return createHash("sha256")
+      .update(
+        canonical({
+          languages: snapshot.languages,
+          nodes: snapshot.nodes,
+          edges: snapshot.edges,
+          diagnostics: snapshot.diagnostics,
+          sources,
+          provenance: snapshot.provenance,
+          warnings: snapshot.warnings,
+        }),
+      )
+      .digest("hex");
+  }
 }
 
 /**

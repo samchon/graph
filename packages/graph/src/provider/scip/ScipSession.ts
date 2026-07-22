@@ -32,6 +32,7 @@ export class ScipSession implements IBulkGraphSession {
   public readonly root: string;
 
   private readonly options: ScipSession.IOptions;
+  private readonly maxStdoutBytes: number;
   private readonly children = new Set<ISpawned>();
   private snapshot: IBulkGraphSession.ISnapshot | undefined;
   private universe = "";
@@ -44,7 +45,13 @@ export class ScipSession implements IBulkGraphSession {
     if (options.languages.length === 0) {
       throw new TypeError("scip: a session must own at least one language");
     }
+    const maxStdoutBytes =
+      options.maxStdoutBytes ?? DEFAULT_MAX_PROCESS_STDOUT_BYTES;
+    if (!Number.isSafeInteger(maxStdoutBytes) || maxStdoutBytes < 1) {
+      throw new TypeError("scip: maxStdoutBytes must be a positive safe integer");
+    }
     this.options = options;
+    this.maxStdoutBytes = maxStdoutBytes;
     this.languages = [...options.languages];
     this.root = options.root;
   }
@@ -67,6 +74,7 @@ export class ScipSession implements IBulkGraphSession {
     }
     return this.enqueue(async () => {
       this.assertOpen();
+      throwIfAborted(options.signal, this.options.provider);
       const universe = this.fingerprint();
       if (universe === this.universe && this.snapshot !== undefined) {
         return {
@@ -88,7 +96,7 @@ export class ScipSession implements IBulkGraphSession {
         mode: this.version === 1 ? ("initial" as const) : ("rebuild" as const),
         snapshot: next,
       };
-    });
+    }, options.signal);
   }
 
   /**
@@ -124,24 +132,29 @@ export class ScipSession implements IBulkGraphSession {
    * is discarded either way.
    */
   private terminate(child: ISpawned): Promise<undefined> {
-    child.process.kill();
-    let timer: NodeJS.Timeout | undefined;
-    const escalated = new Promise<undefined>((resolve) => {
-      timer = setTimeout(() => {
-        /* c8 ignore start -- Windows terminates on the first signal, so the
-         * escalation is unreachable there. POSIX exercises it through the
-         * fixture indexer that ignores SIGTERM. */
-        child.process.kill("SIGKILL");
-        resolve(undefined);
-        /* c8 ignore stop */
-      }, TERMINATION_GRACE_MS);
-      timer.unref();
-    });
-    return Promise.race([child.exit, escalated]).then(async () => {
-      if (timer !== undefined) clearTimeout(timer);
-      await child.exit;
-      return undefined;
-    });
+    if (child.termination !== undefined) return child.termination;
+    const termination = (() => {
+      child.process.kill();
+      let timer: NodeJS.Timeout | undefined;
+      const escalated = new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => {
+          /* c8 ignore start -- Windows terminates on the first signal, so the
+           * escalation is unreachable there. POSIX exercises it through the
+           * fixture indexer that ignores SIGTERM. */
+          child.process.kill("SIGKILL");
+          resolve(undefined);
+          /* c8 ignore stop */
+        }, TERMINATION_GRACE_MS);
+        timer.unref();
+      });
+      return Promise.race([child.exit, escalated]).then(async () => {
+        if (timer !== undefined) clearTimeout(timer);
+        await child.exit;
+        return undefined;
+      });
+    })();
+    child.termination = termination;
+    return termination;
   }
 
   private async build(
@@ -178,6 +191,12 @@ export class ScipSession implements IBulkGraphSession {
         languageOf: this.options.languageOf,
       });
       const manifest = this.manifest(index, adapted.files);
+      const after = this.fingerprint();
+      if (after !== universe) {
+        throw new Error(
+          `${this.options.provider}: project inputs changed while the SCIP artifact was being built, so that artifact cannot be published`,
+        );
+      }
       return {
         languages: [...this.languages],
         nodes: adapted.nodes,
@@ -292,7 +311,7 @@ export class ScipSession implements IBulkGraphSession {
     const declared = projectRoot.startsWith("file://")
       ? fileUriToPath(projectRoot)
       : projectRoot;
-    if (path.resolve(declared) !== path.resolve(this.root)) {
+    if (!samePath(declared, this.root)) {
       throw new Error(
         `${this.options.provider}: the index was produced for ${declared}, not ${this.root}`,
       );
@@ -321,24 +340,36 @@ export class ScipSession implements IBulkGraphSession {
     this.children.add(owned);
 
     let stdout = "";
+    let stdoutBytes = 0;
     let stderr = "";
+    let outputFailure: Error | undefined;
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
+      /* c8 ignore next -- termination can leave one already-buffered chunk. */
+      if (outputFailure !== undefined) return;
+      stdoutBytes += Buffer.byteLength(chunk, "utf8");
+      if (stdoutBytes > this.maxStdoutBytes) {
+        outputFailure = new Error(
+          `${this.options.provider}: ${command} exceeded the ${String(this.maxStdoutBytes)} byte stdout limit`,
+        );
+        void this.terminate(owned).catch(() => undefined);
+        return;
+      }
       stdout += chunk;
     });
     child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
+      stderr = (stderr + chunk).slice(-MAX_PROCESS_STDERR_CHARS);
     });
 
     const abort = (): void => {
-      child.kill();
+      void this.terminate(owned).catch(() => undefined);
     };
     signal?.addEventListener("abort", abort, { once: true });
     // `abort` dispatches synchronously, so a signal that became aborted after
     // the first check but before listener registration must still retire this
     // child instead of letting an already-cancelled refresh run to completion.
-    if (signal?.aborted === true) abort();
+    if (isAborted(signal)) abort();
 
     return new Promise<string>((resolve, reject) => {
       const finish = (): void => {
@@ -356,6 +387,10 @@ export class ScipSession implements IBulkGraphSession {
           reject(abortedProcessError(this.options.provider, command));
           return;
         }
+        if (outputFailure !== undefined) {
+          reject(outputFailure);
+          return;
+        }
         if (code === 0) {
           resolve(stdout);
           return;
@@ -371,16 +406,42 @@ export class ScipSession implements IBulkGraphSession {
     });
   }
 
-  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+  private enqueue<T>(
+    task: () => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
     let settle!: (value: T) => void;
     let fail!: (error: Error) => void;
+    let started = false;
+    let settled = false;
     const result = new Promise<T>((resolve, reject) => {
-      settle = resolve;
-      fail = reject;
+      settle = (value) => {
+        /* c8 ignore next -- a cancelled queued refresh never runs its task. */
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      fail = (error) => {
+        /* c8 ignore next -- a cancelled queued refresh rejects only once. */
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
     });
+    const cancelQueued = (): void => {
+      if (!started) fail(abortedProcessError(this.options.provider, "refresh"));
+    };
+    if (isAborted(signal)) {
+      cancelQueued();
+      return result;
+    }
+    signal?.addEventListener("abort", cancelQueued, { once: true });
     this.queue = this.queue
       .catch(() => undefined)
       .then(async () => {
+        started = true;
+        signal?.removeEventListener("abort", cancelQueued);
+        if (settled) return;
         try {
           settle(await task());
         } catch (error) {
@@ -420,12 +481,16 @@ export namespace ScipSession {
     inputs: () => string[];
 
     languageOf: (file: string) => GraphLanguage;
+
+    /** Maximum decoded stdout retained in memory; primarily lowered by tests. */
+    maxStdoutBytes?: number;
   }
 }
 
 interface ISpawned {
   process: ReturnType<typeof spawn>;
   exit: Promise<undefined>;
+  termination?: Promise<undefined>;
 }
 
 /**
@@ -448,6 +513,12 @@ function deferred(): { promise: Promise<undefined>; settle: () => void } {
 
 /** How long an owned child may ignore its termination signal. */
 const TERMINATION_GRACE_MS = 1_000;
+
+/** A decoder may be large, but it may never grow the process without bound. */
+const DEFAULT_MAX_PROCESS_STDOUT_BYTES = 256 * 1024 * 1024;
+
+/** Only the tail is useful in an error, and an indexer can log indefinitely. */
+const MAX_PROCESS_STDERR_CHARS = 64 * 1024;
 
 /** The dump body contract this session emits. */
 const SCIP_SCHEMA_VERSION = 5;
@@ -485,6 +556,24 @@ function abortedProcessError(provider: string, command: string): Error {
   const error = new Error(`${provider}: ${command} was aborted`);
   error.name = "AbortError";
   return error;
+}
+
+function throwIfAborted(signal: AbortSignal | undefined, provider: string): void {
+  if (isAborted(signal)) throw abortedProcessError(provider, "refresh");
+}
+
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
+function samePath(left: string, right: string): boolean {
+  const normalizedLeft = path.resolve(left);
+  const normalizedRight = path.resolve(right);
+  // Only one arm runs on a given operating system.
+  /* c8 ignore next 3 */
+  return process.platform === "win32"
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
 }
 
 function compareOrdinalPath(left: string, right: string): number {

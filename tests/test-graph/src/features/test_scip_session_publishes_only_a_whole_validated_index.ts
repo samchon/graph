@@ -56,7 +56,7 @@ async function assertTheRegistryEntryItBuilds(): Promise<void> {
   TestValidator.equals(
     "a SCIP entry claims only what a bare index proves",
     [...provider.facts].sort(),
-    ["accesses", "contains", "implements", "imports", "references", "type_ref"],
+    ["contains", "references", "type_ref"],
   );
   TestValidator.equals(
     "…and grounds them in a semantic index by default",
@@ -414,6 +414,12 @@ async function assertCloseOwnsItsChildren(): Promise<void> {
   TestValidator.error("a session must own at least one language", () =>
     sessionOf(root, { languages: [] }),
   );
+  TestValidator.error("a zero output bound is refused", () =>
+    sessionOf(root, { maxStdoutBytes: 0 }),
+  );
+  TestValidator.error("a fractional output bound is refused", () =>
+    sessionOf(root, { maxStdoutBytes: 1.5 }),
+  );
 
   // An executable that is not there fails to spawn rather than exiting.
   const missing = new ScipSession({
@@ -429,6 +435,18 @@ async function assertCloseOwnsItsChildren(): Promise<void> {
   });
   await rejects(missing.refresh(), "an unspawnable indexer rejects");
   await missing.close();
+
+  const bounded = sessionOf(root, { maxStdoutBytes: 32 });
+  await rejects(
+    bounded.refresh(),
+    "decoded SCIP output larger than the configured bound is refused",
+  );
+  TestValidator.equals(
+    "a bounded-conversion failure publishes no generation",
+    [bounded.generation, bounded.current],
+    [0, undefined],
+  );
+  await bounded.close();
 
   // A signal can already be cancelled before a refresh reaches the session.
   // Starting a child in that state is wrong on its own, and a hanging indexer
@@ -449,6 +467,23 @@ async function assertCloseOwnsItsChildren(): Promise<void> {
   );
   await preAborted.close();
 
+  const unchangedAborted = sessionOf(root);
+  await unchangedAborted.refresh();
+  const unchangedController = new AbortController();
+  unchangedController.abort();
+  let unchangedAbortName: string | undefined;
+  try {
+    await unchangedAborted.refresh({ signal: unchangedController.signal });
+  } catch (error) {
+    unchangedAbortName = (error as Error).name;
+  }
+  TestValidator.equals(
+    "an aborted unchanged poll rejects instead of reusing the snapshot",
+    unchangedAbortName,
+    "AbortError",
+  );
+  await unchangedAborted.close();
+
   // An aborted refresh reaches the child it started, and rejects as an abort
   // rather than as the exit code killing it happens to produce.
   const aborted = sessionOf(root, { mode: "hang" });
@@ -456,6 +491,7 @@ async function assertCloseOwnsItsChildren(): Promise<void> {
   const inFlight = aborted.refresh({ signal: controller.signal });
   await settle();
   controller.abort();
+  const abortedClose = aborted.close();
   let name: string | undefined;
   try {
     await inFlight;
@@ -463,7 +499,23 @@ async function assertCloseOwnsItsChildren(): Promise<void> {
     name = (error as Error).name;
   }
   TestValidator.equals("an aborted refresh rejects as an abort", name, "AbortError");
-  await aborted.close();
+  await abortedClose;
+
+  const movingRoot = GraphPaths.createTempDirectory(
+    "samchon-graph-scip-moving-input-",
+  );
+  fs.writeFileSync(path.join(movingRoot, "main.go"), "package main\n");
+  const moving = sessionOf(movingRoot, { mutateInput: "main.go" });
+  await rejects(
+    moving.refresh(),
+    "an input changed by the indexer run cannot publish under the earlier fingerprint",
+  );
+  TestValidator.equals(
+    "a moved-input failure retains the unpublished generation",
+    [moving.generation, moving.current],
+    [0, undefined],
+  );
+  await moving.close();
 
   // Closing while a refresh is queued behind another makes the queued one find
   // the session already closed.
@@ -490,6 +542,8 @@ interface IFixtureOptions {
   plainRoot?: boolean;
   language?: "go" | "rust";
   languages?: ("go" | "rust")[];
+  mutateInput?: string;
+  maxStdoutBytes?: number;
 }
 
 function sessionOf(root: string, options: IFixtureOptions = {}): ScipSession {
@@ -519,6 +573,9 @@ function sessionOf(root: string, options: IFixtureOptions = {}): ScipSession {
       ...(options.bare === true ? ["--no-tool-info"] : []),
       ...(options.plainRoot === true ? ["--plain-root"] : []),
       ...(options.state === undefined ? [] : [`--state=${options.state}`]),
+      ...(options.mutateInput === undefined
+        ? []
+        : [`--mutate=${options.mutateInput}`]),
     ],
     inputs: () =>
       options.inputs ??
@@ -526,6 +583,9 @@ function sessionOf(root: string, options: IFixtureOptions = {}): ScipSession {
         .readdirSync(root)
         .filter((entry) => entry.endsWith(".go") || entry === "go.mod"),
     languageOf: () => "go",
+    ...(options.maxStdoutBytes === undefined
+      ? {}
+      : { maxStdoutBytes: options.maxStdoutBytes }),
   });
 }
 

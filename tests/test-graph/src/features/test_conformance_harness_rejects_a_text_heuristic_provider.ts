@@ -185,6 +185,13 @@ export const test_conformance_harness_rejects_a_text_heuristic_provider =
       Conformance.deterministic(semanticSnapshot(), reorderedSnapshot())
         .failures.length > 0,
     );
+    const changedWarning = semanticSnapshot();
+    changedWarning.warnings.push("a nondeterministic warning");
+    TestValidator.predicate(
+      "changed envelope metadata is not byte-identical",
+      Conformance.deterministic(semanticSnapshot(), changedWarning).failures
+        .length > 0,
+    );
   };
 
 /**

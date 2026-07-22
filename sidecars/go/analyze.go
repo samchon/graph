@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"go/types"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -25,6 +27,9 @@ type collector struct {
 	packageIDs        map[string]string
 	workspacePackages map[string]bool
 	named             map[string]namedType
+	checkerDigests    map[string]string
+	checkerConflicts  map[string]bool
+	checkerMu         sync.Mutex
 	unresolved        int
 }
 
@@ -52,14 +57,17 @@ func analyzeGo(ctx context.Context, projectRoot string, roots []string) (*collec
 		packageIDs:        map[string]string{},
 		workspacePackages: map[string]bool{},
 		named:             map[string]namedType{},
+		checkerDigests:    map[string]string{},
+		checkerConflicts:  map[string]bool{},
 	}
 
 	var loaded []*packages.Package
 	for _, root := range roots {
 		packagesAtRoot, err := packages.Load(&packages.Config{
-			Context: ctx,
-			Dir:     root,
-			Tests:   true,
+			Context:   ctx,
+			Dir:       root,
+			Tests:     true,
+			ParseFile: result.parseFile,
 			Mode: packages.NeedName |
 				packages.NeedFiles |
 				packages.NeedCompiledGoFiles |
@@ -91,6 +99,27 @@ func analyzeGo(ctx context.Context, projectRoot string, roots []string) (*collec
 	result.addRelationships(units)
 	result.addImplementations()
 	return result, nil
+}
+
+func (c *collector) parseFile(
+	fset *token.FileSet,
+	filename string,
+	src []byte,
+) (*ast.File, error) {
+	absolute := filepath.Clean(filename)
+	digest := digestBytes(src)
+	c.checkerMu.Lock()
+	if previous := c.checkerDigests[absolute]; previous != "" && previous != digest {
+		c.checkerConflicts[absolute] = true
+	}
+	c.checkerDigests[absolute] = digest
+	c.checkerMu.Unlock()
+	return parser.ParseFile(
+		fset,
+		filename,
+		src,
+		parser.AllErrors|parser.ParseComments,
+	)
 }
 
 func rejectPackageErrors(loaded []*packages.Package) error {
@@ -129,13 +158,23 @@ func (c *collector) units(loaded []*packages.Package) ([]unit, error) {
 			}
 			seenUnit[key] = true
 			fileName := c.fileIdentity(absolute)
+			checkerDigest := c.checkerDigests[absolute]
+			if checkerDigest == "" {
+				return nil, fmt.Errorf("Go checker published syntax without source bytes: %s", absolute)
+			}
+			if c.checkerConflicts[absolute] {
+				return nil, fmt.Errorf("Go source changed between checker loads: %s", absolute)
+			}
 			body, err := os.ReadFile(absolute)
 			if err != nil {
 				return nil, fmt.Errorf("read checker input %s: %w", absolute, err)
 			}
-			digest := digestBytes(body)
+			diskDigest := digestBytes(body)
+			if checkerDigest != diskDigest {
+				return nil, fmt.Errorf("Go source changed after the checker parsed it: %s", absolute)
+			}
 			c.sources[fileName] = source{
-				File: fileName, CheckerDigest: digest, DiskDigest: digest,
+				File: fileName, CheckerDigest: checkerDigest, DiskDigest: diskDigest,
 			}
 			c.workspacePackages[pkg.PkgPath] = true
 			units = append(units, unit{pkg: pkg, file: file, fileName: fileName})

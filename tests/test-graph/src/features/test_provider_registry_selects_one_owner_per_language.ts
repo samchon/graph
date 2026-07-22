@@ -213,6 +213,20 @@ async function assertSelection(): Promise<void> {
       ],
     ),
   );
+  TestValidator.error("a provider cannot declare one fact family twice", () =>
+    selectGraphProviders(
+      "/root",
+      ["typescript"],
+      {},
+      {},
+      [
+        ProviderFixtures.provider({
+          name: "repeated-fact",
+          facts: ["calls", "calls"],
+        }),
+      ],
+    ),
+  );
 
   // The shipped registry must satisfy its own rule.
   TestValidator.equals(

@@ -121,6 +121,11 @@ function assertOneOwnerPerLanguage(
         `@samchon/graph: provider "${provider.name}" owns no language, so nothing can select it`,
       );
     }
+    if (new Set(provider.facts).size !== provider.facts.length) {
+      throw new Error(
+        `@samchon/graph: provider "${provider.name}" declares one fact family more than once`,
+      );
+    }
     for (const language of provider.languages) {
       const existing = owners.get(language);
       if (existing !== undefined) {

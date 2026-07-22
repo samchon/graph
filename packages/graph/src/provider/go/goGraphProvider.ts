@@ -13,14 +13,16 @@ function goIndexArgs(artifact: string): string[] {
 }
 
 function goInputs(root: string): string[] {
+  const inputs = providerInputFiles(
+    root,
+    ["go"],
+    GO_BUILD_FILE_NAMES,
+    GO_AUXILIARY_EXTENSIONS,
+  );
   return mergeInputs(
-    providerInputFiles(
-      root,
-      ["go"],
-      GO_BUILD_FILE_NAMES,
-      GO_AUXILIARY_EXTENSIONS,
-    ),
+    inputs,
     vendorInputs(root),
+    embeddedInputs(root, inputs),
   );
 }
 
@@ -47,14 +49,19 @@ export const goGraphProvider = Object.assign(
     resolve: resolveGoGraphCommand,
     indexArgs: goIndexArgs,
     inputs: goInputs,
-    configuration: (root) => goConfiguration(root, process.env),
+    configuration: goProviderConfiguration,
   }),
   {
     indexArgs: goIndexArgs,
     inputs: goInputs,
+    providerConfiguration: goProviderConfiguration,
     effectiveConfiguration: goConfiguration,
   },
 );
+
+function goProviderConfiguration(root: string): string[] {
+  return goConfiguration(root, process.env);
+}
 
 function resolveGoGraphCommand(
   root: string,
@@ -80,6 +87,7 @@ function resolveGoGraphCommand(
 }
 
 function goBuildInputs(root: string): string[] {
+  const sources = providerInputFiles(root, ["go"], []);
   return mergeInputs(
     providerInputFiles(
       root,
@@ -88,7 +96,48 @@ function goBuildInputs(root: string): string[] {
       GO_AUXILIARY_EXTENSIONS,
     ),
     vendorInputs(root),
+    embeddedInputs(root, sources),
   );
+}
+
+function embeddedInputs(root: string, inputs: readonly string[]): string[] {
+  const resolved = path.resolve(root);
+  const directories = new Set<string>();
+  for (const input of inputs) {
+    if (path.extname(input).toLowerCase() !== ".go") continue;
+    const absolute = path.resolve(resolved, input);
+    let body: string;
+    try {
+      body = fs.readFileSync(absolute, "utf8");
+      /* c8 ignore next 2 -- an input disappearing between the source walk and
+       * this read is detected by the enclosing generation transaction. */
+    } catch {
+      continue;
+    }
+    const packageRoot = path.dirname(absolute);
+    const directives =
+      body.match(/^[\t ]*\/\/go:embed[\t ]+.+$/gm) ?? [];
+    for (const directive of directives) {
+      const patterns = directive
+        .replace(/^[\t ]*\/\/go:embed[\t ]+/, "")
+        .trim()
+        .split(/\s+/);
+      for (const pattern of patterns) {
+        const prefix = /^(?:all:)?["`]?(?!\.\.(?:\/|$))([A-Za-z0-9_.-]+)\//.exec(
+          pattern,
+        );
+        directories.add(
+          prefix === null
+            ? packageRoot
+            : path.join(packageRoot, prefix[1]!),
+        );
+      }
+    }
+  }
+  return [...directories]
+    .flatMap((directory) => allRegularFiles(directory))
+    .filter((file) => path.extname(file).toLowerCase() !== ".go")
+    .map((file) => normalizePath(path.relative(resolved, file)));
 }
 
 function mergeInputs(...groups: (readonly string[])[]): string[] {

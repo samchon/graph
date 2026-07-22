@@ -31,17 +31,27 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("resolve project root: %w", err)
 	}
+	goCommand, err := resolveGoToolchain(root)
+	if err != nil {
+		return err
+	}
 	command, err := resolveScipGo(root)
 	if err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	environment, err := probeGoEnvironment(ctx, root)
+	environment, err := probeGoEnvironment(ctx, root, goCommand)
 	if err != nil {
 		return err
 	}
-	value, err := buildSnapshot(ctx, root, commandScipIndexer{command: command}, environment)
+	value, err := buildSnapshot(
+		ctx,
+		root,
+		commandScipIndexer{command: command},
+		environment,
+		goCommand,
+	)
 	if err != nil {
 		return err
 	}
@@ -53,7 +63,12 @@ func buildSnapshot(
 	root string,
 	indexer scipIndexer,
 	environment map[string]string,
+	goCommands ...string,
 ) (snapshot, error) {
+	goCommand := "go"
+	if len(goCommands) != 0 {
+		goCommand = goCommands[0]
+	}
 	if err := validateEffectiveWorkspace(root, environment["GOWORK"]); err != nil {
 		return snapshot{}, err
 	}
@@ -81,7 +96,7 @@ func buildSnapshot(
 	if documents == 0 {
 		return snapshot{}, errors.New("scip-go published no Go documents")
 	}
-	graph, err := analyzeGo(ctx, root, roots)
+	graph, err := analyzeGo(ctx, root, roots, goToolchainEnvironment(goCommand))
 	if err != nil {
 		return snapshot{}, err
 	}
@@ -224,11 +239,15 @@ func matchesPinnedScipGoVersion(version string) bool {
 	return false
 }
 
-func probeGoEnvironment(ctx context.Context, root string) (map[string]string, error) {
+func probeGoEnvironment(
+	ctx context.Context,
+	root string,
+	goCommand string,
+) (map[string]string, error) {
 	stdout, stderr, err := runBounded(
 		ctx,
 		root,
-		"go",
+		goCommand,
 		"env",
 		"-json",
 		"GOVERSION",
@@ -271,6 +290,16 @@ func probeGoEnvironment(ctx context.Context, root string) (map[string]string, er
 		return nil, fmt.Errorf("decode Go build environment: %w", err)
 	}
 	return value, nil
+}
+
+func goToolchainEnvironment(goCommand string) []string {
+	if !filepath.IsAbs(goCommand) {
+		return os.Environ()
+	}
+	return append(
+		os.Environ(),
+		"PATH="+filepath.Dir(goCommand)+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
 }
 
 func writeSnapshot(output string, value snapshot) error {

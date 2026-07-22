@@ -268,6 +268,9 @@ func TestModuleAndProcessBoundariesFailClosed(t *testing.T) {
 	for file, body := range map[string]string{
 		"go.mod":                          "module example.com/inputs\n\ngo 1.25\n",
 		"native.h":                        "#define VALUE 1\n",
+		"embedded/main.go":                "package embedded\n\nimport \"embed\"\n\n//go:embed assets/* local.txt\nvar content embed.FS\n",
+		"embedded/assets/message.txt":     "embedded build data\n",
+		"embedded/local.txt":              "local build data\n",
 		"vendor/modules.txt":              "# pinned\n",
 		"vendor/example.com/dep/dep.go":   "package dep\n",
 		"vendor/example.com/dep/data.bin": "vendored build data\n",
@@ -293,6 +296,8 @@ func TestModuleAndProcessBoundariesFailClosed(t *testing.T) {
 		inputs[index] = filepath.ToSlash(relative)
 	}
 	wantInputs := []string{
+		"embedded/assets/message.txt",
+		"embedded/local.txt",
 		"go.mod",
 		"native.h",
 		"vendor/example.com/dep/data.bin",
@@ -327,6 +332,43 @@ func TestModuleAndProcessBoundariesFailClosed(t *testing.T) {
 		map[string]string{"GOVERSION": "go1.25.0"},
 	); err == nil {
 		t.Error("an incompatible scip-go version was accepted by substring")
+	}
+}
+
+func TestGoToolchainResolutionKeepsAnalysisOnTheSelectedToolchain(t *testing.T) {
+	root := t.TempDir()
+	name := "go"
+	if runtime.GOOS == "windows" {
+		name = "go.cmd"
+	}
+	command := filepath.Join(root, ".samchon-graph", "bin", name)
+	if err := os.MkdirAll(filepath.Dir(command), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(command, []byte("toolchain"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SAMCHON_GRAPH_GO_TOOLCHAIN", "")
+	resolved, err := resolveGoToolchain(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !samePath(resolved, command) {
+		t.Fatalf("project-local Go toolchain was not selected: got %s want %s", resolved, command)
+	}
+	var pathValue string
+	for _, entry := range goToolchainEnvironment(resolved) {
+		key, value, found := strings.Cut(entry, "=")
+		if found && strings.EqualFold(key, "PATH") {
+			pathValue = value
+		}
+	}
+	if first, _, _ := strings.Cut(pathValue, string(filepath.ListSeparator)); !samePath(first, filepath.Dir(command)) {
+		t.Fatalf("go/packages PATH did not prefer the selected Go toolchain: %q", pathValue)
+	}
+	t.Setenv("SAMCHON_GRAPH_GO_TOOLCHAIN", "relative/go")
+	if _, err := resolveGoToolchain(root); err == nil {
+		t.Error("a relative Go toolchain override was accepted")
 	}
 }
 

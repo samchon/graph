@@ -48,7 +48,12 @@ type namedType struct {
 	id        string
 }
 
-func analyzeGo(ctx context.Context, projectRoot string, roots []string) (*collector, error) {
+func analyzeGo(
+	ctx context.Context,
+	projectRoot string,
+	roots []string,
+	environment []string,
+) (*collector, error) {
 	result := &collector{
 		root:              projectRoot,
 		nodes:             map[string]node{},
@@ -68,6 +73,7 @@ func analyzeGo(ctx context.Context, projectRoot string, roots []string) (*collec
 		packagesAtRoot, err := packages.Load(&packages.Config{
 			Context:   ctx,
 			Dir:       root,
+			Env:       environment,
 			Tests:     true,
 			ParseFile: result.parseFile,
 			Mode: packages.NeedName |
@@ -79,7 +85,8 @@ func analyzeGo(ctx context.Context, projectRoot string, roots []string) (*collec
 				packages.NeedTypes |
 				packages.NeedSyntax |
 				packages.NeedTypesInfo |
-				packages.NeedModule,
+				packages.NeedModule |
+				packages.NeedEmbedFiles,
 		}, "./...")
 		if err != nil {
 			return nil, fmt.Errorf("load Go packages at %s: %w", root, err)

@@ -33,6 +33,49 @@ type commandScipIndexer struct {
 	command string
 }
 
+func resolveGoToolchain(root string) (string, error) {
+	if override := os.Getenv("SAMCHON_GRAPH_GO_TOOLCHAIN"); override != "" {
+		if !filepath.IsAbs(override) {
+			return "", errors.New("SAMCHON_GRAPH_GO_TOOLCHAIN must be an absolute path")
+		}
+		if !goToolchainName(override) {
+			return "", fmt.Errorf("SAMCHON_GRAPH_GO_TOOLCHAIN must name go, go.exe, go.cmd, or go.bat: %s", override)
+		}
+		if executableFile(override) {
+			return override, nil
+		}
+		return "", fmt.Errorf("SAMCHON_GRAPH_GO_TOOLCHAIN is not executable: %s", override)
+	}
+	names := []string{"go"}
+	if runtime.GOOS == "windows" {
+		names = []string{"go.exe", "go.cmd", "go.bat"}
+	}
+	for _, name := range names {
+		candidate := filepath.Join(root, ".samchon-graph", "bin", name)
+		if executableFile(candidate) {
+			return candidate, nil
+		}
+	}
+	resolved, err := exec.LookPath("go")
+	if err != nil {
+		return "", errors.New("Go was not found project-locally or on PATH")
+	}
+	absolute, err := filepath.Abs(resolved)
+	if err != nil {
+		return "", fmt.Errorf("resolve Go toolchain %s: %w", resolved, err)
+	}
+	return absolute, nil
+}
+
+func goToolchainName(command string) bool {
+	switch strings.ToLower(filepath.Base(command)) {
+	case "go", "go.exe", "go.cmd", "go.bat":
+		return true
+	default:
+		return false
+	}
+}
+
 func resolveScipGo(root string) (string, error) {
 	if override := os.Getenv("SAMCHON_GRAPH_SCIP_GO"); override != "" {
 		if !filepath.IsAbs(override) {

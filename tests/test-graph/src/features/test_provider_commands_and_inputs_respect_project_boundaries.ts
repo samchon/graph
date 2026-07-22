@@ -20,7 +20,19 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
         recursive: true,
       });
       fs.mkdirSync(path.join(root, "foreign", ".git"), { recursive: true });
+      fs.mkdirSync(path.join(root, "embedded", "assets"), {
+        recursive: true,
+      });
       fs.writeFileSync(path.join(root, "main.go"), "package main\n");
+      fs.writeFileSync(
+        path.join(root, "embedded", "main.go"),
+        'package embedded\n\nimport "embed"\n\n//go:embed assets/* local.txt\nvar content embed.FS\n',
+      );
+      fs.writeFileSync(
+        path.join(root, "embedded", "assets", "message.txt"),
+        "hello\n",
+      );
+      fs.writeFileSync(path.join(root, "embedded", "local.txt"), "local\n");
       fs.writeFileSync(path.join(root, "native.h"), "#define VALUE 1\n");
       fs.writeFileSync(path.join(root, "src", "nested", "worker.go"), "package nested\n");
       fs.writeFileSync(path.join(root, "go.mod"), "module example.com/main\n");
@@ -32,7 +44,13 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
       TestValidator.equals(
         "source and nested build inputs are sorted inside one checkout",
         providerInputFiles(root, ["go"], ["go.mod", "go.work"]),
-        ["go.mod", "main.go", "src/nested/go.mod", "src/nested/worker.go"],
+        [
+          "embedded/main.go",
+          "go.mod",
+          "main.go",
+          "src/nested/go.mod",
+          "src/nested/worker.go",
+        ],
       );
       fs.mkdirSync(path.join(root, "vendor"), { recursive: true });
       fs.mkdirSync(path.join(root, "vendor", "example.com", "dep"), {
@@ -59,7 +77,7 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
             : [],
           goGraphProvider.inputs(root),
           goGraphProvider.indexArgs("snapshot.json"),
-          goGraphProvider.configuration(root, ["go"]).some((row) =>
+          goGraphProvider.providerConfiguration(root).some((row) =>
             row.startsWith("GOOS="),
           ),
         ],
@@ -67,6 +85,8 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
           [
             "a/go.mod",
             "a/vendor/modules.txt",
+            "embedded/assets/message.txt",
+            "embedded/local.txt",
             "go.mod",
             "native.h",
             "src/nested/go.mod",
@@ -76,6 +96,9 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
           [
             "a/go.mod",
             "a/vendor/modules.txt",
+            "embedded/assets/message.txt",
+            "embedded/local.txt",
+            "embedded/main.go",
             "go.mod",
             "main.go",
             "native.h",

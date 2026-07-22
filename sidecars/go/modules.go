@@ -167,6 +167,7 @@ func buildInputs(root string) ([]string, error) {
 		"go.mod": true, "go.sum": true, "go.work": true, "go.work.sum": true,
 	}
 	var inputs []string
+	embedDirectories := map[string]bool{}
 	err := filepath.WalkDir(root, func(current string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -187,15 +188,84 @@ func buildInputs(root string) ([]string, error) {
 				return filepath.SkipDir
 			}
 		}
-		if !entry.IsDir() && (names[entry.Name()] || goAuxiliaryExtension(filepath.Ext(entry.Name()))) {
-			inputs = append(inputs, current)
+		if !entry.IsDir() {
+			if strings.EqualFold(filepath.Ext(entry.Name()), ".go") {
+				body, err := os.ReadFile(current)
+				if err != nil {
+					return err
+				}
+				for _, directory := range goEmbedDirectories(current, string(body)) {
+					embedDirectories[directory] = true
+				}
+			}
+			if names[entry.Name()] || goAuxiliaryExtension(filepath.Ext(entry.Name())) {
+				inputs = append(inputs, current)
+			}
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("discover Go build inputs: %w", err)
 	}
+	for directory := range embedDirectories {
+		assets, err := embeddedAssetInputs(directory)
+		if err != nil {
+			return nil, err
+		}
+		inputs = append(inputs, assets...)
+	}
 	return uniqueSorted(inputs), nil
+}
+
+func goEmbedDirectories(file, body string) []string {
+	packageRoot := filepath.Dir(file)
+	directories := map[string]bool{}
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "//go:embed") {
+			continue
+		}
+		patterns := strings.TrimPrefix(trimmed, "//go:embed")
+		if patterns == "" || (patterns[0] != ' ' && patterns[0] != '\t') {
+			continue
+		}
+		for _, pattern := range strings.Fields(patterns) {
+			pattern = strings.TrimPrefix(pattern, "all:")
+			pattern = strings.TrimLeft(pattern, "\"`")
+			first, _, hasDirectory := strings.Cut(pattern, "/")
+			directory := packageRoot
+			if hasDirectory && first != ".." && !strings.ContainsAny(first, "*?[") {
+				directory = filepath.Join(packageRoot, first)
+			}
+			directories[directory] = true
+		}
+	}
+	output := make([]string, 0, len(directories))
+	for directory := range directories {
+		output = append(output, directory)
+	}
+	return uniqueSorted(output)
+}
+
+func embeddedAssetInputs(root string) ([]string, error) {
+	var inputs []string
+	err := filepath.WalkDir(root, func(current string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() && entry.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		if !entry.IsDir() && entry.Type().IsRegular() &&
+			!strings.EqualFold(filepath.Ext(entry.Name()), ".go") {
+			inputs = append(inputs, current)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("discover go:embed inputs: %w", err)
+	}
+	return inputs, nil
 }
 
 func vendorInputs(root string) ([]string, error) {

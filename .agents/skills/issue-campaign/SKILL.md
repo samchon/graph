@@ -19,10 +19,9 @@ The user's requested phase boundary controls how far to proceed. An audit-only
 request does not authorize issue publication, branch pushes, pull requests,
 merges, paid benchmarks, releases, or global tool installation.
 
-Choose the principled course throughout the campaign. Its scale, duration, and
-consequence surface require stronger evidence, deeper consequence analysis, and
-complete verification; they never justify accepting an unverified candidate, a
-shortcut, or a weaker implementation or review standard.
+Apply
+[AGENTS.md's **Choose the principled course** rule](../../../AGENTS.md#attitude)
+to every admission, disposition, implementation, and review decision.
 
 Read the project and review skills before starting. Use the review skill's Solo
 Issue Discovery Rounds. Read [development.md](development.md) in full only when
@@ -61,7 +60,8 @@ inspect relevant upstream behavior, history, generated artifacts, public
 schemas, LSP/static parity, consumers, fixtures, CI, experiments, benchmark
 traces, and documentation.
 
-Treat the development skill's **Forbidden** section as a retrospective audit
+Treat the development skill's
+[Forbidden](../development/SKILL.md#forbidden) section as a retrospective audit
 contract, not only a rule for future changes. In every complete round, inspect
 the current implementation and history for violations, including code that
 predates the campaign or passes every test. Prove a violation from purpose,
@@ -72,10 +72,28 @@ Do not stop after finding enough work for a pull request. Complete the entire
 scope, adjudicate the full candidate pool, and publish only surviving issues
 when authorized.
 
-After the cycle pull request merges, begin a fresh full-scope round against the
-integrated repository. Earlier rounds are not coverage. The campaign ends only
-when a complete fresh round produces no meaningful candidate after fact-checking
-and no accepted issue remains unresolved.
+### Every Round Is Full-Scope
+
+Every round re-audits the entire declared scope against the current integrated
+state. A round is never partitioned: not by package, product lane, language, or
+platform, not by the areas the last cycle happened to touch, and not by
+splitting the scope across rounds so that each one covers a slice. A merged
+cycle changes the state every earlier conclusion rested on, so what an earlier
+round read is not coverage for this one. The review skill's
+[Non-Negotiable Review Law](../review/SKILL.md#non-negotiable-review-law) states
+the same rule for every round and review the campaign runs.
+
+### Discovery Ends Only On An Empty Round
+
+A merged cycle does not end the campaign. It produces one more round: begin a
+fresh full-scope round against the integrated repository. Discovery continues
+cycle after cycle, with no round limit, and ends only when one complete fresh
+round produces no meaningful candidate after fact-checking and no accepted issue
+remains unresolved.
+
+Report the campaign complete only from a round that actually came up empty.
+Ending after a cycle that merely felt thorough leaves the issues the next round
+would have found unrecorded.
 
 ## Vet And Publish Issues
 
@@ -94,13 +112,16 @@ Publish only the adjudicated form and only with user authorization.
 
 ### Self-Contained Issue Body
 
-Write enough context for a fresh coding agent to begin from the issue alone.
-Cover these sections when they apply:
+Write enough context for a fresh coding agent to begin from the issue alone. Do
+not require access to local `.wiki`, the discovery conversation, or unstated
+repository knowledge. Cover these sections when they apply:
 
 - **Problem:** current and expected behavior, impact, and affected users.
 - **Evidence:** exact reproduction, outputs or artifacts, stable symbols,
-  verified root cause, ownership, and provenance. Line numbers are navigation,
-  not proof.
+  verified root cause, ownership, and provenance. For a violation of the
+  development skill's **Forbidden** section, prove the classification from
+  behavior, control flow, and history instead of naming the prohibition. Line
+  numbers are navigation, not proof.
 - **Consequence surface:** affected API/CLI/MCP consumers, LSP/static/hybrid
   lanes, resident states, languages, platforms, compatibility and failure
   paths, plus the complete case matrix for the cause.

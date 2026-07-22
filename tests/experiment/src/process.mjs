@@ -70,11 +70,31 @@ export const cloneRepository = (experiment, options = {}) => {
   if (options.refresh === true && fs.existsSync(dir)) {
     fs.rmSync(dir, { force: true, recursive: true });
   }
+  if (fs.existsSync(dir) && !fs.existsSync(path.join(dir, ".git"))) {
+    fs.rmSync(dir, { force: true, recursive: true });
+  }
+  if (fs.existsSync(dir) && experiment.commit !== undefined) {
+    const current = String(
+      run("git", ["rev-parse", "HEAD"], {
+        cwd: dir,
+        stdio: "pipe",
+      }).stdout,
+    ).trim();
+    if (current !== experiment.commit) {
+      fs.rmSync(dir, { force: true, recursive: true });
+    }
+  }
   if (fs.existsSync(dir) === false) {
     const args = ["clone", "--depth=1"];
     if (experiment.ref !== undefined) args.push("--branch", experiment.ref);
     args.push(experiment.repository, dir);
     run("git", args);
+    if (experiment.commit !== undefined) {
+      run("git", ["fetch", "--depth=1", "origin", experiment.commit], {
+        cwd: dir,
+      });
+      run("git", ["checkout", "--detach", experiment.commit], { cwd: dir });
+    }
   }
   return dir;
 };

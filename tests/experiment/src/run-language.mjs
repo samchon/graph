@@ -5,31 +5,40 @@ import { buildGraphDump } from "@samchon/graph";
 
 import { findExperiment } from "./catalog.mjs";
 import { cloneRepository, ensureDir, parseArgs, resultsRoot, shell } from "./process.mjs";
+import { runStrictLifecycle } from "./strict-lifecycle.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 const experiment = findExperiment(args.language);
 const cwd = cloneRepository(experiment, { refresh: args.refresh === "true" });
 // Some language servers need the checkout prepared before they can boot —
 // ruby-lsp, for one, composes a bundle from the project's Gemfile.
-if (experiment.prepare !== undefined) shell(experiment.prepare, { cwd });
-
-const started = performance.now();
 const strict = experiment.strictProvider !== undefined;
-const dump = await buildGraphDump({
-  cwd,
-  mode: "lsp",
-  languages: [experiment.language],
-  ...(strict
-    ? {}
-    : {
-        maxFiles: experiment.maxFiles,
-        lspReferenceLimit: experiment.referenceLimit ?? 250,
-      }),
-  lspTimeoutMs: experiment.timeoutMs ?? 60_000,
-  lspReadyTimeoutMs: experiment.readyTimeoutMs ?? 180_000,
-  lspWarmupTimeoutMs: experiment.warmupTimeoutMs ?? 180_000,
-});
-const elapsedMs = Math.round(performance.now() - started);
+let dump;
+let elapsedMs;
+let lifecycle;
+if (strict) {
+  lifecycle = await runStrictLifecycle(experiment, cwd);
+  dump = lifecycle.dump;
+  const cold = lifecycle.rows.find((row) => row.name === "cold");
+  if (cold === undefined) {
+    throw new Error(`${experiment.language}: strict lifecycle omitted cold row`);
+  }
+  elapsedMs = cold.elapsedMs;
+} else {
+  if (experiment.prepare !== undefined) shell(experiment.prepare, { cwd });
+  const started = performance.now();
+  dump = await buildGraphDump({
+    cwd,
+    mode: "lsp",
+    languages: [experiment.language],
+    maxFiles: experiment.maxFiles,
+    lspReferenceLimit: experiment.referenceLimit ?? 250,
+    lspTimeoutMs: experiment.timeoutMs ?? 60_000,
+    lspReadyTimeoutMs: experiment.readyTimeoutMs ?? 180_000,
+    lspWarmupTimeoutMs: experiment.warmupTimeoutMs ?? 180_000,
+  });
+  elapsedMs = Math.round(performance.now() - started);
+}
 const warnings = dump.warnings ?? [];
 
 if (dump.indexer === "static") {
@@ -59,8 +68,9 @@ if (
     provenance.producer.tool !== experiment.strictProvider ||
     provenance.producer.version === "" ||
     provenance.producer.compiler === "" ||
-    !provenance.capabilities.includes("sourceDigests") ||
-    !provenance.capabilities.includes("fullRebuild"))
+    (experiment.requiredCapabilities ?? []).some(
+      (capability) => !provenance.capabilities.includes(capability),
+    ))
 ) {
   throw new Error(
     `${experiment.language}: strict provenance is incomplete: ${JSON.stringify(provenance)}`,
@@ -103,7 +113,10 @@ ensureDir(resultsRoot);
 const result = {
   language: experiment.language,
   repository: experiment.repository,
-  project: cwd,
+  commit: experiment.commit,
+  corpus: cwd,
+  project: dump.project,
+  lifecycleProject: lifecycle?.project,
   indexer: dump.indexer,
   elapsedMs,
   nodeCount: dump.nodes.length,
@@ -113,6 +126,7 @@ const result = {
   provenance,
   edgeKindCounts,
   crossFileCalls,
+  lifecycle: lifecycle?.rows,
   warnings,
   sampleNodes: dump.nodes.slice(0, 20).map((node) => ({
     id: node.id,

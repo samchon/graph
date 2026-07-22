@@ -27,6 +27,11 @@ export function assertGraphSnapshotContract(
   if (snapshot.languages.length === 0) {
     throw new Error(`${label} published a snapshot owning no language`);
   }
+  if (new Set(snapshot.languages).size !== snapshot.languages.length) {
+    throw new Error(
+      `${label} published a snapshot owning one language more than once`,
+    );
+  }
 
   const claimed = new Set(languages);
   for (const language of snapshot.languages) {

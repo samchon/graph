@@ -253,6 +253,17 @@ async function assertSnapshotContract(): Promise<void> {
       ["cpp"],
     ),
   );
+  TestValidator.error("a slice cannot claim one language more than once", () =>
+    assertGraphSnapshotContract(
+      ProviderFixtures.snapshot({
+        languages: ["cpp", "cpp"],
+        provider: "fake",
+        facts: ["calls"],
+      }),
+      provider,
+      ["cpp"],
+    ),
+  );
   // A node the slice does not own would be published by this generation and
   // deleted by no later one.
   TestValidator.error("a node outside the slice's languages is refused", () =>

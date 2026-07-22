@@ -117,6 +117,20 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
           .effectiveConfiguration(root, pathEnvironment(""))
           .includes("go-env=unavailable"),
       );
+      const configuredScipGo = platformExecutable(
+        root,
+        "configured-scip-go",
+      );
+      writeVersionedExecutable(configuredScipGo, "scip-go v0.2.7");
+      TestValidator.predicate(
+        "the exact SCIP producer version is part of the effective configuration",
+        goGraphProvider
+          .effectiveConfiguration(root, {
+            ...pathEnvironment(""),
+            SAMCHON_GRAPH_SCIP_GO: configuredScipGo,
+          })
+          .includes("scip-go=scip-go v0.2.7"),
+      );
 
       const command = "samchon-provider-resolution-fixture";
       const privateBin = path.join(root, ".samchon-graph", "bin");
@@ -302,6 +316,16 @@ function writeExecutable(file: string, exitCode: number = 0): void {
     process.platform === "win32"
       ? `@exit /b ${exitCode}\r\n`
       : `#!/bin/sh\nexit ${exitCode}\n`,
+  );
+  fs.chmodSync(file, 0o755);
+}
+
+function writeVersionedExecutable(file: string, version: string): void {
+  fs.writeFileSync(
+    file,
+    process.platform === "win32"
+      ? `@echo ${version}\r\n@exit /b 0\r\n`
+      : `#!/bin/sh\nprintf '%s\\n' '${version}'\n`,
   );
   fs.chmodSync(file, 0o755);
 }

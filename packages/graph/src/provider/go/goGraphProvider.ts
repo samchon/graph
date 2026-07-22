@@ -216,7 +216,37 @@ function goConfiguration(
     probed.status === 0
       ? `go-env=${probed.stdout.trim()}`
       : "go-env=unavailable",
+    toolVersion(
+      root,
+      env,
+      "scip-go",
+      "SAMCHON_GRAPH_SCIP_GO",
+      ["--version"],
+    ),
   ];
+}
+
+function toolVersion(
+  root: string,
+  env: NodeJS.ProcessEnv,
+  command: string,
+  override: string,
+  args: readonly string[],
+): string {
+  const resolved = resolveProviderCommand(root, env, { command, override });
+  if (resolved === undefined) return `${command}=unavailable`;
+  const result = spawnSync(resolved.command, [...resolved.args, ...args], {
+    cwd: root,
+    env,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024,
+    timeout: 10_000,
+    windowsHide: true,
+  });
+  const output = result.stdout.trim();
+  return result.status === 0 && output !== ""
+    ? `${command}=${output}`
+    : `${command}=unavailable`;
 }
 
 const GO_BUILD_FILE_NAMES: readonly string[] = [

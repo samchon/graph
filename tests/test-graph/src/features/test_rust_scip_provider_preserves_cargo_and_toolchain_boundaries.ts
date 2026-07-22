@@ -95,11 +95,14 @@ export const test_rust_scip_provider_preserves_cargo_and_toolchain_boundaries =
       TestValidator.equals(
         "the selected Rust toolchain versions are captured",
         [
-          configuration.filter((row) => row.startsWith("rust-analyzer=")),
+          configuration.filter(
+            (row) =>
+              row.startsWith("rust-analyzer=") || row.startsWith("scip="),
+          ),
           rustScipProvider.effectiveCompilerVersion(root, environment),
         ],
         [
-          ["rust-analyzer=fixture rust-analyzer"],
+          ["rust-analyzer=fixture rust-analyzer", "scip=fixture scip"],
           "rustc=fixture rustc; cargo=fixture cargo",
         ],
       );
@@ -225,8 +228,15 @@ function writeDecoder(file: string): void {
   fs.writeFileSync(
     file,
     process.platform === "win32"
-      ? `@"${process.execPath}" "${GraphPaths.fakeScipDecoder}" %*\r\n`
-      : `#!/bin/sh\n"${process.execPath}" "${GraphPaths.fakeScipDecoder}" "$@"\n`,
+      ? [
+          '@if "%~1"=="--version" (',
+          "@echo fixture scip",
+          "@exit /b 0",
+          ")",
+          `@"${process.execPath}" "${GraphPaths.fakeScipDecoder}" %*`,
+          "",
+        ].join("\r\n")
+      : `#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  printf '%s\\n' 'fixture scip'\n  exit 0\nfi\n"${process.execPath}" "${GraphPaths.fakeScipDecoder}" "$@"\n`,
   );
   fs.chmodSync(file, 0o755);
 }

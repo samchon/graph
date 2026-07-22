@@ -144,6 +144,7 @@ function rustScipConfiguration(
       "SAMCHON_GRAPH_RUST_ANALYZER",
       ["--version"],
     ),
+    toolVersion(root, env, "scip", "SAMCHON_GRAPH_SCIP", ["--version"]),
     toolVersion(root, env, "rustc", "SAMCHON_GRAPH_RUSTC", ["-vV"]),
     toolVersion(root, env, "cargo", "SAMCHON_GRAPH_CARGO", ["-V"]),
   ];

@@ -16,8 +16,9 @@ development, pull-request, and review skills before acting.
 Four rules govern implementation:
 
 - The main agent performs all implementation, test authoring, CI diagnosis,
-  review, and cleanup. Spawn no subagent except the read-only
-  [commit early-warning pass](#implement-and-write-tests).
+  review, and cleanup. The read-only
+  [commit early-warning pass](#implement-and-write-tests) is the only subagent
+  the cycle spawns, and every pushed commit gets one.
 - Put every accepted, implementation-ready issue in the current cycle into one
   pull request. The issue DAG controls edit order inside that pull request, not
   pull-request count.
@@ -121,12 +122,18 @@ pull-request body. Follow the
 comments, review bodies, and self-review restrictions; do not replace this
 ledger with ordinary issue-style pull-request comments.
 
-The main agent may also spawn one read-only subagent as a commit early-warning
-pass over a landed commit and keep implementing while it runs. The pass reads
-that one commit and reports candidates. It never edits, commits, pushes, or
-makes an implementation decision. Its value is timing: a defect named while that
-code is the newest thing written costs little to correct, and nothing has been
-built on top of it yet.
+Every pushed commit also gets one read-only subagent as a commit early-warning
+pass, spawned as soon as that commit is pushed. The main agent keeps
+implementing while the pass runs and does not wait for it. The pass reads that
+one commit and reports candidates. It never edits, commits, pushes, or makes an
+implementation decision.
+
+The pass is required, not discretionary. Its value is timing: a defect named
+while that code is the newest thing written costs little to correct, and nothing
+has been built on top of it yet. A commit judged small, mechanical, or obviously
+correct is exactly the one whose pass is cheapest to run, so size, confidence,
+and hurry do not excuse skipping it. Record any pass that could not run, and
+why, in the campaign ledger.
 
 The pass never reduces the [Self-Review](#validate-with-ci-and-self-review) that
 gates the merge. A reader holding one commit cannot see what appears only across
@@ -226,7 +233,9 @@ After merge:
 ## Repeat Until A Clean Round
 
 After every merged cycle, return to the parent skill's Discover Issues phase and
-perform another complete fresh round over the entire declared scope.
+run it again in full over the entire declared scope. That phase is itself a
+loop: it keeps producing fresh full-scope rounds until one of them comes up
+empty, so a single round after the merge does not discharge it.
 
 If any meaningful candidate survives fact-checking, adjudicate and publish it
 when authorized, then claim the next single cycle pull request containing every

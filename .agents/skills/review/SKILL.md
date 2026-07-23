@@ -50,6 +50,8 @@ Include the following when relevant:
   audit text, and `next` truthfulness;
 - 100 percent coverage without test-only branches or unjustified ignore
   directives;
+- expected values traced to an oracle outside the code under test rather than
+  to current output, and lanes whose only evidence is a round trip;
 - deterministic fake-server tests versus real-server experiment ownership; and
 - benchmark fixture isolation, prompt and commit hashes, comparator fairness,
   raw traces, sample counts, and tracked publication assets.
@@ -76,9 +78,13 @@ pull-request skill.
 ## Commit Early-Warning Pass
 
 A commit early-warning pass is not a review under this skill. It is the
-read-only per-commit reader a solo campaign author may run while still
-implementing, defined by the
+read-only per-commit reader a solo campaign author runs on every pushed commit
+while still implementing, required by the
 [solo campaign development document](../issue-campaign/development.md#implement-and-write-tests).
+
+Being mandatory there gives it no standing here. It is an extra early reader,
+not a stage of the review this skill defines, so completing it satisfies nothing
+the law below requires.
 
 It delegates nothing the Non-Negotiable Review Law governs. The law governs the
 author's own round, which still runs alone over the whole surface before merge
@@ -107,12 +113,15 @@ Use these rounds only through the solo issue-campaign skill.
 4. Record accept, partial acceptance, rewrite, combine, split, reject, or defer.
    Keep the disposition and reason in the knowledge base so later passes do not
    rediscover a rejected premise as new.
-5. Publish only the surviving adjudicated form when the campaign is authorized
-   to publish.
-6. If any meaningful candidate survives, finish the authorized issue and
-   implementation flow, then begin another fresh full-scope round over the
-   integrated state.
-7. End discovery only when one complete fresh round over the entire scope
+5. If the round produced any meaningful candidate, start another complete fresh
+   full-scope round now, before publication and before implementation: restart
+   at step 1 and repeat until one round adds no meaningful candidate after
+   fact-checking.
+6. Publish only the surviving adjudicated form when the campaign is authorized
+   to publish, then complete the authorized implementation flow.
+7. After that flow lands, begin another fresh full-scope round over the
+   integrated state and repeat from step 1.
+8. End discovery only when one complete fresh round over the entire scope
    produces no meaningful candidate after fact-checking.
 
 An unresolved accepted issue, external blocker, or incomplete implementation

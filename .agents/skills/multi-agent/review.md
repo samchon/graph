@@ -53,16 +53,22 @@ Use this mode only through the multi-agent issue-campaign procedure.
 2. Each reviewer independently audits source, tests, documentation, CI,
    packaging, generated artifacts, public schemas, LSP/static parity,
    consumers, fixtures, real-server experiments, benchmark traces, platform
-   behavior, and open and closed issue or pull-request history.
+   behavior, and open and closed issue or pull-request history. Each also
+   audits the current implementation and history against the development
+   skill's [Forbidden](../development/SKILL.md#forbidden) section.
 3. Each reviewer records its own evidence-backed raw candidates without seeing
    or negotiating a shared candidate list.
 4. The lead reopens every candidate from primary evidence, reproduces it,
    checks ownership and provenance, traces the consequence surface, and records
    accept, partial acceptance, rewrite, combine, split, reject, or defer in
    `.wiki`.
-5. If any meaningful candidate survives, complete the authorized campaign cycle
-   and begin another fresh parallel round over the integrated state.
-6. End discovery only when every reviewer completes the whole scope and no
+5. If any meaningful candidate survives lead verification, run another fresh
+   parallel round over the whole scope now, before publication and before
+   implementation. Repeat until one round adds no meaningful candidate.
+6. Publish the surviving adjudicated form when authorized, complete the
+   authorized campaign cycle, then begin another fresh parallel round over the
+   integrated state.
+7. End discovery only when every reviewer completes the whole scope and no
    meaningful candidate survives lead verification.
 
 An unresolved accepted issue or incomplete implementation prevents a successful

@@ -51,7 +51,7 @@ declared surface independently and the lead adjudicates their findings. The pass
 gives one read-only reader one commit's slice, reports candidates to the author
 who is still implementing, and leaves that author's own whole-surface round as
 the gate. A batch implementation agent here runs no pass, because agents do not
-re-delegate; the carve-out belongs to a solo campaign's main agent.
+re-delegate; the requirement belongs to a solo campaign's main agent.
 
 The user's phase boundary controls the topology. A multi-agent issue campaign
 uses parallel discovery and parallel implementation by default. Switch only its

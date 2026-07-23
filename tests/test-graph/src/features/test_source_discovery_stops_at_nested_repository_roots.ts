@@ -110,6 +110,12 @@ export const test_source_discovery_stops_at_nested_repository_roots =
       '{\n  // JSONC is the native TypeScript config format.\n  "compilerOptions": {\n    "outDir": "lib",\n    "declarationDir": "types",\n  },\n}',
     );
     write(compilerRoot, "jsconfig.json", "{ malformed");
+    write(compilerRoot, "null-config/tsconfig.json", "null");
+    write(
+      compilerRoot,
+      "null-config/null-source.ts",
+      "export const nullConfigSource = 'authored';",
+    );
     write(
       compilerRoot,
       "lib/generated.d.ts",
@@ -130,7 +136,7 @@ export const test_source_discovery_stops_at_nested_repository_roots =
       bases(
         walkSourceFiles(compilerRoot, { extensions: new Set([".ts"]) }),
       ),
-      ["source.ts"],
+      ["null-source.ts", "source.ts"],
     );
 
     const inheritedRoot = GraphPaths.createTempDirectory(
@@ -220,6 +226,45 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     );
     write(
       extendsRoot,
+      "node_modules/package-config/package.json",
+      '{"tsconfig":"base.json"}',
+    );
+    write(
+      extendsRoot,
+      "node_modules/package-config/base.json",
+      '{"compilerOptions":{"outDir":"' +
+        "$" +
+        '{configDir}/package-output"}}',
+    );
+    write(
+      extendsRoot,
+      "node_modules/default-config/tsconfig.json",
+      '{"compilerOptions":{"outDir":"' +
+        "$" +
+        '{configDir}/default-output"}}',
+    );
+    write(extendsRoot, "node_modules/invalid-config/package.json", "null");
+    write(
+      extendsRoot,
+      "node_modules/invalid-config/tsconfig.json",
+      '{"compilerOptions":{"outDir":"' +
+        "$" +
+        '{configDir}/invalid-output"}}',
+    );
+    write(
+      extendsRoot,
+      "node_modules/nonstring-config/package.json",
+      '{"tsconfig":7}',
+    );
+    write(
+      extendsRoot,
+      "node_modules/nonstring-config/tsconfig.json",
+      '{"compilerOptions":{"outDir":"' +
+        "$" +
+        '{configDir}/nonstring-output"}}',
+    );
+    write(
+      extendsRoot,
       "apps/direct/tsconfig.json",
       '{"extends":"../../configs/direct.json"}',
     );
@@ -236,7 +281,37 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     write(
       extendsRoot,
       "apps/mixed/tsconfig.json",
-      '{"extends":[7,"package-config","../../configs/missing","../../configs/cycle-a.json"]}',
+      '{"extends":[7,"","@scope","package-config/../escape","missing-package","../../configs/missing","../../configs/cycle-a.json","../../configs/cycle-a.json"]}',
+    );
+    write(
+      extendsRoot,
+      "apps/package/tsconfig.json",
+      '{"extends":"package-config"}',
+    );
+    write(
+      extendsRoot,
+      "apps/subpath/tsconfig.json",
+      '{"extends":"package-config/base"}',
+    );
+    write(
+      extendsRoot,
+      "apps/default/tsconfig.json",
+      '{"extends":"default-config"}',
+    );
+    write(
+      extendsRoot,
+      "apps/invalid/tsconfig.json",
+      '{"extends":"invalid-config"}',
+    );
+    write(
+      extendsRoot,
+      "apps/nonstring/tsconfig.json",
+      '{"extends":"nonstring-config"}',
+    );
+    write(
+      extendsRoot,
+      "apps/self-cycle/tsconfig.json",
+      '{"extends":"./tsconfig.json"}',
     );
     for (const output of [
       "direct-output",
@@ -246,8 +321,8 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     ]) {
       write(
         extendsRoot,
-        `${output}/generated.d.ts`,
-        "export declare const generated: string;",
+        `${output}/generated.js`,
+        "export const generated = true;",
       );
     }
     write(
@@ -255,12 +330,46 @@ export const test_source_discovery_stops_at_nested_repository_roots =
       "apps/mixed/source.ts",
       "export const source = 'authored';",
     );
+    write(
+      extendsRoot,
+      "apps/mixed/source.js",
+      "export const source = 'authored';",
+    );
+    write(
+      extendsRoot,
+      "apps/self-cycle/self-cycle-source.ts",
+      "export const selfCycleSource = 'authored';",
+    );
+    write(
+      extendsRoot,
+      "apps/package/package-output/generated.js",
+      "export const packageGenerated = true;",
+    );
+    for (const output of [
+      "apps/subpath/package-output",
+      "apps/default/default-output",
+      "apps/invalid/invalid-output",
+      "apps/nonstring/nonstring-output",
+    ]) {
+      write(
+        extendsRoot,
+        `${output}/generated.js`,
+        "export const packageGenerated = true;",
+      );
+    }
     TestValidator.equals(
-      "local extends forms, arrays, cycles, and unresolved bases stay bounded",
+      "local and package extends forms, configDir, arrays, cycles, and unresolved bases stay bounded",
       bases(
         walkSourceFiles(extendsRoot, { extensions: new Set([".ts"]) }),
       ),
-      ["source.ts"],
+      ["self-cycle-source.ts", "source.ts"],
+    );
+    TestValidator.equals(
+      "resolved compiler output directories exclude emitted JavaScript",
+      bases(
+        walkSourceFiles(extendsRoot, { extensions: new Set([".js"]) }),
+      ),
+      ["source.js"],
     );
   };
 

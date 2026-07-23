@@ -36,16 +36,32 @@ export namespace ownedProcess {
     child: ChildProcess,
     exit: Promise<void>,
     owner: string,
+    options: { cooperativeStdin?: boolean } = {},
   ): Promise<void> {
     // Give a cooperative transport one bounded chance to observe EOF, flush
     // its final bookkeeping, and retire its own descendants. Destroying stdin
     // and signalling the process group in the same turn races readline's close
     // handler on POSIX and makes an orderly shutdown platform-dependent.
-    if (child.stdin !== null && !child.stdin.destroyed) {
+    if (
+      options.cooperativeStdin === true &&
+      child.stdin !== null &&
+      !child.stdin.destroyed
+    ) {
       child.stdin.end();
-      if (await waitForExit(exit, TERMINATION_GRACE_MS)) return;
+      if (
+        (await waitForExit(exit, TERMINATION_GRACE_MS)) &&
+        !isOwnedProcessGroupRunning(child)
+      ) {
+        return;
+      }
     }
-    if (!isRunning(child)) return;
+    if (
+      !isRunning(child) &&
+      /* c8 ignore next -- only one platform arm runs on a coverage host. */
+      (process.platform === "win32" || !isOwnedProcessGroupRunning(child))
+    ) {
+      return;
+    }
     /* c8 ignore start -- one OS lane runs on each coverage host; platform
      * lifecycle tests exercise both implementations. */
     if (process.platform === "win32") {
@@ -74,6 +90,18 @@ function isRunning(child: ChildProcess): boolean {
     child.signalCode === null
   );
 }
+
+/* c8 ignore start -- POSIX-only process-group liveness probe. */
+function isOwnedProcessGroupRunning(child: ChildProcess): boolean {
+  if (process.platform === "win32" || child.pid === undefined) return false;
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+/* c8 ignore stop */
 
 /* c8 ignore start -- POSIX-only fixed-signal process-group helper. */
 function signalOwnedProcessGroup(

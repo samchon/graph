@@ -11,7 +11,9 @@ export const LANGUAGE_EXPERIMENTS = [
     repository: "https://github.com/nestjs/typescript-starter.git",
     commit: "c4d9330f5513eda0fb5df594f6b34a11fde1a934",
     strictProvider: "ttscgraph",
-    semanticEdges: ["calls", "instantiates", "type_ref"],
+    // This pinned starter has no construction expression; `instantiates` is
+    // proved by the strict conformance fixture rather than invented here.
+    semanticEdges: ["calls", "type_ref"],
     requiredCapabilities: [
       "universe",
       "sourceDigests",

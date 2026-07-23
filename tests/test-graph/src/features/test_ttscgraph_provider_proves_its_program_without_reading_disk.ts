@@ -55,6 +55,7 @@ export const test_ttscgraph_provider_proves_its_program_without_reading_disk =
           path.join(root, "src", "core", "order.ts"),
           path.join(root, "src", "empty.ts"),
           path.join(root, "src", "index.ts"),
+          path.join(root, "tsconfig.json"),
         ].sort(),
       );
       TestValidator.equals(

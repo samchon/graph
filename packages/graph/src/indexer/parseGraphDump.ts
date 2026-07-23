@@ -114,12 +114,14 @@ export function parseGraphDump(input: unknown): ISamchonGraphDump {
     assertUnique(row.facts, `${row.provider} provenance fact`);
     assertUnique(row.capabilities, `${row.provider} provenance capability`);
     if (
+      row.languages.length === 0 ||
       row.producer.tool === "" ||
       !Number.isSafeInteger(row.producer.schemaVersion) ||
       row.producer.schemaVersion < 1 ||
       !Number.isSafeInteger(row.producer.protocolVersion) ||
       row.producer.protocolVersion < 0 ||
-      row.capabilities.some((capability) => capability === "")
+      row.capabilities.some((capability) => capability === "") ||
+      !row.capabilities.includes("universe")
     ) {
       throw new Error(
         `@samchon/graph: provenance ${row.provider} has an invalid producer envelope`,

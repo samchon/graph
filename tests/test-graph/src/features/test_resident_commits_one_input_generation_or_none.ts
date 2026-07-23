@@ -273,7 +273,7 @@ async function assertConflictingProviderSourceDigestsAreRefused(): Promise<void>
     languages: ["typescript"],
     sources: new Map([
       [
-        common,
+        process.platform === "win32" ? common.toUpperCase() : common,
         {
           checkerDigest: "a".repeat(64),
           diskDigest: "a".repeat(64),

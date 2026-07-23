@@ -236,7 +236,12 @@ export function adaptTtscGraphDump(
     edges.push(edge);
   }
 
+  const capabilities = stringArrayOf(
+    objectOf(dump.provenance, "dump.provenance").capabilities,
+    "dump.provenance.capabilities",
+  );
   const manifest = manifestOf(dump.provenance);
+  mergeConfigurationSources(manifest, dump.provenance, capabilities);
   for (const file of [...factFiles].sort(compareOrdinal)) {
     if (!manifest.has(file)) {
       throw new Error(
@@ -255,10 +260,6 @@ export function adaptTtscGraphDump(
     sources.set(sourceManifestKey(expectedRoot, file), digest);
   }
 
-  const capabilities = stringArrayOf(
-    objectOf(dump.provenance, "dump.provenance").capabilities,
-    "dump.provenance.capabilities",
-  );
   const diagnostics = capabilities.includes(
     ITtscGraphSnapshot.CAPABILITY_DIAGNOSTICS,
   )
@@ -832,6 +833,55 @@ function validateGraphFile(
     throw new Error(
       `ttscgraph: ${label} must be a normalized schema-v6 path relative to the project: ${file}`,
     );
+  }
+}
+
+/**
+ * Bind compiler diagnostics on tsconfig files to the exact config bytes that
+ * the producer already carried in its build-universe proof.
+ */
+function mergeConfigurationSources(
+  manifest: Map<string, IBulkGraphSession.ISourceDigest>,
+  value: unknown,
+  capabilities: readonly string[],
+): void {
+  const provenance = objectOf(value, "dump.provenance");
+  const universe = objectOf(
+    provenance.universe,
+    "dump.provenance.universe",
+  );
+  const configs = arrayOf(
+    universe.configs,
+    "dump.provenance.universe.configs",
+  );
+  const hasDiskDigests = capabilities.includes(
+    ITtscGraphSnapshot.CAPABILITY_DISK_DIGESTS,
+  );
+  for (let index = 0; index < configs.length; index++) {
+    const label = `dump.provenance.universe.configs[${index}]`;
+    const config = objectOf(configs[index], label);
+    const file = stringOf(config.file, `${label}.file`);
+    validateGraphFile(file, `${label}.file`);
+    const digest = validateDigest(
+      stringOf(config.digest, `${label}.digest`),
+      `${label}.digest`,
+    );
+    const existing = manifest.get(file);
+    if (existing !== undefined) {
+      if (
+        existing.checkerDigest !== digest ||
+        (hasDiskDigests && existing.diskDigest !== digest)
+      ) {
+        throw new Error(
+          `ttscgraph: ${label} disagrees with the source manifest for ${file}`,
+        );
+      }
+      continue;
+    }
+    manifest.set(file, {
+      checkerDigest: digest,
+      diskDigest: hasDiskDigests ? digest : "",
+    });
   }
 }
 

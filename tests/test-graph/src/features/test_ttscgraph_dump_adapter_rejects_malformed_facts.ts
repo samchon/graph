@@ -221,7 +221,7 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
     [...adaptTtscGraphDump(ordinalManifest, project).sources.keys()].map(
       (file) => path.basename(file),
     ),
-    ["a.ts", "a\u0308.ts", "z.ts", "\u00e4.ts"],
+    ["a.ts", "a\u0308.ts", "z.ts", "\u00e4.ts", "tsconfig.json"],
   );
 
   const globalDiagnostic = good();
@@ -246,6 +246,66 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
         severity: "error",
       },
     ],
+  );
+  const configDiagnostic = good();
+  configDiagnostic.diagnostics.push({
+    file: "tsconfig.json",
+    line: 1,
+    column: 1,
+    code: 5023,
+    category: "error",
+    message: "Unknown compiler option",
+  });
+  const adaptedConfigDiagnostic = adaptTtscGraphDump(
+    configDiagnostic,
+    project,
+  );
+  TestValidator.equals(
+    "a config diagnostic is bound to its build-universe digest",
+    adaptedConfigDiagnostic.sources.get(
+      path.resolve(project, "tsconfig.json"),
+    ),
+    {
+      checkerDigest: sha("tsconfig.json"),
+      diskDigest: sha("tsconfig.json"),
+    },
+  );
+  TestValidator.equals(
+    "a config diagnostic from the same generation is retained",
+    adaptedConfigDiagnostic.diagnostics[0]?.file,
+    "tsconfig.json",
+  );
+  const checkerOnlyConfig = good();
+  checkerOnlyConfig.provenance.capabilities =
+    checkerOnlyConfig.provenance.capabilities.filter(
+      (capability) => capability !== "diskDigests",
+    );
+  for (const source of checkerOnlyConfig.provenance.sources) {
+    source.diskDigest = "";
+  }
+  TestValidator.equals(
+    "a config remains checker-bound when the producer claims no disk digest",
+    adaptTtscGraphDump(checkerOnlyConfig, project).sources.get(
+      path.resolve(project, "tsconfig.json"),
+    ),
+    {
+      checkerDigest: sha("tsconfig.json"),
+      diskDigest: "",
+    },
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.provenance.sources.push({
+            file: "tsconfig.json",
+            checkerDigest: sha("different config"),
+            diskDigest: sha("different config"),
+          }),
+        ),
+        project,
+      ),
+    "a config digest that conflicts with the source manifest",
   );
   rejects(
     () =>

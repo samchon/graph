@@ -160,10 +160,18 @@ func validateScipIndex(moduleRoot string, body []byte) (scipArtifact, error) {
 	seen := make(map[string]bool, len(index.Documents))
 	documents := make([]string, 0, len(index.Documents))
 	definitions := make(map[string]int, len(index.Documents))
+	keptDocuments := make([]*scip.Document, 0, len(index.Documents))
 	for _, document := range index.Documents {
 		relative := filepath.FromSlash(document.RelativePath)
-		if document.RelativePath == "" || filepath.IsAbs(relative) || escapesRoot(relative) {
-			return scipArtifact{}, fmt.Errorf("scip-go emitted an unsafe document path: %q", document.RelativePath)
+		if document.RelativePath == "" {
+			return scipArtifact{}, errors.New("scip-go emitted an empty document path")
+		}
+		if filepath.IsAbs(relative) || escapesRoot(relative) {
+			// scip-go 0.2.7 can include compiler-cache documents outside the
+			// declared module root. They are not project facts and their host
+			// paths are neither portable nor safe to publish. Exclude them
+			// from both corroboration and the canonical artifact digest.
+			continue
 		}
 		cleaned := filepath.Clean(relative)
 		key := pathKey(cleaned)
@@ -175,6 +183,7 @@ func validateScipIndex(moduleRoot string, body []byte) (scipArtifact, error) {
 			return scipArtifact{}, fmt.Errorf("scip-go emitted a %s document: %s", document.Language, document.RelativePath)
 		}
 		absolute := filepath.Join(moduleRoot, cleaned)
+		keptDocuments = append(keptDocuments, document)
 		documents = append(documents, absolute)
 		for _, occurrence := range document.Occurrences {
 			if occurrence.SymbolRoles&int32(scip.SymbolRole_Definition) != 0 {
@@ -184,6 +193,7 @@ func validateScipIndex(moduleRoot string, body []byte) (scipArtifact, error) {
 	}
 	canonical := proto.Clone(index).(*scip.Index)
 	canonical.Metadata.ProjectRoot = ""
+	canonical.Documents = keptDocuments
 	if canonical.Metadata.ToolInfo != nil {
 		canonical.Metadata.ToolInfo.Arguments = nil
 	}

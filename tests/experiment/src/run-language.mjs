@@ -88,7 +88,7 @@ const edgeKindCounts = Object.fromEntries(
 for (const kind of experiment.semanticEdges ?? []) {
   if ((edgeKindCounts[kind] ?? 0) === 0) {
     throw new Error(
-      `${experiment.language}: strict corpus produced no ${kind} semantic edge`,
+      `${experiment.language}: strict corpus produced no ${kind} semantic edge; observed ${JSON.stringify(edgeKindCounts)}`,
     );
   }
 }

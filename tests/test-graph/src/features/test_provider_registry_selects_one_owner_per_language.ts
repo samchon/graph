@@ -457,6 +457,8 @@ async function assertSnapshotContract(): Promise<void> {
   for (const source of [
     "bundled:///",
     "bundled:///cpp/../builtin",
+    "bundled:///../escape",
+    "bundled:////etc",
     "relative.cpp",
     `${process.cwd()}${path.sep}nested${path.sep}..${path.sep}source.cpp`,
   ]) {

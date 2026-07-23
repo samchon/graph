@@ -235,8 +235,9 @@ function strictProvenance(dump, experiment) {
     (row) => row.provider === experiment.strictProvider,
   );
   if (provenance === undefined) {
+    const warnings = dump.warnings?.join("; ") ?? "no graph warnings";
     throw new Error(
-      `${experiment.language}: strict lifecycle lost ${experiment.strictProvider} provenance`,
+      `${experiment.language}: strict lifecycle lost ${experiment.strictProvider} provenance: ${warnings}`,
     );
   }
   return provenance;

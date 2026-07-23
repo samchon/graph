@@ -255,8 +255,18 @@ export const test_graph_dump_parser_closes_every_public_trust_boundary =
       candidate.provenance = [
         {
           ...validProvenance(),
-          capabilities: ["sourceDigests", "sourceDigests"],
+          capabilities: ["universe", "sourceDigests", "sourceDigests"],
         },
+      ];
+    });
+    await rejected("empty provenance language ownership", (candidate) => {
+      candidate.provenance = [
+        { ...validProvenance(), languages: [] },
+      ];
+    });
+    await rejected("provenance without a universe capability", (candidate) => {
+      candidate.provenance = [
+        { ...validProvenance(), capabilities: ["sourceDigests"] },
       ];
     });
     await rejected("provenance languages absent from the dump", (candidate) => {
@@ -323,7 +333,7 @@ function validProvenance() {
     languages: ["go"] as ("go" | "rust")[],
     authority: "semantic-index" as const,
     facts: ["calls"] as ("calls" | "contains")[],
-    capabilities: ["sourceDigests"],
+    capabilities: ["universe", "sourceDigests"],
     producer: {
       tool: "scip-go",
       version: "1.0.0",

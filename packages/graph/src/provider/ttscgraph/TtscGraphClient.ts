@@ -392,6 +392,7 @@ export class TtscGraphClient implements IBulkGraphSession {
         child.process,
         child.exit,
         "ttscgraph",
+        { cooperativeStdin: true },
       );
       // A protocol failure retires the child before a caller necessarily asks
       // to close the client. Keep the rejection observed here while preserving

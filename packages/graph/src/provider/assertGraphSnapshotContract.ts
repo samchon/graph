@@ -41,9 +41,6 @@ export function assertGraphSnapshotContract(
     warnings: snapshot.warnings,
     provenance: [dumpProvenanceOf(snapshot)],
   });
-  if (snapshot.languages.length === 0) {
-    throw new Error(`${label} published a snapshot owning no language`);
-  }
   const claimed = new Set(languages);
   for (const language of snapshot.languages) {
     if (!claimed.has(language)) {
@@ -111,7 +108,10 @@ function assertSourceManifest(
       const relative = file.slice("bundled:///".length);
       if (
         relative === "" ||
-        path.posix.normalize(relative) !== relative
+        path.posix.normalize(relative) !== relative ||
+        relative
+          .split("/")
+          .some((part) => part === "" || part === "." || part === "..")
       ) {
         throw new Error(
           `${label} published a non-canonical bundled source identity: ${file}`,

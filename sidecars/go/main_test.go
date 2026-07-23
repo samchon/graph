@@ -178,6 +178,19 @@ func TestScipBoundaryRejectsForeignAndMalformedArtifacts(t *testing.T) {
 	if err != nil || len(artifact.Documents) != 1 {
 		t.Fatalf("valid SCIP boundary failed: artifact=%#v err=%v", artifact, err)
 	}
+	withExternalCache := proto.Clone(valid).(*scip.Index)
+	withExternalCache.Documents = append(withExternalCache.Documents, &scip.Document{
+		Language:     "go",
+		RelativePath: filepath.Join("..", "..", "gocache", "compiled-export-data"),
+	})
+	withExternalBody, err := proto.Marshal(withExternalCache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	filtered, err := validateScipIndex(root, withExternalBody)
+	if err != nil || len(filtered.Documents) != 1 || filtered.Digest != artifact.Digest {
+		t.Fatalf("external SCIP cache document was not excluded canonically: artifact=%#v err=%v", filtered, err)
+	}
 	otherRoot := t.TempDir()
 	other := proto.Clone(valid).(*scip.Index)
 	other.Metadata.ProjectRoot = fileURI(otherRoot)
@@ -193,7 +206,7 @@ func TestScipBoundaryRejectsForeignAndMalformedArtifacts(t *testing.T) {
 	invalid := []*scip.Index{
 		{},
 		{Metadata: &scip.Metadata{ProjectRoot: fileURI(filepath.Join(root, "other"))}},
-		{Metadata: valid.Metadata, Documents: []*scip.Document{{RelativePath: "../escape.go"}}},
+		{Metadata: valid.Metadata, Documents: []*scip.Document{{RelativePath: ""}}},
 		{Metadata: valid.Metadata, Documents: []*scip.Document{{RelativePath: "main.go"}, {RelativePath: "main.go"}}},
 		{Metadata: valid.Metadata, Documents: []*scip.Document{{Language: "rust", RelativePath: "main.go"}}},
 	}

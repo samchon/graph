@@ -6,6 +6,7 @@ import { DEFAULT_IGNORES } from "./DEFAULT_IGNORES";
 import { IWalkOptions } from "./IWalkOptions";
 
 export function walkSourceFiles(root: string, options: IWalkOptions): string[] {
+  if (options.maxFiles !== undefined && options.maxFiles <= 0) return [];
   const out: string[] = [];
   const ignoreDirs = options.ignoreDirs ?? DEFAULT_IGNORES;
   const allowNested = options.allowNestedRepositories ?? false;
@@ -16,7 +17,6 @@ export function walkSourceFiles(root: string, options: IWalkOptions): string[] {
     allowNested,
   );
   const visit = (dir: string, insideCompilerOutput: boolean): void => {
-    if (options.maxFiles !== undefined && out.length >= options.maxFiles) return;
     let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -122,8 +122,9 @@ function compilerOutputsOf(
   config: string,
   cache: Map<string, ICompilerOutputs | undefined>,
   visiting: Set<string>,
+  configDirectory: string = path.dirname(config),
 ): ICompilerOutputs | undefined {
-  const key = platformPathKey(path.resolve(config));
+  const key = `${platformPathKey(path.resolve(config))}\0${platformPathKey(configDirectory)}`;
   if (cache.has(key)) return cache.get(key);
   if (visiting.has(key)) return {};
   visiting.add(key);
@@ -134,7 +135,14 @@ function compilerOutputsOf(
       allowTrailingComma: true,
       disallowComments: false,
     }) as ICompilerConfig | undefined;
-    if (errors.length > 0) parsed = undefined;
+    if (
+      errors.length > 0 ||
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
+      parsed = undefined;
+    }
     /* c8 ignore start -- a concurrently removed config is not evidence that
      * any directory is generated, so discovery stays open. */
   } catch {
@@ -160,25 +168,36 @@ function compilerOutputsOf(
   for (const specifier of extensions) {
     const base = resolveExtendedConfig(directory, specifier);
     if (base === undefined) continue;
-    Object.assign(inherited, compilerOutputsOf(base, cache, visiting));
+    Object.assign(
+      inherited,
+      compilerOutputsOf(base, cache, visiting, configDirectory),
+    );
   }
   for (const field of ["outDir", "declarationDir"] as const) {
     const value = parsed.compilerOptions?.[field];
-    if (typeof value === "string") inherited[field] = path.resolve(directory, value);
+    if (typeof value === "string") {
+      inherited[field] = path.resolve(
+        directory,
+        value.replaceAll(CONFIG_DIR_VARIABLE, configDirectory),
+      );
+    }
   }
   visiting.delete(key);
   cache.set(key, inherited);
   return inherited;
 }
 
+const CONFIG_DIR_VARIABLE = "$" + "{configDir}";
+
 function resolveExtendedConfig(
   directory: string,
   specifier: string,
 ): string | undefined {
-  if (!path.isAbsolute(specifier) && !specifier.startsWith(".")) {
-    return undefined;
-  }
-  const base = path.resolve(directory, specifier);
+  const base =
+    path.isAbsolute(specifier) || specifier.startsWith(".")
+      ? path.resolve(directory, specifier)
+      : resolvePackageConfig(directory, specifier);
+  if (base === undefined) return undefined;
   for (const candidate of [
     base,
     path.extname(base) === "" ? `${base}.json` : base,
@@ -191,6 +210,73 @@ function resolveExtendedConfig(
     }
   }
   return undefined;
+}
+
+function resolvePackageConfig(
+  directory: string,
+  specifier: string,
+): string | undefined {
+  const parts = specifier.split("/");
+  const packagePartCount = specifier.startsWith("@") ? 2 : 1;
+  const packageParts =
+    packagePartCount === 2 ? parts.slice(0, 2) : parts.slice(0, 1);
+  if (
+    packageParts.length !== packagePartCount ||
+    parts.some((part) => part === "" || part === "." || part === "..")
+  ) {
+    return undefined;
+  }
+  const subpath = parts.slice(packageParts.length).join("/");
+  let current = path.resolve(directory);
+  while (true) {
+    const packageRoot = path.join(
+      current,
+      "node_modules",
+      ...packageParts,
+    );
+    if (isDirectory(packageRoot)) {
+      if (subpath !== "") return path.join(packageRoot, subpath);
+      const packageJson = path.join(packageRoot, "package.json");
+      const configured = packageConfigEntry(packageJson);
+      return path.join(packageRoot, configured ?? "tsconfig.json");
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return undefined;
+}
+
+function packageConfigEntry(packageJson: string): string | undefined {
+  try {
+    const errors: ParseError[] = [];
+    const value = parseJsonc(fs.readFileSync(packageJson, "utf8"), errors, {
+      allowTrailingComma: true,
+      disallowComments: false,
+    }) as unknown;
+    if (
+      errors.length !== 0 ||
+      value === null ||
+      typeof value !== "object" ||
+      Array.isArray(value)
+    ) {
+      return undefined;
+    }
+    const configured = (value as { tsconfig?: unknown }).tsconfig;
+    return typeof configured === "string" && configured !== ""
+      ? configured
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isDirectory(directory: string): boolean {
+  try {
+    return fs.statSync(directory).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 function isTypeScriptCompilerOutput(file: string): boolean {

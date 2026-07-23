@@ -154,39 +154,62 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
         elapsedMs: Math.round(performance.now() - failedAt),
         error: failure.message,
       });
-    } else if (fixture.failurePolicy === "diagnostic") {
+    } else if (
+      fixture.failurePolicy === "diagnostic" ||
+      fixture.failurePolicy === "reject-or-diagnostic"
+    ) {
       const priorIdentity = previousIdentity;
-      const diagnosed = await resident.load();
-      if ((diagnosed.diagnostics?.length ?? 0) === 0) {
-        throw new Error(
-          `${experiment.language}: malformed source produced neither rejection nor diagnostics`,
-        );
+      let diagnosed;
+      let rejected;
+      try {
+        diagnosed = await resident.load();
+      } catch (error) {
+        rejected = error;
       }
-      dump = diagnosed;
-      const provenance = strictProvenance(diagnosed, experiment);
-      const mode = resident.modes().get(experiment.strictProvider);
-      if (!CHANGED_MODES.includes(mode)) {
-        throw new Error(
-          `${experiment.language}: diagnostic failure reported ${String(mode)}`,
-        );
+      if (rejected !== undefined) {
+        if (fixture.failurePolicy !== "reject-or-diagnostic") throw rejected;
+        rows.push({
+          name: "failure",
+          status: "rejected",
+          mode: resident.modes().get(experiment.strictProvider),
+          elapsedMs: Math.round(performance.now() - failedAt),
+          error: rejected instanceof Error ? rejected.message : String(rejected),
+        });
+      } else {
+        if (diagnosed === undefined) {
+          throw new Error(`${experiment.language}: failure produced no result`);
+        }
+        if ((diagnosed.diagnostics?.length ?? 0) === 0) {
+          throw new Error(
+            `${experiment.language}: malformed source produced neither rejection nor diagnostics`,
+          );
+        }
+        dump = diagnosed;
+        const provenance = strictProvenance(diagnosed, experiment);
+        const mode = resident.modes().get(experiment.strictProvider);
+        if (!CHANGED_MODES.includes(mode)) {
+          throw new Error(
+            `${experiment.language}: diagnostic failure reported ${String(mode)}`,
+          );
+        }
+        previousIdentity = [
+          provenance.manifest,
+          provenance.content,
+          provenance.universe,
+        ].join(":");
+        if (previousIdentity === priorIdentity) {
+          throw new Error(
+            `${experiment.language}: diagnostic failure did not move strict provenance`,
+          );
+        }
+        rows.push({
+          name: "failure",
+          status: "diagnostic-only",
+          mode,
+          elapsedMs: Math.round(performance.now() - failedAt),
+          diagnosticCount: diagnosed.diagnostics?.length ?? 0,
+        });
       }
-      previousIdentity = [
-        provenance.manifest,
-        provenance.content,
-        provenance.universe,
-      ].join(":");
-      if (previousIdentity === priorIdentity) {
-        throw new Error(
-          `${experiment.language}: diagnostic failure did not move strict provenance`,
-        );
-      }
-      rows.push({
-        name: "failure",
-        status: "diagnostic-only",
-        mode,
-        elapsedMs: Math.round(performance.now() - failedAt),
-        diagnosticCount: diagnosed.diagnostics?.length ?? 0,
-      });
     } else {
       throw new Error(
         `${experiment.language}: unknown failure policy ${String(fixture.failurePolicy)}`,

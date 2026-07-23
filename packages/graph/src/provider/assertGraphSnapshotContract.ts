@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { parseGraphDump } from "../indexer/parseGraphDump";
 import { GraphLanguage } from "../typings";
+import { dumpProvenanceOf } from "./dumpProvenanceOf";
 import { IBulkGraphSession } from "./IBulkGraphSession";
 import { IGraphProvider } from "./IGraphProvider";
 
@@ -29,6 +30,7 @@ export function assertGraphSnapshotContract(
 ): void {
   const label = `@samchon/graph: provider "${provider.name}"`;
   const project = path.resolve(root);
+  assertProvenance(snapshot, label);
   parseGraphDump({
     project,
     languages: snapshot.languages,
@@ -37,6 +39,7 @@ export function assertGraphSnapshotContract(
     edges: snapshot.edges,
     diagnostics: snapshot.diagnostics,
     warnings: snapshot.warnings,
+    provenance: [dumpProvenanceOf(snapshot)],
   });
   if (snapshot.languages.length === 0) {
     throw new Error(`${label} published a snapshot owning no language`);
@@ -108,10 +111,7 @@ function assertSourceManifest(
       const relative = file.slice("bundled:///".length);
       if (
         relative === "" ||
-        path.posix.normalize(relative) !== relative ||
-        relative
-          .split("/")
-          .some((part) => part === "" || part === "." || part === "..")
+        path.posix.normalize(relative) !== relative
       ) {
         throw new Error(
           `${label} published a non-canonical bundled source identity: ${file}`,
@@ -124,24 +124,27 @@ function assertSourceManifest(
     }
   }
 
-  const required = new Set(nodeFiles);
+  const required = new Set<string>();
+  for (const file of nodeFiles) requireHostSource(required, file);
   for (const node of snapshot.nodes) {
-    if (node.evidence?.file !== undefined) required.add(node.evidence.file);
+    if (node.evidence?.file !== undefined) {
+      requireHostSource(required, node.evidence.file);
+    }
     if (node.implementation?.file !== undefined) {
-      required.add(node.implementation.file);
+      requireHostSource(required, node.implementation.file);
     }
   }
   for (const edge of snapshot.edges) {
-    if (edge.evidence?.file !== undefined) required.add(edge.evidence.file);
+    if (edge.evidence?.file !== undefined) {
+      requireHostSource(required, edge.evidence.file);
+    }
   }
   for (const diagnostic of snapshot.diagnostics) {
-    if (diagnostic.file !== "") required.add(diagnostic.file);
+    if (diagnostic.file !== "") requireHostSource(required, diagnostic.file);
   }
 
   for (const file of required) {
-    const source = file.startsWith("bundled:///")
-      ? file
-      : path.resolve(root, file);
+    const source = path.resolve(root, file);
     if (!snapshot.sources.has(source)) {
       throw new Error(
         `${label} published facts for ${file} without binding that file to its source manifest`,
@@ -150,16 +153,66 @@ function assertSourceManifest(
   }
 }
 
+function requireHostSource(required: Set<string>, file: string): void {
+  // A bundled identity is versioned with its provider/toolchain and has no
+  // coordinator-readable host file. Requiring it in the host source manifest
+  // rejects valid compiler builtins (Go universe nodes, TypeScript lib files)
+  // without adding a byte fence the coordinator could reproduce.
+  if (!file.startsWith("bundled:///")) required.add(file);
+}
+
+function assertProvenance(
+  snapshot: IBulkGraphSession.ISnapshot,
+  label: string,
+): void {
+  const provenance = snapshot.provenance;
+  if (
+    !Number.isSafeInteger(provenance.schemaVersion) ||
+    provenance.schemaVersion < 1 ||
+    !Number.isSafeInteger(provenance.protocolVersion) ||
+    provenance.protocolVersion < 0 ||
+    provenance.tool === "" ||
+    !SHA256.test(provenance.universe)
+  ) {
+    throw new Error(`${label} published an invalid provenance envelope`);
+  }
+  const capabilities = new Set(provenance.capabilities);
+  if (
+    capabilities.size !== provenance.capabilities.length ||
+    provenance.capabilities.some((capability) => capability === "") ||
+    !capabilities.has("universe")
+  ) {
+    throw new Error(
+      `${label} published duplicate, empty, or unproven provenance capabilities`,
+    );
+  }
+  const sourceDigests = capabilities.has("sourceDigests");
+  const diskDigests = capabilities.has("diskDigests");
+  for (const [file, digest] of snapshot.sources) {
+    if (
+      (sourceDigests && !SHA256.test(digest.checkerDigest)) ||
+      (!sourceDigests && digest.checkerDigest !== "") ||
+      (digest.diskDigest !== "" &&
+        (!diskDigests || !SHA256.test(digest.diskDigest)))
+    ) {
+      throw new Error(
+        `${label} published a source digest that contradicts its capabilities: ${file}`,
+      );
+    }
+  }
+}
+
+const SHA256 = /^[0-9a-f]{64}$/;
+
 function sameFacts(
   left: readonly string[],
   right: readonly string[],
 ): boolean {
   if (left.length !== right.length) return false;
-  // These are fact families, so a repeated member is not a second fact. Without
-  // rejecting it, ["calls", "calls"] could replace ["calls", "imports"]:
-  // the old membership-only check saw two entries that each appeared in the
-  // registry and missed the family the provider had silently stopped claiming.
-  if (new Set(left).size !== left.length) return false;
+  // parseGraphDump has already established that the published family list is
+  // unique. The registry is trusted coordinator configuration, but still
+  // reject a duplicated entry there: it must not make a distinct published
+  // family set appear equivalent by length and membership alone.
   const expected = new Set(right);
   if (expected.size !== right.length) return false;
   return left.every((fact) => expected.has(fact));

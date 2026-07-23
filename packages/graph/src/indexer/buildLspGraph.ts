@@ -32,6 +32,7 @@ import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IIndexerResult } from "./IIndexerResult";
 import { ILspSession } from "./ILspSession";
 import { languageIdOf } from "./languageIdOf";
+import { mergeProviderSourceDigests } from "./mergeProviderSourceDigests";
 import { specOf } from "./languages";
 import { scanSession } from "./scanSession";
 import { IGraphSourceSelection } from "./IGraphSourceSelection";
@@ -166,6 +167,12 @@ async function buildLspGraphAttempt(
             candidate.languages,
             root,
           );
+          // Closing a one-shot session is part of accepting its candidate. A
+          // close failure declines it before its manifest or facts can enter
+          // the aggregate. Resident candidates stay live only after the same
+          // collision gate admits their source evidence.
+          if (!options.keepAlive) await session.close();
+          mergeProviderSourceDigests(strictDigests, snapshot.sources);
         } catch (error) {
           // `collectProviderGraph` has handed this live session to the
           // coordinator, but a rejected snapshot never enters `sessions`.
@@ -181,10 +188,6 @@ async function buildLspGraphAttempt(
           }
           throw error;
         }
-        // One-shot callers do not retain the session. Close it before adding
-        // the slice, so a shutdown failure declines this candidate whole rather
-        // than leaving its facts beside a fallback warning.
-        if (!options.keepAlive) await session.close();
         appendAll(strictNodes, snapshot.nodes);
         appendAll(strictEdges, snapshot.edges);
         appendAll(diagnostics, snapshot.diagnostics);
@@ -194,9 +197,6 @@ async function buildLspGraphAttempt(
         // already resolved, and the only thing the generic lane wanted text for
         // — deriving export edges — is work this provider has already done
         // against the real checker.
-        for (const [file, digest] of snapshot.sources) {
-          strictDigests.set(file, digest);
-        }
         provenance.push(dumpProvenanceOf(snapshot));
         modes.set(candidate.provider.name, refresh.mode);
         // A complete strict slice can legitimately contain no declarations.

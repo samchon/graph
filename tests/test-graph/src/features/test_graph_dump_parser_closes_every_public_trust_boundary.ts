@@ -159,6 +159,42 @@ export const test_graph_dump_parser_closes_every_public_trust_boundary =
     await rejected("non-positive diagnostic lines", (candidate) => {
       candidate.diagnostics = [
         {
+          file: "src/run.go",
+          line: 0,
+          code: "fixture",
+          message: "invalid",
+        },
+      ];
+    });
+    const global = valid();
+    global.diagnostics = [
+      {
+        file: "",
+        line: 0,
+        column: 0,
+        code: "fixture",
+        message: "global",
+      },
+    ];
+    TestValidator.equals(
+      "a global diagnostic uses the producer's canonical zero coordinates",
+      parseGraphDump(global).diagnostics,
+      global.diagnostics,
+    );
+    await rejected("nonzero global diagnostic coordinates", (candidate) => {
+      candidate.diagnostics = [
+        {
+          file: "",
+          line: 1,
+          column: 0,
+          code: "fixture",
+          message: "invalid",
+        },
+      ];
+    });
+    await rejected("global diagnostics without their zero column", (candidate) => {
+      candidate.diagnostics = [
+        {
           file: "",
           line: 0,
           code: "fixture",
@@ -190,6 +226,17 @@ export const test_graph_dump_parser_closes_every_public_trust_boundary =
     });
     await rejected("empty provenance provider names", (candidate) => {
       candidate.provenance = [{ ...validProvenance(), provider: "" }];
+    });
+    await rejected("invalid provenance producer revisions", (candidate) => {
+      candidate.provenance = [
+        {
+          ...validProvenance(),
+          producer: {
+            ...validProvenance().producer,
+            schemaVersion: 1.5,
+          },
+        },
+      ];
     });
     await rejected("duplicate provenance provider names", (candidate) => {
       candidate.provenance = [validProvenance(), validProvenance()];

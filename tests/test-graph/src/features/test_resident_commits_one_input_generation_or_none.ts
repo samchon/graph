@@ -32,6 +32,7 @@ export const test_resident_commits_one_input_generation_or_none = async () => {
   await assertAnUnchangedProviderCannotHideAMovedExternalSource();
   await assertAProviderTopologyChangeRebuildsTheResidentState();
   await assertAStableProviderFallbackKeepsTheResidentState();
+  await assertConflictingProviderSourceDigestsAreRefused();
   await assertAHashOnlySourceMismatchRebuildsTheResidentState();
   await assertProvenanceDescribesThePublishedGeneration();
   await assertADeclaredBuildInputInvalidatesTheProject();
@@ -90,7 +91,7 @@ async function assertAMovedExternalProviderSourceIsDiscarded(): Promise<void> {
   const provider = ProviderFixtures.provider({ name: "sibling-provider" });
   const snapshot = ProviderFixtures.snapshot({
     provider: "sibling-provider",
-    capabilities: ["sourceDigests", "diskDigests"],
+    capabilities: ["universe", "sourceDigests", "diskDigests"],
     sources: new Map([
       [sibling, { checkerDigest: consumed, diskDigest: consumed }],
     ]),
@@ -164,7 +165,7 @@ async function assertAnUnchangedProviderCannotHideAMovedExternalSource(): Promis
   const snapshot = ProviderFixtures.snapshot({
     root,
     provider: "unchanged-sibling",
-    capabilities: ["sourceDigests", "diskDigests"],
+    capabilities: ["universe", "sourceDigests", "diskDigests"],
     sources: new Map([
       [sibling, { checkerDigest: consumed, diskDigest: consumed }],
     ]),
@@ -237,6 +238,114 @@ async function assertAStableProviderFallbackKeepsTheResidentState(): Promise<voi
     "a consistently falling-back provider does not rebuild unchanged state",
     builds,
     1,
+  );
+  fs.writeFileSync(file, "export const value = 2;\n");
+  await source.load();
+  TestValidator.equals(
+    "a changed input generation retries a previously failed provider",
+    builds,
+    2,
+  );
+  await source.close();
+}
+
+async function assertConflictingProviderSourceDigestsAreRefused(): Promise<void> {
+  const root = GraphPaths.createTempDirectory(
+    "samchon-graph-provider-digest-conflict-",
+  );
+  const typescript = path.join(root, "a.ts");
+  const go = path.join(root, "b.go");
+  fs.writeFileSync(typescript, "export const value = 1;\n");
+  fs.writeFileSync(go, "package main\nfunc main() {}\n");
+  const common = path.join(root, "shared.txt");
+  fs.writeFileSync(common, "shared\n");
+  const firstProvider = ProviderFixtures.provider({
+    name: "first-digest",
+    languages: ["typescript"],
+  });
+  const secondProvider = ProviderFixtures.provider({
+    name: "second-digest",
+    languages: ["go"],
+  });
+  const first = ProviderFixtures.snapshot({
+    root,
+    provider: "first-digest",
+    languages: ["typescript"],
+    sources: new Map([
+      [
+        common,
+        {
+          checkerDigest: "a".repeat(64),
+          diskDigest: "a".repeat(64),
+        },
+      ],
+    ]),
+  });
+  const second = ProviderFixtures.snapshot({
+    root,
+    provider: "second-digest",
+    languages: ["go"],
+    sources: new Map([
+      [
+        common,
+        {
+          checkerDigest: "b".repeat(64),
+          diskDigest: "b".repeat(64),
+        },
+      ],
+    ]),
+  });
+  const firstSession = ProviderFixtures.session({
+    root,
+    languages: ["typescript"],
+    snapshots: [first],
+  });
+  const secondSession = ProviderFixtures.session({
+    root,
+    languages: ["go"],
+    snapshots: [second],
+  });
+  await firstSession.refresh();
+  await secondSession.refresh();
+  const source = createResidentGraphSource(
+    { cwd: root },
+    {
+      providers: [firstProvider, secondProvider],
+      buildLspGraph: async () => ({
+        ...resultOf(root, typescript, fs.readFileSync(typescript, "utf8")),
+        dump: {
+          ...resultOf(
+            root,
+            typescript,
+            fs.readFileSync(typescript, "utf8"),
+          ).dump,
+          languages: ["typescript", "go"],
+        },
+        sources: new Map([
+          [typescript, fs.readFileSync(typescript, "utf8")],
+          [go, fs.readFileSync(go, "utf8")],
+        ]),
+        sessions: new Map([
+          ["typescript", firstSession],
+          ["go", secondSession],
+        ]),
+        providers: new Map([
+          ["typescript", firstProvider],
+          ["go", secondProvider],
+        ]),
+      }),
+    },
+  );
+  let failure: unknown;
+  try {
+    await source.load();
+  } catch (error) {
+    failure = error;
+  }
+  TestValidator.predicate(
+    "one provider cannot hide another provider's conflicting source digest",
+    failure instanceof Error &&
+      failure.message.includes("conflicting source digests"),
   );
   await source.close();
 }

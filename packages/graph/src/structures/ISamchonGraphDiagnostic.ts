@@ -17,10 +17,10 @@ export interface ISamchonGraphDiagnostic {
    */
   file: string;
 
-  /** 1-based line of the diagnostic. */
+  /** 1-based line, or `0` only for a global finding whose `file` is empty. */
   line: number;
 
-  /** 1-based column of the diagnostic, when known. */
+  /** 1-based column when known; required as `0` for a global finding. */
   column?: number;
 
   /** The server's own code for the finding, or its source when it gave none. */

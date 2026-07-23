@@ -142,7 +142,7 @@ export const test_conformance_harness_rejects_a_text_heuristic_provider =
           sources: new Map([
             [
               path.resolve("a.ts"),
-              { checkerDigest: "", diskDigest: "abc" },
+              { checkerDigest: "", diskDigest: "" },
             ],
           ]),
           capabilities: ["sourceDigests"],
@@ -158,9 +158,10 @@ export const test_conformance_harness_rejects_a_text_heuristic_provider =
           sources: new Map([
             [
               path.resolve("a.ts"),
-              { checkerDigest: "", diskDigest: "abc" },
+              { checkerDigest: "", diskDigest: "" },
             ],
           ]),
+          capabilities: ["universe"],
         }),
         provider,
         ["typescript"],

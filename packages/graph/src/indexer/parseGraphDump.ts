@@ -87,12 +87,18 @@ export function parseGraphDump(input: unknown): ISamchonGraphDump {
     if (diagnostic.file !== "") {
       validateGraphPath(diagnostic.file, "diagnostic file");
     }
-    if (
-      !isPositiveSafeInteger(diagnostic.line) ||
-      (diagnostic.column !== undefined &&
-        !isPositiveSafeInteger(diagnostic.column))
-    ) {
-      throw new Error("@samchon/graph: diagnostic coordinates must be positive");
+    const fileless = diagnostic.file === "";
+    const invalidLine = fileless
+      ? diagnostic.line !== 0
+      : !isPositiveSafeInteger(diagnostic.line);
+    const invalidColumn = fileless
+      ? diagnostic.column !== 0
+      : diagnostic.column !== undefined &&
+        !isPositiveSafeInteger(diagnostic.column);
+    if (invalidLine || invalidColumn) {
+      throw new Error(
+        "@samchon/graph: diagnostic coordinates must be one-based, or exactly 0:0 for a global finding",
+      );
     }
   }
 
@@ -107,6 +113,18 @@ export function parseGraphDump(input: unknown): ISamchonGraphDump {
     assertUnique(row.languages, `${row.provider} provenance language`);
     assertUnique(row.facts, `${row.provider} provenance fact`);
     assertUnique(row.capabilities, `${row.provider} provenance capability`);
+    if (
+      row.producer.tool === "" ||
+      !Number.isSafeInteger(row.producer.schemaVersion) ||
+      row.producer.schemaVersion < 1 ||
+      !Number.isSafeInteger(row.producer.protocolVersion) ||
+      row.producer.protocolVersion < 0 ||
+      row.capabilities.some((capability) => capability === "")
+    ) {
+      throw new Error(
+        `@samchon/graph: provenance ${row.provider} has an invalid producer envelope`,
+      );
+    }
     for (const language of row.languages) {
       if (!dumpLanguages.has(language)) {
         throw new Error(

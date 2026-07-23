@@ -126,6 +126,30 @@ const installZls = async () => {
   fs.symlinkSync(binary, link);
 };
 
+const installScip = async () => {
+  const archive = path.join(toolsRoot, "scip-v0.7.1-linux-amd64.tar.gz");
+  const target = path.join(toolsRoot, "scip-v0.7.1");
+  await downloadFile(
+    "https://github.com/scip-code/scip/releases/download/v0.7.1/scip-linux-amd64.tar.gz",
+    archive,
+  );
+  verifySha256(
+    archive,
+    "7bb1a566787478641a13bd9c93c2f571337556c76d659206f2225dc7d71a648b",
+  );
+  fs.rmSync(target, { force: true, recursive: true });
+  ensureDir(target);
+  run("tar", ["-xzf", archive, "-C", target]);
+  const binary = findFile(target, "scip");
+  if (binary === undefined) {
+    throw new Error("scip binary not found after extraction");
+  }
+  fs.chmodSync(binary, 0o755);
+  const link = path.join(binRoot, "scip");
+  fs.rmSync(link, { force: true });
+  fs.symlinkSync(binary, link);
+};
+
 const findFile = (dir, name) => {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const abs = path.join(dir, entry.name);
@@ -178,6 +202,7 @@ switch (experiment.language) {
     shell("curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal");
     appendGithubPath(path.join(os.homedir(), ".cargo", "bin"));
     shell(`${path.join(os.homedir(), ".cargo", "bin", "rustup")} component add rust-analyzer`);
+    await installScip();
     break;
   case "cpp":
   case "c":

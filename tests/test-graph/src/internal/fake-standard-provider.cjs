@@ -93,7 +93,7 @@ if (sidecarLanguages.has(sidecarLanguage)) {
       protocolVersion: 1,
     },
     universe: sha256(`${sidecarLanguage}-universe`),
-    capabilities: ["sourceDigests", "diskDigests"],
+    capabilities: ["universe", "sourceDigests", "diskDigests"],
     sources: [
       {
         file,

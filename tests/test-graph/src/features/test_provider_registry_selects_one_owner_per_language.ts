@@ -399,9 +399,13 @@ async function assertSnapshotContract(): Promise<void> {
           language: "cpp",
           name: "builtin",
           file: "bundled:///cpp/builtin",
-          external: false,
+          external: true,
         },
       ],
+      // Compiler builtins have no coordinator-readable host file. Their
+      // provider/toolchain revision binds them, so a host manifest entry is
+      // neither required nor fabricated.
+      sources: new Map(),
     }),
     provider,
     ["cpp"],
@@ -464,6 +468,7 @@ async function assertSnapshotContract(): Promise<void> {
             languages: ["cpp"],
             provider: "fake",
             facts: ["calls"],
+            capabilities: ["universe"],
             sources: new Map([
               [source, { checkerDigest: "", diskDigest: "" }],
             ]),
@@ -563,6 +568,43 @@ async function assertSnapshotContract(): Promise<void> {
       ["cpp"],
     ),
   );
+  for (const [label, mutate] of [
+    [
+      "a fractional schema revision",
+      (snapshot: IBulkGraphSession.ISnapshot) => {
+        snapshot.provenance.schemaVersion = 1.5;
+      },
+    ],
+    [
+      "duplicate capabilities",
+      (snapshot: IBulkGraphSession.ISnapshot) => {
+        snapshot.provenance.capabilities = ["universe", "universe"];
+      },
+    ],
+    [
+      "a malformed universe fingerprint",
+      (snapshot: IBulkGraphSession.ISnapshot) => {
+        snapshot.provenance.universe = "not-a-digest";
+      },
+    ],
+    [
+      "a source digest without its capability",
+      (snapshot: IBulkGraphSession.ISnapshot) => {
+        snapshot.provenance.capabilities = ["universe"];
+      },
+    ],
+  ] as const) {
+    TestValidator.error(`${label} is refused by the common gate`, () => {
+      const snapshot = ProviderFixtures.snapshot({
+        languages: ["cpp"],
+        provider: "fake",
+        facts: ["calls"],
+        nodes: [node("a.cpp", "run", "cpp")],
+      });
+      mutate(snapshot);
+      assertGraphSnapshotContract(snapshot, provider, ["cpp"]);
+    });
+  }
   TestValidator.error("understated fact families are refused", () =>
     assertGraphSnapshotContract(
       ProviderFixtures.snapshot({

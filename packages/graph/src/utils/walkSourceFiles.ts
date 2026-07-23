@@ -7,12 +7,16 @@ import { IWalkOptions } from "./IWalkOptions";
 
 export function walkSourceFiles(root: string, options: IWalkOptions): string[] {
   const out: string[] = [];
-  const compilerOutputs = new Set<string>();
   const ignoreDirs = options.ignoreDirs ?? DEFAULT_IGNORES;
   const allowNested = options.allowNestedRepositories ?? false;
-  const visit = (dir: string): void => {
+  const resolvedRoot = path.resolve(root);
+  const compilerOutputs = collectCompilerOutputs(
+    resolvedRoot,
+    ignoreDirs,
+    allowNested,
+  );
+  const visit = (dir: string, insideCompilerOutput: boolean): void => {
     if (options.maxFiles !== undefined && out.length >= options.maxFiles) return;
-    registerCompilerOutputs(dir, compilerOutputs);
     let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -25,7 +29,6 @@ export function walkSourceFiles(root: string, options: IWalkOptions): string[] {
       const abs = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         if (ignoreDirs.has(entry.name)) continue;
-        if (compilerOutputs.has(path.resolve(abs))) continue;
         // A subdirectory that is itself a git repository or worktree root —
         // marked by a `.git` directory (a clone) or a `.git` file (a linked
         // worktree or a submodule) — belongs to a different checkout: a nested
@@ -34,17 +37,24 @@ export function walkSourceFiles(root: string, options: IWalkOptions): string[] {
         // win a `maxFiles` cap before any real source is seen. Stop at that
         // boundary unless the caller intentionally opts in.
         if (!allowNested && isRepositoryRoot(abs)) continue;
-        visit(abs);
+        visit(
+          abs,
+          insideCompilerOutput ||
+            compilerOutputs.has(platformPathKey(path.resolve(abs))),
+        );
         continue;
       }
       /* c8 ignore next */
       if (!entry.isFile()) continue;
-      if (options.extensions.has(path.extname(entry.name).toLowerCase())) {
+      if (
+        options.extensions.has(path.extname(entry.name).toLowerCase()) &&
+        !(insideCompilerOutput && isTypeScriptCompilerOutput(entry.name))
+      ) {
         out.push(abs);
       }
     }
   };
-  visit(path.resolve(root));
+  visit(resolvedRoot, compilerOutputs.has(platformPathKey(resolvedRoot)));
   return out;
 }
 
@@ -58,53 +68,143 @@ function isRepositoryRoot(dir: string): boolean {
   return fs.existsSync(path.join(dir, ".git"));
 }
 
-/**
- * Register only output directories a project config explicitly declares.
- *
- * Names such as `lib` are ordinary authored-source conventions too, especially
- * for declaration-only packages. Treating the name itself as generated drops
- * real APIs. A valid JSON config that names the directory is positive evidence
- * that this particular directory is compiler output; an unreadable or
- * malformed config provides no such evidence and therefore excludes nothing.
- */
-function registerCompilerOutputs(
-  directory: string,
-  outputs: Set<string>,
-): void {
-  for (const name of ["tsconfig.json", "jsconfig.json"]) {
-    const config = path.join(directory, name);
-    if (!fs.existsSync(config)) continue;
-    let text: string;
+/** Find every effective TypeScript output directory before source traversal. */
+function collectCompilerOutputs(
+  root: string,
+  ignoreDirs: ReadonlySet<string>,
+  allowNested: boolean,
+): Set<string> {
+  const outputs = new Set<string>();
+  const cache = new Map<string, ICompilerOutputs | undefined>();
+  const visit = (directory: string): void => {
+    for (const name of ["tsconfig.json", "jsconfig.json"]) {
+      const config = path.join(directory, name);
+      if (!fs.existsSync(config)) continue;
+      const configured = compilerOutputsOf(config, cache, new Set());
+      for (const output of [
+        configured?.outDir,
+        configured?.declarationDir,
+      ]) {
+        if (output !== undefined) outputs.add(platformPathKey(output));
+      }
+    }
+    let entries: fs.Dirent[];
     try {
-      text = fs.readFileSync(config, "utf8");
-      /* c8 ignore start -- a concurrently removed config is not evidence that
-       * any directory is generated, so discovery stays open. */
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || ignoreDirs.has(entry.name)) continue;
+      const nested = path.join(directory, entry.name);
+      if (!allowNested && isRepositoryRoot(nested)) continue;
+      visit(nested);
+    }
+  };
+  visit(root);
+  return outputs;
+}
+
+interface ICompilerOutputs {
+  outDir?: string;
+  declarationDir?: string;
+}
+
+interface ICompilerConfig {
+  extends?: unknown;
+  compilerOptions?: {
+    outDir?: unknown;
+    declarationDir?: unknown;
+  };
+}
+
+function compilerOutputsOf(
+  config: string,
+  cache: Map<string, ICompilerOutputs | undefined>,
+  visiting: Set<string>,
+): ICompilerOutputs | undefined {
+  const key = platformPathKey(path.resolve(config));
+  if (cache.has(key)) return cache.get(key);
+  if (visiting.has(key)) return {};
+  visiting.add(key);
+  let parsed: ICompilerConfig | undefined;
+  try {
+    const errors: ParseError[] = [];
+    parsed = parseJsonc(fs.readFileSync(config, "utf8"), errors, {
+      allowTrailingComma: true,
+      disallowComments: false,
+    }) as ICompilerConfig | undefined;
+    if (errors.length > 0) parsed = undefined;
+    /* c8 ignore start -- a concurrently removed config is not evidence that
+     * any directory is generated, so discovery stays open. */
+  } catch {
+    parsed = undefined;
+  }
+  /* c8 ignore stop */
+  if (parsed === undefined) {
+    visiting.delete(key);
+    cache.set(key, undefined);
+    return undefined;
+  }
+
+  const directory = path.dirname(config);
+  const inherited: ICompilerOutputs = {};
+  const extensions =
+    typeof parsed.extends === "string"
+      ? [parsed.extends]
+      : Array.isArray(parsed.extends)
+        ? parsed.extends.filter(
+            (value): value is string => typeof value === "string",
+          )
+        : [];
+  for (const specifier of extensions) {
+    const base = resolveExtendedConfig(directory, specifier);
+    if (base === undefined) continue;
+    Object.assign(inherited, compilerOutputsOf(base, cache, visiting));
+  }
+  for (const field of ["outDir", "declarationDir"] as const) {
+    const value = parsed.compilerOptions?.[field];
+    if (typeof value === "string") inherited[field] = path.resolve(directory, value);
+  }
+  visiting.delete(key);
+  cache.set(key, inherited);
+  return inherited;
+}
+
+function resolveExtendedConfig(
+  directory: string,
+  specifier: string,
+): string | undefined {
+  if (!path.isAbsolute(specifier) && !specifier.startsWith(".")) {
+    return undefined;
+  }
+  const base = path.resolve(directory, specifier);
+  for (const candidate of [
+    base,
+    path.extname(base) === "" ? `${base}.json` : base,
+    path.join(base, "tsconfig.json"),
+  ]) {
+    try {
+      if (fs.statSync(candidate).isFile()) return candidate;
     } catch {
       continue;
     }
-    /* c8 ignore stop */
-    const errors: ParseError[] = [];
-    const compilerOptions = (
-      parseJsonc(text, errors, {
-        allowTrailingComma: true,
-        disallowComments: false,
-      }) as
-        | {
-            compilerOptions?: {
-              outDir?: unknown;
-              declarationDir?: unknown;
-            };
-          }
-        | undefined
-    )?.compilerOptions;
-    if (errors.length > 0) continue;
-    for (const value of [
-      compilerOptions?.outDir,
-      compilerOptions?.declarationDir,
-    ]) {
-      if (typeof value === "string") {
-        outputs.add(path.resolve(directory, value));
-      }
-    }
   }
+  return undefined;
+}
+
+function isTypeScriptCompilerOutput(file: string): boolean {
+  const lower = file.toLowerCase();
+  return (
+    lower.endsWith(".d.ts") ||
+    lower.endsWith(".d.mts") ||
+    lower.endsWith(".d.cts") ||
+    [".js", ".jsx", ".mjs", ".cjs"].includes(path.extname(lower))
+  );
+}
+
+function platformPathKey(value: string): string {
+  const normalized = path.normalize(value);
+  /* c8 ignore next 3 -- only one platform arm runs on a given host. */
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }

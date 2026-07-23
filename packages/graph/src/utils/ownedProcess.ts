@@ -1,7 +1,7 @@
 import { ChildProcess, spawn } from "node:child_process";
 import path from "node:path";
 
-const TERMINATION_GRACE_MS = 1_000;
+const TERMINATION_GRACE_MS = 250;
 const FORCED_EXIT_GRACE_MS = 2_000;
 
 export namespace ownedProcess {
@@ -37,7 +37,14 @@ export namespace ownedProcess {
     exit: Promise<void>,
     owner: string,
   ): Promise<void> {
-    if (child.stdin !== null && !child.stdin.destroyed) child.stdin.destroy();
+    // Give a cooperative transport one bounded chance to observe EOF, flush
+    // its final bookkeeping, and retire its own descendants. Destroying stdin
+    // and signalling the process group in the same turn races readline's close
+    // handler on POSIX and makes an orderly shutdown platform-dependent.
+    if (child.stdin !== null && !child.stdin.destroyed) {
+      child.stdin.end();
+      if (await waitForExit(exit, TERMINATION_GRACE_MS)) return;
+    }
     if (!isRunning(child)) return;
     /* c8 ignore start -- one OS lane runs on each coverage host; platform
      * lifecycle tests exercise both implementations. */

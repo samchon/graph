@@ -25,6 +25,7 @@ import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { ILspSession } from "./ILspSession";
 import { IResidentGraphSource } from "./IResidentGraphSource";
 import { languageOf } from "./languageOf";
+import { mergeProviderSourceDigests } from "./mergeProviderSourceDigests";
 import { movedConsumedSource } from "./movedConsumedSource";
 import { movedProviderSource } from "./movedProviderSource";
 import { refreshLanguageSession } from "./refreshLanguageSession";
@@ -62,6 +63,8 @@ interface IResidentState {
   inputManifestLanguages: GraphLanguage[];
   buildInputs: string[];
   providerTopology: string;
+  /** An available strict candidate fell back while this state was built. */
+  providerFallback: boolean;
 }
 
 interface IResidentDependencies {
@@ -163,6 +166,13 @@ export function createResidentGraphSource(
         inputManifestLanguages,
         buildInputs,
         providerTopology: providerTopology.serialize(availableTopology),
+        providerFallback: availableTopology.some((row) =>
+          row.languages.some(
+            (language) =>
+              (result.providers ?? new Map()).get(language)?.name !==
+              row.provider,
+          ),
+        ),
       };
     } catch (error) {
       // Once the build hands its sessions to this source, every later failure
@@ -438,6 +448,17 @@ export function createResidentGraphSource(
         current.buildInputs,
         new Set(current.inputManifestLanguages),
       );
+      if (
+        current.providerFallback &&
+        !sameProjectInputManifest(current.inputManifest, inputManifest)
+      ) {
+        // A stable failed candidate must not rebuild on every unchanged load,
+        // but an input generation change is exactly when the reason it failed
+        // may have been repaired. Re-run selection and preparation rather than
+        // pinning the resident to fallback for its entire lifetime.
+        await replaceLanguages(current, signal);
+        return;
+      }
       const prefetched = await refreshBulkSessions(current.sessions, signal);
       const bulkChanged = [...prefetched].some(
         ([language, refresh]) =>
@@ -600,7 +621,7 @@ function providerSourcesOf(
 ): Map<string, IBulkGraphSession.ISourceDigest> {
   const sources = new Map<string, IBulkGraphSession.ISourceDigest>();
   for (const snapshot of snapshots) {
-    for (const [file, digest] of snapshot.sources) sources.set(file, digest);
+    mergeProviderSourceDigests(sources, snapshot.sources);
   }
   return sources;
 }
@@ -613,8 +634,8 @@ function sourceReaderOf(
   const digests = new Map<string, IBulkGraphSession.ISourceDigest>();
   for (const session of sessions.values()) {
     if (!isBulkGraphSession(session)) continue;
-    for (const [file, digest] of session.current?.sources ?? []) {
-      digests.set(file, digest);
+    if (session.current !== undefined) {
+      mergeProviderSourceDigests(digests, session.current.sources);
     }
   }
   return new SamchonGraphSourceReader(root, { texts, digests });

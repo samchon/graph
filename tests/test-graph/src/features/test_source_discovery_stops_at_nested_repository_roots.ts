@@ -132,6 +132,136 @@ export const test_source_discovery_stops_at_nested_repository_roots =
       ),
       ["source.ts"],
     );
+
+    const inheritedRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-inherited-output-",
+    );
+    write(
+      inheritedRoot,
+      "config/base.json",
+      '{"compilerOptions":{"outDir":"../a-output"}}',
+    );
+    write(
+      inheritedRoot,
+      "packages/app/tsconfig.json",
+      '{"extends":"../../config/base.json"}',
+    );
+    write(
+      inheritedRoot,
+      "a-output/generated.d.ts",
+      "export declare const generated: string;",
+    );
+    write(
+      inheritedRoot,
+      "a-output/authored.go",
+      "package authored\n",
+    );
+    write(
+      inheritedRoot,
+      "packages/app/src/source.ts",
+      "export const source = 'authored';",
+    );
+    TestValidator.equals(
+      "inherited sibling outputs are known before traversal and keep polyglot source",
+      bases(
+        walkSourceFiles(inheritedRoot, {
+          extensions: new Set([".ts", ".go"]),
+        }),
+      ),
+      ["authored.go", "source.ts"],
+    );
+
+    const caseRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-output-case-",
+    );
+    write(
+      caseRoot,
+      "tsconfig.json",
+      '{"compilerOptions":{"outDir":"LIB"}}',
+    );
+    write(
+      caseRoot,
+      "lib/generated.d.ts",
+      "export declare const generated: string;",
+    );
+    TestValidator.equals(
+      "compiler output comparison follows the host filesystem's case rules",
+      bases(walkSourceFiles(caseRoot, { extensions: new Set([".ts"]) })),
+      process.platform === "win32" ? [] : ["generated.d.ts"],
+    );
+
+    const extendsRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-output-extends-forms-",
+    );
+    write(
+      extendsRoot,
+      "configs/direct.json",
+      '{"compilerOptions":{"outDir":"../direct-output"}}',
+    );
+    write(
+      extendsRoot,
+      "configs/no-extension.json",
+      '{"compilerOptions":{"outDir":"../extension-output"}}',
+    );
+    write(
+      extendsRoot,
+      "configs/directory/tsconfig.json",
+      '{"compilerOptions":{"declarationDir":"../../directory-output"}}',
+    );
+    write(
+      extendsRoot,
+      "configs/cycle-a.json",
+      '{"extends":"./cycle-b.json","compilerOptions":{"outDir":"../cycle-output"}}',
+    );
+    write(
+      extendsRoot,
+      "configs/cycle-b.json",
+      '{"extends":"./cycle-a.json"}',
+    );
+    write(
+      extendsRoot,
+      "apps/direct/tsconfig.json",
+      '{"extends":"../../configs/direct.json"}',
+    );
+    write(
+      extendsRoot,
+      "apps/no-extension/tsconfig.json",
+      '{"extends":"../../configs/no-extension"}',
+    );
+    write(
+      extendsRoot,
+      "apps/directory/tsconfig.json",
+      '{"extends":"../../configs/directory"}',
+    );
+    write(
+      extendsRoot,
+      "apps/mixed/tsconfig.json",
+      '{"extends":[7,"package-config","../../configs/missing","../../configs/cycle-a.json"]}',
+    );
+    for (const output of [
+      "direct-output",
+      "extension-output",
+      "directory-output",
+      "cycle-output",
+    ]) {
+      write(
+        extendsRoot,
+        `${output}/generated.d.ts`,
+        "export declare const generated: string;",
+      );
+    }
+    write(
+      extendsRoot,
+      "apps/mixed/source.ts",
+      "export const source = 'authored';",
+    );
+    TestValidator.equals(
+      "local extends forms, arrays, cycles, and unresolved bases stay bounded",
+      bases(
+        walkSourceFiles(extendsRoot, { extensions: new Set([".ts"]) }),
+      ),
+      ["source.ts"],
+    );
   };
 
 const write = (root: string, file: string, content: string): void => {

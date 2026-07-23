@@ -52,6 +52,13 @@ export namespace ProviderFixtures {
   ): IBulkGraphSession.ISnapshot {
     const languages = props.languages ?? ["typescript"];
     const nodes = props.nodes ?? [];
+    const capabilities = props.capabilities ?? [
+      "universe",
+      "sourceDigests",
+      "diskDigests",
+    ];
+    const provesSources = capabilities.includes("sourceDigests");
+    const provesDisk = capabilities.includes("diskDigests");
     const sources =
       props.sources ??
       new Map(
@@ -69,13 +76,17 @@ export namespace ProviderFixtures {
           ),
         ].map((file) => {
           if (file.startsWith("bundled:///")) {
-            return [file, { checkerDigest: "", diskDigest: "" }];
+            return [
+              file,
+              {
+                checkerDigest: provesSources ? sha256(file) : "",
+                diskDigest: "",
+              },
+            ];
           }
-          let digest = "";
+          let diskDigest = "";
           try {
-            digest = createHash("sha256")
-              .update(fs.readFileSync(file))
-              .digest("hex");
+            diskDigest = sha256(fs.readFileSync(file));
           } catch {
             // A deliberately synthetic fixture can name a file without
             // materializing it; tests that commit a resident generation create
@@ -83,7 +94,14 @@ export namespace ProviderFixtures {
           }
           return [
             file,
-            { checkerDigest: digest, diskDigest: digest },
+            {
+              checkerDigest: provesSources
+                ? diskDigest === ""
+                  ? sha256(file)
+                  : diskDigest
+                : "",
+              diskDigest: provesDisk ? diskDigest : "",
+            },
           ];
         }),
       );
@@ -102,11 +120,15 @@ export namespace ProviderFixtures {
         toolVersion: "1.0.0",
         compilerVersion: "1.0.0",
         protocolVersion: 1,
-        universe: props.universe ?? "universe-1",
-        capabilities: props.capabilities ?? [],
+        universe: sha256(props.universe ?? "universe-1"),
+        capabilities,
       },
       warnings: props.warnings ?? [],
     };
+  }
+
+  function sha256(value: string | Buffer): string {
+    return createHash("sha256").update(value).digest("hex");
   }
 
   export interface ISessionProps {

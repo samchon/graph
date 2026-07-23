@@ -64,8 +64,9 @@ if (strict && provenance === undefined) {
 }
 if (
   provenance !== undefined &&
-  (provenance.authority !== "compiler" ||
-    provenance.producer.tool !== experiment.strictProvider ||
+  (provenance.authority !== (experiment.strictAuthority ?? "compiler") ||
+    provenance.producer.tool !==
+      (experiment.strictTool ?? experiment.strictProvider) ||
     provenance.producer.version === "" ||
     provenance.producer.compiler === "" ||
     (experiment.requiredCapabilities ?? []).some(
@@ -92,6 +93,7 @@ for (const kind of experiment.semanticEdges ?? []) {
   }
 }
 const nodeFiles = new Map(dump.nodes.map((node) => [node.id, node.file]));
+const crossFileEdge = experiment.crossFileEdge ?? "calls";
 const crossFileCalls = dump.edges.filter(
   (edge) =>
     edge.kind === "calls" &&
@@ -99,9 +101,16 @@ const crossFileCalls = dump.edges.filter(
     nodeFiles.get(edge.to) !== undefined &&
     nodeFiles.get(edge.from) !== nodeFiles.get(edge.to),
 ).length;
-if (strict && crossFileCalls === 0) {
+const crossFileRelationships = dump.edges.filter(
+  (edge) =>
+    edge.kind === crossFileEdge &&
+    nodeFiles.get(edge.from) !== undefined &&
+    nodeFiles.get(edge.to) !== undefined &&
+    nodeFiles.get(edge.from) !== nodeFiles.get(edge.to),
+).length;
+if (strict && crossFileRelationships === 0) {
   throw new Error(
-    `${experiment.language}: strict corpus produced no cross-file call`,
+    `${experiment.language}: strict corpus produced no cross-file ${crossFileEdge} relationship`,
   );
 }
 console.log(`${experiment.language}: ${dump.nodes.length} nodes, ${dump.edges.length} edges (indexer=${dump.indexer}).`);
@@ -126,6 +135,7 @@ const result = {
   provenance,
   edgeKindCounts,
   crossFileCalls,
+  crossFileRelationships,
   lifecycle: lifecycle?.rows,
   warnings,
   sampleNodes: dump.nodes.slice(0, 20).map((node) => ({

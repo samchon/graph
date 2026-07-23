@@ -161,6 +161,7 @@ export const test_sidecar_session_enforces_the_common_semantic_contract =
         [],
       );
       await noDigestClaims.close();
+      write(payload, snapshotOf(root, source));
 
       const boundedStdout = sessionOf(root, payload, { maxStdoutBytes: 1 });
       await boundedStdout.close();
@@ -346,7 +347,7 @@ function snapshotOf(root: string, source: string): ISidecarSnapshot {
       protocolVersion: 1,
     },
     universe: digest("go-build"),
-    capabilities: ["sourceDigests", "diskDigests"],
+    capabilities: ["universe", "sourceDigests", "diskDigests"],
     sources: [
       ...sourceRows(source),
       {

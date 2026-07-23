@@ -3,12 +3,15 @@
 // transform); keep the two in sync. The CLI reduces in Node before serving, so
 // the browser viewer only ever renders a ready `{ nodes, links }`.
 
+import { fileOfNodeId } from "./utils/fileOfNodeId";
+
 export interface RawNode {
   id: string;
   name: string;
   kind: string;
   file: string;
   external?: boolean;
+  ignored?: boolean;
 }
 
 export interface RawEdge {
@@ -45,6 +48,7 @@ export interface ViewerPayload {
     nodes: number;
     links: number;
     droppedExternal: number;
+    droppedIgnored: number;
     droppedByCap: number;
   };
   nodes: ViewerNode[];
@@ -74,6 +78,10 @@ function directoryOf(file: string): string {
 }
 
 function commonRoot(directories: string[]): string {
+  /* c8 ignore start -- the only caller first proves that the first absolute
+   * project file exists, so its mapped directory list cannot be empty. */
+  if (directories.length === 0) return "";
+  /* c8 ignore stop */
   let parts = posix(directories[0]!).split("/");
   const caseInsensitive = directories.every(isWindowsPath);
   for (const directory of directories.slice(1)) {
@@ -93,15 +101,10 @@ function commonRoot(directories: string[]): string {
   return parts.join("/");
 }
 
-// A null root means at least one project identity is already relative. Preserve
-// those current identities, while still sanitizing an absolute compiler-loaded
-// sibling through the same outside-root policy as a legacy dump.
+// A null root means schema-v6 coordinates are already project-relative.
 function relativize(file: string, root: string | null): string {
   const normalized = posix(file);
-  if (root === null)
-    return isAbsolute(normalized)
-      ? outsideRootPath(normalized)
-      : normalized;
+  if (root === null) return normalized;
   const normalizedRoot = posix(root);
   const r = normalizedRoot === "/" ? "/" : normalizedRoot.replace(/\/+$/, "");
   const caseInsensitive = isWindowsPath(normalized) && isWindowsPath(r);
@@ -116,14 +119,9 @@ function relativize(file: string, root: string | null): string {
       comparedPath.startsWith(comparedRoot + "/"))
   )
     return normalized.slice(r.length).replace(/^\/+/, "");
-  return outsideRootPath(normalized);
-}
-
-function outsideRootPath(file: string): string {
-  const nodeModules = file.lastIndexOf("node_modules/");
-  if (nodeModules >= 0) return file.slice(nodeModules);
-  const slash = file.lastIndexOf("/");
-  return slash >= 0 ? file.slice(slash + 1) : file;
+  const nodeModules = normalized.lastIndexOf("node_modules/");
+  if (nodeModules >= 0) return normalized.slice(nodeModules);
+  return normalized;
 }
 
 function rewriteId(id: string, root: string | null): string {
@@ -131,9 +129,13 @@ function rewriteId(id: string, root: string | null): string {
   // pre-`#` region is a language + digest, not a path; relativizing it would
   // corrupt the key, so it ships verbatim.
   if (id.startsWith("@v2/") || id.startsWith("@g2/")) return id;
-  const hash = id.indexOf("#");
+  const hash = fileOfNodeId.hash(id);
   if (hash < 0) return id;
-  return relativize(id.slice(0, hash), root) + id.slice(hash);
+  return (
+    fileOfNodeId.escape(
+      relativize(fileOfNodeId.unescape(id.slice(0, hash)), root),
+    ) + id.slice(hash)
+  );
 }
 
 function degreeOf(
@@ -174,25 +176,33 @@ export function reduce(
   {
     maxNodes = 1200,
     keepExternal = false,
-  }: { maxNodes?: number; keepExternal?: boolean } = {},
+    keepIgnored = false,
+  }: {
+    maxNodes?: number;
+    keepExternal?: boolean;
+    keepIgnored?: boolean;
+  } = {},
 ): ViewerPayload {
-  const keptByExternal = raw.nodes.filter((n) => keepExternal || !n.external);
-  // Reroot only when every authored identity is absolute (the legacy dump
-  // contract). A current dump can mix relative project files with canonical
-  // absolute compiler-loaded siblings; that form is handled per file below.
-  const projectFiles = raw.nodes.filter((n) => !n.external).map((n) => n.file);
+  const keep = (node: RawNode): boolean =>
+    (keepExternal || !node.external) && (keepIgnored || !node.ignored);
+  const keptByBoundary = raw.nodes.filter(keep);
+  // Reroot only a legacy dump whose first authored identity is absolute.
+  // Schema-v6 coordinates are already relative and pass through intact.
+  const projectFiles = raw.nodes
+    .filter((n) => !n.external && !n.ignored)
+    .map((n) => n.file);
   const root =
-    projectFiles.length > 0 && projectFiles.every(isAbsolute)
-      ? commonRoot(projectFiles.map(directoryOf))
+    projectFiles.length > 0 && isAbsolute(projectFiles[0]!)
+      ? commonRoot(projectFiles.filter(isAbsolute).map(directoryOf))
       : null;
 
-  const liveIds = new Set(keptByExternal.map((n) => n.id));
+  const liveIds = new Set(keptByBoundary.map((n) => n.id));
   const liveEdges = raw.edges.filter(
     (e) => liveIds.has(e.from) && liveIds.has(e.to),
   );
 
-  const degree = degreeOf(keptByExternal, liveEdges);
-  let kept = keptByExternal;
+  const degree = degreeOf(keptByBoundary, liveEdges);
+  let kept = keptByBoundary;
   let droppedByCap = 0;
   if (kept.length > maxNodes) {
     kept = [...kept]
@@ -200,7 +210,7 @@ export function reduce(
       /* c8 ignore next */
       .sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0))
       .slice(0, maxNodes);
-    droppedByCap = keptByExternal.length - kept.length;
+    droppedByCap = keptByBoundary.length - kept.length;
   }
 
   const keptIds = new Set(kept.map((n) => n.id));
@@ -239,7 +249,12 @@ export function reduce(
       rawEdges: raw.edges.length,
       nodes: nodes.length,
       links: links.length,
-      droppedExternal: raw.nodes.length - keptByExternal.length,
+      droppedExternal: keepExternal
+        ? 0
+        : raw.nodes.filter((node) => node.external).length,
+      droppedIgnored: keepIgnored
+        ? 0
+        : raw.nodes.filter((node) => node.ignored && !node.external).length,
       droppedByCap,
     },
     nodes,

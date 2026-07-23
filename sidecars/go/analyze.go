@@ -10,6 +10,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,6 +34,7 @@ type collector struct {
 	checkerConflicts  map[string]bool
 	checkerMu         sync.Mutex
 	unresolved        int
+	conflict          error
 }
 
 type unit struct {
@@ -116,6 +118,9 @@ func analyzeGo(
 	result.addRelationships(units)
 	for _, group := range unitGroups {
 		result.addImplementations(namedTypes(group))
+	}
+	if result.conflict != nil {
+		return nil, result.conflict
 	}
 	return result, nil
 }
@@ -268,7 +273,7 @@ func (c *collector) addContainers(units []unit) {
 	}
 	sort.Strings(paths)
 	for _, pkgPath := range paths {
-		id := semanticID("package", "package:"+pkgPath, pkgPath, false)
+		id := semanticID("package", "package:"+pkgPath, pkgPath, "")
 		c.packageIDs[pkgPath] = id
 		c.addNode(node{
 			ID: id, Kind: "package", Language: "go", Name: packageNames[pkgPath],
@@ -278,7 +283,12 @@ func (c *collector) addContainers(units []unit) {
 	for index := range units {
 		current := &units[index]
 		current.packageID = c.packageIDs[current.pkg.PkgPath]
-		current.fileID = semanticID("file", "file:"+current.fileName, current.fileName, false)
+		current.fileID = semanticID(
+			"file",
+			"file:"+current.fileName,
+			filepath.Base(current.fileName),
+			"",
+		)
 		c.addNode(node{
 			ID: current.fileID, Kind: "file", Language: "go", Name: filepath.Base(current.fileName),
 			File: current.fileName, External: false,
@@ -426,7 +436,7 @@ func (c *collector) addObjectNode(
 	extraModifiers ...string,
 ) string {
 	symbol := objectSymbol(object, qualified)
-	id := semanticID(kind, symbol, name, false)
+	id := semanticID(kind, symbol, qualified, "")
 	exported := object.Exported() && kind != "parameter" && !(kind == "type" && owner != nil)
 	modifiers := []string{}
 	if kind != "parameter" {
@@ -768,7 +778,12 @@ func (c *collector) addClosure(current *unit, owner string, literal *ast.FuncLit
 	qualified += "." + name
 	symbol := owner + "::" + current.fileName + "::" + strconv.Itoa(position.Offset)
 	symbol += "::" + c.sources[current.fileName].CheckerDigest
-	id := semanticID("function", symbol, name, true)
+	id := semanticID(
+		"function",
+		symbol,
+		qualified,
+		c.sources[current.fileName].CheckerDigest,
+	)
 	c.addNode(node{
 		ID: id, Kind: "function", Language: "go", Name: name, QualifiedName: qualified,
 		File: current.fileName, External: false, Closure: true,
@@ -779,9 +794,16 @@ func (c *collector) addClosure(current *unit, owner string, literal *ast.FuncLit
 }
 
 func (c *collector) addNode(value node) {
-	if _, exists := c.nodes[value.ID]; !exists {
-		c.nodes[value.ID] = value
+	if existing, exists := c.nodes[value.ID]; exists {
+		if !reflect.DeepEqual(existing, value) && c.conflict == nil {
+			c.conflict = fmt.Errorf(
+				"conflicting Go facts derive the same semantic node id %s",
+				value.ID,
+			)
+		}
+		return
 	}
+	c.nodes[value.ID] = value
 }
 
 func (c *collector) addEdge(value edge) {
@@ -838,7 +860,7 @@ func (c *collector) externalObject(object types.Object, symbol string) string {
 		packagePath = object.Pkg().Path()
 	}
 	qualified := packagePath + "." + object.Name()
-	id := semanticID("external_symbol", symbol, object.Name(), false)
+	id := semanticID("external_symbol", symbol, qualified, "")
 	c.addNode(node{
 		ID: id, Kind: "external_symbol", Language: "go", Name: object.Name(),
 		QualifiedName: qualified, File: "bundled:///go/" + packagePath,
@@ -848,7 +870,12 @@ func (c *collector) externalObject(object types.Object, symbol string) string {
 }
 
 func (c *collector) externalPackage(packagePath string) string {
-	id := semanticID("external_symbol", "external-package:"+packagePath, packagePath, false)
+	id := semanticID(
+		"external_symbol",
+		"external-package:"+packagePath,
+		packagePath,
+		"",
+	)
 	name := packagePath
 	if slash := strings.LastIndex(packagePath, "/"); slash >= 0 {
 		name = packagePath[slash+1:]
@@ -870,11 +897,13 @@ func (c *collector) evidence(pkg *packages.Package, positioned ast.Node) *eviden
 	result := &evidence{
 		File: c.fileIdentity(start.Filename), StartLine: start.Line, StartCol: start.Column,
 	}
-	if end.Line != start.Line {
-		result.EndLine = end.Line
-	}
 	if end.Column > 0 {
+		// The common span wire requires the end line whenever an end column is
+		// present, including a same-line declaration.
+		result.EndLine = end.Line
 		result.EndCol = end.Column
+	} else if end.Line != start.Line {
+		result.EndLine = end.Line
 	}
 	return result
 }

@@ -33,7 +33,7 @@ export const test_workflows_use_current_core_action_runtimes = () => {
     [
       ...Array(6).fill("checkout@v7"),
       ...Array(2).fill("download-artifact@v8"),
-      ...Array(2).fill("setup-go@v7"),
+      ...Array(3).fill("setup-go@v7"),
       ...Array(5).fill("setup-node@v7"),
       ...Array(2).fill("upload-artifact@v7"),
     ].sort(),
@@ -55,6 +55,55 @@ export const test_workflows_use_current_core_action_runtimes = () => {
     occurrences(release, "uses: actions/download-artifact@v8"),
     2,
   );
+  TestValidator.predicate(
+    "exact local tarballs execute before their artifact can be uploaded",
+    release.indexOf("node build/release-smoke.mjs") <
+      release.indexOf("uses: actions/upload-artifact@v7"),
+  );
+  TestValidator.predicate(
+    "a production advisory fails before either publication job",
+    release.indexOf("pnpm audit --prod") <
+      release.indexOf("publish-graph-sitter:"),
+  );
+  TestValidator.predicate(
+    "the packaged Go source fallback uses a pinned workflow-local SCIP producer",
+    release.includes(
+      "go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.7",
+    ) &&
+      release.includes("RELEASE_SCIP_GO:"),
+  );
+
+  const releasePack = fs.readFileSync(
+    path.join(GraphPaths.repositoryRoot, "build", "release-pack.mjs"),
+    "utf8",
+  );
+  const releasePublish = fs.readFileSync(
+    path.join(GraphPaths.repositoryRoot, "build", "release-publish.mjs"),
+    "utf8",
+  );
+  const releaseSmoke = fs.readFileSync(
+    path.join(GraphPaths.repositoryRoot, "build", "release-smoke.mjs"),
+    "utf8",
+  );
+  TestValidator.predicate(
+    "archive inspection never passes an absolute drive path to tar",
+    [releasePack, releasePublish].every(
+      (script) =>
+        script.includes("path.basename(tarball)") &&
+        script.includes("cwd: path.dirname(tarball)"),
+    ),
+  );
+  for (const surface of [
+    "MCP handshake",
+    "packaged viewer",
+    "packaged Go source fallback",
+    "graph-sitter tarballs",
+  ]) {
+    TestValidator.predicate(
+      `the exact-artifact smoke proves ${surface}`,
+      releaseSmoke.includes(surface),
+    );
+  }
 };
 
 function occurrences(text: string, needle: string): number {

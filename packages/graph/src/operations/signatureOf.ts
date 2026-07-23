@@ -13,6 +13,8 @@ export function signatureOf(
   graph: SamchonGraphMemory,
   node: ISamchonGraphNode,
 ): string | undefined {
+  const owned = node.signature?.trim();
+  if (owned !== undefined && owned !== "") return owned;
   const evidence = node.evidence;
   const lines =
     evidence === undefined ? undefined : graph.source.lines(evidence.file);

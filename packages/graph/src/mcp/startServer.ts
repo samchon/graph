@@ -7,9 +7,9 @@ import { discoverLanguages } from "../indexer/discoverLanguages";
 import { IBuildGraphOptions } from "../indexer/IBuildGraphOptions";
 import { IResidentGraphSource } from "../indexer/IResidentGraphSource";
 import { normalizeRequestedLanguages } from "../indexer/normalizeRequestedLanguages";
+import { parseGraphDump } from "../indexer/parseGraphDump";
 import { SamchonGraphMemory } from "../SamchonGraphMemory";
 import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
-import { ISamchonGraphDump } from "../structures";
 import { GraphLanguage } from "../typings";
 import { createResidentCloseHandler } from "./createResidentCloseHandler";
 import { createResidentGraphMemorySource } from "./createResidentGraphMemorySource";
@@ -49,9 +49,9 @@ export async function startServer(
   let languages: GraphLanguage[];
   let resident: IResidentGraphSource | undefined;
   if (options.graphFile !== undefined) {
-    const dump = JSON.parse(
-      fs.readFileSync(options.graphFile, "utf8"),
-    ) as ISamchonGraphDump;
+    const dump = parseGraphDump(
+      JSON.parse(fs.readFileSync(options.graphFile, "utf8")),
+    );
     languages = dump.languages;
     source = once(() =>
       SamchonGraphMemory.from(dump, SamchonGraphSourceReader.none(dump.project)),

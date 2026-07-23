@@ -2,8 +2,10 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-import { GraphEdgeKind } from "../../typings";
+import { GraphEdgeKind, GraphLanguage } from "../../typings";
 import { normalizePath } from "../../utils/normalizePath";
+import { spawnableCommand } from "../../utils/spawnableCommand";
+import { IGraphProvider } from "../IGraphProvider";
 import { providerInputFiles } from "../providerInputFiles";
 import { resolveProviderCommand } from "../resolveProviderCommand";
 import { sidecarProvider } from "../sidecar";
@@ -59,19 +61,28 @@ export const goGraphProvider = Object.assign(
   },
 );
 
-function goProviderConfiguration(root: string): string[] {
-  return goConfiguration(root, process.env);
+function goProviderConfiguration(
+  root: string,
+  _languages?: readonly GraphLanguage[],
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  return goConfiguration(root, env);
 }
 
 function resolveGoGraphCommand(
   root: string,
   env: NodeJS.ProcessEnv,
-): { command: string; args: string[] } | undefined {
+): IGraphProvider.ICommand | undefined {
   const installed = resolveProviderCommand(root, env, {
     command: "samchon-graph-go",
     override: "SAMCHON_GRAPH_GO",
   });
-  if (installed !== undefined) return installed;
+  if (installed !== undefined) {
+    return spawnableCommand.append(
+      { ...installed, args: [...installed.args] },
+      ["--project", path.resolve(root)],
+    );
+  }
   const source = path.resolve(__dirname, "..", "..", "..", "sidecars", "go");
   if (!fs.existsSync(path.join(source, "go.mod"))) return undefined;
   const go = resolveProviderCommand(root, env, {
@@ -80,10 +91,17 @@ function resolveGoGraphCommand(
   });
   return go === undefined
     ? undefined
-    : {
-        command: go.command,
-        args: [...go.args, "-C", source, "run", "."],
-      };
+    : spawnableCommand.append(
+        { ...go, args: [...go.args] },
+        [
+          "-C",
+          source,
+          "run",
+          ".",
+          "--project",
+          path.resolve(root),
+        ],
+      );
 }
 
 function goBuildInputs(root: string): string[] {
@@ -109,11 +127,12 @@ function embeddedInputs(root: string, inputs: readonly string[]): string[] {
     let body: string;
     try {
       body = fs.readFileSync(absolute, "utf8");
-      /* c8 ignore next 2 -- an input disappearing between the source walk and
+      /* c8 ignore start -- an input disappearing between the source walk and
        * this read is detected by the enclosing generation transaction. */
     } catch {
       continue;
     }
+    /* c8 ignore stop */
     const packageRoot = path.dirname(absolute);
     const directives =
       body.match(/^[\t ]*\/\/go:embed[\t ]+.+$/gm) ?? [];
@@ -198,22 +217,24 @@ function goConfiguration(
     command: "go",
     override: "SAMCHON_GRAPH_GO_TOOLCHAIN",
   });
-  if (go === undefined) return [...rows, "go-env=unavailable"];
-  const probed = spawnSync(
-    go.command,
-    [...go.args, "env", "-json", ...GO_PROBED_ENVIRONMENT_KEYS],
-    {
-      cwd: root,
-      env,
-      encoding: "utf8",
-      maxBuffer: 1024 * 1024,
-      timeout: 10_000,
-      windowsHide: true,
-    },
-  );
+  const probed =
+    go === undefined
+      ? undefined
+      : spawnSync(
+          go.command,
+          [...go.args, "env", "-json", ...GO_PROBED_ENVIRONMENT_KEYS],
+          {
+            cwd: root,
+            env,
+            encoding: "utf8",
+            maxBuffer: 1024 * 1024,
+            timeout: 10_000,
+            windowsHide: true,
+          },
+        );
   return [
     ...rows,
-    probed.status === 0
+    probed?.status === 0
       ? `go-env=${probed.stdout.trim()}`
       : "go-env=unavailable",
     toolVersion(
@@ -235,18 +256,28 @@ function toolVersion(
 ): string {
   const resolved = resolveProviderCommand(root, env, { command, override });
   if (resolved === undefined) return `${command}=unavailable`;
-  const result = spawnSync(resolved.command, [...resolved.args, ...args], {
+  const spawnable = spawnableCommand.append(
+    { ...resolved, args: [...resolved.args] },
+    args,
+  );
+  const result = spawnSync(spawnable.command, spawnable.args, {
     cwd: root,
     env,
     encoding: "utf8",
     maxBuffer: 1024 * 1024,
     timeout: 10_000,
+    windowsVerbatimArguments:
+      spawnable.windowsVerbatimArguments,
     windowsHide: true,
   });
-  const output = result.stdout.trim();
+  /* c8 ignore start -- an executed spawnSync with UTF-8 encoding returns a
+   * string; the null arm exists only for Node's broader result type. Success
+   * and unavailable results remain asserted by provider-resolution tests. */
+  const output = String(result.stdout ?? "").trim();
   return result.status === 0 && output !== ""
     ? `${command}=${output}`
     : `${command}=unavailable`;
+  /* c8 ignore stop */
 }
 
 const GO_BUILD_FILE_NAMES: readonly string[] = [

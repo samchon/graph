@@ -35,9 +35,8 @@ export interface ISamchonGraphNode {
   qualifiedName?: string;
 
   /**
-   * Graph file identity of the declaration. Project-owned files are
-   * project-relative; compiler-loaded files outside the root keep normalized
-   * absolute identities, and virtual libraries use `bundled:///`.
+   * Schema-v6 graph file identity of the declaration, relative to the dump
+   * project (including `../` siblings) or `bundled:///` for a virtual library.
    */
   file: string;
 
@@ -114,6 +113,20 @@ export interface ISamchonGraphNode {
    * (`@Controller`, `@Get`) a consumer interprets without re-parsing source.
    */
   decorators?: ISamchonGraphDecorator[];
+
+  /**
+   * The declaration head, cut by the producer where the producer says the body
+   * opens.
+   *
+   * Absent when the producer could not bound the head, in which case a consumer
+   * falls back to reading the declaration span. That fallback is a line scan,
+   * and a physical line is not a declaration boundary: it leaks implementation
+   * text when a declaration shares its line with its body, and it stops early
+   * when the head itself contains a brace — a type-literal parameter, an object
+   * return type, a destructured parameter. Prefer this field wherever it is
+   * present.
+   */
+  signature?: string;
 
   /** The declaration span, for display and signatures. */
   evidence?: ISamchonGraphEvidence;

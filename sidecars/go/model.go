@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -75,14 +74,53 @@ type evidence struct {
 	EndCol    int    `json:"endCol,omitempty"`
 }
 
-func semanticID(kind, symbol, display string, generation bool) string {
+func semanticID(kind, symbol, display, generation string) string {
 	prefix := "@v2"
-	if generation {
+	stability := "persistent"
+	if generation != "" {
 		prefix = "@g2"
+		stability = "generation"
 	}
-	digest := sha256.Sum256([]byte("go\x00" + kind + "\x00" + symbol))
-	return prefix + "/go/" + hex.EncodeToString(digest[:]) + "#" +
-		url.QueryEscape(display) + ":" + kind
+	fields := [][2]string{
+		{"version", "2"},
+		{"language", "go"},
+		{"role", kind},
+		{"symbol", symbol},
+		{"stability", stability},
+	}
+	if generation != "" {
+		fields = append(fields, [2]string{"generation", generation})
+	}
+	fields = append(fields, [2]string{"display", display})
+	hash := sha256.New()
+	for _, field := range fields {
+		hash.Write([]byte(lengthPrefix(field[0])))
+		hash.Write([]byte(lengthPrefix(field[1])))
+	}
+	return prefix + "/go/" + hex.EncodeToString(hash.Sum(nil)) + "#" +
+		encodeURIComponent(display) + ":" + kind
+}
+
+func lengthPrefix(value string) string {
+	return strconv.Itoa(len([]byte(value))) + ":" + value
+}
+
+func encodeURIComponent(value string) string {
+	const hexadecimal = "0123456789ABCDEF"
+	var encoded strings.Builder
+	for _, value := range []byte(value) {
+		if (value >= 'A' && value <= 'Z') ||
+			(value >= 'a' && value <= 'z') ||
+			(value >= '0' && value <= '9') ||
+			strings.ContainsRune("-_.!~*'()", rune(value)) {
+			encoded.WriteByte(value)
+			continue
+		}
+		encoded.WriteByte('%')
+		encoded.WriteByte(hexadecimal[value>>4])
+		encoded.WriteByte(hexadecimal[value&0x0f])
+	}
+	return encoded.String()
 }
 
 func digestBytes(body []byte) string {

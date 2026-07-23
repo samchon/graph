@@ -15,6 +15,7 @@ import {
   GraphProviderAuthority,
 } from "../../typings";
 import { IBulkGraphSession } from "../IBulkGraphSession";
+import { fileOfNodeId } from "../../utils/fileOfNodeId";
 import { ITtscGraphSnapshot } from "./ITtscGraphSnapshot";
 
 /**
@@ -160,6 +161,9 @@ export function adaptTtscGraphDump(
     if (raw.decorators !== undefined) {
       node.decorators = decoratorsOf(raw.decorators, id);
     }
+    optionalString(raw.signature, `${id}.signature`, (value) => {
+      node.signature = value;
+    });
     if (raw.evidence !== undefined) {
       node.evidence = evidenceOf(raw.evidence, file, `${id}.evidence`, true);
       factFiles.add(node.evidence.file);
@@ -811,45 +815,30 @@ function validateGraphFile(
   allowBundled = false,
 ): void {
   if (allowBundled && isNormalizedBundledFile(file)) return;
-  if (isNormalizedAbsoluteFile(file)) return;
+  const segments = file.split("/");
   if (
     file === "" ||
     file.includes("\\") ||
+    /^[A-Za-z]:\//.test(file) ||
     path.posix.normalize(file) !== file ||
-    file.split("/").some((segment) =>
-      segment === "" || segment === "." || segment === ".."
+    path.posix.isAbsolute(file) ||
+    segments.some((segment, index) =>
+      segment === "" ||
+      segment === "." ||
+      (segment === ".." &&
+        segments.slice(index + 1).every((rest) => rest === ".."))
     )
   ) {
     throw new Error(
-      `ttscgraph: ${label} must be a normalized project-relative file: ${file}`,
+      `ttscgraph: ${label} must be a normalized schema-v6 path relative to the project: ${file}`,
     );
   }
 }
 
 /**
- * Canonical ttsc keeps the producer's normalized absolute identity for a file
- * loaded outside the selected project root (for example a sibling workspace
- * package declaration). It is a valid fact identity but not a display-source
- * capability: {@link SamchonGraphSourceReader} separately confines reads to
- * the project root.
+ * Virtual compiler libraries are the only non-relative schema-v6 identity.
+ * They retain their `bundled:///` scheme and can never traverse.
  */
-function isNormalizedAbsoluteFile(file: string): boolean {
-  if (file.includes("\\")) return false;
-  if (/^[A-Za-z]:\//.test(file)) {
-    return path.posix.normalize(file) === file;
-  }
-  if (file.startsWith("//")) {
-    const segments = file.slice(2).split("/");
-    return (
-      segments.length >= 3 &&
-      segments.every(
-        (segment) => segment !== "" && segment !== "." && segment !== "..",
-      )
-    );
-  }
-  return path.posix.isAbsolute(file) && path.posix.normalize(file) === file;
-}
-
 function isNormalizedBundledFile(file: string): boolean {
   if (!file.startsWith(BUNDLED_FILE_PREFIX)) return false;
   const relative = file.slice(BUNDLED_FILE_PREFIX.length);
@@ -865,17 +854,17 @@ function isNormalizedBundledFile(file: string): boolean {
 }
 
 function sourceManifestKey(project: string, file: string): string {
-  return isNormalizedBundledFile(file) || isNormalizedAbsoluteFile(file)
+  return isNormalizedBundledFile(file)
     ? file
     : path.resolve(project, file);
 }
 
 function validateNodeId(id: string, file: string, kind: GraphNodeKind): void {
-  const hash = id.indexOf("#");
+  const parsed = fileOfNodeId.parseLegacy(id);
   if (
-    hash <= 0 ||
-    id.slice(0, hash) !== file ||
-    !id.endsWith(`:${kind}`)
+    parsed === undefined ||
+    parsed.file !== file ||
+    parsed.kind !== kind
   ) {
     throw new Error(
       `ttscgraph: node id does not match its file and kind: ${id}`,

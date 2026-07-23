@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { languageOf } from "../../indexer/languageOf";
+import { GraphLanguage } from "../../typings";
+import { spawnableCommand } from "../../utils/spawnableCommand";
 import { IGraphProvider } from "../IGraphProvider";
 import { providerInputFiles } from "../providerInputFiles";
 import { resolveProviderCommand } from "../resolveProviderCommand";
@@ -62,10 +64,10 @@ function resolveRustScipCommand(
   ) {
     return undefined;
   }
-  return {
-    command: analyzer.command,
-    args: [...analyzer.args, "scip", ".", "--exclude-vendored-libraries"],
-  };
+  return spawnableCommand.append(
+    { ...analyzer, args: [...analyzer.args] },
+    ["scip", ".", "--exclude-vendored-libraries"],
+  );
 }
 
 function rustScipDecoder(
@@ -78,10 +80,10 @@ function rustScipDecoder(
       "rust-analyzer-scip: the SCIP decoder disappeared after provider selection",
     );
   }
-  return {
-    command: decoder.command,
-    args: [...decoder.args, "print", "--json"],
-  };
+  return spawnableCommand.append(
+    { ...decoder, args: [...decoder.args] },
+    ["print", "--json"],
+  );
 }
 
 function rustScipIndexArgs(artifact: string): string[] {
@@ -120,8 +122,12 @@ function isRegularFile(file: string): boolean {
   }
 }
 
-function rustProviderConfiguration(root: string): readonly string[] {
-  return rustScipConfiguration(root, process.env);
+function rustProviderConfiguration(
+  root: string,
+  _languages?: readonly GraphLanguage[],
+  env: NodeJS.ProcessEnv = process.env,
+): readonly string[] {
+  return rustScipConfiguration(root, env);
 }
 
 function rustScipConfiguration(
@@ -179,18 +185,28 @@ function toolVersion(
 ): string {
   const resolved = resolveTool(root, env, command, override);
   if (resolved === undefined) return `${command}=unavailable`;
-  const result = spawnSync(resolved.command, [...resolved.args, ...args], {
+  const spawnable = spawnableCommand.append(
+    { ...resolved, args: [...resolved.args] },
+    args,
+  );
+  const result = spawnSync(spawnable.command, spawnable.args, {
     cwd: root,
     env,
     encoding: "utf8",
     maxBuffer: 1024 * 1024,
     timeout: 10_000,
+    windowsVerbatimArguments:
+      spawnable.windowsVerbatimArguments,
     windowsHide: true,
   });
-  const output = result.stdout.trim();
+  /* c8 ignore start -- an executed spawnSync with UTF-8 encoding returns a
+   * string; the null arm exists only for Node's broader result type. Success
+   * and unavailable results remain asserted by provider-resolution tests. */
+  const output = String(result.stdout ?? "").trim();
   return result.status === 0 && output !== ""
     ? `${command}=${output}`
     : `${command}=unavailable`;
+  /* c8 ignore stop */
 }
 
 function resolveTool(

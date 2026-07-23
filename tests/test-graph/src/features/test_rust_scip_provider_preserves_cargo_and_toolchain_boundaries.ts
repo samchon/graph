@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { rustScipProvider } from "@samchon/graph";
 
+import { spawnableCommand } from "../../../../packages/graph/src/utils/spawnableCommand";
 import { GraphPaths } from "../internal/GraphPaths";
 
 /** The stock Rust SCIP lane remains a complete, truthful navigation slice. */
@@ -251,10 +252,8 @@ function platformExecutable(directory: string, command: string): string {
 function expectedCommand(
   executable: string,
   args: readonly string[] = [],
-): { command: string; args: string[] } {
-  return process.platform === "win32"
-    ? { command: "cmd.exe", args: ["/d", "/s", "/c", executable, ...args] }
-    : { command: executable, args: [...args] };
+): ReturnType<typeof spawnableCommand> {
+  return spawnableCommand(executable, args);
 }
 
 function pathEnvironment(value: string): NodeJS.ProcessEnv {

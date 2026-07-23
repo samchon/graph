@@ -31,6 +31,7 @@ const PUBLIC_GRAPH_DIR = path.join(REPO_ROOT, "tests", "benchmark", "results", "
 
 /** Longest shared prefix of POSIX-normalized directories. */
 function commonRoot(directories) {
+  if (directories.length === 0) return "";
   let parts = posix(directories[0]).split("/");
   const caseInsensitive = directories.every(isWindowsPath);
   for (const directory of directories.slice(1)) {
@@ -80,10 +81,7 @@ function directoryOf(file) {
  */
 function relativize(file, root) {
   const normalized = posix(file);
-  if (root === null)
-    return isAbsolute(normalized)
-      ? outsideRootPath(normalized)
-      : normalized;
+  if (root === null) return normalized;
   const normalizedRoot = posix(root);
   const r = normalizedRoot === "/" ? "/" : normalizedRoot.replace(/\/+$/, "");
   const caseInsensitive = isWindowsPath(normalized) && isWindowsPath(r);
@@ -98,14 +96,9 @@ function relativize(file, root) {
       comparedPath.startsWith(comparedRoot + "/"))
   )
     return normalized.slice(r.length).replace(/^\/+/, "");
-  return outsideRootPath(normalized);
-}
-
-function outsideRootPath(file) {
-  const nodeModules = file.lastIndexOf("node_modules/");
-  if (nodeModules >= 0) return file.slice(nodeModules);
-  const slash = file.lastIndexOf("/");
-  return slash >= 0 ? file.slice(slash + 1) : file;
+  const nodeModules = normalized.lastIndexOf("node_modules/");
+  if (nodeModules >= 0) return normalized.slice(nodeModules);
+  return normalized;
 }
 
 /**
@@ -117,9 +110,50 @@ function rewriteId(id, root) {
   // pre-`#` region is a language + digest, not a path; relativizing it would
   // corrupt the key, so it ships verbatim.
   if (id.startsWith("@v2/") || id.startsWith("@g2/")) return id;
-  const hash = id.indexOf("#");
+  const hash = graphNodeIdHash(id);
   if (hash < 0) return id;
-  return relativize(id.slice(0, hash), root) + id.slice(hash);
+  return (
+    escapeGraphNodeIdPart(
+      relativize(unescapeGraphNodeIdPart(id.slice(0, hash)), root),
+    ) + id.slice(hash)
+  );
+}
+
+function escapeGraphNodeIdPart(value) {
+  return value.replaceAll("\\", "\\\\").replaceAll("#", "\\#");
+}
+
+function unescapeGraphNodeIdPart(value) {
+  let result = "";
+  for (let index = 0; index < value.length; index++) {
+    const next = value[index + 1];
+    if (value[index] === "\\" && next !== undefined) {
+      if (next === "#" || (next === "\\" && !legacyUNCStart(value, index))) {
+        result += next;
+        index++;
+        continue;
+      }
+    }
+    result += value[index];
+  }
+  return result;
+}
+
+function legacyUNCStart(value, index) {
+  return (
+    index === 0 && value.length > 2 && value[2] !== "\\" && value[2] !== "#"
+  );
+}
+
+function graphNodeIdHash(id) {
+  for (let index = 0; index < id.length; index++) {
+    if (id[index] !== "#") continue;
+    let slashes = 0;
+    for (let slash = index - 1; slash >= 0 && id[slash] === "\\"; slash--)
+      slashes++;
+    if (slashes % 2 === 0) return index;
+  }
+  return -1;
 }
 
 /**
@@ -158,15 +192,14 @@ export function reduce(
   const keep = (n) =>
     (keepExternal || !n.external) && (keepIgnored || !n.ignored);
   const keptBoundary = raw.nodes.filter(keep);
-  // Reroot only when every authored identity is absolute (the legacy dump
-  // contract). A current dump can mix relative project files with canonical
-  // absolute compiler-loaded siblings; that form is handled per file below.
+  // Reroot only a legacy dump whose first authored identity is absolute.
+  // Schema-v6 coordinates are already relative and pass through intact.
   const projectFiles = raw.nodes
     .filter((n) => !n.external && !n.ignored)
     .map((n) => n.file);
   const root =
-    projectFiles.length > 0 && projectFiles.every(isAbsolute)
-      ? commonRoot(projectFiles.map(directoryOf))
+    projectFiles.length > 0 && isAbsolute(projectFiles[0])
+      ? commonRoot(projectFiles.filter(isAbsolute).map(directoryOf))
       : null;
 
   const liveIds = new Set(keptBoundary.map((n) => n.id));

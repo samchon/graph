@@ -54,7 +54,10 @@ export const test_resident_close_reaches_a_stalled_bulk_refresh = async () => {
   };
   const resident = createResidentGraphSource(
     { cwd: root, languages: ["typescript"] },
-    { buildLspGraph: async () => result },
+    {
+      providers: [],
+      buildLspGraph: async () => result,
+    },
   );
 
   await resident.load();
@@ -100,6 +103,7 @@ export const test_resident_close_reaches_a_stalled_bulk_refresh = async () => {
   const failed = createResidentGraphSource(
     { cwd: root, languages: ["typescript"] },
     {
+      providers: [],
       buildLspGraph: async () => ({
         dump: {
           project: root,

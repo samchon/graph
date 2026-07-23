@@ -38,10 +38,15 @@ export function ensureCompileCommands(
     ],
     { timeout: 60_000, stdio: "ignore" },
   );
-  if (result.error !== undefined || result.status !== 0) return undefined;
-  return fs.existsSync(path.join(buildDir, "compile_commands.json"))
-    ? buildDir
-    : undefined;
+  if (
+    result.error !== undefined ||
+    result.status !== 0 ||
+    !fs.existsSync(path.join(buildDir, "compile_commands.json"))
+  ) {
+    fs.rmSync(buildDir, { recursive: true, force: true });
+    return undefined;
+  }
+  return buildDir;
 }
 
 function hasCompileCommands(root: string): boolean {

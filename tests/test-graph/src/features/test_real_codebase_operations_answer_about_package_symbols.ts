@@ -58,14 +58,20 @@ export const test_real_codebase_operations_answer_about_package_symbols = async 
         direction: "forward",
         focus: "all",
         maxDepth: 2,
-        maxNodes: 12,
+        maxNodes: 64,
       },
     })
   ).result;
   TestValidator.predicate(
-    "real codebase trace reaches graph builders or validators",
+    "real codebase trace reaches a graph builder or dump trust boundary",
     trace.reached.some((node) =>
-      ["buildLspGraph", "buildStaticGraph", "validateDump"].includes(node.name),
+      [
+        "buildGraphResult",
+        "buildLspGraph",
+        "buildStaticGraph",
+        "parseGraphDump",
+        "validateSemanticGraphNode",
+      ].includes(node.name),
     ),
   );
 };

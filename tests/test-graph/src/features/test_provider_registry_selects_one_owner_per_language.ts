@@ -1,8 +1,10 @@
 import { TestValidator } from "@nestia/e2e";
 import {
   GRAPH_PROVIDERS,
+  LANGUAGE_SPECS,
   assertGraphSnapshotContract,
   buildLspGraph,
+  compareOrdinal,
   dumpProvenanceOf,
   graphSnapshotDigests,
   selectGraphProviders,
@@ -300,6 +302,33 @@ async function assertSelection(): Promise<void> {
       go.languages[0] === "go" &&
       typeof go.buildInputs === "function",
   );
+  const owners = new Map<string, string[]>();
+  for (const provider of GRAPH_PROVIDERS) {
+    for (const language of provider.languages) {
+      owners.set(language, [...(owners.get(language) ?? []), provider.name]);
+    }
+  }
+  TestValidator.equals(
+    "the shipped registry assigns exactly one strict owner to every public language",
+    [...owners.entries()].sort(([x], [y]) => compareOrdinal(x, y)),
+    LANGUAGE_SPECS.map((spec) => spec.language)
+      .sort(compareOrdinal)
+      .map((language) => [language, [owners.get(language)?.[0]]]),
+  );
+  TestValidator.equals(
+    "C and C++ share one compilation-universe provider",
+    owners.get("c"),
+    owners.get("cpp"),
+  );
+  TestValidator.equals(
+    "the JVM languages share one build-universe provider",
+    [owners.get("java"), owners.get("kotlin"), owners.get("scala")],
+    [
+      ["scip-java"],
+      ["scip-java"],
+      ["scip-java"],
+    ],
+  );
 }
 
 async function assertSnapshotContract(): Promise<void> {
@@ -320,6 +349,50 @@ async function assertSnapshotContract(): Promise<void> {
   // Admission is proved by this not throwing; asserting a literal `true`
   // afterwards would read like a check while testing nothing.
   assertGraphSnapshotContract(valid, provider, ["cpp", "c"]);
+  assertGraphSnapshotContract(
+    ProviderFixtures.snapshot({
+      languages: ["cpp"],
+      provider: "fake",
+      facts: ["calls"],
+      nodes: [
+        {
+          id: "stdlib.operator",
+          kind: "external_symbol",
+          language: "cpp",
+          name: "operator",
+          file: "",
+          external: true,
+        },
+        {
+          id: "a.cpp",
+          kind: "file",
+          language: "cpp",
+          name: "a.cpp",
+          file: "a.cpp",
+          external: false,
+        },
+      ],
+    }),
+    provider,
+    ["cpp", "c"],
+  );
+  TestValidator.error("a contradictory legacy identity is refused", () =>
+    assertGraphSnapshotContract(
+      ProviderFixtures.snapshot({
+        languages: ["cpp"],
+        provider: "fake",
+        facts: ["calls"],
+        nodes: [
+          {
+            ...node("a.cpp", "run", "cpp"),
+            id: "moved.cpp#run:function",
+          },
+        ],
+      }),
+      provider,
+      ["cpp"],
+    ),
+  );
 
   TestValidator.error("a slice owning no language is refused", () =>
     assertGraphSnapshotContract(
@@ -680,7 +753,7 @@ async function assertDigestsAndProvenance(): Promise<void> {
             name: "run",
             language: "typescript",
             kind: "function",
-            id: "a.ts#run",
+            id: "a.ts#run:function",
           } as ISamchonGraphNode,
         ],
       }),
@@ -773,7 +846,7 @@ async function assertDigestsAndProvenance(): Promise<void> {
       provenance.producer.schemaVersion,
       provenance.producer.protocolVersion,
     ],
-    ["fake-provider", "1.0.0", "1.0.0", 5, 1],
+    ["fake-provider", "1.0.0", "1.0.0", 6, 1],
   );
 }
 
@@ -783,7 +856,7 @@ function node(
   language: ISamchonGraphNode["language"],
 ): ISamchonGraphNode {
   return {
-    id: `${file}#${name}`,
+    id: `${file}#${name}:function`,
     kind: "function",
     language,
     name,

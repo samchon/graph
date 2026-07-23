@@ -3,8 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { GraphLanguage, GraphProviderAuthority } from "../../typings";
+import { fileFromUri } from "../../utils/fileFromUri";
 import { BatchGraphSession } from "../BatchGraphSession";
 import { IBulkGraphSession } from "../IBulkGraphSession";
+import { IGraphProvider } from "../IGraphProvider";
 import { adaptScipIndex } from "./adaptScipIndex";
 import { IScipIndex } from "./IScipIndex";
 import { parseScipIndex } from "./parseScipIndex";
@@ -49,6 +51,9 @@ export class ScipSession implements IBulkGraphSession {
         ? {}
         : { configuration: options.configuration }),
       load: (props) => this.load(props),
+      ...(options.validate === undefined
+        ? {}
+        : { validate: options.validate }),
       ...(options.maxStdoutBytes === undefined
         ? {}
         : { maxStdoutBytes: options.maxStdoutBytes }),
@@ -84,10 +89,7 @@ export class ScipSession implements IBulkGraphSession {
         `${this.options.provider}: SCIP artifact exceeded the ${String(this.maxArtifactBytes)} byte artifact limit`,
       );
     }
-    const json = await props.run(this.options.decode.command, [
-      ...this.options.decode.args,
-      props.artifact,
-    ]);
+    const json = await props.run(this.options.decode, [props.artifact]);
     const index = parseScipIndex(JSON.parse(json), this.options.provider);
     this.assertProjectRoot(index.metadata.projectRoot);
     const adapted = adaptScipIndex({
@@ -174,7 +176,7 @@ export class ScipSession implements IBulkGraphSession {
 
   private assertProjectRoot(projectRoot: string): void {
     const declared = projectRoot.startsWith("file://")
-      ? fileUriToPath(projectRoot)
+      ? fileFromUri(projectRoot)
       : projectRoot;
     if (!samePath(declared, this.root)) {
       throw new Error(
@@ -190,8 +192,8 @@ export namespace ScipSession {
     languages: readonly GraphLanguage[];
     provider: string;
     authority: GraphProviderAuthority;
-    command: { command: string; args: readonly string[] };
-    decode: { command: string; args: readonly string[] };
+    command: IGraphProvider.ICommand;
+    decode: IGraphProvider.ICommand;
     indexArgs: (artifact: string) => string[];
     inputs: () => string[];
     configuration?: () => readonly string[];
@@ -200,6 +202,7 @@ export namespace ScipSession {
     languageOf: (file: string) => GraphLanguage;
     maxStdoutBytes?: number;
     maxArtifactBytes?: number;
+    validate?: (snapshot: IBulkGraphSession.ISnapshot) => void;
   }
 }
 
@@ -208,13 +211,6 @@ const SCIP_SCHEMA_VERSION = 5;
 const SCIP_PROTOCOL_VERSION = 0;
 const SCIP_CAPABILITIES: readonly string[] = ["universe", "diskDigests"];
 const SOURCE_DIGESTS_CAPABILITY = "sourceDigests";
-
-function fileUriToPath(uri: string): string {
-  const withoutScheme = uri
-    .slice("file://".length)
-    .replace(/^\/(?=[a-zA-Z]:)/, "");
-  return decodeURIComponent(withoutScheme);
-}
 
 function samePath(left: string, right: string): boolean {
   const normalizedLeft = path.resolve(left);

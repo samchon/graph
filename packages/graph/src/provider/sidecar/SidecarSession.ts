@@ -7,8 +7,10 @@ import {
   GraphProviderAuthority,
 } from "../../typings";
 import { normalizePath } from "../../utils/normalizePath";
+import { fileFromUri } from "../../utils/fileFromUri";
 import { BatchGraphSession } from "../BatchGraphSession";
 import { IBulkGraphSession } from "../IBulkGraphSession";
+import { IGraphProvider } from "../IGraphProvider";
 import { parseSidecarSnapshot } from "./parseSidecarSnapshot";
 
 /** A strict batch session over the common compiler/analyzer sidecar wire. */
@@ -43,6 +45,9 @@ export class SidecarSession implements IBulkGraphSession {
         ? {}
         : { configuration: options.configuration }),
       load: (props) => this.load(props),
+      ...(options.validate === undefined
+        ? {}
+        : { validate: options.validate }),
       ...(options.maxStdoutBytes === undefined
         ? {}
         : { maxStdoutBytes: options.maxStdoutBytes }),
@@ -136,7 +141,7 @@ export class SidecarSession implements IBulkGraphSession {
 
   private assertProjectRoot(projectRoot: string): void {
     const declared = projectRoot.startsWith("file://")
-      ? fileUriToPath(projectRoot)
+      ? fileFromUri(projectRoot)
       : projectRoot;
     if (!samePath(declared, this.root)) {
       throw new Error(
@@ -153,12 +158,13 @@ export namespace SidecarSession {
     provider: string;
     authority: GraphProviderAuthority;
     facts: readonly GraphEdgeKind[];
-    command: { command: string; args: readonly string[] };
+    command: IGraphProvider.ICommand;
     indexArgs: (artifact: string) => string[];
     inputs: () => string[];
     configuration?: () => readonly string[];
     maxStdoutBytes?: number;
     maxArtifactBytes?: number;
+    validate?: (snapshot: IBulkGraphSession.ISnapshot) => void;
   }
 }
 
@@ -238,13 +244,6 @@ function sourceIdentity(root: string, file: string): string {
     }
   }
   return path.isAbsolute(file) ? path.normalize(file) : path.resolve(root, file);
-}
-
-function fileUriToPath(uri: string): string {
-  const withoutScheme = uri
-    .slice("file://".length)
-    .replace(/^\/(?=[a-zA-Z]:)/, "");
-  return decodeURIComponent(withoutScheme);
 }
 
 function samePath(left: string, right: string): boolean {

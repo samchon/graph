@@ -14,6 +14,7 @@ import {
 } from "./structures";
 import { GraphLanguage } from "./typings";
 import { basename } from "./utils/path";
+import { fileOfNodeId } from "./utils/fileOfNodeId";
 import { SamchonGraphSourceReader } from "./SamchonGraphSourceReader";
 
 /**
@@ -192,8 +193,7 @@ function spanIn(span: ISamchonGraphSpan, file: string): ISamchonGraphEvidence {
  */
 function fileOfLegacyNodeId(id: string): string | undefined {
   if (isSemanticGraphNodeId(id)) return undefined;
-  const hash = id.indexOf("#");
-  return hash === -1 ? id : id.slice(0, hash);
+  return fileOfNodeId(id);
 }
 
 /** Resolve an edge source file without interpreting an opaque semantic id. */

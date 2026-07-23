@@ -113,8 +113,8 @@ function resolveGraphName(
   if (exact.length > 1) return { candidates: [...exact] };
 
   // clangd can mix namespace dots with C++ member separators in one identity
-  // (`leveldb.DBImpl::Get`), while callers naturally write either
-  // `leveldb.DBImpl.Get` or `leveldb::DBImpl::Get`. Normalize both the handle
+  // (`storage.DBImpl::Get`), while callers naturally write either
+  // `storage.DBImpl.Get` or `storage::DBImpl::Get`. Normalize both the handle
   // and clangd's stored spelling only after the graph's exact-name lane has
   // failed. Keeping this C++-only avoids changing dotted receiver semantics in
   // TypeScript, Java, C#, and the other language indexes.
@@ -146,7 +146,7 @@ function resolveGraphName(
   }
 
   // JDT.LS and csharp-ls decorate callable symbol names with their parameter
-  // list (`Gson.toJson(Object)`, `Logger.Write(LogEvent)`). A handle copied
+  // list (`Serializer.toJson(Object)`, `Logger.Write(LogEvent)`). A handle copied
   // from source or written from memory normally omits that list. Preserve the
   // decorated nodes so overloads stay distinct, but resolve the undecorated
   // callable base after every exact-name lane has failed.

@@ -1,4 +1,5 @@
 import { IGraphProvider } from "../IGraphProvider";
+import { assertGraphSnapshotContract } from "../assertGraphSnapshotContract";
 import { adaptTtscGraphDump } from "./adaptTtscGraphDump";
 import { resolveTtscGraphCommand } from "./resolveTtscGraphCommand";
 import { TtscGraphClient } from "./TtscGraphClient";
@@ -39,5 +40,15 @@ export const ttscGraphProvider: IGraphProvider = {
       root: props.root,
       command: props.command.command,
       args: props.command.args,
+      windowsVerbatimArguments:
+        props.command.windowsVerbatimArguments,
+      windowsDoubleEscapeArguments:
+        props.command.windowsDoubleEscapeArguments,
+      validate: (snapshot) =>
+        assertGraphSnapshotContract(
+          snapshot,
+          ttscGraphProvider,
+          props.languages,
+        ),
     }),
 };

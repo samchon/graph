@@ -3,6 +3,8 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { buildGraphDump } from "./indexer/buildGraphDump";
+import { parseGraphDump } from "./indexer/parseGraphDump";
+import { spawnableCommand } from "./utils/spawnableCommand";
 import { IGraphArguments, parseGraphArgs } from "./parseGraphArgs";
 import { reduce, type RawDump } from "./reduce";
 
@@ -21,15 +23,30 @@ function parseViewArgs(argv: readonly string[]): ViewOptions {
     maxNodes: 1200,
   };
   const graphArgs: string[] = [];
+  const next = (index: number, option: string): string => {
+    const value = argv[index + 1];
+    if (value === undefined) throw new Error(`Missing value for ${option}`);
+    return value;
+  };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
-    if (arg === "--port") opts.port = Number(argv[++i]);
+    if (arg === "--port")
+      opts.port = parseGraphArgs.safeInteger(next(i++, arg), arg, 0, 65_535);
     else if (arg.startsWith("--port="))
-      opts.port = Number(arg.slice("--port=".length));
+      opts.port = parseGraphArgs.safeInteger(
+        arg.slice("--port=".length),
+        "--port",
+        0,
+        65_535,
+      );
     else if (arg === "--no-open") opts.open = false;
-    else if (arg === "--max-nodes") opts.maxNodes = Number(argv[++i]);
+    else if (arg === "--max-nodes")
+      opts.maxNodes = parseGraphArgs.safeInteger(next(i++, arg), arg);
     else if (arg.startsWith("--max-nodes="))
-      opts.maxNodes = Number(arg.slice("--max-nodes=".length));
+      opts.maxNodes = parseGraphArgs.safeInteger(
+        arg.slice("--max-nodes=".length),
+        "--max-nodes",
+      );
     else {
       graphArgs.push(arg);
       if (
@@ -45,7 +62,7 @@ function parseViewArgs(argv: readonly string[]): ViewOptions {
           "--graph-file",
         ].includes(arg)
       )
-        graphArgs.push(argv[++i] ?? "");
+        graphArgs.push(next(i++, arg));
     }
   }
   opts.graph = parseGraphArgs(graphArgs);
@@ -66,7 +83,7 @@ export async function runView(argv: readonly string[]): Promise<number | void> {
   let raw: RawDump;
   try {
     raw = opts.graph.graphFile
-      ? (JSON.parse(fs.readFileSync(opts.graph.graphFile, "utf8")) as RawDump)
+      ? parseGraphDump(JSON.parse(fs.readFileSync(opts.graph.graphFile, "utf8")))
       : await buildGraphDump(opts.graph);
   } catch (err) {
     process.stderr.write(
@@ -109,34 +126,58 @@ export async function runView(argv: readonly string[]): Promise<number | void> {
     }
   });
 
-  server.listen(opts.port, "127.0.0.1", () => {
-    const address = server.address();
-    const port =
-      typeof address === "object" && address ? address.port : opts.port;
-    const url = `http://127.0.0.1:${port}/`;
-    const counts = payload.counts;
+  try {
+    await new Promise<undefined>((resolve, reject) => {
+      const onError = (error: Error): void => reject(error);
+      server.once("error", onError);
+      server.listen(opts.port, "127.0.0.1", () => {
+        server.off("error", onError);
+        resolve(undefined);
+      });
+    });
+  } catch (error) {
+    server.close();
     process.stderr.write(
-      `@samchon/graph: ${counts.nodes.toLocaleString()} nodes / ${counts.links.toLocaleString()} edges` +
-        ` (from ${counts.rawNodes.toLocaleString()} / ${counts.rawEdges.toLocaleString()})\n`,
+      `@samchon/graph: could not start the viewer: ${String(error)}\n`,
     );
-    process.stderr.write(`@samchon/graph: serving the 3D viewer at ${url}\n`);
-    process.stderr.write("@samchon/graph: press Ctrl+C to stop.\n");
-    if (opts.open) openBrowser(url);
-  });
+    return 1;
+  }
+  const address = server.address();
+  const port =
+    typeof address === "object" && address ? address.port : opts.port;
+  const url = `http://127.0.0.1:${port}/`;
+  const counts = payload.counts;
+  process.stderr.write(
+    `@samchon/graph: ${counts.nodes.toLocaleString()} nodes / ${counts.links.toLocaleString()} edges` +
+      ` (from ${counts.rawNodes.toLocaleString()} / ${counts.rawEdges.toLocaleString()})\n`,
+  );
+  process.stderr.write(`@samchon/graph: serving the 3D viewer at ${url}\n`);
+  process.stderr.write("@samchon/graph: press Ctrl+C to stop.\n");
+  if (opts.open) openBrowser(url);
   // No return: the listening server keeps the process alive until Ctrl+C.
 }
 
 /** Best-effort open the URL in the default browser; the URL is printed anyway. */
 function openBrowser(url: string): void {
   try {
-    if (process.platform === "win32")
-      spawn("cmd", ["/c", "start", "", url], {
-        stdio: "ignore",
-        detached: true,
-      }).unref();
-    else if (process.platform === "darwin")
-      spawn("open", [url], { stdio: "ignore", detached: true }).unref();
-    else spawn("xdg-open", [url], { stdio: "ignore", detached: true }).unref();
+    const child =
+      process.platform === "win32"
+        ? spawn(
+            spawnableCommand.windowsSystem("rundll32.exe"),
+            ["url.dll,FileProtocolHandler", url],
+            {
+              stdio: "ignore",
+              detached: true,
+              windowsHide: true,
+            },
+          )
+        : process.platform === "darwin"
+          ? spawn("open", [url], { stdio: "ignore", detached: true })
+          : spawn("xdg-open", [url], { stdio: "ignore", detached: true });
+    child.once("error", () => {
+      // The URL was already printed; opening it is only a convenience.
+    });
+    child.unref();
   } catch {
     /* the URL is printed; opening is a convenience */
   }

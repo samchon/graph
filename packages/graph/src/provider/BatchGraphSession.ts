@@ -5,7 +5,11 @@ import os from "node:os";
 import path from "node:path";
 
 import { GraphLanguage } from "../typings";
+import { confinedProjectInput } from "../indexer/confinedProjectInput";
+import { ownedProcess } from "../utils/ownedProcess";
+import { spawnableCommand } from "../utils/spawnableCommand";
 import { IBulkGraphSession } from "./IBulkGraphSession";
+import { IGraphProvider } from "./IGraphProvider";
 
 /**
  * Atomic lifecycle shared by batch semantic providers.
@@ -32,6 +36,7 @@ export class BatchGraphSession implements IBulkGraphSession {
   private closed = false;
   private closing: Promise<void> | undefined;
   private queue: Promise<void> = Promise.resolve();
+  private activeAbort: AbortController | undefined;
 
   public constructor(options: BatchGraphSession.IOptions) {
     if (options.languages.length === 0) {
@@ -69,28 +74,35 @@ export class BatchGraphSession implements IBulkGraphSession {
       );
     }
     return this.enqueue(async () => {
-      this.assertOpen();
-      throwIfAborted(options.signal, this.options.provider);
-      const universe = this.fingerprint();
-      if (universe === this.universe && this.snapshot !== undefined) {
+      const activeAbort = new AbortController();
+      this.activeAbort = activeAbort;
+      const signal = combineSignals(options.signal, activeAbort.signal);
+      try {
+        this.assertOpen();
+        throwIfAborted(signal, this.options.provider);
+        const universe = this.fingerprint();
+        if (universe === this.universe && this.snapshot !== undefined) {
+          return {
+            changed: false,
+            generation: this.version,
+            mode: "unchanged" as const,
+            snapshot: this.snapshot,
+          };
+        }
+        const next = await this.build(universe, signal);
+        this.assertOpen();
+        this.snapshot = next;
+        this.universe = universe;
+        this.version += 1;
         return {
-          changed: false,
+          changed: true,
           generation: this.version,
-          mode: "unchanged" as const,
-          snapshot: this.snapshot,
+          mode: this.version === 1 ? ("initial" as const) : ("rebuild" as const),
+          snapshot: next,
         };
+      } finally {
+        if (this.activeAbort === activeAbort) this.activeAbort = undefined;
       }
-      const next = await this.build(universe, options.signal);
-      this.assertOpen();
-      this.snapshot = next;
-      this.universe = universe;
-      this.version += 1;
-      return {
-        changed: true,
-        generation: this.version,
-        mode: this.version === 1 ? ("initial" as const) : ("rebuild" as const),
-        snapshot: next,
-      };
     }, options.signal);
   }
 
@@ -98,35 +110,26 @@ export class BatchGraphSession implements IBulkGraphSession {
   public close(): Promise<void> {
     if (this.closing !== undefined) return this.closing;
     this.closed = true;
+    this.activeAbort?.abort(
+      new Error(`${this.options.provider}: session is closed`),
+    );
     const owned = [...this.children];
     this.children.clear();
-    this.closing = Promise.all(owned.map((child) => this.terminate(child))).then(
-      () => undefined,
-    );
+    const queue = this.queue;
+    this.closing = Promise.all([
+      ...owned.map((child) => this.terminate(child)),
+      queue.catch(() => undefined),
+    ]).then(() => undefined);
     return this.closing;
   }
 
-  private terminate(child: ISpawned): Promise<undefined> {
+  private terminate(child: ISpawned): Promise<void> {
     if (child.termination !== undefined) return child.termination;
-    const termination = (() => {
-      child.process.kill();
-      let timer: NodeJS.Timeout | undefined;
-      const escalated = new Promise<undefined>((resolve) => {
-        timer = setTimeout(() => {
-          /* c8 ignore start -- Windows terminates on the first signal; the
-           * deterministic POSIX fixture exercises escalation. */
-          child.process.kill("SIGKILL");
-          resolve(undefined);
-          /* c8 ignore stop */
-        }, TERMINATION_GRACE_MS);
-        timer.unref();
-      });
-      return Promise.race([child.exit, escalated]).then(async () => {
-        if (timer !== undefined) clearTimeout(timer);
-        await child.exit;
-        return undefined;
-      });
-    })();
+    const termination = ownedProcess.terminate(
+      child.process,
+      child.exit,
+      this.options.provider,
+    );
     child.termination = termination;
     return termination;
   }
@@ -141,8 +144,8 @@ export class BatchGraphSession implements IBulkGraphSession {
     try {
       const artifact = path.join(output, this.options.artifactName);
       await this.run(
-        this.options.command.command,
-        [...this.options.command.args, ...this.options.indexArgs(artifact)],
+        this.options.command,
+        this.options.indexArgs(artifact),
         signal,
       );
       if (!fs.existsSync(artifact)) {
@@ -156,6 +159,7 @@ export class BatchGraphSession implements IBulkGraphSession {
         signal,
         run: (command, args) => this.run(command, args, signal),
       });
+      this.options.validate?.(snapshot);
       const after = this.fingerprint();
       if (after !== universe) {
         throw new Error(
@@ -174,42 +178,53 @@ export class BatchGraphSession implements IBulkGraphSession {
     for (const value of [
       ...(this.options.configuration?.() ?? []),
     ].sort(compareOrdinalPath)) {
-      hash.update(`configuration\0${String(Buffer.byteLength(value, "utf8"))}\0`);
-      hash.update(value);
-      hash.update("\n");
+      frame(hash, "configuration", Buffer.from(value, "utf8"));
     }
     for (const file of [...this.options.inputs()].sort(compareOrdinalPath)) {
-      hash.update(`${file}\0`);
+      const relative = path
+        .relative(this.root, confinedProjectInput(this.root, file))
+        .replaceAll("\\", "/");
+      frame(hash, "path", Buffer.from(relative, "utf8"));
       try {
-        hash.update(fs.readFileSync(path.resolve(this.root, file)));
+        frame(hash, "present", fs.readFileSync(path.resolve(this.root, relative)));
         /* c8 ignore start -- a listed input removed between the walk and this
          * read is itself a difference the next comparison catches. */
       } catch {
-        hash.update("\0missing");
+        frame(hash, "missing", Buffer.alloc(0));
       }
       /* c8 ignore stop */
-      hash.update("\n");
     }
     return hash.digest("hex");
   }
 
   /** Run one exact-owned child to completion and retain bounded stdout. */
   private run(
-    command: string,
-    args: readonly string[],
+    command: IGraphProvider.ICommand,
+    trailingArgs: readonly string[],
     signal: AbortSignal | undefined,
   ): Promise<string> {
+    const spawnable = spawnableCommand.append(
+      {
+        ...command,
+        args: [...command.args],
+      },
+      trailingArgs,
+    );
     this.assertOpen();
     if (signal?.aborted === true) {
-      return Promise.reject(abortedProcessError(this.options.provider, command));
+      return Promise.reject(
+        abortedProcessError(this.options.provider, command.command),
+      );
     }
-    const child = spawn(command, [...args], {
+    const child = spawn(spawnable.command, spawnable.args, {
       cwd: this.root,
+      detached: ownedProcess.group(),
       windowsHide: true,
+      windowsVerbatimArguments:
+        spawnable.windowsVerbatimArguments,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const exited = deferred();
-    const owned: ISpawned = { process: child, exit: exited.promise };
+    const owned: ISpawned = { process: child, exit: ownedProcess.exit(child) };
     this.children.add(owned);
 
     let stdout = "";
@@ -224,7 +239,7 @@ export class BatchGraphSession implements IBulkGraphSession {
       stdoutBytes += Buffer.byteLength(chunk, "utf8");
       if (stdoutBytes > this.maxStdoutBytes) {
         outputFailure = new Error(
-          `${this.options.provider}: ${command} exceeded the ${String(this.maxStdoutBytes)} byte stdout limit`,
+          `${this.options.provider}: ${command.command} exceeded the ${String(this.maxStdoutBytes)} byte stdout limit`,
         );
         void this.terminate(owned).catch(() => undefined);
         return;
@@ -245,7 +260,6 @@ export class BatchGraphSession implements IBulkGraphSession {
       const finish = (): void => {
         signal?.removeEventListener("abort", abort);
         this.children.delete(owned);
-        exited.settle();
       };
       child.on("error", (error) => {
         finish();
@@ -254,7 +268,9 @@ export class BatchGraphSession implements IBulkGraphSession {
       child.on("close", (code) => {
         finish();
         if (signal?.aborted === true) {
-          reject(abortedProcessError(this.options.provider, command));
+          reject(
+            abortedProcessError(this.options.provider, command.command),
+          );
           return;
         }
         if (outputFailure !== undefined) {
@@ -267,7 +283,7 @@ export class BatchGraphSession implements IBulkGraphSession {
         }
         reject(
           new Error(
-            `${this.options.provider}: ${command} exited with code ${String(code)}${
+            `${this.options.provider}: ${command.command} exited with code ${String(code)}${
               stderr === "" ? "" : `: ${stderr.trim()}`
             }`,
           ),
@@ -333,13 +349,15 @@ export namespace BatchGraphSession {
     root: string;
     languages: readonly GraphLanguage[];
     provider: string;
-    command: { command: string; args: readonly string[] };
+    command: IGraphProvider.ICommand;
     artifactName: string;
     indexArgs: (artifact: string) => string[];
     inputs: () => string[];
     /** Non-file build settings whose change invalidates the complete artifact. */
     configuration?: () => readonly string[];
     load: (props: ILoadProps) => Promise<IBulkGraphSession.ISnapshot>;
+    /** Contract gate that must pass before this generation becomes current. */
+    validate?: (snapshot: IBulkGraphSession.ISnapshot) => void;
     maxStdoutBytes?: number;
   }
 
@@ -347,27 +365,19 @@ export namespace BatchGraphSession {
     artifact: string;
     universe: string;
     signal: AbortSignal | undefined;
-    run: (command: string, args: readonly string[]) => Promise<string>;
+    run: (
+      command: IGraphProvider.ICommand,
+      args: readonly string[],
+    ) => Promise<string>;
   }
 }
 
 interface ISpawned {
   process: ReturnType<typeof spawn>;
-  exit: Promise<undefined>;
-  termination?: Promise<undefined>;
+  exit: Promise<void>;
+  termination?: Promise<void>;
 }
 
-function deferred(): { promise: Promise<undefined>; settle: () => void } {
-  let settle!: () => void;
-  const promise = new Promise<undefined>((resolve) => {
-    settle = () => {
-      resolve(undefined);
-    };
-  });
-  return { promise, settle };
-}
-
-const TERMINATION_GRACE_MS = 1_000;
 const DEFAULT_MAX_PROCESS_STDOUT_BYTES = 256 * 1024 * 1024;
 const MAX_PROCESS_STDERR_CHARS = 64 * 1024;
 
@@ -388,4 +398,51 @@ function isAborted(signal: AbortSignal | undefined): boolean {
 function compareOrdinalPath(left: string, right: string): number {
   /* c8 ignore next 2 -- input lists hold distinct project-relative paths. */
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function frame(
+  hash: ReturnType<typeof createHash>,
+  label: string,
+  value: Buffer,
+): void {
+  const labelBytes = Buffer.from(label, "utf8");
+  hash.update(String(labelBytes.length));
+  hash.update(":");
+  hash.update(labelBytes);
+  hash.update(String(value.length));
+  hash.update(":");
+  hash.update(value);
+}
+
+function combineSignals(
+  caller: AbortSignal | undefined,
+  lifecycle: AbortSignal,
+): AbortSignal {
+  if (caller === undefined) return lifecycle;
+  return {
+    get aborted() {
+      return caller.aborted || lifecycle.aborted;
+    },
+    /* c8 ignore start -- these AbortSignal compatibility members are required
+     * structurally, while the owned-process consumer uses `aborted` and event
+     * registration only. */
+    get reason() {
+      return caller.aborted ? caller.reason : lifecycle.reason;
+    },
+    onabort: null,
+    addEventListener: (type, listener, options) => {
+      caller.addEventListener(type, listener, options);
+      lifecycle.addEventListener(type, listener, options);
+    },
+    removeEventListener: (type, listener, options) => {
+      caller.removeEventListener(type, listener, options);
+      lifecycle.removeEventListener(type, listener, options);
+    },
+    dispatchEvent: () => false,
+    throwIfAborted() {
+      if (!this.aborted) return;
+      throw this.reason;
+    },
+    /* c8 ignore stop */
+  } as AbortSignal;
 }

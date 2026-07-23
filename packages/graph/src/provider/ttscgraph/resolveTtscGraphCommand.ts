@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
 
+import { spawnableCommand } from "../../utils/spawnableCommand";
 interface ITtscGraphCommand {
   command: string;
   args: string[];
@@ -107,7 +108,7 @@ function resolveExecutable(
   /* c8 ignore next 5 -- only one platform's lookup command runs per OS */
   const lookup =
     process.platform === "win32"
-      ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "where.exe")
+      ? spawnableCommand.windowsSystem("where.exe", env)
       : "command";
   const args = process.platform === "win32" ? [command] : ["-v", command];
   const projectBin = path.join(root, "node_modules", ".bin");
@@ -151,12 +152,7 @@ function isSpawnableFile(file: string): boolean {
 }
 
 function spawnable(executable: string): ITtscGraphCommand {
-  return /\.(?:cmd|bat)$/i.test(executable)
-    ? {
-        command: "cmd.exe",
-        args: ["/d", "/s", "/c", executable],
-      }
-    : { command: executable, args: [] };
+  return spawnableCommand(executable);
 }
 
 function ttscPackagesBeside(server: string): string[] {

@@ -3,6 +3,7 @@ import {
   GraphLanguage,
   GraphProviderAuthority,
 } from "../../typings";
+import { assertGraphSnapshotContract } from "../assertGraphSnapshotContract";
 import { IGraphProvider } from "../IGraphProvider";
 import { SidecarSession } from "./SidecarSession";
 
@@ -11,7 +12,7 @@ export function sidecarProvider(
   props: sidecarProvider.IProps,
 ): IGraphProvider {
   const configuration = props.configuration;
-  return {
+  const provider: IGraphProvider = {
     name: props.name,
     languages: props.languages,
     authority: props.authority,
@@ -19,6 +20,12 @@ export function sidecarProvider(
     ...(props.buildInputs === undefined
       ? {}
       : { buildInputs: props.buildInputs }),
+    ...(configuration === undefined
+      ? {}
+      : {
+          configuration: (root, env) =>
+            configuration(root, props.languages, env),
+        }),
     refuse: (options) => {
       const refused: string[] = [];
       if (options.server !== undefined) refused.push("server");
@@ -45,6 +52,12 @@ export function sidecarProvider(
         provider: props.name,
         authority: props.authority,
         facts: props.facts,
+        validate: (snapshot) =>
+          assertGraphSnapshotContract(
+            snapshot,
+            provider,
+            open.languages,
+          ),
         command: open.command,
         indexArgs: (artifact) =>
           props.indexArgs(artifact, open.root, open.languages),
@@ -57,6 +70,7 @@ export function sidecarProvider(
             }),
       }),
   };
+  return provider;
 }
 
 export namespace sidecarProvider {
@@ -77,6 +91,7 @@ export namespace sidecarProvider {
     configuration?: (
       root: string,
       languages: readonly GraphLanguage[],
+      env?: NodeJS.ProcessEnv,
     ) => readonly string[];
   }
 }

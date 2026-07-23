@@ -27,10 +27,76 @@ export const test_resident_commits_one_input_generation_or_none = async () => {
   await assertAMultiLanguageSessionIsMergedOnce();
   await assertABulkSliceLanguageChangeRebuildsTheResidentTopology();
   await assertAProviderThatMovedMidTransactionIsDiscarded();
+  await assertAProviderTopologyChangeRebuildsTheResidentState();
+  await assertAHashOnlySourceMismatchRebuildsTheResidentState();
   await assertProvenanceDescribesThePublishedGeneration();
   await assertADeclaredBuildInputInvalidatesTheProject();
   await assertAMovedBuildInputDiscardsTheCandidate();
 };
+
+async function assertAProviderTopologyChangeRebuildsTheResidentState(): Promise<void> {
+  const root = GraphPaths.createTempDirectory("samchon-graph-provider-topology-");
+  const file = path.join(root, "a.ts");
+  fs.writeFileSync(file, "export const value = 1;\n");
+  let command = "first-provider";
+  let builds = 0;
+  const provider = ProviderFixtures.provider({
+    name: "moving-provider",
+    resolve: () => ({ command, args: [] }),
+  });
+  const source = createResidentGraphSource(
+    { cwd: root },
+    {
+      providers: [provider],
+      buildLspGraph: async () => {
+        builds += 1;
+        return {
+          ...resultOf(root, file, fs.readFileSync(file, "utf8")),
+          providers: new Map([["typescript", provider]]),
+        };
+      },
+    },
+  );
+  await source.load();
+  command = "second-provider";
+  await source.load();
+  TestValidator.equals(
+    "a moved provider command replaces the complete resident state",
+    builds,
+    2,
+  );
+  await source.close();
+}
+
+async function assertAHashOnlySourceMismatchRebuildsTheResidentState(): Promise<void> {
+  const root = GraphPaths.createTempDirectory("samchon-graph-hash-topology-");
+  const sourceFile = path.join(root, "a.ts");
+  const unselected = path.join(root, "README.md");
+  fs.writeFileSync(sourceFile, "export const value = 1;\n");
+  fs.writeFileSync(unselected, "fixture\n");
+  let builds = 0;
+  const source = createResidentGraphSource(
+    { cwd: root },
+    {
+      providers: [],
+      buildLspGraph: async () => {
+        builds += 1;
+        return {
+          ...resultOf(root, sourceFile, fs.readFileSync(sourceFile, "utf8")),
+          sources: new Map([[unselected, fs.readFileSync(unselected, "utf8")]]),
+        };
+      },
+    },
+  );
+  await source.load();
+  await source.load();
+  TestValidator.equals(
+    "a same-sized but differently keyed source snapshot is stale",
+    builds,
+    2,
+  );
+  await source.close();
+}
 
 async function assertADeclaredBuildInputInvalidatesTheProject(): Promise<void> {
   const root = GraphPaths.createTempDirectory("samchon-graph-build-input-");
@@ -213,6 +279,7 @@ async function assertAProviderThatMovedMidTransactionIsDiscarded(): Promise<void
   const source = createResidentGraphSource(
     { cwd: root },
     {
+      providers: [provider],
       buildLspGraph: async () => {
         const result = resultOf(root, file, fs.readFileSync(file, "utf8"));
         const go = path.join(root, "b.go");
@@ -309,6 +376,7 @@ async function assertAMultiLanguageSessionIsMergedOnce(): Promise<void> {
   const source = createResidentGraphSource(
     { cwd: root },
     {
+      providers: [provider],
       buildLspGraph: async () => ({
         ...resultOf(root, file, fs.readFileSync(file, "utf8")),
         sessions: new Map([
@@ -431,6 +499,7 @@ async function assertABulkSliceLanguageChangeRebuildsTheResidentTopology(): Prom
   const source = createResidentGraphSource(
     { cwd: root },
     {
+      providers: [provider],
       buildLspGraph: async () => {
         builds += 1;
         if (builds === 1) {
@@ -635,7 +704,31 @@ async function assertALaterGenerationIsStillHeldToItsContract(): Promise<void> {
       }),
       ProviderFixtures.snapshot({
         provider: "drifting",
-        edges: [{ kind: "decorates", from: "x", to: "y" }],
+        nodes: [
+          {
+            id: "a.ts#owner:function",
+            kind: "function",
+            language: "typescript",
+            name: "owner",
+            file: "a.ts",
+            external: false,
+          },
+          {
+            id: "a.ts#decorator:function",
+            kind: "function",
+            language: "typescript",
+            name: "decorator",
+            file: "a.ts",
+            external: false,
+          },
+        ],
+        edges: [
+          {
+            kind: "decorates",
+            from: "a.ts#owner:function",
+            to: "a.ts#decorator:function",
+          },
+        ],
       }),
     ],
   });

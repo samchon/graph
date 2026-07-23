@@ -1,4 +1,5 @@
 import { GraphLanguage, GraphProviderAuthority } from "../../typings";
+import { assertGraphSnapshotContract } from "../assertGraphSnapshotContract";
 import { IGraphProvider } from "../IGraphProvider";
 import { adaptScipIndex } from "./adaptScipIndex";
 import { ScipSession } from "./ScipSession";
@@ -21,7 +22,7 @@ import { ScipSession } from "./ScipSession";
 export function scipProvider(props: scipProvider.IProps): IGraphProvider {
   const configuration = props.configuration;
   const compilerVersion = props.compilerVersion;
-  return {
+  const provider: IGraphProvider = {
     name: props.name,
     languages: props.languages,
     authority: props.authority ?? "semantic-index",
@@ -29,6 +30,12 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
     ...(props.buildInputs === undefined
       ? {}
       : { buildInputs: props.buildInputs }),
+    ...(configuration === undefined
+      ? {}
+      : {
+          configuration: (root, env) =>
+            configuration(root, props.languages, env),
+        }),
 
     // A SCIP indexer answers with a whole-workspace artifact and has no
     // bounded mode, so the same refusal the compiler-owned lane makes applies:
@@ -63,6 +70,12 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
         languages: open.languages,
         provider: props.name,
         authority: props.authority ?? "semantic-index",
+        validate: (snapshot) =>
+          assertGraphSnapshotContract(
+            snapshot,
+            provider,
+            open.languages,
+          ),
         command: open.command,
         decode: props.decode(open.root),
         indexArgs: props.indexArgs,
@@ -85,6 +98,7 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
         languageOf: props.languageOf,
       }),
   };
+  return provider;
 }
 
 export namespace scipProvider {
@@ -122,6 +136,7 @@ export namespace scipProvider {
     configuration?: (
       root: string,
       languages: readonly GraphLanguage[],
+      env?: NodeJS.ProcessEnv,
     ) => readonly string[];
 
     /** The compiler/toolchain revision that the indexer's analysis targets. */

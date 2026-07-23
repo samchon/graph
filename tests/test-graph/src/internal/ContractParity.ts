@@ -366,21 +366,21 @@ export namespace ContractParity {
     "}",
     "/** A root file attributed to the config that named it. */",
     "export interface IRootFile {",
-    "/** The tsconfig that named this root, project-relative. */",
+    "/** The tsconfig that named this root, in the dump's path vocabulary. */",
     "config: string;",
-    "/** The root file, project-relative. */",
+    "/** The root file, in the dump's path vocabulary. */",
     "file: string;",
     "}",
     "/** A file and the hex-encoded SHA-256 of its on-disk bytes. */",
     "export interface IFileDigest {",
-    "/** Project-relative. */",
+    "/** In the dump's path vocabulary. */",
     "file: string;",
     "/** Hex-encoded SHA-256. */",
     "digest: string;",
     "}",
     '/** The manifest entry for one source file the program loaded. Two digests, because "the bytes the checker read" and "the bytes on disk" are not always the same string and a consumer needs to know which one it compares against. They diverge when a source-preamble plugin injects text ahead of the file before tsgo parses it, which a real plugin project does on every build. */',
     "export interface ISourceDigest {",
-    "/** Project-relative. */",
+    "/** In the dump's path vocabulary. */",
     "file: string;",
     "/** Hex-encoded SHA-256 of the text the index resolved against — the ground truth for the facts. Every node, edge, and span attributed to this file was computed from these bytes. */",
     "checkerDigest: string;",
@@ -389,7 +389,7 @@ export namespace ContractParity {
     "}",
     "/** One compiler diagnostic from the generation that produced the facts. */",
     "export interface IDiagnostic {",
-    "/** Project-relative. */",
+    "/** In the dump's path vocabulary. */",
     "file: string;",
     "/** 1-based line. */",
     "line: number;",
@@ -531,52 +531,52 @@ export namespace ContractParity {
       },
       {
         reason:
-          "Compiler-owned providers can retain canonical absolute or virtual identities for files loaded outside the project, so selected declarations must not promise every file is project-relative.",
+          "Schema v6 retains portable project coordinates, including `../` siblings and virtual sources, so selected declarations describe the complete path vocabulary.",
         layer: "prose",
         from: "/** Project-relative path of the file that declares this node. */",
-        to: "/** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */",
+        to: "/** Schema-v6 declaration identity: project-relative (including `../`) or `bundled:///`. */",
         occurrences: 2,
       },
       {
         reason:
-          "A dependency neighbor can be a compiler-loaded declaration outside the project and carries the same canonical identity as its graph node.",
+          "A dependency neighbor carries the same portable schema-v6 identity as its graph node.",
         layer: "prose",
         from: "/** Project-relative declaration file for the neighbor. */",
-        to: "/** Neighbor identity: project-relative, normalized absolute, or `bundled:///`. */",
+        to: "/** Schema-v6 neighbor identity: project-relative (including `../`) or `bundled:///`. */",
       },
     ],
     Entrypoints: [
       {
         reason:
-          "An entrypoint candidate can name a compiler-loaded declaration outside the project, whose canonical identity is absolute or virtual.",
+          "An entrypoint candidate can name a schema-v6 sibling or virtual declaration.",
         layer: "prose",
         from: "/** Project-relative path of the declaration file. */",
-        to: "/** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */",
+        to: "/** Schema-v6 declaration identity: project-relative (including `../`) or `bundled:///`. */",
       },
       {
         reason:
-          "An entrypoint dependency neighbor preserves the canonical identity of its graph node even when the compiler loaded it outside the project.",
+          "An entrypoint dependency neighbor preserves its graph node's schema-v6 coordinate.",
         layer: "prose",
         from: "/** Project-relative declaration file for the neighbor. */",
-        to: "/** Neighbor identity: project-relative, normalized absolute, or `bundled:///`. */",
+        to: "/** Schema-v6 neighbor identity: project-relative (including `../`) or `bundled:///`. */",
       },
     ],
     Evidence: [
       {
         reason:
-          "Evidence cites the graph identity that produced the fact; strict compiler providers retain normalized absolute and virtual identities for out-of-root sources.",
+          "Evidence cites the portable schema-v6 coordinate that produced the fact, including sibling and virtual sources.",
         layer: "prose",
         from: "/** Project-relative path of the file the span lives in. */",
-        to: "/** Graph file identity of the span: normally project-relative, but normalized absolute for a compiler-loaded out-of-root file or `bundled:///` for a virtual library. */",
+        to: "/** Schema-v6 graph file identity of the span, relative to the dump project (including `../` siblings) or `bundled:///` for a virtual library. */",
       },
     ],
     Lookup: [
       {
         reason:
-          "A lookup result can select a compiler-loaded declaration outside the project and must describe its canonical absolute or virtual identity honestly.",
+          "A lookup result can select a sibling or virtual declaration and must describe its schema-v6 identity honestly.",
         layer: "prose",
         from: "/** Project-relative path of the declaration file. */",
-        to: "/** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */",
+        to: "/** Schema-v6 declaration identity: project-relative (including `../`) or `bundled:///`. */",
       },
     ],
     Dump: [
@@ -777,17 +777,17 @@ export namespace ContractParity {
       },
       {
         reason:
-          "The product's public dump has no single TypeScript config or provenance manifest, but a strict compiler provider can contribute out-of-root and virtual source identities that must remain canonical across every result surface.",
+          "The public multi-language dump uses the reference's schema-v6 path vocabulary and additionally states that the same coordinate survives every product result boundary.",
         layer: "prose",
-        from: "`project` is absolute. Every other path is relative to it — `tsconfig`, and the `file` fields on nodes, edges, diagnostics, and the provenance manifest. Two kinds of path fall outside the project and so cannot be relative to it: a dependency keeps its `node_modules/`-relative tail, which is what makes a dependency leaf readable, and anything else the compiler loaded keeps the identity the compiler gave it — a virtual lib stays `bundled:///…`.",
-        to: "`project` is absolute. A graph file identity uses normalized forward slashes: a project-owned file is relative to `project`, a compiler-loaded file outside that root keeps its normalized absolute identity, and a virtual compiler library keeps its `bundled:///` identity. The same identity flows through a node's `file`, legacy id prefix when it has one, reconstructed edge evidence, diagnostics, and operation results.",
+        from: "`project` is the producer-local absolute locator. Every identity-bearing path uses one schema-v6 coordinate relative to it: project files are ordinary relative paths; same-filesystem siblings use `../` segments; package files keep their full resolution context (including version/peer-store segments); and a virtual compiler source stays `bundled:///…`. Raw absolute identities are never emitted. A source on another drive or UNC share makes the producer fail unless a future contract supplies a logical root for it.",
+        to: "`project` is the producer-local absolute locator. Every identity-bearing path uses one schema-v6 coordinate relative to it: project files are ordinary relative paths; same-filesystem siblings use `../` segments; package files keep their full resolution context (including version/peer-store segments); and a virtual compiler source stays `bundled:///…`. Raw absolute identities are never emitted. A source on another drive or UNC share makes the producer fail unless a future contract supplies a logical root for it. The same coordinate flows through nodes, edges, evidence, diagnostics, and results.",
       },
       {
         reason:
           "The `tsconfig`-to-`languages`/`indexer` swap above is a code rule the structure layer sees; each new field's JSDoc, which that layer drops, is documented here.",
         layer: "prose",
         from: [
-          '/** The tsconfig the program was loaded from, relative to `project`. */',
+          "/** The tsconfig the program was loaded from, in the dump's path vocabulary. */",
           "languages: GraphLanguage[];",
           'indexer: "lsp" | "static" | "hybrid";',
         ].join("\n"),
@@ -915,10 +915,17 @@ export namespace ContractParity {
       },
       {
         reason:
-          "A node can represent an out-of-root source loaded by a strict compiler provider, so its canonical identity may be normalized absolute or virtual rather than project-relative.",
+          "A node can represent a schema-v6 sibling or virtual source, so the field documents the full portable coordinate vocabulary.",
         layer: "prose",
         from: "/** Project-relative path of the file that declares this node. */",
-        to: "/** Graph file identity of the declaration. Project-owned files are project-relative; compiler-loaded files outside the root keep normalized absolute identities, and virtual libraries use `bundled:///`. */",
+        to: "/** Schema-v6 graph file identity of the declaration, relative to the dump project (including `../` siblings) or `bundled:///` for a virtual library. */",
+      },
+      {
+        reason:
+          "The declaration boundary belongs to the active producer, which may be a compiler, semantic index, or language server.",
+        layer: "prose",
+        from: "cut by the producer where the compiler says the body opens",
+        to: "cut by the producer where the producer says the body opens",
       },
       {
         reason:
@@ -938,17 +945,17 @@ export namespace ContractParity {
     Overview: [
       {
         reason:
-          "Overview layers can include a canonical out-of-root compiler directory, so the directory identity is not universally project-relative.",
+          "Overview layers use the schema-v6 directory coordinate relative to the dump project.",
         layer: "prose",
         from: "/** Directory, project-relative. */",
-        to: "/** Directory identity: project-relative or normalized absolute. */",
+        to: "/** Schema-v6 directory identity, relative to the dump project. */",
       },
       {
         reason:
-          "Overview declarations preserve canonical compiler-loaded file identities across the public result boundary.",
+          "Overview declarations preserve portable sibling and virtual coordinates across the public result boundary.",
         layer: "prose",
         from: "/** Project-relative path of the file that declares it. */",
-        to: "/** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */",
+        to: "/** Schema-v6 declaration identity: project-relative (including `../`) or `bundled:///`. */",
       },
     ],
     NodeModifier: [
@@ -1029,10 +1036,10 @@ export namespace ContractParity {
       },
       {
         reason:
-          "An implementation can live in an out-of-root or virtual compiler source and keeps the same canonical graph identity as complete evidence.",
+          "An implementation can live in a sibling or virtual source and keeps the same portable schema-v6 coordinate as complete evidence.",
         layer: "prose",
         from: "/** Present only when it cannot be derived: an `implementation` can live in a different file from the declaration that owns it. */",
-        to: "/** Present only when it cannot be derived: an `implementation` can live in a different file from the declaration that owns it. Uses the same project-relative, normalized absolute, or `bundled:///` identity as a complete graph evidence span. */",
+        to: "/** Present only when it cannot be derived: an `implementation` can live in a different file from the declaration that owns it. Uses the same schema-v6 project-relative (including `../` siblings) or `bundled:///` identity as a complete graph evidence span. */",
       },
       {
         reason:
@@ -1045,17 +1052,17 @@ export namespace ContractParity {
     Tour: [
       {
         reason:
-          "A tour candidate can cite a compiler-loaded declaration outside the project and preserves its canonical identity.",
+          "A tour candidate can cite a schema-v6 sibling or virtual declaration and preserves its portable coordinate.",
         layer: "prose",
         from: "/** Project-relative declaration file. */",
-        to: "/** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */",
+        to: "/** Schema-v6 declaration identity: project-relative (including `../`) or `bundled:///`. */",
       },
       {
         reason:
-          "Tour anchors preserve the graph file identity that backs their citation, including absolute and virtual compiler sources.",
+          "Tour anchors preserve the schema-v6 coordinate that backs their citation, including sibling and virtual sources.",
         layer: "prose",
         from: "/** Project-relative file. */",
-        to: "/** Graph file identity: project-relative, normalized absolute, or `bundled:///`. */",
+        to: "/** Schema-v6 graph identity: project-relative (including `../`) or `bundled:///`. */",
         occurrences: 2,
       },
       {
@@ -1110,17 +1117,26 @@ export namespace ContractParity {
     Trace: [
       {
         reason:
-          "Trace nodes preserve canonical compiler-loaded declaration identities across the public result boundary.",
+          "The public contract uses a neutral event-emitter example so shipped instructions cannot reveal a benchmark corpus or its answer symbols.",
         layer: "prose",
-        from: "/** Project-relative path of the file that declares it. */",
-        to: "/** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */",
+        from:
+          "/** Symbols both ends touch, when no call path runs between them. Nothing calls across the gap because in an event-driven codebase nothing does: a handler registers a listener on an emitter, the emitter's `emit()` runs whatever a registration put in an array, and no call edge crosses that array. But both ends touch the emitter, and that is an edge, not a guess — Excalidraw's pointer handler and its store's emit both reference `Store.onDurableIncrementEmitter`, which is exactly the seam the call graph cannot walk. A junction is not a path. It is the symbol to look at next, and the edges that say why. */",
+        to:
+          "/** Symbols both ends touch, when no call path runs between them. Nothing calls across the gap because in an event-driven codebase nothing does: a handler registers a listener on an emitter, the emitter's `emit()` runs whatever a registration put in an array, and no call edge crosses that array. But both ends touch the emitter, and that is an edge, not a guess: a request handler and a state store's emit both reference `StateStore.onCommit`, which is exactly the seam the call graph cannot walk. A junction is not a path. It is the symbol to look at next, and the edges that say why. */",
       },
       {
         reason:
-          "Trace omissions name the same canonical declaration identity as the omitted graph node.",
+          "Trace nodes preserve portable sibling and virtual declaration coordinates across the public result boundary.",
+        layer: "prose",
+        from: "/** Project-relative path of the file that declares it. */",
+        to: "/** Schema-v6 declaration identity: project-relative (including `../`) or `bundled:///`. */",
+      },
+      {
+        reason:
+          "Trace omissions name the same schema-v6 declaration coordinate as the omitted graph node.",
         layer: "prose",
         from: "/** Project-relative path of the declaration file. */",
-        to: "/** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */",
+        to: "/** Schema-v6 declaration identity: project-relative (including `../`) or `bundled:///`. */",
       },
       {
         reason:

@@ -58,9 +58,12 @@ export interface IIndexerResult {
   /** Project-wide source/config/build inputs fenced around this build. */
   inputManifest?: Map<string, string>;
 
-  /** Languages whose source contents remain opaque to the coordinator. */
+  /** Legacy resident field; coordinator manifests now hash every source. */
   inputManifestLanguages?: GraphLanguage[];
 
   /** Provider-declared non-source inputs retained for resident recapture. */
   buildInputs?: string[];
+
+  /** Internal provider disk-digest fence consumed before publication. */
+  providerSourceDigests?: Map<string, IBulkGraphSession.ISourceDigest>;
 }

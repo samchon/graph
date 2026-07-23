@@ -42,6 +42,12 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: 1.26.5
+          cache-dependency-path: sidecars/go/go.sum
+
       # The tag, both manifests, and the commit the tag points at must agree.
       # Any pair alone leaves a real failure open: matching versions on an
       # unapproved commit, or an approved commit carrying two packages at
@@ -61,6 +67,9 @@ jobs:
       - name: Install with the committed lockfile
         run: pnpm install --frozen-lockfile
 
+      - name: Audit production dependencies
+        run: pnpm audit --prod
+
       - name: Build
         run: pnpm run build
 
@@ -77,6 +86,17 @@ jobs:
         run: node build/release-pack.mjs
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+
+      - name: Build the pinned local SCIP producer
+        run: |
+          mkdir -p .release/tools
+          GOBIN="$PWD/.release/tools" go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.7
+
+      - name: Clean-install and execute the exact local tarballs
+        run: node build/release-smoke.mjs
+        env:
+          RELEASE_TARBALL_DIRECTORY: .release
+          RELEASE_SCIP_GO: ${{ github.workspace }}/.release/tools/scip-go
 
       - name: Upload tarballs
         uses: actions/upload-artifact@v7
@@ -177,6 +197,6 @@ jobs:
           fetch-depth: 0
       - run: corepack enable
       - name: Generate release notes
-        run: pnpm dlx changelogithub
+        run: pnpm exec changelogithub
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

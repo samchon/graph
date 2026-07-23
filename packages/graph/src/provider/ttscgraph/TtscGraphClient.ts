@@ -1,17 +1,20 @@
 import { ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 
+import { ownedProcess } from "../../utils/ownedProcess";
+import { spawnableCommand } from "../../utils/spawnableCommand";
 import { IBulkGraphSession } from "../IBulkGraphSession";
 import { adaptTtscGraphDump } from "./adaptTtscGraphDump";
 import { ITtscGraphSnapshot } from "./ITtscGraphSnapshot";
 import { parseTtscGraphSnapshot } from "./parseTtscGraphSnapshot";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 300_000;
+const DEFAULT_MAX_RESPONSE_BYTES = 256 * 1024 * 1024;
 const MAX_TIMER_MS = 2_147_483_647;
-const TERMINATION_GRACE_MS = 1_000;
 
 interface NativeChild {
   process: ChildProcessWithoutNullStreams;
   stdoutChunks: string[];
+  stdoutBytes: number;
   stderr: string;
   exit: Promise<void>;
   termination?: Promise<void>;
@@ -34,7 +37,13 @@ export class TtscGraphClient implements IBulkGraphSession {
 
   private readonly command: string;
   private readonly args: readonly string[];
+  private readonly windowsVerbatimArguments: boolean | undefined;
+  private readonly windowsDoubleEscapeArguments: boolean | undefined;
   private readonly requestTimeoutMs: number;
+  private readonly maxResponseBytes: number;
+  private readonly validate: (
+    snapshot: IBulkGraphSession.ISnapshot,
+  ) => void;
   private child: NativeChild | undefined;
   private readonly ownedChildren = new Set<NativeChild>();
   private readonly pending = new Map<number, Pending>();
@@ -43,11 +52,14 @@ export class TtscGraphClient implements IBulkGraphSession {
   private closed = false;
   private closing: Promise<void> | undefined;
   private snapshot: IBulkGraphSession.ISnapshot | undefined;
+  private childHasSnapshot = false;
   private version = 0;
 
   public constructor(options: TtscGraphClient.IOptions) {
     const requestTimeoutMs =
       options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    const maxResponseBytes =
+      options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
     if (
       !Number.isSafeInteger(requestTimeoutMs) ||
       requestTimeoutMs <= 0 ||
@@ -57,10 +69,20 @@ export class TtscGraphClient implements IBulkGraphSession {
         `ttscgraph: requestTimeoutMs must be an integer between 1 and ${String(MAX_TIMER_MS)}`,
       );
     }
+    if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes < 1) {
+      throw new TypeError(
+        "ttscgraph: maxResponseBytes must be a positive safe integer",
+      );
+    }
     this.root = options.root;
     this.command = options.command;
     this.args = options.args ?? [];
+    this.windowsVerbatimArguments = options.windowsVerbatimArguments;
+    this.windowsDoubleEscapeArguments =
+      options.windowsDoubleEscapeArguments;
     this.requestTimeoutMs = requestTimeoutMs;
+    this.maxResponseBytes = maxResponseBytes;
+    this.validate = options.validate ?? (() => undefined);
   }
 
   public get generation(): number {
@@ -86,7 +108,7 @@ export class TtscGraphClient implements IBulkGraphSession {
         }
         const mode: IBulkGraphSession.Mode = response.mode;
         if (!response.changed) {
-          if (this.snapshot === undefined) {
+          if (this.snapshot === undefined || !this.childHasSnapshot) {
             throw new Error(
               "ttscgraph: first response was unchanged without a snapshot",
             );
@@ -127,7 +149,9 @@ export class TtscGraphClient implements IBulkGraphSession {
           provenance,
           warnings: adapted.warnings,
         };
+        this.validate(next);
         this.snapshot = next;
+        this.childHasSnapshot = true;
         this.version += 1;
         return {
           changed: true,
@@ -215,24 +239,40 @@ export class TtscGraphClient implements IBulkGraphSession {
     ) {
       return this.child;
     }
+    const spawnable = spawnableCommand.append(
+      {
+        command: this.command,
+        args: [...this.args],
+        windowsVerbatimArguments:
+          this.windowsVerbatimArguments,
+        windowsDoubleEscapeArguments:
+          this.windowsDoubleEscapeArguments,
+      },
+      ["serve", "--cwd", this.root],
+    );
     const spawned = spawn(
-      this.command,
-      [...this.args, "serve", "--cwd", this.root],
+      spawnable.command,
+      spawnable.args,
       {
         cwd: this.root,
         env: process.env,
+        detached: ownedProcess.group(),
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
+        windowsVerbatimArguments:
+          spawnable.windowsVerbatimArguments,
         windowsHide: true,
       },
     );
     const child: NativeChild = {
       process: spawned,
       stdoutChunks: [],
+      stdoutBytes: 0,
       stderr: "",
-      exit: exitOf(spawned),
+      exit: ownedProcess.exit(spawned),
     };
     this.child = child;
+    this.childHasSnapshot = false;
     this.ownedChildren.add(child);
     void child.exit.then(() => this.ownedChildren.delete(child));
     spawned.stdout.setEncoding("utf8");
@@ -274,12 +314,18 @@ export class TtscGraphClient implements IBulkGraphSession {
     for (;;) {
       const newline = chunk.indexOf("\n", start);
       if (newline === -1) {
-        if (start < chunk.length) child.stdoutChunks.push(chunk.slice(start));
+        if (
+          start < chunk.length &&
+          !this.appendResponseChunk(child, chunk.slice(start))
+        ) {
+          return;
+        }
         return;
       }
-      child.stdoutChunks.push(chunk.slice(start, newline));
+      if (!this.appendResponseChunk(child, chunk.slice(start, newline))) return;
       const line = child.stdoutChunks.join("").trim();
       child.stdoutChunks.length = 0;
+      child.stdoutBytes = 0;
       start = newline + 1;
       if (line === "") continue;
       let value: unknown;
@@ -313,6 +359,21 @@ export class TtscGraphClient implements IBulkGraphSession {
     }
   }
 
+  private appendResponseChunk(child: NativeChild, chunk: string): boolean {
+    child.stdoutBytes += Buffer.byteLength(chunk, "utf8");
+    if (child.stdoutBytes > this.maxResponseBytes) {
+      this.failChild(
+        child,
+        new Error(
+          `ttscgraph: response exceeded the ${String(this.maxResponseBytes)} byte frame limit`,
+        ),
+      );
+      return false;
+    }
+    child.stdoutChunks.push(chunk);
+    return true;
+  }
+
   private failChild(
     child: NativeChild,
     error: Error,
@@ -320,14 +381,18 @@ export class TtscGraphClient implements IBulkGraphSession {
   ): void {
     if (this.child !== child) return;
     this.child = undefined;
-    this.snapshot = undefined;
+    this.childHasSnapshot = false;
     this.failPending(error, child);
     if (terminate) void this.terminate(child);
   }
 
   private terminate(child: NativeChild): Promise<void> {
     if (child.termination === undefined) {
-      child.termination = terminateChild(child.process, child.exit);
+      child.termination = ownedProcess.terminate(
+        child.process,
+        child.exit,
+        "ttscgraph",
+      );
       // A protocol failure retires the child before a caller necessarily asks
       // to close the client. Keep the rejection observed here while preserving
       // the original promise for close() to report.
@@ -415,79 +480,20 @@ export namespace TtscGraphClient {
     root: string;
     command: string;
     args?: readonly string[];
+    windowsVerbatimArguments?: boolean;
+    windowsDoubleEscapeArguments?: boolean;
     /** Maximum time for one native snapshot response. */
     requestTimeoutMs?: number;
+    /** Maximum bytes retained before one NDJSON response delimiter. */
+    maxResponseBytes?: number;
+    /** Provider contract gate run before a generation becomes current. */
+    validate?: (snapshot: IBulkGraphSession.ISnapshot) => void;
   }
 
   export interface IRefreshOptions {
     /** Cancel this refresh and retire the native child generation it owns. */
     signal?: AbortSignal;
   }
-}
-
-function terminateChild(
-  child: ChildProcessWithoutNullStreams,
-  exit: Promise<void>,
-): Promise<void> {
-  if (!child.stdin.destroyed) child.stdin.destroy();
-  return (async () => {
-    signalChild(child);
-    if (await waitForExit(exit, TERMINATION_GRACE_MS)) return;
-    /* c8 ignore next -- Windows exits on the first signal; POSIX tests this. */
-    signalChild(child, "SIGKILL");
-    /* c8 ignore start */
-    if (!(await waitForExit(exit, 2_000))) {
-      throw new Error(
-        "ttscgraph: owned process did not exit after forced termination",
-      );
-    }
-    /* c8 ignore stop */
-  })();
-}
-
-function waitForExit(
-  exit: Promise<void>,
-  timeoutMs: number,
-): Promise<boolean> {
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (value: boolean): void => {
-      /* c8 ignore next */
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(value);
-    };
-    const timer = setTimeout(() => finish(false), timeoutMs);
-    timer.unref();
-    void exit.then(() => finish(true));
-  });
-}
-
-function exitOf(child: ChildProcessWithoutNullStreams): Promise<void> {
-  return new Promise((resolve) => {
-    const exited = (): void => {
-      child.off("exit", exited);
-      child.off("close", exited);
-      resolve();
-    };
-    child.once("exit", exited);
-    child.once("close", exited);
-  });
-}
-
-function signalChild(
-  child: ChildProcessWithoutNullStreams,
-  signal?: NodeJS.Signals,
-): void {
-  /* c8 ignore start -- an owned handle and fixed valid signals make throwing
-   * unreachable; kill reports failure as false or through child exit state. */
-  try {
-    child.kill(signal);
-  } catch {
-    return;
-  }
-  /* c8 ignore stop */
 }
 
 function cancelledError(signal?: AbortSignal, child?: NativeChild): Error {

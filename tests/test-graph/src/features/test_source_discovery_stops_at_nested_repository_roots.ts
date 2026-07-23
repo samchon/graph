@@ -40,6 +40,7 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     // The checkout's own source, and its own `.git` — a root is never excluded.
     fs.mkdirSync(path.join(root, ".git"), { recursive: true });
     write(root, "src/a.ts", "export const a = 1;");
+    write(root, "src/ambient.d.ts", "declare const ambient: unique symbol;");
     write(root, "src/z.ts", "export const z = 1;");
 
     // A linked agent worktree: `.claude/worktrees/wt` carries a `.git` *file*.
@@ -63,7 +64,7 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     TestValidator.equals(
       "a nested worktree and a vendored clone are excluded from discovery",
       bases(discovered),
-      ["a.ts", "z.ts"],
+      ["a.ts", "ambient.d.ts", "z.ts"],
     );
 
     // Capped walk: the cap is spent on real source, not on the worktree file
@@ -88,7 +89,7 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     TestValidator.equals(
       "an explicit opt-in indexes nested repositories",
       bases(withNested),
-      ["a.ts", "nested.ts", "vendored.ts", "z.ts"],
+      ["a.ts", "ambient.d.ts", "nested.ts", "vendored.ts", "z.ts"],
     );
   };
 

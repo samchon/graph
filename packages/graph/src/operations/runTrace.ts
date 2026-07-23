@@ -178,7 +178,7 @@ export function runTrace(
       // registration put in an array, and no call edge crosses that array. The
       // callers of the target are the way across, and the graph has them, so
       // say which call to make instead of handing back an empty result dressed
-      // as the answer. Excalidraw's tour spent eleven calls finding this out.
+      // as the answer. Returning the junction makes that seam explicit.
       next: hasPath
         ? pathNext
         : found.truncated
@@ -366,8 +366,8 @@ function traceSteps(
  * A call graph cannot cross a callback: the registration hands a listener to an
  * emitter, and `emit()` runs whatever the registration put in an array. But the
  * registration and the emit both reference the emitter, and those are edges the
- * indexer resolved — Excalidraw's `App.componentDidMount` and its
- * `Store.emitDurableIncrement` both touch `Store.onDurableIncrementEmitter`,
+ * indexer resolved — `Application.mount` and `StateStore.emitCommit` both touch
+ * `StateStore.onCommit`,
  * which is
  * the exact seam the path walk stops at.
  *

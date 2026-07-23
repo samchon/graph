@@ -1,4 +1,5 @@
 import { TestValidator } from "@nestia/e2e";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -7,6 +8,7 @@ import {
   providerInputFiles,
   resolveProviderCommand,
 } from "@samchon/graph";
+import { spawnableCommand } from "../../../../packages/graph/src/utils/spawnableCommand";
 
 import { GraphPaths } from "../internal/GraphPaths";
 
@@ -171,7 +173,7 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
       TestValidator.equals(
         "the shipped Go provider uses the common project-local resolver",
         goGraphProvider.resolve(root, emptyPath),
-        expectedCommand(goCommand),
+        expectedCommand(goCommand, ["--project", path.resolve(root)]),
       );
       fs.rmSync(goCommand, { force: true });
       const bundledGo = goGraphProvider.resolve(root, process.env);
@@ -179,7 +181,8 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
         "the packaged Go source sidecar runs through the available toolchain",
         bundledGo !== undefined &&
           bundledGo.args.includes("-C") &&
-          bundledGo.args.slice(-2).join(" ") === "run .",
+          bundledGo.args.slice(-4).join(" ") ===
+            `run . --project ${path.resolve(root)}`,
       );
       if (bundledGo === undefined) {
         throw new Error("the packaged Go source sidecar was not resolved");
@@ -245,6 +248,60 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
             { command, override: "SAMCHON_TEST_PROVIDER" },
           ),
           expectedCommand(batchOverride),
+        );
+        const argumentShimDirectory = path.join(
+          root,
+          "node_modules",
+          ".bin",
+        );
+        fs.mkdirSync(argumentShimDirectory, { recursive: true });
+        const argumentWriter = path.join(
+          argumentShimDirectory,
+          "literal-arguments.cmd",
+        );
+        const argumentProgram = path.join(root, "literal-arguments.cjs");
+        const argumentOutput = path.join(root, "literal-arguments.txt");
+        const siblingMarker = path.join(root, "injected-command.txt");
+        fs.writeFileSync(
+          argumentProgram,
+          [
+            '"use strict";',
+            'const fs = require("node:fs");',
+            "fs.writeFileSync(process.argv[2], process.argv[3]);",
+            "",
+          ].join("\n"),
+        );
+        fs.writeFileSync(
+          argumentWriter,
+          [
+            "@echo off",
+            `"${process.execPath}" "${argumentProgram}" %*`,
+            "",
+          ].join("\r\n"),
+        );
+        const literal =
+          `space & pipe | input < output > group (x) caret ^ bang ! ` +
+          `percent %PATH% quote " semi ; comma , star * question ? ` +
+          `& type nul > "${siblingMarker}"`;
+        const invocation = spawnableCommand(argumentWriter, [
+          argumentOutput,
+          literal,
+        ]);
+        const executed = spawnSync(invocation.command, invocation.args, {
+          cwd: root,
+          encoding: "utf8",
+          windowsHide: true,
+          windowsVerbatimArguments:
+            invocation.windowsVerbatimArguments,
+        });
+        TestValidator.equals(
+          "Windows command shims preserve every command metacharacter literally",
+          [
+            executed.status,
+            fs.readFileSync(argumentOutput, "utf8"),
+            fs.existsSync(siblingMarker),
+          ],
+          [0, literal, false],
         );
       }
 
@@ -334,12 +391,7 @@ function expectedCommand(
   executable: string,
   args: readonly string[] = [],
 ): { command: string; args: string[] } {
-  return process.platform === "win32"
-    ? {
-        command: "cmd.exe",
-        args: ["/d", "/s", "/c", executable, ...args],
-      }
-    : { command: executable, args: [...args] };
+  return spawnableCommand(executable, args);
 }
 
 function pathEnvironment(value: string): NodeJS.ProcessEnv {

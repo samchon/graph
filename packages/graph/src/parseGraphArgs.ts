@@ -39,16 +39,24 @@ export function parseGraphArgs(argv: readonly string[]): IGraphArguments {
         arg.slice("--server-arg=".length),
       ];
     else if (arg === "--lsp-concurrency")
-      options.lspConcurrency = parseInteger(next());
+      options.lspConcurrency = parseGraphArgs.safeInteger(
+        next(),
+        "--lsp-concurrency",
+      );
     else if (arg.startsWith("--lsp-concurrency="))
-      options.lspConcurrency = parseInteger(
+      options.lspConcurrency = parseGraphArgs.safeInteger(
         arg.slice("--lsp-concurrency=".length),
+        "--lsp-concurrency",
       );
     else if (arg === "--lsp-ready-quiet-ms")
-      options.lspReadyQuietMs = parseInteger(next());
+      options.lspReadyQuietMs = parseGraphArgs.safeInteger(
+        next(),
+        "--lsp-ready-quiet-ms",
+      );
     else if (arg.startsWith("--lsp-ready-quiet-ms="))
-      options.lspReadyQuietMs = parseInteger(
+      options.lspReadyQuietMs = parseGraphArgs.safeInteger(
         arg.slice("--lsp-ready-quiet-ms=".length),
+        "--lsp-ready-quiet-ms",
       );
     else if (arg === "--graph-file") options.graphFile = next();
     else if (arg.startsWith("--graph-file="))
@@ -65,7 +73,6 @@ function parseMode(value: string): "auto" | "lsp" | "static" {
 
 const ALLOWED_LANGUAGES = new Set<string>([
   ...LANGUAGE_SPECS.map((spec) => spec.language),
-  "unknown",
 ]);
 
 function parseLanguage(value: string): GraphLanguage {
@@ -74,9 +81,27 @@ function parseLanguage(value: string): GraphLanguage {
   return value as GraphLanguage;
 }
 
-function parseInteger(value: string): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 1)
-    throw new Error(`Expected positive integer, got: ${value}`);
-  return Math.floor(parsed);
+export namespace parseGraphArgs {
+  export function safeInteger(
+    value: string,
+    label: string,
+    minimum = 1,
+    maximum = Number.MAX_SAFE_INTEGER,
+  ): number {
+    const parsed = Number(value);
+    if (
+      !Number.isSafeInteger(parsed) ||
+      parsed < minimum ||
+      parsed > maximum
+    ) {
+      throw new Error(
+        `Expected ${label} to be an integer from ${minimum} through ${maximum}, got: ${value}`,
+      );
+    }
+    return parsed;
+  }
+  /* c8 ignore start -- declaration merging emits an `X || (X = {})` branch
+   * after the function declaration, so the namespace's creation arm is
+   * unreachable. */
 }
+/* c8 ignore stop */

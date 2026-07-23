@@ -7,10 +7,10 @@ catalogs:
     typescript: ^7.0.2
   samchon:
     "@nestia/e2e": ^12.0.0
-    ttsc: &ttsc ^0.19.3
+    ttsc: &ttsc ^0.20.1
     "@ttsc/lint": *ttsc
     "@ttsc/unplugin": *ttsc
-    typia: &typia ^13.1.1
+    typia: &typia ^13.2.0
     "@typia/interface": *typia
     "@typia/mcp": *typia
   bundler:
@@ -20,3 +20,6 @@ catalogs:
     bumpp: ^10.4.0
     c8: ^10.1.3
     rimraf: ^6.0.1
+overrides:
+  "@hono/node-server": 2.0.11
+  fast-uri: 3.1.4

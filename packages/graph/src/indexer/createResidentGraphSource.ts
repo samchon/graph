@@ -11,6 +11,7 @@ import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import { assertGraphSnapshotContract } from "../provider/assertGraphSnapshotContract";
 import { dumpProvenanceOf } from "../provider/dumpProvenanceOf";
 import { IGraphProvider } from "../provider/IGraphProvider";
+import { GRAPH_PROVIDERS } from "../provider/GRAPH_PROVIDERS";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { isBulkGraphSession } from "../provider/isBulkGraphSession";
 import { mergeGraphSlices } from "../provider/mergeGraphSlices";
@@ -32,6 +33,7 @@ import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
 import { projectInputManifest } from "./projectInputManifest";
 import { sameProjectInputManifest } from "./sameProjectInputManifest";
+import { providerTopology } from "../provider/providerTopology";
 
 /**
  * How many times one `load` may prepare a candidate before giving up on the
@@ -58,11 +60,13 @@ interface IResidentState {
   inputManifest: Map<string, string>;
   inputManifestLanguages: GraphLanguage[];
   buildInputs: string[];
+  providerTopology: string;
 }
 
 interface IResidentDependencies {
   buildLspGraph: typeof buildLspGraph;
   buildStaticGraphResult?: typeof buildStaticGraphResult;
+  providers?: readonly IGraphProvider[];
 
   /**
    * The static lane's parse, substitutable so the commit fence can be proved.
@@ -81,6 +85,7 @@ interface IResidentDependencies {
 const DEFAULT_DEPENDENCIES: IResidentDependencies = {
   buildLspGraph,
   buildStaticGraphResult,
+  providers: GRAPH_PROVIDERS,
 };
 
 // Languages that fell back to static parsing (no LSP session to hold) are
@@ -125,6 +130,14 @@ export function createResidentGraphSource(
       const buildInputs = result.buildInputs ?? [];
       const inputManifestLanguages =
         result.inputManifestLanguages ?? [...bulkLanguagesOf(sessions)];
+      const selected = selectGraphSources(root, options);
+      const availableTopology = providerTopology.available(
+        root,
+        selected.presentLanguages,
+        options,
+        process.env,
+        dependencies.providers ?? [],
+      );
       return {
         dump: result.dump,
         sessions,
@@ -148,6 +161,10 @@ export function createResidentGraphSource(
           ),
         inputManifestLanguages,
         buildInputs,
+        providerTopology: providerTopology.actual(
+          availableTopology,
+          result.providers ?? new Map(),
+        ),
       };
     } catch (error) {
       // Once the build hands its sessions to this source, every later failure
@@ -391,6 +408,20 @@ export function createResidentGraphSource(
     signal: AbortSignal,
   ): Promise<void> {
     for (let attempt = 1; ; attempt++) {
+      const selected = selectGraphSources(root, options);
+      const liveTopology = providerTopology.serialize(
+        providerTopology.available(
+          root,
+          selected.presentLanguages,
+          options,
+          process.env,
+          dependencies.providers ?? [],
+        ),
+      );
+      if (liveTopology !== current.providerTopology) {
+        await replaceLanguages(current, signal);
+        return;
+      }
       const inputManifest = projectInputManifest(
         root,
         options,

@@ -230,6 +230,11 @@ export const test_sidecar_session_enforces_the_common_semantic_contract =
         languages: ["go"],
         options: { cwd: root },
       });
+      TestValidator.equals(
+        "the provider-level configuration preserves its language binding",
+        configured.configuration?.(root, process.env),
+        ["GOOS=fixture"],
+      );
       await configuredSession.refresh();
       await configuredSession.close();
 

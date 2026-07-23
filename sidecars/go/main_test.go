@@ -5,11 +5,14 @@ import (
 	"errors"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/scip-code/scip/bindings/go/scip"
 	"google.golang.org/protobuf/proto"
@@ -84,6 +87,13 @@ func TestBuildSnapshotProvesWorkspaceSemantics(t *testing.T) {
 	}
 	if len(first.Sources) == 0 || first.Tool.CompilerVersion != "go1.25.0" {
 		t.Error("snapshot omitted source or toolchain evidence")
+	}
+	for _, declaration := range first.Nodes {
+		if declaration.Evidence != nil &&
+			declaration.Evidence.EndCol > 0 &&
+			declaration.Evidence.EndLine == 0 {
+			t.Errorf("node %s has an end column without its end line", declaration.ID)
+		}
 	}
 	if countNamedExternalTargets(first, run.ID, "Len", "references") != 1 {
 		t.Error("one external selector did not normalize to one reference endpoint")
@@ -317,6 +327,18 @@ func TestModuleAndProcessBoundariesFailClosed(t *testing.T) {
 			buffer.String(),
 		)
 	}
+	cancelled := 0
+	cancelling := &limitedBuffer{
+		limit: 1,
+		onExceeded: func() {
+			cancelled++
+		},
+	}
+	_, _ = cancelling.Write([]byte("too much"))
+	_, _ = cancelling.Write([]byte("again"))
+	if cancelled != 1 {
+		t.Fatalf("output overflow did not cancel its child exactly once: %d", cancelled)
+	}
 	if _, err := buildSnapshot(
 		context.Background(),
 		copyFixture(t),
@@ -333,6 +355,142 @@ func TestModuleAndProcessBoundariesFailClosed(t *testing.T) {
 	); err == nil {
 		t.Error("an incompatible scip-go version was accepted by substring")
 	}
+}
+
+func TestSidecarRejectsConflictingNodesAndPreservesFileAuthorities(t *testing.T) {
+	graph := &collector{nodes: map[string]node{}}
+	first := node{ID: "same", Kind: "function", Language: "go", Name: "first"}
+	graph.addNode(first)
+	graph.addNode(first)
+	if graph.conflict != nil {
+		t.Fatal("an idempotent duplicate observation was rejected")
+	}
+	graph.addNode(node{ID: "same", Kind: "function", Language: "go", Name: "second"})
+	if graph.conflict == nil {
+		t.Fatal("conflicting facts with one semantic id were silently retained")
+	}
+
+	authority, err := fileURIPath("file://server/share/Foo.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.FromSlash("//server/share/Foo.go")
+	if authority != want {
+		t.Fatalf("file URI authority was lost: got %q want %q", authority, want)
+	}
+	if runtime.GOOS == "windows" {
+		drive, err := fileURIPath("file://C:%5Cworkspace%5Cmain.go")
+		if err != nil || drive != filepath.Clean(`C:\workspace\main.go`) {
+			t.Fatalf("scip-go Windows drive URI was not normalized: %q %v", drive, err)
+		}
+	}
+}
+
+func TestSemanticIdentityMatchesTheSharedProviderV2Codec(t *testing.T) {
+	if got, want := semanticID(
+		"function",
+		"symbol",
+		"pkg.Run",
+		"",
+	), "@v2/go/72970ade4889e23bd0ad347ed93e0813dd3a150d0e56575778b3e9156b7eb707#pkg.Run:function"; got != want {
+		t.Fatalf("persistent semantic identity drifted: got %s want %s", got, want)
+	}
+	if got, want := semanticID(
+		"function",
+		"symbol",
+		"pkg.Run",
+		"digest",
+	), "@g2/go/0e248f71b8ef9d791eb0bed85838c18b941a2066263d310b959ef0ba21fc3fee#pkg.Run:function"; got != want {
+		t.Fatalf("generation semantic identity drifted: got %s want %s", got, want)
+	}
+	if encoded := encodeURIComponent("pkg/a+b c"); encoded != "pkg%2Fa%2Bb%20c" {
+		t.Fatalf("display suffix is not encodeURIComponent-compatible: %s", encoded)
+	}
+}
+
+func TestRunBoundedTerminatesOnlyItsOwnedProcessTree(t *testing.T) {
+	descendantMarker := filepath.Join(t.TempDir(), "descendant.txt")
+	unrelatedMarker := filepath.Join(t.TempDir(), "unrelated.txt")
+	unrelated := exec.Command(
+		os.Args[0],
+		"-test.run=^TestDelayedMarkerProcess$",
+		"--",
+		"samchon-unrelated-marker",
+		unrelatedMarker,
+	)
+	if err := unrelated.Start(); err != nil {
+		t.Fatal(err)
+	}
+
+	started := time.Now()
+	_, _, err := runBounded(
+		context.Background(),
+		"",
+		os.Args[0],
+		"-test.run=^TestOverflowingProcessTree$",
+		"--",
+		"samchon-overflow-helper",
+		descendantMarker,
+	)
+	if err == nil || !strings.Contains(err.Error(), "output limit") {
+		t.Fatalf("overflowing process tree was not rejected: %v", err)
+	}
+	if time.Since(started) > 10*time.Second {
+		t.Fatal("overflow was not terminated promptly")
+	}
+	if err := unrelated.Wait(); err != nil {
+		t.Fatalf("unrelated process was harmed: %v", err)
+	}
+	if _, err := os.Stat(unrelatedMarker); err != nil {
+		t.Fatalf("unrelated process did not finish: %v", err)
+	}
+	time.Sleep(2500 * time.Millisecond)
+	if _, err := os.Stat(descendantMarker); !os.IsNotExist(err) {
+		t.Fatalf("owned descendant survived termination: %v", err)
+	}
+}
+
+func TestOverflowingProcessTree(t *testing.T) {
+	if !helperArgument("samchon-overflow-helper") {
+		t.Skip("subprocess helper")
+	}
+	marker := os.Args[len(os.Args)-1]
+	child := exec.Command(
+		os.Args[0],
+		"-test.run=^TestDelayedMarkerProcess$",
+		"--",
+		"samchon-descendant-marker",
+		marker,
+	)
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	block := make([]byte, 64*1024)
+	for {
+		if _, err := os.Stdout.Write(block); err != nil {
+			os.Exit(0)
+		}
+	}
+}
+
+func TestDelayedMarkerProcess(t *testing.T) {
+	if !helperArgument("samchon-descendant-marker") &&
+		!helperArgument("samchon-unrelated-marker") {
+		t.Skip("subprocess helper")
+	}
+	time.Sleep(2 * time.Second)
+	if err := os.WriteFile(os.Args[len(os.Args)-1], []byte("done"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func helperArgument(value string) bool {
+	for _, argument := range os.Args {
+		if argument == value {
+			return true
+		}
+	}
+	return false
 }
 
 func TestGoToolchainResolutionKeepsAnalysisOnTheSelectedToolchain(t *testing.T) {

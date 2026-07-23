@@ -21,7 +21,8 @@ const matches = fs
   .map((entry) => path.join(directory, entry))
   .filter((tarball) => {
     const manifest = JSON.parse(
-      execFileSync("tar", ["-xOzf", tarball, "package/package.json"], {
+      execFileSync("tar", ["-xOzf", path.basename(tarball), "package/package.json"], {
+        cwd: path.dirname(tarball),
         encoding: "utf8",
       }),
     );

@@ -734,7 +734,7 @@ function assertMapping(): void {
   // A document in a language this session does not own is reported, not
   // silently absorbed.
   const foreign = adaptScipIndex({
-    index: parseScipIndex(rawIndex()),
+    index: parseScipIndex(rawIndex({ language: "rust" })),
     root: "/r",
     provider: "scip-go",
     languages: ["go"],

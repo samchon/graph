@@ -52,6 +52,8 @@ const symbolCallCountByUri = new Map();
 let diagnosticSeverities = [2];
 let hangMethod;
 let hangRefreshMethod;
+let oversizedFrame = 0;
+let oversizedHeader = "";
 if (process.env.SAMCHON_GRAPH_FAKE_LSP_ARGS_FILE) {
   fs.writeFileSync(
     process.env.SAMCHON_GRAPH_FAKE_LSP_ARGS_FILE,
@@ -183,6 +185,12 @@ for (const arg of process.argv.slice(2)) {
     slowFirstReferencesMs = Number(arg.slice("--slow-first-references=".length));
   } else if (arg.startsWith("--hang-references-after=")) {
     hangReferencesAfter = Number(arg.slice("--hang-references-after=".length));
+  } else if (arg.startsWith("--oversized-frame=")) {
+    oversizedFrame = Number(arg.slice("--oversized-frame=".length));
+  } else if (arg === "--oversized-header=unterminated") {
+    oversizedHeader = "unterminated";
+  } else if (arg === "--oversized-header=terminated") {
+    oversizedHeader = "terminated";
   } else if (arg.startsWith("--document-version-log=")) {
     documentVersionLog = arg.slice("--document-version-log=".length);
   } else if (arg.startsWith("--diagnostic-severities=")) {
@@ -252,6 +260,20 @@ function handle(message) {
   }
   if (message.method === "initialize") {
     if (options.exitOnInitialize) process.exit(7);
+    if (oversizedHeader !== "") {
+      process.stdout.write(
+        `${"X".repeat(70 * 1024)}${
+          oversizedHeader === "terminated" ? "\r\n\r\n" : ""
+        }`,
+      );
+      setInterval(() => undefined, 1_000);
+      return;
+    }
+    if (oversizedFrame > 0) {
+      process.stdout.write(`Content-Length: ${oversizedFrame}\r\n\r\n`);
+      setInterval(() => undefined, 1_000);
+      return;
+    }
     if (options.stderr) process.stderr.write("fake-lsp progress\n");
     if (options.badHeader) process.stdout.write("Missing-Length\r\n\r\n");
     if (options.badJson) {

@@ -10,8 +10,7 @@
     "parity": "pnpm --filter @samchon/graph-test build && node tests/test-graph/lib/parity.mjs",
     "experiment": "pnpm --filter @samchon/graph-experiment start",
     "benchmark": "pnpm --filter @samchon/graph-benchmark start",
-    "release": "bumpp --r",
-    "package:latest": "pnpm --filter @samchon/graph... publish --access public --tag latest"
+    "release": "bumpp --r"
   },
   "repository": {
     "type": "git",
@@ -26,6 +25,7 @@
   "packageManager": "pnpm@10.10.0",
   "devDependencies": {
     "bumpp": "catalog:utils",
-    "c8": "catalog:utils"
+    "c8": "catalog:utils",
+    "changelogithub": "14.0.0"
   }
 }

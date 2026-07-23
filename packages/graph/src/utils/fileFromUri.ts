@@ -5,7 +5,7 @@ export function fileFromUri(uri: string): string {
   // An LSP owns the URI encoder on responses. Pyright percent-encodes reserved
   // path characters such as the drive colon and `@`, while other servers leave
   // some of them literal. `decodeURI` deliberately preserves reserved escapes,
-  // which made `flask%40commit` a different filesystem path and discarded every
+  // which made `project%40commit` a different filesystem path and discarded every
   // reference edge from that checkout. Decode the complete file path once at
   // this boundary instead of maintaining a server-specific escape allowlist.
   try {

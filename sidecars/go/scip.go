@@ -198,6 +198,21 @@ func validateScipIndex(moduleRoot string, body []byte) (scipArtifact, error) {
 }
 
 func fileURIPath(value string) (string, error) {
+	if runtime.GOOS == "windows" && strings.HasPrefix(strings.ToLower(value), "file://") {
+		// scip-go 0.2.7 serializes a Windows drive path as
+		// `file://C:%5C...`, placing the drive in URI authority position. That
+		// is not a valid file URL, but it is unambiguous and version-pinned at
+		// this provider boundary, so normalize only this exact drive form
+		// before the general URL parser. Hosts, ports, and non-file schemes
+		// still go through the strict path below.
+		raw, err := url.PathUnescape(value[len("file://"):])
+		if err != nil {
+			return "", err
+		}
+		if len(raw) >= 3 && raw[1] == ':' && (raw[2] == '\\' || raw[2] == '/') {
+			return filepath.Clean(raw), nil
+		}
+	}
 	parsed, err := url.Parse(value)
 	if err != nil {
 		return "", err
@@ -208,7 +223,13 @@ func fileURIPath(value string) (string, error) {
 	if parsed.Scheme != "file" {
 		return "", fmt.Errorf("unsupported URI scheme %q", parsed.Scheme)
 	}
+	if parsed.User != nil || parsed.Port() != "" {
+		return "", errors.New("file URI cannot carry user information or a port")
+	}
 	path := parsed.Path
+	if parsed.Hostname() != "" && !strings.EqualFold(parsed.Hostname(), "localhost") {
+		path = "//" + parsed.Hostname() + path
+	}
 	if runtime.GOOS == "windows" && len(path) >= 3 && path[0] == '/' && path[2] == ':' {
 		path = path[1:]
 	}
@@ -217,15 +238,37 @@ func fileURIPath(value string) (string, error) {
 
 func runBounded(ctx context.Context, directory, command string, args ...string) (string, string, error) {
 	executable, commandArgs := commandInvocation(command, args)
-	process := exec.CommandContext(ctx, executable, commandArgs...)
+	boundedContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if err := boundedContext.Err(); err != nil {
+		return "", "", err
+	}
+	process := exec.Command(executable, commandArgs...)
+	configureOwnedProcess(process)
 	if directory != "" {
 		process.Dir = directory
 	}
-	stdout := &limitedBuffer{limit: maxChildOutputBytes}
-	stderr := &limitedBuffer{limit: maxChildOutputBytes}
+	stdout := &limitedBuffer{limit: maxChildOutputBytes, onExceeded: cancel}
+	stderr := &limitedBuffer{limit: maxChildOutputBytes, onExceeded: cancel}
 	process.Stdout = stdout
 	process.Stderr = stderr
-	err := process.Run()
+	if err := process.Start(); err != nil {
+		return "", "", err
+	}
+	exited := make(chan error, 1)
+	go func() {
+		exited <- process.Wait()
+	}()
+	var err error
+	select {
+	case err = <-exited:
+	case <-boundedContext.Done():
+		terminateOwnedProcess(process)
+		err = <-exited
+		if ctx.Err() != nil {
+			err = ctx.Err()
+		}
+	}
 	if stdout.exceeded || stderr.exceeded {
 		return stdout.String(), stderr.String(), fmt.Errorf(
 			"%s exceeded the %d-byte output limit",
@@ -240,16 +283,21 @@ func commandInvocation(command string, args []string) (string, []string) {
 	if runtime.GOOS == "windows" {
 		extension := strings.ToLower(filepath.Ext(command))
 		if extension == ".cmd" || extension == ".bat" {
-			return "cmd.exe", append([]string{"/d", "/s", "/c", command}, args...)
+			systemRoot := os.Getenv("SystemRoot")
+			if systemRoot == "" {
+				systemRoot = `C:\Windows`
+			}
+			return filepath.Join(systemRoot, "System32", "cmd.exe"), append([]string{"/d", "/s", "/v:off", "/c", command}, args...)
 		}
 	}
 	return command, args
 }
 
 type limitedBuffer struct {
-	buffer   bytes.Buffer
-	limit    int
-	exceeded bool
+	buffer     bytes.Buffer
+	limit      int
+	exceeded   bool
+	onExceeded func()
 }
 
 func (buffer *limitedBuffer) Write(body []byte) (int, error) {
@@ -262,6 +310,9 @@ func (buffer *limitedBuffer) Write(body []byte) (int, error) {
 		_, _ = buffer.buffer.Write(chunk)
 	}
 	if len(body) > available {
+		if !buffer.exceeded && buffer.onExceeded != nil {
+			buffer.onExceeded()
+		}
 		buffer.exceeded = true
 	}
 	return len(body), nil

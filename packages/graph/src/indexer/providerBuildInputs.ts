@@ -1,5 +1,7 @@
 import { IGraphProvider } from "../provider/IGraphProvider";
 import { GraphLanguage } from "../typings";
+import { languageBuildInputs } from "./languageBuildInputs";
+import { confinedProjectInput } from "./confinedProjectInput";
 
 /** Every provider-declared non-source input relevant to these languages. */
 export function providerBuildInputs(
@@ -10,11 +12,14 @@ export function providerBuildInputs(
   const requested = new Set(languages);
   return [
     ...new Set(
-      providers.flatMap((provider) =>
-        provider.languages.some((language) => requested.has(language))
-          ? buildInputsOf(provider, root)
-          : [],
-      ),
+      [
+        ...languageBuildInputs(root, languages),
+        ...providers.flatMap((provider) =>
+          provider.languages.some((language) => requested.has(language))
+            ? buildInputsOf(provider, root)
+            : [],
+        ),
+      ].map((input) => confinedProjectInput.relative(root, input)),
     ),
   ].sort(compareOrdinal);
 }

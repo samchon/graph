@@ -11,9 +11,9 @@
  */
 export interface ISamchonGraphDiagnostic {
   /**
-   * Graph file identity the diagnostic names, or `""` for a global finding.
-   * Project files are relative; compiler-loaded out-of-root and virtual files
-   * retain normalized absolute or `bundled:///` identities.
+   * Schema-v6 graph file identity the diagnostic names, relative to the dump
+   * project (including `../` siblings), `bundled:///` for a virtual library, or
+   * `""` for a global finding.
    */
   file: string;
 

@@ -1,9 +1,11 @@
 import { ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 
+import { ownedProcess } from "../utils/ownedProcess";
+
 const SHUTDOWN_GRACE_MS = 1_000;
-const TERMINATION_GRACE_MS = 1_000;
-const FORCED_EXIT_GRACE_MS = 2_000;
+const DEFAULT_MAX_MESSAGE_BYTES = 256 * 1024 * 1024;
+const MAX_HEADER_BYTES = 64 * 1024;
 
 interface IRequest {
   resolve: (value: unknown) => void;
@@ -18,6 +20,7 @@ export class LspClient {
   private readonly exit: Promise<void>;
   private readonly pending = new Map<number, IRequest>();
   private readonly events = new EventEmitter();
+  private readonly maxMessageBytes: number;
   private buffer = Buffer.alloc(0);
   private nextId = 1;
   private exited = false;
@@ -30,13 +33,23 @@ export class LspClient {
     args: readonly string[],
     private readonly timeoutMs?: number,
     cwd?: string,
+    maxMessageBytes = DEFAULT_MAX_MESSAGE_BYTES,
+    windowsVerbatimArguments?: boolean,
   ) {
+    if (!Number.isSafeInteger(maxMessageBytes) || maxMessageBytes < 1) {
+      throw new TypeError(
+        "LSP maxMessageBytes must be a positive safe integer.",
+      );
+    }
+    this.maxMessageBytes = maxMessageBytes;
     this.process = spawn(command, [...args], {
       cwd,
+      detached: ownedProcess.group(),
       stdio: "pipe",
+      windowsVerbatimArguments,
       windowsHide: true,
     });
-    this.exit = exitOf(this.process);
+    this.exit = ownedProcess.exit(this.process);
     this.process.stdout.on("data", (chunk: Buffer) => this.onData(chunk));
     this.process.stderr.on("data", () => {
       // Language servers often log noisy progress to stderr.
@@ -168,7 +181,26 @@ export class LspClient {
     this.buffer = Buffer.concat([this.buffer, chunk]);
     for (;;) {
       const headerEnd = this.buffer.indexOf("\r\n\r\n");
-      if (headerEnd < 0) return;
+      if (headerEnd < 0) {
+        if (this.buffer.length > MAX_HEADER_BYTES) {
+          this.failTransport(
+            new Error(
+              `Language server exceeded the ${String(MAX_HEADER_BYTES)} byte LSP header limit.`,
+            ),
+          );
+          this.buffer = Buffer.alloc(0);
+        }
+        return;
+      }
+      if (headerEnd > MAX_HEADER_BYTES) {
+        this.failTransport(
+          new Error(
+            `Language server exceeded the ${String(MAX_HEADER_BYTES)} byte LSP header limit.`,
+          ),
+        );
+        this.buffer = Buffer.alloc(0);
+        return;
+      }
       const header = this.buffer.slice(0, headerEnd).toString("ascii");
       const match = /Content-Length:\s*(\d+)/i.exec(header);
       if (match === null) {
@@ -176,6 +208,19 @@ export class LspClient {
         continue;
       }
       const length = Number(match[1]);
+      if (
+        !Number.isSafeInteger(length) ||
+        length < 0 ||
+        length > this.maxMessageBytes
+      ) {
+        this.failTransport(
+          new Error(
+            `Language server declared an invalid or oversized LSP frame (${String(length)} bytes; limit ${String(this.maxMessageBytes)}).`,
+          ),
+        );
+        this.buffer = Buffer.alloc(0);
+        return;
+      }
       const bodyStart = headerEnd + 4;
       const bodyEnd = bodyStart + length;
       if (this.buffer.length < bodyEnd) return;
@@ -264,7 +309,11 @@ export class LspClient {
         this.fail(new Error("Language server exited (null, SIGKILL)."));
       }
       /* c8 ignore stop */
-      this.termination = terminateOwnedProcess(this.process, this.exit);
+      this.termination = ownedProcess.terminate(
+        this.process,
+        this.exit,
+        "Language server",
+      );
     }
     return this.termination;
   }
@@ -289,86 +338,6 @@ function stdinError(error: unknown): Error {
   return new Error(`Language server stdin failed: ${message}`);
 }
 
-async function terminateOwnedProcess(
-  child: ChildProcessWithoutNullStreams,
-  exit: Promise<void>,
-): Promise<void> {
-  if (!child.stdin.destroyed) child.stdin.destroy();
-  /* c8 ignore next -- child exit can win the race into its owned teardown. */
-  if (!isRunning(child)) return;
-  /* c8 ignore start -- exactly one OS termination lane can execute on a
-   * coverage host. Windows and POSIX integration tests still exercise their
-   * respective process-tree and SIGTERM-to-SIGKILL behavior. */
-  if (process.platform === "win32") {
-    await killWindowsProcessTree(child.pid!);
-    if (await waitForExit(exit, FORCED_EXIT_GRACE_MS)) return;
-    throw new Error(
-      "Language server process tree did not exit after forced termination.",
-    );
-  }
-  signalChild(child, "SIGTERM");
-  if (await waitForExit(exit, TERMINATION_GRACE_MS)) return;
-  signalChild(child, "SIGKILL");
-  if (!(await waitForExit(exit, FORCED_EXIT_GRACE_MS))) {
-    throw new Error(
-      "Language server did not exit after forced termination.",
-    );
-  }
-  /* c8 ignore stop */
-}
-
-function isRunning(child: ChildProcessWithoutNullStreams): boolean {
-  return (
-    child.pid !== undefined &&
-    child.exitCode === null &&
-    child.signalCode === null
-  );
-}
-
-/* c8 ignore start -- POSIX-only helper; its fixed valid signals and owned
- * handle are covered by the POSIX lifecycle integration test. */
-function signalChild(
-  child: ChildProcessWithoutNullStreams,
-  signal: NodeJS.Signals,
-): void {
-  try {
-    child.kill(signal);
-  } catch {
-    return;
-  }
-}
-/* c8 ignore stop */
-
-/* c8 ignore start -- Windows-only helper; the Windows lifecycle integration
- * test proves exact-tree termination and unrelated-process preservation. */
-function killWindowsProcessTree(pid: number): Promise<void> {
-  return new Promise((resolve) => {
-    const killer = spawn(
-      "taskkill.exe",
-      ["/pid", String(pid), "/t", "/f"],
-      {
-        stdio: "ignore",
-        windowsHide: true,
-      },
-    );
-    let settled = false;
-    const finish = (): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve();
-    };
-    const timer = setTimeout(() => {
-      killer.kill();
-      finish();
-    }, FORCED_EXIT_GRACE_MS);
-    timer.unref();
-    killer.once("error", finish);
-    killer.once("exit", finish);
-  });
-}
-/* c8 ignore stop */
-
 function waitForExit(exit: Promise<void>, timeoutMs: number): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
@@ -383,19 +352,5 @@ function waitForExit(exit: Promise<void>, timeoutMs: number): Promise<boolean> {
     const timer = setTimeout(() => finish(false), timeoutMs);
     timer.unref();
     void exit.then(() => finish(true));
-  });
-}
-
-function exitOf(child: ChildProcessWithoutNullStreams): Promise<void> {
-  return new Promise((resolve) => {
-    const settled = (): void => {
-      child.off("error", settled);
-      child.off("exit", settled);
-      child.off("close", settled);
-      resolve();
-    };
-    child.once("error", settled);
-    child.once("exit", settled);
-    child.once("close", settled);
   });
 }

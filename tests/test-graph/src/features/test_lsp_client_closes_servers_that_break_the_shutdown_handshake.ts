@@ -32,6 +32,7 @@ type LspClientConstructor = new (
   args: readonly string[],
   timeoutMs?: number,
   cwd?: string,
+  maxMessageBytes?: number,
 ) => ILspClient;
 
 /** `LspClient` is internal transport, reached through the shipped artifact. */
@@ -106,6 +107,8 @@ export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
     await assertSynchronousWriteFailureRejectsRequests(LspClient);
     await assertStdinStreamErrorRejectsRequests(LspClient);
     await assertPerRequestDeadlineCleansUpTheTransport(LspClient);
+    await assertOversizedFrameTerminatesTransport(LspClient);
+    await assertOversizedHeadersTerminateTransport(LspClient);
 
     // An already-cancelled request never enters the wire or waits for the
     // otherwise-unlimited default deadline. The client still owns its child and
@@ -127,6 +130,65 @@ export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
     );
     await cancelled.close();
   };
+
+const assertOversizedFrameTerminatesTransport = async (
+  LspClient: LspClientConstructor,
+): Promise<void> => {
+  TestValidator.error(
+    "an unsafe LSP message limit is rejected before spawn",
+    () =>
+      new LspClient(
+        process.execPath,
+        [GraphPaths.fakeLspServer],
+        undefined,
+        undefined,
+        Number.MAX_SAFE_INTEGER + 1,
+      ),
+  );
+  const client = new LspClient(
+    process.execPath,
+    [GraphPaths.fakeLspServer, "--oversized-frame=4096"],
+    undefined,
+    undefined,
+    128,
+  );
+  try {
+    const rejection = await rejectionWithin(
+      client.request("initialize", {}),
+      2_000,
+    );
+    TestValidator.predicate(
+      "a declared oversized frame rejects the pending request promptly",
+      rejection.message.includes("oversized LSP frame") &&
+        rejection.message.includes("4096"),
+    );
+  } finally {
+    await settleWithin(client.close(), 5_000, () => undefined);
+  }
+};
+
+const assertOversizedHeadersTerminateTransport = async (
+  LspClient: LspClientConstructor,
+): Promise<void> => {
+  for (const mode of ["unterminated", "terminated"] as const) {
+    const client = new LspClient(process.execPath, [
+      GraphPaths.fakeLspServer,
+      `--oversized-header=${mode}`,
+    ]);
+    try {
+      const rejection = await rejectionWithin(
+        client.request("initialize", {}),
+        2_000,
+      );
+      TestValidator.predicate(
+        `an ${mode} oversized LSP header retires the transport`,
+        rejection.message.includes("LSP header limit"),
+      );
+    } finally {
+      await settleWithin(client.close(), 5_000, () => undefined);
+    }
+  }
+};
 
 const assertStubbornProcessTreeIsOwned = async (
   LspClient: LspClientConstructor,

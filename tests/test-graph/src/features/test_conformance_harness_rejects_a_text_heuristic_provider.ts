@@ -310,7 +310,7 @@ function declaration(
   kind: ISamchonGraphNode["kind"],
 ): ISamchonGraphNode {
   return {
-    id: id(name),
+    id: id(name, kind),
     kind,
     language: "typescript",
     name,
@@ -320,6 +320,11 @@ function declaration(
   };
 }
 
-function id(name: string): string {
-  return `a.ts#${name}`;
+function id(
+  name: string,
+  kind: ISamchonGraphNode["kind"] = name === "unrelatedHelper"
+    ? "method"
+    : "function",
+): string {
+  return `a.ts#${name}:${kind}`;
 }

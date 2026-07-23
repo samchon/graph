@@ -22,6 +22,12 @@ export interface IBuildGraphOptions {
    */
   lspTimeoutMs?: number;
   /**
+   * Maximum UTF-8 byte length of one inbound LSP JSON-RPC payload. The client
+   * rejects a larger declared frame before buffering its body and terminates
+   * the owned server process. Defaults to 256 MiB.
+   */
+  lspMaxMessageBytes?: number;
+  /**
    * How many `textDocument/references` requests to keep in flight at once.
    * Reference collection dominates indexing time on large repositories, and the
    * requests are independent, so they are issued concurrently up to this bound.

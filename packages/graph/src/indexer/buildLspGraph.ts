@@ -12,6 +12,7 @@ import {
 import { GraphLanguage } from "../typings";
 import { projectRelative, readText } from "../utils/fs";
 import { fileFromUri, fileUri, isSubPath } from "../utils/path";
+import { spawnableCommand } from "../utils/spawnableCommand";
 import { assertGraphSnapshotContract } from "../provider/assertGraphSnapshotContract";
 import { dumpProvenanceOf } from "../provider/dumpProvenanceOf";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
@@ -81,9 +82,19 @@ export async function buildLspGraph(
         ? []
         : closeKeptSessions(result.sessions),
   );
-  if (options.keepAlive) return committed;
-  const { sources: _consumedSources, ...result } = committed;
+  if (options.keepAlive) {
+    const { providerSourceDigests: _providerSourceDigests, ...result } =
+      committed;
+    void _providerSourceDigests;
+    return result;
+  }
+  const {
+    sources: _consumedSources,
+    providerSourceDigests: _providerSourceDigests,
+    ...result
+  } = committed;
   void _consumedSources;
+  void _providerSourceDigests;
   return result;
 }
 
@@ -116,16 +127,10 @@ async function buildLspGraphAttempt(
   const modes = new Map<string, IBulkGraphSession.Mode>();
   const providers = new Map<GraphLanguage, IGraphProvider>();
   const servedLanguages = new Set<GraphLanguage>();
+  let compileCommandsDir: string | undefined;
+  let pubPrepared = false;
   let semanticSliceCount = 0;
   try {
-    // Computed once (not per-language) since cpp and c share the same clangd
-    // compilation database and root.
-    const compileCommandsDir =
-      languages.includes("cpp") || languages.includes("c")
-        ? ensureCompileCommands(root, options.cmakeCommand)
-        : undefined;
-    if (languages.includes("dart")) ensurePubDeps(root, options.pubCommand);
-
     // Every strict provider runs before the generic loop, and the loop then
     // serves whatever they did not claim. The selection this replaces was an
     // `if (language === "typescript")` arm in the middle of that loop: adding a
@@ -239,6 +244,22 @@ async function buildLspGraphAttempt(
       const files = selected.byLanguage.get(language) ?? [];
       if (files.length === 0) continue;
       if (strictLanguages.has(language)) continue;
+      // Preparation belongs to the generic lane that consumes it. Running it
+      // before strict-provider selection mutates/builds projects even when a
+      // compiler-owned snapshot answers without clangd or Analysis Server.
+      if (
+        (language === "cpp" || language === "c") &&
+        compileCommandsDir === undefined
+      ) {
+        compileCommandsDir = ensureCompileCommands(
+          root,
+          options.cmakeCommand,
+        );
+      }
+      if (language === "dart" && !pubPrepared) {
+        ensurePubDeps(root, options.pubCommand);
+        pubPrepared = true;
+      }
       const spec = specOf(language);
       if (spec?.lsp === undefined) {
         warnings.push(`${language}: no built-in LSP server is configured.`);
@@ -269,9 +290,7 @@ async function buildLspGraphAttempt(
       // npm installs Windows servers as .cmd shims, which CreateProcess cannot
       // spawn directly; run those through cmd.exe so ttscserver,
       // pyright-langserver, and friends work from a plain package install.
-      const spawnable = /\.(cmd|bat)$/i.test(resolved)
-        ? { command: "cmd.exe", args: ["/d", "/s", "/c", resolved, ...args] }
-        : { command: resolved, args: [...args] };
+      const spawnable = spawnableCommand(resolved, args);
       try {
         const { result, session } =
           await resolvedDependencies.collectLanguageGraph(
@@ -281,6 +300,7 @@ async function buildLspGraphAttempt(
             spawnable.args,
             files,
             options,
+            spawnable.windowsVerbatimArguments,
           );
         if (result.nodes.length === 0) {
           warnings.push(
@@ -381,6 +401,7 @@ async function buildLspGraphAttempt(
       source: snapshotSource(),
       modes,
       sources,
+      providerSourceDigests: strictDigests,
       ...(options.keepAlive ? { sessions, providers } : {}),
     };
   } catch (error) {
@@ -392,6 +413,13 @@ async function buildLspGraphAttempt(
       );
     }
     throw error;
+  /* c8 ignore start -- V8 reports a synthetic branch on `finally`; cleanup
+   * itself runs on both the success and failure tests above. */
+  } finally {
+  /* c8 ignore stop */
+    if (compileCommandsDir !== undefined) {
+      fs.rmSync(compileCommandsDir, { recursive: true, force: true });
+    }
   }
 }
 
@@ -558,6 +586,7 @@ async function collectLanguageGraph(
   args: readonly string[],
   files: readonly string[],
   options: IBuildGraphOptions,
+  windowsVerbatimArguments?: boolean,
 ): Promise<{
   result: {
     nodes: ISamchonGraphNode[];
@@ -574,6 +603,7 @@ async function collectLanguageGraph(
     args,
     files,
     options,
+    windowsVerbatimArguments,
   );
   let result: {
     nodes: ISamchonGraphNode[];
@@ -601,10 +631,18 @@ async function openLanguageSession(
   args: readonly string[],
   files: readonly string[],
   options: IBuildGraphOptions,
+  windowsVerbatimArguments?: boolean,
 ): Promise<ILspSession> {
   // Normal callers remain unlimited. Bounded callers such as the real-server
   // experiment can opt into a request deadline.
-  const client = new LspClient(command, args, options.lspTimeoutMs, root);
+  const client = new LspClient(
+    command,
+    args,
+    options.lspTimeoutMs,
+    root,
+    options.lspMaxMessageBytes,
+    windowsVerbatimArguments,
+  );
   const diagnostics = new Map<string, ISamchonGraphDiagnostic[]>();
   let lastProgressAt = 0;
   let progressVersion = 0;
@@ -835,9 +873,14 @@ function resolveCommand(command: string, root: string): string | undefined {
     const resolved = path.resolve(root, command);
     return fs.existsSync(resolved) ? resolved : undefined;
   }
-  /* c8 ignore next 2 */
-  const lookup = process.platform === "win32" ? "where.exe" : "command";
+  /* c8 ignore start -- each CI operating system has exactly one command
+   * lookup primitive, so no single run can enter both native arms. */
+  const lookup =
+    process.platform === "win32"
+      ? spawnableCommand.windowsSystem("where.exe")
+      : "command";
   const args = process.platform === "win32" ? [command] : ["-v", command];
+  /* c8 ignore stop */
   const result = spawnSync(lookup, args, {
     encoding: "utf8",
     env: {

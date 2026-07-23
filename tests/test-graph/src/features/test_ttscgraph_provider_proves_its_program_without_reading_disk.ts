@@ -159,8 +159,8 @@ async function assertUniverseDriftRefused(root: string): Promise<void> {
       error instanceof Error,
     );
     TestValidator.predicate(
-      "a contradicted mode clears the untrusted child generation",
-      client.current === undefined && client.generation === 1,
+      "a contradicted mode preserves the previous trusted generation",
+      client.current !== undefined && client.generation === 1,
     );
   } finally {
     await client.close();

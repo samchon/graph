@@ -56,7 +56,7 @@ export namespace ProviderFixtures {
         provider: props.provider ?? "fake",
         authority: props.authority ?? "compiler",
         facts: [...(props.facts ?? DEFAULT_FACTS)],
-        schemaVersion: 5,
+        schemaVersion: 6,
         tool: "fake-provider",
         toolVersion: "1.0.0",
         compilerVersion: "1.0.0",

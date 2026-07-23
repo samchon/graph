@@ -23,13 +23,24 @@ func main() {
 
 func run() error {
 	output := flag.String("output", "", "write the normalized snapshot to this file")
+	project := flag.String("project", "", "absolute project root to index")
 	flag.Parse()
 	if *output == "" {
 		return errors.New("--output is required")
 	}
-	root, err := filepath.Abs(".")
+	if *project == "" {
+		return errors.New("--project is required")
+	}
+	if !filepath.IsAbs(*project) {
+		return errors.New("--project must be absolute")
+	}
+	root, err := filepath.Abs(*project)
 	if err != nil {
 		return fmt.Errorf("resolve project root: %w", err)
+	}
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return fmt.Errorf("--project is not a readable directory: %s", root)
 	}
 	goCommand, err := resolveGoToolchain(root)
 	if err != nil {

@@ -957,6 +957,15 @@ export const test_coverage_edge_cases = async () => {
     fileFromUri("file://localhost/C:/repo/Foo.cs"),
     windows ? "C:\\repo\\Foo.cs" : "/C:/repo/Foo.cs",
   );
+  const { fileUri } = await importLib<{
+    fileUri: (file: string) => string;
+  }>("utils/fileUri.js");
+  const reservedPath = path.resolve(orderRoot, "source # percent%.ts");
+  TestValidator.equals(
+    "outgoing file URIs round-trip reserved path characters",
+    fileFromUri(fileUri(reservedPath)),
+    reservedPath,
+  );
 
   const { readText } = await importLib<{ readText: (file: string) => string | undefined }>("utils/readText.js");
   TestValidator.equals("missing text file returns undefined", readText(path.join(orderRoot, "missing.ts")), undefined);

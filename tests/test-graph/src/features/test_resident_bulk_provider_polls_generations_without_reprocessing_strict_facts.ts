@@ -77,6 +77,9 @@ export const test_resident_bulk_provider_polls_generations_without_reprocessing_
     const resident = createResidentGraphSource(
       { cwd: root, languages: ["typescript"] },
       {
+        // Keep this hand-written legacy result independent of whichever
+        // optional strict tools the coverage runner exposes through PATH.
+        providers: [],
         buildLspGraph: async () => {
           builds += 1;
           return {
@@ -179,9 +182,9 @@ function snapshot(
       provider: "ttscgraph",
       authority: "compiler",
       facts: ["exports", "calls"],
-      schemaVersion: 5,
+      schemaVersion: 6,
       tool: "ttscgraph",
-      toolVersion: "0.19.3-21-g2b724664e",
+      toolVersion: "0.20.1",
       compilerVersion: "5.9.0",
       protocolVersion: 1,
       universe: createHash("sha256").update("universe").digest("hex"),

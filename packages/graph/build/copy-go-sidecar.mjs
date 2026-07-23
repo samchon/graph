@@ -19,6 +19,8 @@ for (const file of [
   "main.go",
   "model.go",
   "modules.go",
+  "process_unix.go",
+  "process_windows.go",
   "scip.go",
 ]) {
   fs.copyFileSync(path.join(source, file), path.join(target, file));

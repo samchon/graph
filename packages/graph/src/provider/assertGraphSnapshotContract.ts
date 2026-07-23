@@ -1,6 +1,11 @@
 import { GraphLanguage } from "../typings";
+import { fileOfNodeId } from "../utils/fileOfNodeId";
 import { IBulkGraphSession } from "./IBulkGraphSession";
 import { IGraphProvider } from "./IGraphProvider";
+import {
+  isSemanticGraphNodeId,
+  validateSemanticGraphNode,
+} from "./semanticIdentity";
 
 /**
  * Hold a published snapshot to the contract its provider registered.
@@ -46,16 +51,48 @@ export function assertGraphSnapshotContract(
   // not name would be published by this generation and deleted by no later one,
   // because nothing that refreshes this session is responsible for it.
   const owned = new Set(snapshot.languages);
+  const nodeIds = new Set<string>();
+  const files = new Set<string>();
   for (const node of snapshot.nodes) {
     if (!owned.has(node.language)) {
       throw new Error(
         `${label} published a ${node.language} node in a slice that owns only ${snapshot.languages.join(", ")}: ${node.id}`,
       );
     }
+    if (nodeIds.has(node.id)) {
+      throw new Error(`${label} published duplicate node id ${node.id}`);
+    }
+    nodeIds.add(node.id);
+    if (node.file !== "") files.add(node.file);
+    if (isSemanticGraphNodeId(node.id)) {
+      validateSemanticGraphNode(node);
+    } else if (
+      !(node.external && node.kind === "external_symbol" && node.file === "") &&
+      !(node.kind === "file" && node.id === node.file)
+    ) {
+      const parsed = fileOfNodeId.parseLegacy(node.id);
+      if (
+        parsed === undefined ||
+        parsed.file !== node.file ||
+        parsed.kind !== node.kind
+      ) {
+        throw new Error(
+          `${label} published a legacy node id that contradicts its file or kind: ${node.id}`,
+        );
+      }
+    }
   }
 
   const provable = new Set(provider.facts);
   for (const edge of snapshot.edges) {
+    if (
+      (!nodeIds.has(edge.from) && !files.has(edge.from)) ||
+      (!nodeIds.has(edge.to) && !files.has(edge.to))
+    ) {
+      throw new Error(
+        `${label} published an edge with an absent endpoint: ${edge.from} -> ${edge.to}`,
+      );
+    }
     if (!provable.has(edge.kind)) {
       throw new Error(
         `${label} published a "${edge.kind}" edge although it is not registered to prove that family: ${edge.from} -> ${edge.to}`,

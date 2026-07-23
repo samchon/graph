@@ -51,17 +51,20 @@ export const test_benchmark_viewer_reduce_matches_package_reducer = async () => 
   const relativeFirst = mixedPathReduction(viewer.reduce, false);
   const absoluteFirst = mixedPathReduction(viewer.reduce, true);
   TestValidator.equals(
-    "the benchmark viewer sanitizes a sibling absolute identity beside a project-relative identity",
+    "the benchmark viewer preserves a sibling identity beside a project-relative identity",
     pathCoordinates(relativeFirst),
+    [
+      ["Local", "src/local.ts", "src/local.ts"],
+      ["Sibling", "D:/sibling/sibling.ts", "D:/sibling/sibling.ts"],
+    ],
+  );
+  TestValidator.equals(
+    "the benchmark viewer reroots an absolute-first legacy projection",
+    pathCoordinates(absoluteFirst),
     [
       ["Local", "src/local.ts", "src/local.ts"],
       ["Sibling", "sibling.ts", "sibling.ts"],
     ],
-  );
-  TestValidator.equals(
-    "the benchmark viewer's mixed path reduction is independent of node order",
-    pathCoordinates(absoluteFirst),
-    pathCoordinates(relativeFirst),
   );
 };
 

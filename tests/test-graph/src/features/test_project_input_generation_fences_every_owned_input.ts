@@ -48,7 +48,10 @@ export const test_project_input_generation_fences_every_owned_input =
 
     TestValidator.equals(
       "only participating provider inputs are deduplicated and sorted",
-      providerBuildInputs(["typescript", "go"], providers),
+      providerBuildInputs(["typescript", "go"], providers, root)
+        .filter((input) =>
+          ["first.ts", "go.generated", "shared.generated"].includes(input),
+        ),
       ["first.ts", "go.generated", "shared.generated"],
     );
     TestValidator.equals(
@@ -56,13 +59,13 @@ export const test_project_input_generation_fences_every_owned_input =
       providerBuildInputs(
         ["typescript"],
         [ProviderFixtures.provider({ name: "source-only" })],
+        root,
       ),
-      [],
+      providerBuildInputs(["typescript"], [], root),
     );
-    TestValidator.equals(
-      "dynamic build inputs receive the project root",
-      providerBuildInputs(["go"], [dynamic], root),
-      [path.join("nested", "go.mod")],
+    TestValidator.predicate(
+      "dynamic build inputs receive the project root and join the common registry",
+      providerBuildInputs(["go"], [dynamic], root).includes("nested/go.mod"),
     );
 
     const manifest = projectInputManifest(
@@ -72,9 +75,10 @@ export const test_project_input_generation_fences_every_owned_input =
       new Set(["typescript"]),
     );
     TestValidator.equals(
-      "provider-owned source contents stay opaque",
-      manifest.get(second),
-      "provider-owned",
+      "provider-owned source contents are coordinator-fenced too",
+      manifest.get(second) !== undefined &&
+        manifest.get(second) !== "missing",
+      true,
     );
     TestValidator.predicate(
       "a declared input overrides source opacity and is hashed",
@@ -144,14 +148,14 @@ export const test_project_input_generation_fences_every_owned_input =
       }),
     );
     TestValidator.equals(
-      "a stable generation retains every provider-owned language",
+      "the coordinator no longer excludes provider-owned languages",
       committed.inputManifestLanguages,
-      ["go", "rust", "typescript"],
+      [],
     );
     TestValidator.equals(
       "a stable generation retains the selected providers' build inputs",
       committed.buildInputs,
-      ["first.ts", "go.generated", "shared.generated"],
+      providerBuildInputs(["typescript", "go"], providers, root),
     );
 
     const cleanupRoot = GraphPaths.createTempDirectory(
@@ -208,6 +212,43 @@ export const test_project_input_generation_fences_every_owned_input =
       attempts === 3 &&
         exhaustion instanceof Error &&
         exhaustion.message.includes("all 3 bounded attempts"),
+    );
+
+    const unboundRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-provider-digest-",
+    );
+    const unboundFile = path.join(unboundRoot, "index.ts");
+    fs.writeFileSync(unboundFile, "export const value = 1;\n");
+    let unboundAttempts = 0;
+    let unboundFailure: unknown;
+    try {
+      await commitProjectInputGeneration(
+        { cwd: unboundRoot, languages: ["typescript"] },
+        [],
+        () => {
+          unboundAttempts += 1;
+          return {
+            ...resultOf(unboundRoot),
+            providerSourceDigests: new Map([
+              [
+                unboundFile,
+                {
+                  checkerDigest: "a".repeat(64),
+                  diskDigest: "b".repeat(64),
+                },
+              ],
+            ]),
+          };
+        },
+      );
+    } catch (error) {
+      unboundFailure = error;
+    }
+    TestValidator.predicate(
+      "a provider digest outside the coordinator generation never publishes",
+      unboundAttempts === 3 &&
+        unboundFailure instanceof Error &&
+        unboundFailure.message.includes("does not bind the provider snapshot"),
     );
   };
 

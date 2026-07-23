@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
+import { spawnableCommand } from "../utils/spawnableCommand";
 import { IGraphProvider } from "./IGraphProvider";
 
 /** Resolve a sidecar/indexer project-locally before consulting PATH. */
@@ -43,11 +44,7 @@ function resolveOnPath(
   /* c8 ignore start -- each CI operating system exercises its native lookup. */
   const lookup =
     process.platform === "win32"
-      ? path.join(
-          process.env.SystemRoot ?? "C:\\Windows",
-          "System32",
-          "where.exe",
-        )
+      ? spawnableCommand.windowsSystem("where.exe", env)
       : "command";
   const args = process.platform === "win32" ? [command] : ["-v", command];
   const shell = process.platform !== "win32";
@@ -72,8 +69,11 @@ function resolveOnPath(
     return [...native, ...shim, ...lines][0];
   }
   /* c8 ignore stop */
+  /* c8 ignore start -- this is the POSIX half of the Windows-native branch
+   * above and is exercised on POSIX CI only. */
   return lines[0];
 }
+/* c8 ignore stop */
 
 function localCandidates(root: string, command: string): string[] {
   const privateBin = path.join(root, ".samchon-graph", "bin");
@@ -108,11 +108,6 @@ function spawnable(
 ): IGraphProvider.ICommand {
   /* c8 ignore start -- Windows exercises its command shim and POSIX its
    * directly executable file in the same cross-platform test. */
-  return process.platform === "win32" && /\.(?:cmd|bat)$/i.test(executable)
-    ? {
-        command: "cmd.exe",
-        args: ["/d", "/s", "/c", executable, ...args],
-      }
-    : { command: executable, args: [...args] };
+  return spawnableCommand(executable, args);
   /* c8 ignore stop */
 }

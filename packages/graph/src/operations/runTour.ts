@@ -177,13 +177,12 @@ export function runTour(
       .slice(0, MAX_FLOW_ANCHORS)
       .map((hop) => flowStepOf(graph, hop));
     // Every node the flow reached is listed, including the ones its steps name.
-    // A step is prose — `App.render -[calls at App.tsx:2093]-> renderScene` — and
+    // A step is prose — `Controller.start -[calls at controller.ts:42]-> Service.run` — and
     // it carries the name and the citation but not the *handle*, and the handle
     // is what a second call needs. Holding back the nodes the steps had named
-    // took their ids away with them: Sonnet traced `mutateElement` by name, got
-    // the several nodes that name, and re-traced it by id — two calls for one
-    // symbol, four times over in a single Excalidraw tour, which went from five
-    // graph calls to fifteen. What `reached` is for is not the story, which the
+    // took their ids away with them: an agent traced an overloaded method by
+    // name, got the several nodes that name, and re-traced it by id — two calls
+    // for one symbol, four times in one tour. What `reached` is for is not the story, which the
     // steps tell; it is the handles to go on with.
     primaryFlow.push({
       start: flowStartOf(start),
@@ -313,9 +312,8 @@ function namedNodesOf(
     // An ambiguous guess is not evidence. A name the project declares once is a
     // symbol the caller named; a name it declares many times is a word, and the
     // graph does not get to decide which one was meant. Resolving to the first
-    // candidate decides anyway: Sonnet asked for `handlePointerDown`, Excalidraw
-    // declares it on several classes, and the tour of a drawing app opened on
-    // its line editor and cost eight calls. Boosting all of them instead only
+    // candidate decides anyway: an agent asked for an overloaded handler that
+    // several classes declare, and the tour opened on the wrong owner. Boosting all of them instead only
     // spreads the same guess wider. Both are the graph inventing a belief the
     // caller did not have, so an ambiguous name is dropped, exactly like a name
     // the graph has never heard of.
@@ -1024,11 +1022,9 @@ function diverseTourSeeds<
  * Whether a candidate seed would only say again what a chosen seed says: the
  * same file, and a name the chosen one already contains word for word.
  *
- * `LinearElementEditor.handlePointerMove` and its `...InEditMode` sibling, and
- * `renderNewElementScene` beside its own throttled twin, took four of the five
- * seeds on Excalidraw's edit-pipeline tour. The mutation and history layers the
- * question
- * named took none, and Sonnet spent twenty-two graph calls finding them. A seed
+ * `Editor.move` and its `moveInMode` sibling, and `renderView` beside its own
+ * throttled twin, can consume four of five seeds. The distinct mutation and
+ * history layers then receive none, forcing extra graph calls. A seed
  * that restates a chosen one is a slot spent on a fact the tour already has.
  */
 function restates(
@@ -1113,11 +1109,10 @@ function isNoisePath(file: string): boolean {
 
 /**
  * A question and the code it asks about name the same thing in different parts
- * of speech: the asker writes "scene mutation", the symbol is `mutateElement`.
+ * of speech: the asker writes "record mutation", the symbol is `mutateRecord`.
  * Inflection alone does not bridge that — "mutation" and "mutate" share five
- * characters and the prefix rule wants six — so a tour of Excalidraw's edit
- * pipeline seeded four renderers, never surfaced the mutation layer the question named,
- * and Sonnet went and found it itself in twenty-one further graph calls.
+ * characters and the prefix rule wants six — so a tour can seed four renderers
+ * without surfacing the mutation layer the question named.
  *
  * Stripping the derivational suffixes as well collapses both spellings onto the
  * same stem, so the noun in the question reaches the verb in the code.
@@ -1159,13 +1154,11 @@ function commonPrefixLength(a: string, b: string): number {
  *
  * `dependsOn` is the union of what a symbol calls and what it names in a type
  * position, so walking `calls`, then `types`, then `dependsOn` listed the same
- * neighbour under three labels, and the ten nearby slots of Excalidraw's edit
- * tour went:
- * `_renderInteractiveScene` as a call, `_renderInteractiveScene` as a type,
- * `InteractiveSceneRenderConfig` as a type, and the same again for the next
+ * neighbour under three labels, so ten nearby slots can become:
+ * `renderFrame` as a call, `renderFrame` as a type, `FrameConfig` as a type,
+ * and the same again for the next
  * symbol. Two of five stages consumed the whole list, and the stage the reader
- * would have to look up next — who calls the mutation — was not in it. Sonnet
- * then asked the graph "who calls this" thirteen times.
+ * would have to look up next — who calls the mutation — was not in it.
  *
  * So a neighbour is named once, and the callers come first. A tour follows what
  * runs; a type reference is the weakest thing a symbol can say about itself,
@@ -1206,9 +1199,8 @@ function nearbyAnchorsOf(
   });
 
   // A stage at a time, not a symbol at a time. The list is capped, and taken
-  // symbol by symbol the first one's neighbourhood filled it: Excalidraw's
-  // renderer spent
-  // six of the ten slots on its own callees and types, and the mutation, the
+  // symbol by symbol the first one's neighbourhood filled it: one renderer can
+  // spend six of ten slots on its own callees and types, while the mutation, the
   // history and the collaboration the question named got none.
   const anchors: ISamchonGraphTour.IAnchor[] = [];
   const told = new Set<string>();

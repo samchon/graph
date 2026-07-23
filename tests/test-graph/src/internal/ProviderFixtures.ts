@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+
 import {
   type GraphEdgeKind,
   type GraphLanguage,
@@ -34,6 +38,7 @@ export namespace ProviderFixtures {
     diagnostics?: ISamchonGraphDiagnostic[];
     sources?: Map<string, IBulkGraphSession.ISourceDigest>;
     warnings?: string[];
+    root?: string;
     provider?: string;
     authority?: GraphProviderAuthority;
     facts?: readonly GraphEdgeKind[];
@@ -46,12 +51,48 @@ export namespace ProviderFixtures {
     props: ISnapshotProps = {},
   ): IBulkGraphSession.ISnapshot {
     const languages = props.languages ?? ["typescript"];
+    const nodes = props.nodes ?? [];
+    const sources =
+      props.sources ??
+      new Map(
+        [
+          ...new Set(
+            nodes.flatMap((node) =>
+              node.file === ""
+                ? []
+                : [
+                    node.file.startsWith("bundled:///")
+                      ? node.file
+                      : path.resolve(props.root ?? process.cwd(), node.file),
+                  ],
+            ),
+          ),
+        ].map((file) => {
+          if (file.startsWith("bundled:///")) {
+            return [file, { checkerDigest: "", diskDigest: "" }];
+          }
+          let digest = "";
+          try {
+            digest = createHash("sha256")
+              .update(fs.readFileSync(file))
+              .digest("hex");
+          } catch {
+            // A deliberately synthetic fixture can name a file without
+            // materializing it; tests that commit a resident generation create
+            // the file and therefore receive an exact disk binding.
+          }
+          return [
+            file,
+            { checkerDigest: digest, diskDigest: digest },
+          ];
+        }),
+      );
     return {
       languages,
-      nodes: props.nodes ?? [],
+      nodes,
       edges: props.edges ?? [],
       diagnostics: props.diagnostics ?? [],
-      sources: props.sources ?? new Map(),
+      sources,
       provenance: {
         provider: props.provider ?? "fake",
         authority: props.authority ?? "compiler",

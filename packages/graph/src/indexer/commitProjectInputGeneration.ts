@@ -1,10 +1,10 @@
 import path from "node:path";
 
-import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { IGraphProvider } from "../provider/IGraphProvider";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IIndexerResult } from "./IIndexerResult";
 import { movedConsumedSource } from "./movedConsumedSource";
+import { movedProviderSource } from "./movedProviderSource";
 import { projectInputManifest } from "./projectInputManifest";
 import { providerBuildInputs } from "./providerBuildInputs";
 import { sameProjectInputManifest } from "./sameProjectInputManifest";
@@ -72,28 +72,4 @@ export async function commitProjectInputGeneration(
   throw new Error(
     `@samchon/graph: ${lastMovement} in all ${String(INPUT_COMMIT_ATTEMPTS)} bounded attempts, so no mixed-generation graph was published`,
   );
-}
-
-function movedProviderSource(
-  digests: ReadonlyMap<
-    string,
-    IBulkGraphSession.ISourceDigest
-  > | undefined,
-  before: ReadonlyMap<string, string>,
-  after: ReadonlyMap<string, string>,
-): string | undefined {
-  if (digests === undefined) return undefined;
-  for (const [file, digest] of digests) {
-    const expectedBefore = before.get(file);
-    const expectedAfter = after.get(file);
-    if (expectedBefore === undefined && expectedAfter === undefined) continue;
-    if (
-      digest.diskDigest === "" ||
-      digest.diskDigest !== expectedBefore ||
-      digest.diskDigest !== expectedAfter
-    ) {
-      return `${file} does not bind the provider snapshot to the coordinator's input generation`;
-    }
-  }
-  return undefined;
 }

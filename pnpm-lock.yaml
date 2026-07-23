@@ -87,6 +87,9 @@ importers:
       '@typia/mcp':
         specifier: catalog:samchon
         version: 13.2.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
+      jsonc-parser:
+        specifier: ^3.3.1
+        version: 3.3.1
       typia:
         specifier: catalog:samchon
         version: 13.2.0(@types/node@22.20.0)(ttsc@0.20.1)

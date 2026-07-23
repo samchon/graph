@@ -42,6 +42,7 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     write(root, "src/a.ts", "export const a = 1;");
     write(root, "src/ambient.d.ts", "declare const ambient: unique symbol;");
     write(root, "src/z.ts", "export const z = 1;");
+    write(root, "lib/index.d.ts", "export declare const publicApi: string;");
 
     // A linked agent worktree: `.claude/worktrees/wt` carries a `.git` *file*.
     // It sorts ahead of `src`, so an uncut walk would fill a cap from here.
@@ -64,12 +65,13 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     TestValidator.equals(
       "a nested worktree and a vendored clone are excluded from discovery",
       bases(discovered),
-      ["a.ts", "ambient.d.ts", "z.ts"],
+      ["a.ts", "ambient.d.ts", "index.d.ts", "z.ts"],
     );
 
     // Capped walk: the cap is spent on real source, not on the worktree file
-    // that sorts ahead of it. `.claude` < `embedded` < `src`, so without the
-    // boundary the single slot would be `nested.ts`.
+    // that sorts ahead of it. The authored declaration under `lib` is the
+    // first legitimate file; without the repository boundary it would still
+    // lose the single slot to `nested.ts`.
     const capped = walkSourceFiles(root, {
       extensions: new Set([".ts"]),
       maxFiles: 1,
@@ -77,7 +79,7 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     TestValidator.equals(
       "a capped walk fills its slots from the requested checkout",
       bases(capped),
-      ["a.ts"],
+      ["index.d.ts"],
     );
 
     // Opt-in: an intentionally vendored repository is indexed on request, and a
@@ -89,7 +91,46 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     TestValidator.equals(
       "an explicit opt-in indexes nested repositories",
       bases(withNested),
-      ["a.ts", "ambient.d.ts", "nested.ts", "vendored.ts", "z.ts"],
+      [
+        "a.ts",
+        "ambient.d.ts",
+        "index.d.ts",
+        "nested.ts",
+        "vendored.ts",
+        "z.ts",
+      ],
+    );
+
+    const compilerRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-compiler-output-",
+    );
+    write(
+      compilerRoot,
+      "tsconfig.json",
+      '{\n  // JSONC is the native TypeScript config format.\n  "compilerOptions": {\n    "outDir": "lib",\n    "declarationDir": "types",\n  },\n}',
+    );
+    write(compilerRoot, "jsconfig.json", "{ malformed");
+    write(
+      compilerRoot,
+      "lib/generated.d.ts",
+      "export declare const generated: string;",
+    );
+    write(
+      compilerRoot,
+      "src/source.ts",
+      "export const source = 'authored';",
+    );
+    write(
+      compilerRoot,
+      "types/generated.d.ts",
+      "export declare const generatedType: string;",
+    );
+    TestValidator.equals(
+      "an explicitly configured compiler output is excluded",
+      bases(
+        walkSourceFiles(compilerRoot, { extensions: new Set([".ts"]) }),
+      ),
+      ["source.ts"],
     );
   };
 

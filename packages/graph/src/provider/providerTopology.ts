@@ -49,19 +49,6 @@ export namespace providerTopology {
     }));
   }
 
-  /** Keep only providers that actually published the resident state. */
-  export function actual(
-    available: readonly IRow[],
-    providers: ReadonlyMap<GraphLanguage, IGraphProvider>,
-  ): string {
-    const names = new Set(
-      [...providers.values()].map((provider) => provider.name),
-    );
-    return JSON.stringify(
-      available.filter((row) => names.has(row.provider)),
-    );
-  }
-
   export function serialize(available: readonly IRow[]): string {
     return JSON.stringify(available);
   }

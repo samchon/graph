@@ -164,6 +164,7 @@ async function buildLspGraphAttempt(
             snapshot,
             candidate.provider,
             candidate.languages,
+            root,
           );
         } catch (error) {
           // `collectProviderGraph` has handed this live session to the

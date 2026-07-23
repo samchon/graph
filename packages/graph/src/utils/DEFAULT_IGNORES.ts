@@ -7,7 +7,6 @@ export const DEFAULT_IGNORES = new Set([
   "node_modules",
   "bower_components",
   "vendor",
-  "lib",
   "dist",
   "build",
   "target",

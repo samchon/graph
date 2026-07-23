@@ -196,6 +196,8 @@ jobs:
         with:
           fetch-depth: 0
       - run: corepack enable
+      - name: Install locked release tooling
+        run: pnpm install --frozen-lockfile
       - name: Generate release notes
         run: pnpm exec changelogithub
         env:

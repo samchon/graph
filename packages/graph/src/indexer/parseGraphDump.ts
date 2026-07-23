@@ -87,7 +87,11 @@ export function parseGraphDump(input: unknown): ISamchonGraphDump {
     if (diagnostic.file !== "") {
       validateGraphPath(diagnostic.file, "diagnostic file");
     }
-    if (diagnostic.line < 1 || diagnostic.column !== undefined && diagnostic.column < 1) {
+    if (
+      !isPositiveSafeInteger(diagnostic.line) ||
+      (diagnostic.column !== undefined &&
+        !isPositiveSafeInteger(diagnostic.column))
+    ) {
       throw new Error("@samchon/graph: diagnostic coordinates must be positive");
     }
   }
@@ -156,14 +160,24 @@ function validateSpan(
     throw new Error(`@samchon/graph: ${label} has an empty file identity`);
   }
   if (
-    span.startLine < 1 ||
-    span.startCol !== undefined && span.startCol < 1 ||
-    span.endLine !== undefined && span.endLine < span.startLine ||
-    span.endCol !== undefined && span.endLine === undefined ||
-    span.endCol !== undefined && span.endCol < 1
+    !isPositiveSafeInteger(span.startLine) ||
+    (span.startCol !== undefined && !isPositiveSafeInteger(span.startCol)) ||
+    (span.endLine !== undefined &&
+      (!isPositiveSafeInteger(span.endLine) ||
+        span.endLine < span.startLine)) ||
+    (span.endCol !== undefined &&
+      (span.endLine === undefined ||
+        !isPositiveSafeInteger(span.endCol) ||
+        (span.endLine === span.startLine &&
+          span.startCol !== undefined &&
+          span.endCol < span.startCol)))
   ) {
     throw new Error(`@samchon/graph: ${label} has invalid coordinates`);
   }
+}
+
+function isPositiveSafeInteger(value: number): boolean {
+  return Number.isSafeInteger(value) && value >= 1;
 }
 
 function validateGraphPath(file: string, label: string): void {

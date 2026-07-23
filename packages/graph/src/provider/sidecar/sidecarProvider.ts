@@ -57,6 +57,7 @@ export function sidecarProvider(
             snapshot,
             provider,
             open.languages,
+            open.root,
           ),
         command: open.command,
         indexArgs: (artifact) =>

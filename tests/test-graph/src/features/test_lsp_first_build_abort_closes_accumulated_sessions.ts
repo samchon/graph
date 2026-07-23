@@ -161,6 +161,7 @@ async function assertARejectedStrictSnapshotClosesItsUnpublishedSession(): Promi
     facts: ["calls"],
   });
   const snapshot = ProviderFixtures.snapshot({
+    root,
     provider: "invalid",
     facts: ["imports"],
     nodes: [graphNode("typescript", "index.ts", "strict")],
@@ -333,6 +334,7 @@ async function assertAnUnpublishedLanguageIsReported(): Promise<void> {
   } as ILspSession;
 
   const snapshot = ProviderFixtures.snapshot({
+    root,
     languages: ["typescript"],
     // Attributed to the registered entry, or the contract check rejects it
     // before the unpublished-language report is ever reached.
@@ -416,7 +418,7 @@ async function runAbortedBuild(
   const buildError = new Error("later language aborted");
   let bulkCloseCalls = 0;
   let genericCloseCalls = 0;
-  const snapshot = bulkSnapshot();
+  const snapshot = bulkSnapshot(root);
   const bulk: IBulkGraphSession = {
     kind: "bulk",
     languages: ["typescript"],
@@ -526,8 +528,9 @@ function fakeProvider(): IGraphProvider {
   return ProviderFixtures.provider();
 }
 
-function bulkSnapshot(): IBulkGraphSession.ISnapshot {
+function bulkSnapshot(root: string): IBulkGraphSession.ISnapshot {
   return ProviderFixtures.snapshot({
+    root,
     nodes: [graphNode("typescript", "index.ts", "value", "variable")],
   });
 }

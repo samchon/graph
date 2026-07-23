@@ -129,6 +129,17 @@ export const test_graph_dump_parser_closes_every_public_trust_boundary =
     await rejected("invalid source ranges", (candidate) => {
       candidate.nodes[0]!.evidence!.endLine = 0;
     });
+    await rejected("fractional source coordinates", (candidate) => {
+      candidate.nodes[0]!.evidence!.startLine = 1.5;
+    });
+    await rejected("reversed same-line source columns", (candidate) => {
+      Object.assign(candidate.nodes[0]!.evidence!, {
+        startLine: 2,
+        startCol: 4,
+        endLine: 2,
+        endCol: 3,
+      });
+    });
     await rejected("empty explicit span files", (candidate) => {
       Object.assign(record(candidate.nodes[1]!), {
         id: "stdlib.external",
@@ -161,6 +172,17 @@ export const test_graph_dump_parser_closes_every_public_trust_boundary =
           file: "src/run.go",
           line: 1,
           column: 0,
+          code: "fixture",
+          message: "invalid",
+        },
+      ];
+    });
+    await rejected("fractional diagnostic coordinates", (candidate) => {
+      candidate.diagnostics = [
+        {
+          file: "src/run.go",
+          line: 1.5,
+          column: 1,
           code: "fixture",
           message: "invalid",
         },

@@ -1,11 +1,9 @@
+import path from "node:path";
+
+import { parseGraphDump } from "../indexer/parseGraphDump";
 import { GraphLanguage } from "../typings";
-import { fileOfNodeId } from "../utils/fileOfNodeId";
 import { IBulkGraphSession } from "./IBulkGraphSession";
 import { IGraphProvider } from "./IGraphProvider";
-import {
-  isSemanticGraphNodeId,
-  validateSemanticGraphNode,
-} from "./semanticIdentity";
 
 /**
  * Hold a published snapshot to the contract its provider registered.
@@ -27,17 +25,22 @@ export function assertGraphSnapshotContract(
   snapshot: IBulkGraphSession.ISnapshot,
   provider: IGraphProvider,
   languages: readonly GraphLanguage[],
+  root: string = process.cwd(),
 ): void {
   const label = `@samchon/graph: provider "${provider.name}"`;
+  const project = path.resolve(root);
+  parseGraphDump({
+    project,
+    languages: snapshot.languages,
+    indexer: "lsp",
+    nodes: snapshot.nodes,
+    edges: snapshot.edges,
+    diagnostics: snapshot.diagnostics,
+    warnings: snapshot.warnings,
+  });
   if (snapshot.languages.length === 0) {
     throw new Error(`${label} published a snapshot owning no language`);
   }
-  if (new Set(snapshot.languages).size !== snapshot.languages.length) {
-    throw new Error(
-      `${label} published a snapshot owning one language more than once`,
-    );
-  }
-
   const claimed = new Set(languages);
   for (const language of snapshot.languages) {
     if (!claimed.has(language)) {
@@ -50,37 +53,11 @@ export function assertGraphSnapshotContract(
   // A slice replaces its languages whole. A node in a language the slice does
   // not name would be published by this generation and deleted by no later one,
   // because nothing that refreshes this session is responsible for it.
-  const owned = new Set(snapshot.languages);
   const nodeIds = new Set<string>();
   const files = new Set<string>();
   for (const node of snapshot.nodes) {
-    if (!owned.has(node.language)) {
-      throw new Error(
-        `${label} published a ${node.language} node in a slice that owns only ${snapshot.languages.join(", ")}: ${node.id}`,
-      );
-    }
-    if (nodeIds.has(node.id)) {
-      throw new Error(`${label} published duplicate node id ${node.id}`);
-    }
     nodeIds.add(node.id);
     if (node.file !== "") files.add(node.file);
-    if (isSemanticGraphNodeId(node.id)) {
-      validateSemanticGraphNode(node);
-    } else if (
-      !(node.external && node.kind === "external_symbol" && node.file === "") &&
-      !(node.kind === "file" && node.id === node.file)
-    ) {
-      const parsed = fileOfNodeId.parseLegacy(node.id);
-      if (
-        parsed === undefined ||
-        parsed.file !== node.file ||
-        parsed.kind !== node.kind
-      ) {
-        throw new Error(
-          `${label} published a legacy node id that contradicts its file or kind: ${node.id}`,
-        );
-      }
-    }
   }
 
   const provable = new Set(provider.facts);
@@ -115,6 +92,61 @@ export function assertGraphSnapshotContract(
     throw new Error(
       `${label} published provenance claiming fact families [${provenance.facts.join(", ")}] although it is registered to prove [${provider.facts.join(", ")}]`,
     );
+  }
+
+  assertSourceManifest(snapshot, project, label, files);
+}
+
+function assertSourceManifest(
+  snapshot: IBulkGraphSession.ISnapshot,
+  root: string,
+  label: string,
+  nodeFiles: ReadonlySet<string>,
+): void {
+  for (const file of snapshot.sources.keys()) {
+    if (file.startsWith("bundled:///")) {
+      const relative = file.slice("bundled:///".length);
+      if (
+        relative === "" ||
+        path.posix.normalize(relative) !== relative ||
+        relative
+          .split("/")
+          .some((part) => part === "" || part === "." || part === "..")
+      ) {
+        throw new Error(
+          `${label} published a non-canonical bundled source identity: ${file}`,
+        );
+      }
+    } else if (!path.isAbsolute(file) || path.normalize(file) !== file) {
+      throw new Error(
+        `${label} published a source identity that is not normalized and absolute: ${file}`,
+      );
+    }
+  }
+
+  const required = new Set(nodeFiles);
+  for (const node of snapshot.nodes) {
+    if (node.evidence?.file !== undefined) required.add(node.evidence.file);
+    if (node.implementation?.file !== undefined) {
+      required.add(node.implementation.file);
+    }
+  }
+  for (const edge of snapshot.edges) {
+    if (edge.evidence?.file !== undefined) required.add(edge.evidence.file);
+  }
+  for (const diagnostic of snapshot.diagnostics) {
+    if (diagnostic.file !== "") required.add(diagnostic.file);
+  }
+
+  for (const file of required) {
+    const source = file.startsWith("bundled:///")
+      ? file
+      : path.resolve(root, file);
+    if (!snapshot.sources.has(source)) {
+      throw new Error(
+        `${label} published facts for ${file} without binding that file to its source manifest`,
+      );
+    }
   }
 }
 

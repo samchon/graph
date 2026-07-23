@@ -49,6 +49,7 @@ export const ttscGraphProvider: IGraphProvider = {
           snapshot,
           ttscGraphProvider,
           props.languages,
+          props.root,
         ),
     }),
 };

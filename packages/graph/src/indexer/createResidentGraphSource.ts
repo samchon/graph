@@ -26,6 +26,7 @@ import { ILspSession } from "./ILspSession";
 import { IResidentGraphSource } from "./IResidentGraphSource";
 import { languageOf } from "./languageOf";
 import { movedConsumedSource } from "./movedConsumedSource";
+import { movedProviderSource } from "./movedProviderSource";
 import { refreshLanguageSession } from "./refreshLanguageSession";
 import { IGraphSourceSelection } from "./IGraphSourceSelection";
 import { selectGraphSources } from "./selectGraphSources";
@@ -161,10 +162,7 @@ export function createResidentGraphSource(
           ),
         inputManifestLanguages,
         buildInputs,
-        providerTopology: providerTopology.actual(
-          availableTopology,
-          result.providers ?? new Map(),
-        ),
+        providerTopology: providerTopology.serialize(availableTopology),
       };
     } catch (error) {
       // Once the build hands its sessions to this source, every later failure
@@ -228,6 +226,7 @@ export function createResidentGraphSource(
             refresh.snapshot,
             provider,
             session.languages,
+            root,
           );
         }
         strictNodes.push(...refresh.snapshot.nodes);
@@ -337,6 +336,17 @@ export function createResidentGraphSource(
         "@samchon/graph: the project source/config/build input manifest changed while this refresh was preparing, so none of its language slices may be published",
       );
     }
+    const providerSources = providerSourcesOf([...merged.values()]);
+    const providerMovement = movedProviderSource(
+      providerSources,
+      inputManifest,
+      committedInputs,
+    );
+    if (providerMovement !== undefined) {
+      throw new StaleCandidateError(
+        `@samchon/graph: ${providerMovement}, so no slice of that generation may be published`,
+      );
+    }
 
     // Written out rather than spread from the previous dump, because a spread
     // carries forward whatever this refresh did not replace — and `provenance`
@@ -438,9 +448,19 @@ export function createResidentGraphSource(
         prefetched,
         current.providers,
       );
+      const providerMovement = movedProviderSource(
+        providerSourcesOf(
+          [...new Set(prefetched.values())].map(
+            (refresh) => refresh.snapshot,
+          ),
+        ),
+        current.inputManifest,
+        inputManifest,
+      );
       if (
         !bulkChanged &&
         !bulkSliceLanguagesChanged &&
+        providerMovement === undefined &&
         sameProjectInputManifest(current.inputManifest, inputManifest) &&
         !isStale(current.hashes, root, options, bulkLanguagesOf(current.sessions))
       ) {
@@ -573,6 +593,16 @@ function bulkModesOf(
     modes.set(refresh.snapshot.provenance.provider, refresh.mode);
   }
   return modes;
+}
+
+function providerSourcesOf(
+  snapshots: readonly IBulkGraphSession.ISnapshot[],
+): Map<string, IBulkGraphSession.ISourceDigest> {
+  const sources = new Map<string, IBulkGraphSession.ISourceDigest>();
+  for (const snapshot of snapshots) {
+    for (const [file, digest] of snapshot.sources) sources.set(file, digest);
+  }
+  return sources;
 }
 
 function sourceReaderOf(
@@ -727,7 +757,12 @@ function sameBulkSliceLanguages(
     const refresh = prefetched.get(languages[0]!)!;
     const provider = providers.get(languages[0]!);
     if (provider !== undefined) {
-      assertGraphSnapshotContract(refresh.snapshot, provider, session.languages);
+      assertGraphSnapshotContract(
+        refresh.snapshot,
+        provider,
+        session.languages,
+        session.root,
+      );
     }
     if (!sameLanguages(languages, refresh.snapshot.languages)) return false;
   }

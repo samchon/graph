@@ -12,10 +12,11 @@ import (
 
 const createNewProcessGroup = 0x00000200
 
-func configureOwnedProcess(command *exec.Cmd) {
+func configureOwnedProcess(command *exec.Cmd, commandLine string) {
 	command.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: createNewProcessGroup,
 		HideWindow:    true,
+		CmdLine:       commandLine,
 	}
 }
 

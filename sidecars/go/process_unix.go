@@ -7,7 +7,7 @@ import (
 	"syscall"
 )
 
-func configureOwnedProcess(command *exec.Cmd) {
+func configureOwnedProcess(command *exec.Cmd, _ string) {
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }
 

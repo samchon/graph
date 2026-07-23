@@ -94,7 +94,7 @@ async function assertGenericDuplicatesAndGlobalCap(root: string): Promise<void> 
 async function assertStrictDuplicatesAreNotOpenedTwice(root: string): Promise<void> {
   let calls = 0;
   let closes = 0;
-  const snapshot = strictSnapshot();
+  const snapshot = strictSnapshot(root);
   const session: IBulkGraphSession = {
     kind: "bulk",
     languages: ["typescript"],
@@ -547,8 +547,9 @@ function graphNode(language: GraphLanguage, file: string): ISamchonGraphNode {
   };
 }
 
-function strictSnapshot(): IBulkGraphSession.ISnapshot {
+function strictSnapshot(root: string): IBulkGraphSession.ISnapshot {
   return ProviderFixtures.snapshot({
+    root,
     nodes: [graphNode("typescript", "b.ts")],
   });
 }

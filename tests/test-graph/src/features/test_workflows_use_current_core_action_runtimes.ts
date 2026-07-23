@@ -72,6 +72,13 @@ export const test_workflows_use_current_core_action_runtimes = () => {
     ) &&
       release.includes("RELEASE_SCIP_GO:"),
   );
+  const releaseJob = release.slice(release.indexOf("\n  release:"));
+  TestValidator.predicate(
+    "the release job installs its locked changelog tool before executing it",
+    releaseJob.indexOf("pnpm install --frozen-lockfile") !== -1 &&
+      releaseJob.indexOf("pnpm install --frozen-lockfile") <
+        releaseJob.indexOf("pnpm exec changelogithub"),
+  );
 
   const releasePack = fs.readFileSync(
     path.join(GraphPaths.repositoryRoot, "build", "release-pack.mjs"),

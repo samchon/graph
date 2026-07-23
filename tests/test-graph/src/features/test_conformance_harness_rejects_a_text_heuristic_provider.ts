@@ -5,6 +5,7 @@ import type {
   ISamchonGraphEdge,
   ISamchonGraphNode,
 } from "@samchon/graph";
+import path from "node:path";
 
 import { Conformance } from "../internal/Conformance";
 import { ProviderFixtures } from "../internal/ProviderFixtures";
@@ -139,7 +140,10 @@ export const test_conformance_harness_rejects_a_text_heuristic_provider =
       Conformance.structure(
         snapshotOf({
           sources: new Map([
-            ["a.ts", { checkerDigest: "", diskDigest: "abc" }],
+            [
+              path.resolve("a.ts"),
+              { checkerDigest: "", diskDigest: "abc" },
+            ],
           ]),
           capabilities: ["sourceDigests"],
         }),
@@ -152,7 +156,10 @@ export const test_conformance_harness_rejects_a_text_heuristic_provider =
       Conformance.structure(
         snapshotOf({
           sources: new Map([
-            ["a.ts", { checkerDigest: "", diskDigest: "abc" }],
+            [
+              path.resolve("a.ts"),
+              { checkerDigest: "", diskDigest: "abc" },
+            ],
           ]),
         }),
         provider,
@@ -300,7 +307,7 @@ function snapshotOf(props: {
     facts: ["calls", "references", "exports"] as GraphEdgeKind[],
     nodes: props.nodes ?? [],
     edges: props.edges ?? [],
-    sources: props.sources ?? new Map(),
+    ...(props.sources === undefined ? {} : { sources: props.sources }),
     capabilities: props.capabilities,
   });
 }

@@ -726,3 +726,44 @@ func fileURI(file string) string {
 	}
 	return (&url.URL{Scheme: "file", Path: path}).String()
 }
+
+func TestWindowsCommandLineEscapesMetacharacters(t *testing.T) {
+	line := windowsCommandLine(
+		`C:\tools & fixtures\index.cmd`,
+		[]string{`%PATH% & | < > ^ ! (value) "quoted" trailing\`},
+	)
+	for _, escaped := range []string{"^%", "^&", "^|", "^<", "^>", "^^", "^!"} {
+		if !strings.Contains(line, escaped) {
+			t.Fatalf("command line did not escape %q: %s", escaped, line)
+		}
+	}
+	if !strings.Contains(line, "/v:off") {
+		t.Fatalf("command line did not disable delayed expansion: %s", line)
+	}
+}
+
+func TestWindowsBatchArgumentsRemainLiteral(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows cmd.exe contract")
+	}
+	root := t.TempDir()
+	command := filepath.Join(root, "tools & fixtures", "echo.cmd")
+	if err := os.MkdirAll(filepath.Dir(command), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		command,
+		[]byte("@echo off\r\nsetlocal DisableDelayedExpansion\r\n<nul set /p \"=%~1\"\r\nexit /b 0\r\n"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	literal := `%PATH% & | < > ^ ! (value)`
+	stdout, stderr, err := runBounded(context.Background(), root, command, literal)
+	if err != nil {
+		t.Fatalf("batch command failed: %v\nstderr: %s", err, stderr)
+	}
+	if stdout != literal {
+		t.Fatalf("batch argument changed\nwant: %q\n got: %q", literal, stdout)
+	}
+}

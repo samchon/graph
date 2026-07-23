@@ -75,6 +75,7 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
             snapshot,
             provider,
             open.languages,
+            open.root,
           ),
         command: open.command,
         decode: props.decode(open.root),

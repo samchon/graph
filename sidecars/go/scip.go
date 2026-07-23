@@ -237,14 +237,14 @@ func fileURIPath(value string) (string, error) {
 }
 
 func runBounded(ctx context.Context, directory, command string, args ...string) (string, string, error) {
-	executable, commandArgs := commandInvocation(command, args)
+	executable, commandArgs, commandLine := commandInvocation(command, args)
 	boundedContext, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if err := boundedContext.Err(); err != nil {
 		return "", "", err
 	}
 	process := exec.Command(executable, commandArgs...)
-	configureOwnedProcess(process)
+	configureOwnedProcess(process, commandLine)
 	if directory != "" {
 		process.Dir = directory
 	}
@@ -279,7 +279,7 @@ func runBounded(ctx context.Context, directory, command string, args ...string) 
 	return stdout.String(), stderr.String(), err
 }
 
-func commandInvocation(command string, args []string) (string, []string) {
+func commandInvocation(command string, args []string) (string, []string, string) {
 	if runtime.GOOS == "windows" {
 		extension := strings.ToLower(filepath.Ext(command))
 		if extension == ".cmd" || extension == ".bat" {
@@ -287,10 +287,62 @@ func commandInvocation(command string, args []string) (string, []string) {
 			if systemRoot == "" {
 				systemRoot = `C:\Windows`
 			}
-			return filepath.Join(systemRoot, "System32", "cmd.exe"), append([]string{"/d", "/s", "/v:off", "/c", command}, args...)
+			return filepath.Join(systemRoot, "System32", "cmd.exe"), nil, windowsCommandLine(command, args)
 		}
 	}
-	return command, args
+	return command, args, ""
+}
+
+func windowsCommandLine(command string, args []string) string {
+	doubleEscape := strings.Contains(
+		strings.ToLower(filepath.ToSlash(command)),
+		"/node_modules/.bin/",
+	)
+	parts := []string{escapeCmdMeta(filepath.Clean(command))}
+	for _, argument := range args {
+		escaped := escapeCmdMeta(quoteWindowsArgument(argument))
+		if doubleEscape {
+			escaped = escapeCmdMeta(escaped)
+		}
+		parts = append(parts, escaped)
+	}
+	return `/d /s /v:off /c "` + strings.Join(parts, " ") + `"`
+}
+
+func quoteWindowsArgument(value string) string {
+	var quoted strings.Builder
+	quoted.WriteByte('"')
+	backslashes := 0
+	for _, character := range value {
+		if character == '\\' {
+			backslashes++
+			continue
+		}
+		if character == '"' {
+			quoted.WriteString(strings.Repeat(`\`, backslashes*2+1))
+			quoted.WriteRune(character)
+			backslashes = 0
+			continue
+		}
+		quoted.WriteString(strings.Repeat(`\`, backslashes))
+		backslashes = 0
+		quoted.WriteRune(character)
+	}
+	quoted.WriteString(strings.Repeat(`\`, backslashes*2))
+	quoted.WriteByte('"')
+	return quoted.String()
+}
+
+func escapeCmdMeta(value string) string {
+	const meta = "()[]%!^\"`<>&|;, *?"
+	var escaped strings.Builder
+	for _, character := range value {
+		if strings.ContainsRune(meta, character) {
+			escaped.WriteByte('^')
+		}
+		escaped.WriteRune(character)
+	}
+	return escaped.String()
 }
 
 type limitedBuffer struct {

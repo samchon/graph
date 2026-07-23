@@ -1,10 +1,12 @@
 import { TestValidator } from "@nestia/e2e";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 import { commitProjectInputGeneration } from "../../../../packages/graph/src/indexer/commitProjectInputGeneration";
 import type { IIndexerResult } from "../../../../packages/graph/src/indexer/IIndexerResult";
 import { movedConsumedSource } from "../../../../packages/graph/src/indexer/movedConsumedSource";
+import { movedProviderSource } from "../../../../packages/graph/src/indexer/movedProviderSource";
 import { projectInputManifest } from "../../../../packages/graph/src/indexer/projectInputManifest";
 import { providerBuildInputs } from "../../../../packages/graph/src/indexer/providerBuildInputs";
 import { sameProjectInputManifest } from "../../../../packages/graph/src/indexer/sameProjectInputManifest";
@@ -21,6 +23,82 @@ export const test_project_input_generation_fences_every_owned_input =
     fs.writeFileSync(first, "export const first = 1;\n");
     fs.writeFileSync(second, "export const second = 2;\n");
     fs.writeFileSync(go, "package main\n");
+
+    const external = GraphPaths.createTempDirectory(
+      "samchon-graph-provider-source-helper-",
+    );
+    const externalFile = path.join(external, "shared.ts");
+    const externalBody = Buffer.from("export const shared = 1;\n");
+    fs.writeFileSync(externalFile, externalBody);
+    const externalDigest = digest(externalBody);
+    TestValidator.equals(
+      "an absent provider manifest has no movement",
+      movedProviderSource(undefined, new Map(), new Map()),
+      undefined,
+    );
+    TestValidator.equals(
+      "a bundled provider source needs no disk identity",
+      movedProviderSource(
+        new Map([
+          [
+            "bundled:///typescript/lib",
+            { checkerDigest: externalDigest, diskDigest: "" },
+          ],
+        ]),
+        new Map(),
+        new Map(),
+      ),
+      undefined,
+    );
+    TestValidator.equals(
+      "an unchanged external provider source remains bound",
+      movedProviderSource(
+        new Map([
+          [
+            externalFile,
+            {
+              checkerDigest: externalDigest,
+              diskDigest: externalDigest,
+            },
+          ],
+        ]),
+        new Map(),
+        new Map(),
+      ),
+      undefined,
+    );
+    TestValidator.predicate(
+      "a relative provider source cannot escape the common identity contract",
+      movedProviderSource(
+        new Map([
+          [
+            "relative.ts",
+            {
+              checkerDigest: externalDigest,
+              diskDigest: externalDigest,
+            },
+          ],
+        ]),
+        new Map(),
+        new Map(),
+      )?.includes("does not bind") === true,
+    );
+    TestValidator.predicate(
+      "a missing external provider source cannot retain an old digest",
+      movedProviderSource(
+        new Map([
+          [
+            path.join(external, "missing.ts"),
+            {
+              checkerDigest: externalDigest,
+              diskDigest: externalDigest,
+            },
+          ],
+        ]),
+        new Map(),
+        new Map(),
+      )?.includes("does not bind") === true,
+    );
 
     const typescript = ProviderFixtures.provider({
       name: "typescript-owner",
@@ -250,7 +328,53 @@ export const test_project_input_generation_fences_every_owned_input =
         unboundFailure instanceof Error &&
         unboundFailure.message.includes("does not bind the provider snapshot"),
     );
+
+    const siblingRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-provider-sibling-",
+    );
+    const siblingFile = path.join(siblingRoot, "shared.ts");
+    fs.writeFileSync(siblingFile, "export const shared = 0;\n");
+    let siblingAttempts = 0;
+    let siblingFailure: unknown;
+    try {
+      await commitProjectInputGeneration(
+        { cwd: unboundRoot, languages: ["typescript"] },
+        [],
+        () => {
+          const consumed = fs.readFileSync(siblingFile);
+          siblingAttempts += 1;
+          fs.writeFileSync(
+            siblingFile,
+            `export const shared = ${String(siblingAttempts)};\n`,
+          );
+          return {
+            ...resultOf(unboundRoot),
+            providerSourceDigests: new Map([
+              [
+                siblingFile,
+                {
+                  checkerDigest: digest(consumed),
+                  diskDigest: digest(consumed),
+                },
+              ],
+            ]),
+          };
+        },
+      );
+    } catch (error) {
+      siblingFailure = error;
+    }
+    TestValidator.predicate(
+      "an external sibling that moves after provider consumption never publishes",
+      siblingAttempts === 3 &&
+        siblingFailure instanceof Error &&
+        siblingFailure.message.includes("does not bind the provider snapshot"),
+    );
   };
+
+function digest(value: Buffer): string {
+  return createHash("sha256").update(value).digest("hex");
+}
 
 function resultOf(root: string): IIndexerResult {
   return {

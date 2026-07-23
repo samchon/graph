@@ -356,6 +356,63 @@ async function assertSnapshotContract(): Promise<void> {
       facts: ["calls"],
       nodes: [
         {
+          ...node("a.cpp", "run", "cpp"),
+          evidence: { file: "a.cpp", startLine: 1, startCol: 1 },
+          implementation: { file: "a.cpp", startLine: 2, startCol: 1 },
+        },
+        node("b.cpp", "called", "cpp"),
+      ],
+      edges: [
+        {
+          kind: "calls",
+          from: "a.cpp#run:function",
+          to: "b.cpp#called:function",
+          evidence: { file: "a.cpp", startLine: 3, startCol: 1 },
+        },
+        {
+          kind: "calls",
+          from: "a.cpp",
+          to: "b.cpp",
+        },
+      ],
+      diagnostics: [
+        {
+          file: "a.cpp",
+          line: 1,
+          code: "fixture",
+          message: "diagnostic",
+        },
+      ],
+    }),
+    provider,
+    ["cpp"],
+  );
+  assertGraphSnapshotContract(
+    ProviderFixtures.snapshot({
+      languages: ["cpp"],
+      provider: "fake",
+      facts: ["calls"],
+      nodes: [
+        {
+          id: "bundled:///cpp/builtin",
+          kind: "file",
+          language: "cpp",
+          name: "builtin",
+          file: "bundled:///cpp/builtin",
+          external: false,
+        },
+      ],
+    }),
+    provider,
+    ["cpp"],
+  );
+  assertGraphSnapshotContract(
+    ProviderFixtures.snapshot({
+      languages: ["cpp"],
+      provider: "fake",
+      facts: ["calls"],
+      nodes: [
+        {
           id: "stdlib.operator",
           kind: "external_symbol",
           language: "cpp",
@@ -393,6 +450,29 @@ async function assertSnapshotContract(): Promise<void> {
       ["cpp"],
     ),
   );
+  for (const source of [
+    "bundled:///",
+    "bundled:///cpp/../builtin",
+    "relative.cpp",
+    `${process.cwd()}${path.sep}nested${path.sep}..${path.sep}source.cpp`,
+  ]) {
+    TestValidator.error(
+      `a malformed provider source identity ${source} is refused`,
+      () =>
+        assertGraphSnapshotContract(
+          ProviderFixtures.snapshot({
+            languages: ["cpp"],
+            provider: "fake",
+            facts: ["calls"],
+            sources: new Map([
+              [source, { checkerDigest: "", diskDigest: "" }],
+            ]),
+          }),
+          provider,
+          ["cpp"],
+        ),
+    );
+  }
 
   TestValidator.error("a slice owning no language is refused", () =>
     assertGraphSnapshotContract(

@@ -208,6 +208,41 @@ export const test_sidecar_session_enforces_the_common_semantic_contract =
       );
       await opened.close();
 
+      const rejectedCandidate = provider.open({
+        root,
+        command: provider.resolve(root, process.env)!,
+        languages: ["go"],
+        options: { cwd: root },
+      });
+      const missingManifest = snapshotOf(root, source);
+      missingManifest.sources = missingManifest.sources.filter(
+        (entry) => entry.file.startsWith("bundled:///"),
+      );
+      write(payload, missingManifest);
+      await TestValidator.error(
+        "sidecar facts without their source manifest are refused before caching",
+        () => rejectedCandidate.refresh(),
+      );
+      TestValidator.equals(
+        "a refused sidecar candidate does not poison current state",
+        [rejectedCandidate.generation, rejectedCandidate.current],
+        [0, undefined],
+      );
+      const fractionalSpan = snapshotOf(root, source);
+      fractionalSpan.nodes[0]!.evidence = { startLine: 1.5 };
+      write(payload, fractionalSpan);
+      await TestValidator.error(
+        "sidecar facts share the public safe-integer span boundary",
+        () => rejectedCandidate.refresh(),
+      );
+      write(payload, snapshotOf(root, source));
+      TestValidator.equals(
+        "the same session can publish a later valid candidate",
+        (await rejectedCandidate.refresh()).generation,
+        1,
+      );
+      await rejectedCandidate.close();
+
       const configured = sidecarProvider({
         name: "configured-go-sidecar",
         languages: ["go"],

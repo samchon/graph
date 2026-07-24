@@ -28,6 +28,18 @@ export const test_experiment_corpora_are_commit_pinned = () => {
     [...catalog.matchAll(/strictProvider:\s*"[^"]+"/g)].length,
     [...catalog.matchAll(/lifecycle:\s*\{/g)].length,
   );
+  const python = catalog.slice(
+    catalog.indexOf('language: "python"'),
+    catalog.indexOf('language: "ruby"'),
+  );
+  TestValidator.predicate(
+    "the dynamic SCIP smoke proves a versioned Python lifecycle, not an edge count",
+    python.includes('strictProvider: "scip-python"') &&
+      python.includes('strictAuthority: "semantic-index"') &&
+      python.includes('semanticEdges: ["contains", "references"]') &&
+      python.includes('failurePolicy: "reject"') &&
+      !python.includes("minEdges"),
+  );
 
   const process = fs.readFileSync(
     path.join(
@@ -59,5 +71,27 @@ export const test_experiment_corpora_are_commit_pinned = () => {
     "strict edits happen only in a copied external workspace",
     lifecycle.includes("fs.cpSync(pinnedRoot, lifecycleRoot") &&
       lifecycle.includes("path.join(lifecycleRoot, fixture.sourceFile)"),
+  );
+
+  const setup = fs.readFileSync(
+    path.join(
+      GraphPaths.repositoryRoot,
+      "tests",
+      "experiment",
+      "src",
+      "setup-language.mjs",
+    ),
+    "utf8",
+  );
+  TestValidator.predicate(
+    "the Python indexer and decoder are exact campaign-owned tools",
+    setup.includes("scip-python-0.6.6.tgz") &&
+      setup.includes(
+        "qoKL1Rggg0o5newAFbCFAKlS0AjWxG5MA+mC28BtgxOv0DhO4zdL8u7151FxEppDpXMVvm7+yXSjXotoVH9cMQ==",
+      ) &&
+      setup.includes('"--prefix"') &&
+      setup.includes("await installScipPython();") &&
+      setup.includes("await installScip();") &&
+      !setup.includes("npm install -g pyright"),
   );
 };

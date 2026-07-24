@@ -80,6 +80,15 @@ const verifySha256 = (file, expected) => {
   }
 };
 
+const verifySha512 = (file, expected) => {
+  const actual = createHash("sha512")
+    .update(fs.readFileSync(file))
+    .digest("base64");
+  if (actual !== expected) {
+    throw new Error(`${file} has an unexpected SHA-512 digest`);
+  }
+};
+
 // Unauthenticated requests to api.github.com share a 60/hour rate limit across
 // the whole runner IP pool; a GITHUB_TOKEN raises that to 5000/hour and is
 // never sent past api.github.com since this call never redirects elsewhere.
@@ -148,6 +157,49 @@ const installScip = async () => {
   const link = path.join(binRoot, "scip");
   fs.rmSync(link, { force: true });
   fs.symlinkSync(binary, link);
+};
+
+const installScipPython = async () => {
+  const archive = path.join(toolsRoot, "scip-python-0.6.6.tgz");
+  const target = path.join(toolsRoot, "scip-python-0.6.6");
+  await downloadFile(
+    "https://registry.npmjs.org/@sourcegraph/scip-python/-/scip-python-0.6.6.tgz",
+    archive,
+  );
+  verifySha512(
+    archive,
+    "qoKL1Rggg0o5newAFbCFAKlS0AjWxG5MA+mC28BtgxOv0DhO4zdL8u7151FxEppDpXMVvm7+yXSjXotoVH9cMQ==",
+  );
+  fs.rmSync(target, { force: true, recursive: true });
+  ensureDir(target);
+  run("npm", [
+    "install",
+    "--prefix",
+    target,
+    "--no-save",
+    "--no-package-lock",
+    "--ignore-scripts",
+    "--no-audit",
+    "--no-fund",
+    archive,
+  ]);
+  const launcher = path.join(
+    target,
+    "node_modules",
+    ".bin",
+    process.platform === "win32" ? "scip-python.cmd" : "scip-python",
+  );
+  if (!fs.existsSync(launcher)) {
+    throw new Error(
+      "scip-python launcher not found after isolated installation",
+    );
+  }
+  const link = path.join(
+    binRoot,
+    process.platform === "win32" ? "scip-python.cmd" : "scip-python",
+  );
+  fs.rmSync(link, { force: true });
+  fs.symlinkSync(launcher, link);
 };
 
 const findFile = (dir, name) => {
@@ -267,7 +319,8 @@ switch (experiment.language) {
     await installZls();
     break;
   case "python":
-    shell("npm install -g pyright");
+    await installScipPython();
+    await installScip();
     break;
   case "ruby":
     // The runner ships ruby but not bundler, which both the fixture's

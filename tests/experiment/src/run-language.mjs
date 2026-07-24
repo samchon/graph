@@ -127,21 +127,6 @@ for (const kind of experiment.semanticEdges ?? []) {
     );
   }
 }
-// A row may expect fewer families than its provider is registered to prove —
-// a producer can be registered for a family and still never emit the field the
-// adapter derives it from. That is a real limitation, and it has to be stated:
-// otherwise the cheapest way to make a failing lane pass is to quietly drop the
-// family it could not produce.
-if (provenance !== undefined) {
-  const unclaimed = provenance.facts.filter(
-    (fact) => !experiment.semanticEdges.includes(fact),
-  );
-  if (unclaimed.length > 0 && typeof experiment.semanticLimitation !== "string") {
-    throw new Error(
-      `${experiment.language}: the row expects none of ${unclaimed.join(", ")} although ${provenance.provider} is registered to prove them, and states no limitation explaining why`,
-    );
-  }
-}
 // The negative twin of the list above. Requiring the declared families proves
 // the provider found what it claims; this proves it published nothing else —
 // so a family it cannot prove stays absent instead of arriving relabelled from

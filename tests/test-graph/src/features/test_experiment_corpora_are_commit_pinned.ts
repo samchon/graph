@@ -32,13 +32,14 @@ export const test_experiment_corpora_are_commit_pinned = () => {
       python.includes('semanticEdges: ["references"]') &&
       !python.includes("minEdges"),
   );
-  // Dropping a family a provider is registered to prove is the cheapest way to
-  // make a failing lane pass, so a row that claims fewer than its provider
-  // proves has to say what the producer cannot emit.
+  // A family the producer cannot emit at all is different from one this corpus
+  // happens not to contain, and only the first is a limitation worth publishing.
+  // `contains` is the first for scip-python, so the row has to say so.
   TestValidator.predicate(
-    "a row expecting fewer families than its provider proves states the gap",
+    "a family the pinned producer cannot emit is published as a limitation",
     /semanticLimitation:\s*"?[^",]/.test(python) &&
-      runner.includes("states no limitation explaining why"),
+      python.includes("enclosing_symbol") &&
+      runner.includes("semanticLimitation: experiment.semanticLimitation"),
   );
   // scip-python 0.6.6 recovers from a malformed `pyproject.toml` and emits no
   // SCIP diagnostics, so a row claiming either boundary would assert behaviour

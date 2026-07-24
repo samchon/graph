@@ -39,6 +39,8 @@ function assertTheAdditiveBoundary(): void {
 
   let immutable = false;
   let immutableIndex = false;
+  let immutableDescriptor = false;
+  let immutableIndexDescriptor = false;
   const rawIndex = indexOf();
   const calls = enrichment({
     enrich: ({ common: snapshot, index }) => {
@@ -51,6 +53,24 @@ function assertTheAdditiveBoundary(): void {
         (index.metadata as { projectRoot: string }).projectRoot = "/rewritten";
       } catch {
         immutableIndex = true;
+      }
+      try {
+        (
+          Object.getOwnPropertyDescriptor(snapshot.edges, "0")!.value as {
+            kind: GraphEdgeKind;
+          }
+        ).kind = "calls";
+      } catch {
+        immutableDescriptor = true;
+      }
+      try {
+        (
+          Object.getOwnPropertyDescriptor(index, "metadata")!.value as {
+            projectRoot: string;
+          }
+        ).projectRoot = "/descriptor-rewrite";
+      } catch {
+        immutableIndexDescriptor = true;
       }
       return {
         edges: [
@@ -76,9 +96,15 @@ function assertTheAdditiveBoundary(): void {
       enriched.warnings,
       immutable,
       immutableIndex,
+      immutableDescriptor,
+      immutableIndexDescriptor,
       common.nodes[0]!.name,
+      common.edges[0]!.kind,
       rawIndex.metadata.projectRoot,
       Object.isFrozen(rawIndex),
+      Object.isFrozen(rawIndex.metadata),
+      Object.isFrozen(common.edges),
+      Object.isFrozen(common.edges[0]),
       ScipEnrichment.capability(calls),
     ],
     [
@@ -90,11 +116,37 @@ function assertTheAdditiveBoundary(): void {
       ["another limitation", "one limitation"],
       true,
       true,
+      true,
+      true,
       "caller",
+      "references",
       "/fixture",
-      false,
+      true,
+      true,
+      true,
+      true,
       "scip-enrichment:go-calls@2",
     ],
+  );
+
+  const receiverAware = {
+    ...enrichment(),
+    marker: "receiver-preserved",
+    enrich() {
+      return { edges: [], warnings: [this.marker] };
+    },
+  };
+  TestValidator.equals(
+    "normalization preserves a method enrichment receiver",
+    ScipEnrichment.apply({
+      enrichment: ScipEnrichment.normalize(receiverAware, ["go"]),
+      index: indexOf(),
+      root: "/fixture",
+      provider: "scip-fixture",
+      languages: ["go"],
+      common: commonSlice(),
+    }).warnings,
+    ["receiver-preserved"],
   );
 
   const mutable = enrichment();
@@ -445,6 +497,26 @@ async function assertTheSessionFence(): Promise<void> {
   );
   await sourceBacked.close();
 
+  const mutatingValidator = sessionOf(
+    root,
+    enrichment(),
+    false,
+    (snapshot) => {
+      snapshot.edges.push({
+        kind: "tests",
+        from: snapshot.nodes[0]!.id,
+        to: snapshot.nodes[0]!.id,
+      });
+    },
+  );
+  await rejects(mutatingValidator.refresh());
+  TestValidator.equals(
+    "mandatory validation runs after a caller-supplied validator",
+    [mutatingValidator.generation, mutatingValidator.current],
+    [0, undefined],
+  );
+  await mutatingValidator.close();
+
   const malformed = sessionOf(
     root,
     enrichment({
@@ -472,29 +544,62 @@ async function assertTheSessionFence(): Promise<void> {
   );
   await malformed.close();
 
-  const provider = scipProvider({
+  const providerProps: scipProvider.IProps = {
     name: "scip-enriched-fixture",
+    authority: "semantic-index",
     languages: ["go"],
     resolve: () => ({ command: process.execPath, args: [] }),
-    decode: () => ({ command: process.execPath, args: [] }),
-    indexArgs: () => [],
-    inputs: () => [],
+    decode: () => ({
+      command: process.execPath,
+      args: [GraphPaths.fakeScipDecoder],
+    }),
+    indexArgs: (artifact) => [
+      `--output=${artifact}`,
+      `--root=${root}`,
+    ],
+    inputs: () => ["main.go"],
     languageOf: () => "go",
-    enrichment: contract,
+    enrichment: enrichment(),
+  };
+  const provider = scipProvider(providerProps);
+  providerProps.name = "mutated-after-registration";
+  providerProps.authority = "compiler";
+  providerProps.decode = () => ({
+    command: "missing-decoder-after-registration",
+    args: [],
   });
+  providerProps.indexArgs = () => [];
+  providerProps.inputs = () => [];
+  providerProps.languageOf = () => "rust";
   TestValidator.equals(
-    "a registry entry declares exactly the common and enriched fact families",
-    provider.facts,
-    ["contains", "references", "type_ref", "calls"],
+    "a registry entry captures identity and fact families at registration",
+    [provider.name, provider.authority, provider.facts],
+    [
+      "scip-enriched-fixture",
+      "semantic-index",
+      ["contains", "references", "type_ref", "calls"],
+    ],
   );
-  await provider
-    .open({
+  const providerSession = provider.open({
       root,
-      command: { command: process.execPath, args: [] },
+      command: {
+        command: process.execPath,
+        args: [GraphPaths.fakeScipIndexer],
+      },
       languages: ["go"],
       options: {},
-    })
-    .close();
+    });
+  const providerRefresh = await providerSession.refresh();
+  TestValidator.equals(
+    "an opened session cannot drift with mutable registration props",
+    [
+      providerRefresh.snapshot.provenance.provider,
+      providerRefresh.snapshot.provenance.authority,
+      providerRefresh.snapshot.languages,
+    ],
+    ["scip-enriched-fixture", "semantic-index", ["go"]],
+  );
+  await providerSession.close();
   const bareProvider = scipProvider({
     name: "scip-bare-fixture",
     languages: ["go"],

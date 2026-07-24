@@ -20,8 +20,19 @@ import { ScipEnrichment } from "./ScipEnrichment";
  * more does it through typed enrichment, not by widening this list.
  */
 export function scipProvider(props: scipProvider.IProps): IGraphProvider {
+  const name = props.name;
+  const authority = props.authority ?? "semantic-index";
+  const buildInputs = props.buildInputs;
+  const resolve = props.resolve;
+  const prepare = props.prepare;
+  const decode = props.decode;
+  const indexArgs = props.indexArgs;
+  const inputs = props.inputs;
   const configuration = props.configuration;
   const compilerVersion = props.compilerVersion;
+  const sourceText = props.sourceText;
+  const projectRootFromInvocation = props.projectRootFromInvocation;
+  const languageOf = props.languageOf;
   const languages = Object.freeze([...props.languages]);
   const enrichment =
     props.enrichment === undefined
@@ -32,13 +43,13 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
     ...(enrichment?.facts ?? []),
   ]);
   const provider: IGraphProvider = {
-    name: props.name,
+    name,
     languages,
-    authority: props.authority ?? "semantic-index",
+    authority,
     facts,
-    ...(props.buildInputs === undefined
+    ...(buildInputs === undefined
       ? {}
-      : { buildInputs: props.buildInputs }),
+      : { buildInputs }),
     ...(configuration === undefined
       ? {}
       : {
@@ -62,27 +73,26 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
       // Names the authority as well as the provider, because that is what a
       // reader loses: the sentence has to say which grade of fact the build
       // gave up, not merely which program it did not run.
-      const authority = props.authority ?? "semantic-index";
       return (
-        `${languages.join(", ")}: the ${props.name} ${authority} provider is disabled by ${refused.join(", ")}; ` +
+        `${languages.join(", ")}: the ${name} ${authority} provider is disabled by ${refused.join(", ")}; ` +
         `it publishes whole-workspace indexes and has no bounded mode, so these languages fall through to the generic language-server lane. ` +
         `Drop ${refused.length === 1 ? "that option" : "those options"} for a strict index.`
       );
     },
 
-    resolve: props.resolve,
-    ...(props.prepare === undefined ? {} : { prepare: props.prepare }),
+    resolve,
+    ...(prepare === undefined ? {} : { prepare }),
 
     open: (open) =>
       new ScipSession({
         root: open.root,
         languages: open.languages,
-        provider: props.name,
-        authority: props.authority ?? "semantic-index",
+        provider: name,
+        authority,
         command: open.command,
-        decode: props.decode(open.root),
-        indexArgs: props.indexArgs,
-        inputs: () => props.inputs(open.root, open.languages),
+        decode: decode(open.root),
+        indexArgs,
+        inputs: () => inputs(open.root, open.languages),
         ...(configuration === undefined
           ? {}
           : {
@@ -95,19 +105,18 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
               compilerVersion: () =>
                 compilerVersion(open.root, open.languages),
             }),
-        ...(props.sourceText === undefined
+        ...(sourceText === undefined
           ? {}
-          : { sourceText: props.sourceText }),
-        ...(props.projectRootFromInvocation === undefined
+          : { sourceText }),
+        ...(projectRootFromInvocation === undefined
           ? {}
           : {
-              projectRootFromInvocation:
-                props.projectRootFromInvocation,
+              projectRootFromInvocation,
             }),
         ...(enrichment === undefined
           ? {}
           : { enrichment }),
-        languageOf: props.languageOf,
+        languageOf,
       }),
   };
   return provider;

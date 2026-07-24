@@ -68,6 +68,7 @@ export class ScipSession implements IBulkGraphSession {
         : { configuration: configured.configuration }),
       load: (props) => this.load(props),
       validate: (snapshot) => {
+        configured.validate?.(snapshot);
         assertGraphSnapshotContract(
           snapshot,
           {
@@ -78,7 +79,6 @@ export class ScipSession implements IBulkGraphSession {
           configured.languages,
           configured.root,
         );
-        configured.validate?.(snapshot);
       },
       ...(configured.maxStdoutBytes === undefined
         ? {}

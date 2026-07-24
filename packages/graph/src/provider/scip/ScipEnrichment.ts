@@ -112,7 +112,7 @@ export namespace ScipEnrichment {
     languages: readonly GraphLanguage[],
   ): IContract {
     assert(enrichment, languages);
-    const enrich = enrichment.enrich;
+    const enrich = enrichment.enrich.bind(enrichment);
     return Object.freeze({
       name: enrichment.name,
       version: enrichment.version,
@@ -160,7 +160,7 @@ export namespace ScipEnrichment {
       }
       files.add(file);
     }
-    const common = new Set<string>();
+    const commonEdges = new Set<string>();
     for (const edge of props.common.edges) {
       if (!adaptScipIndex.EDGE_KINDS.includes(edge.kind)) {
         throw new Error(
@@ -176,26 +176,32 @@ export namespace ScipEnrichment {
         );
       }
       const key = edgeKey(edge);
-      if (common.has(key)) {
+      if (commonEdges.has(key)) {
         throw new Error(
           `@samchon/graph: the common SCIP slice duplicated an edge: ${edge.from} -> ${edge.to} (${edge.kind})`,
         );
       }
-      common.add(key);
+      commonEdges.add(key);
     }
     assert(enrichment, props.languages);
+    // These are session-owned, already-validated trees. Freezing them in place
+    // gives the language contract a genuinely immutable view without retaining
+    // one Proxy (and one cache entry) for every object it reads from a large
+    // index. The parser and common adapter produce bounded-depth acyclic trees,
+    // so this walk has constant auxiliary space rather than a second graph.
+    const index = freezeTree(props.index);
+    const languages = freezeTree([...props.languages]);
+    const common = freezeTree({
+      nodes: props.common.nodes,
+      edges: props.common.edges,
+      files: props.common.files,
+    });
     const result = enrichment.enrich({
-      // The raw artifact may be hundreds of megabytes. A lazy read-only proxy
-      // protects it without allocating a second whole-index representation.
-      index: readonlyView(props.index),
+      index,
       root: props.root,
       provider: props.provider,
-      languages: readonlyView([...props.languages]),
-      common: readonlyView({
-        nodes: props.common.nodes,
-        edges: props.common.edges,
-        files: props.common.files,
-      }),
+      languages,
+      common,
     });
     if (
       result === null ||
@@ -289,30 +295,34 @@ function copyEdge(edge: ISamchonGraphEdge): ISamchonGraphEdge {
   return structuredClone(edge);
 }
 
-function readonlyView<T>(value: T): T {
-  const proxies = new WeakMap<object, object>();
-  const visit = (entry: unknown): unknown => {
-    if (entry === null || typeof entry !== "object") return entry;
-    const cached = proxies.get(entry);
-    if (cached !== undefined) return cached;
-    const refuse = (): never => {
+function freezeTree<T>(value: T): T {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    Object.freeze(value);
+    for (let index = 0; index < value.length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (descriptor === undefined) continue;
+      if (!("value" in descriptor)) {
+        throw new TypeError(
+          "@samchon/graph: a SCIP enrichment input cannot contain accessors",
+        );
+      }
+      freezeTree(descriptor.value);
+    }
+    return value;
+  }
+  const keys = Object.keys(value);
+  Object.freeze(value);
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
+    if (!("value" in descriptor)) {
       throw new TypeError(
-        "@samchon/graph: a SCIP enrichment cannot mutate its input",
+        "@samchon/graph: a SCIP enrichment input cannot contain accessors",
       );
-    };
-    const proxy = new Proxy(entry, {
-      get: (target, property, receiver) =>
-        visit(Reflect.get(target, property, receiver)),
-      set: refuse,
-      deleteProperty: refuse,
-      defineProperty: refuse,
-      setPrototypeOf: refuse,
-      preventExtensions: refuse,
-    });
-    proxies.set(entry, proxy);
-    return proxy;
-  };
-  return visit(value) as T;
+    }
+    freezeTree(descriptor.value);
+  }
+  return value;
 }
 
 function compareOrdinal(left: string, right: string): number {

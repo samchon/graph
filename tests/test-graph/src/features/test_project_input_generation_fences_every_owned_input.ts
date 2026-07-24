@@ -7,9 +7,11 @@ import { commitProjectInputGeneration } from "../../../../packages/graph/src/ind
 import type { IIndexerResult } from "../../../../packages/graph/src/indexer/IIndexerResult";
 import { movedConsumedSource } from "../../../../packages/graph/src/indexer/movedConsumedSource";
 import { movedProviderSource } from "../../../../packages/graph/src/indexer/movedProviderSource";
+import { projectInputGeneration } from "../../../../packages/graph/src/indexer/projectInputGeneration";
 import { projectInputManifest } from "../../../../packages/graph/src/indexer/projectInputManifest";
 import { providerBuildInputs } from "../../../../packages/graph/src/indexer/providerBuildInputs";
 import { sameProjectInputManifest } from "../../../../packages/graph/src/indexer/sameProjectInputManifest";
+import { dumpProvenanceOf } from "../../../../packages/graph/src/provider/dumpProvenanceOf";
 import { GraphPaths } from "../internal/GraphPaths";
 import { ProviderFixtures } from "../internal/ProviderFixtures";
 
@@ -191,7 +193,6 @@ export const test_project_input_generation_fences_every_owned_input =
       root,
       { languages: ["typescript", "go"] },
       ["first.ts", "missing.generated"],
-      new Set(["typescript"]),
     );
     TestValidator.equals(
       "provider-owned source contents are coordinator-fenced too",
@@ -240,6 +241,127 @@ export const test_project_input_generation_fences_every_owned_input =
       !sameProjectInputManifest(manifest, new Map()),
     );
 
+    const consumedSources = new Map([
+      [first, fs.readFileSync(first, "utf8")],
+      [go, fs.readFileSync(go, "utf8")],
+    ]);
+    const providerSources = new Map([
+      [
+        second,
+        {
+          checkerDigest: manifest.get(second)!,
+          diskDigest: manifest.get(second)!,
+        },
+      ],
+    ]);
+    const providerSnapshot = ProviderFixtures.snapshot({
+      root,
+      provider: "typescript-owner",
+      sources: providerSources,
+    });
+    const provenance = [dumpProvenanceOf(providerSnapshot)];
+    const generation = projectInputGeneration({
+      sourceFiles: [first, second, go],
+      buildInputFiles: [missing],
+      manifest,
+      consumedSources,
+      providerSources,
+      provenance,
+    });
+    TestValidator.predicate(
+      "one coordinator token names the complete input generation",
+      /^[a-f0-9]{64}$/.test(generation),
+    );
+    TestValidator.equals(
+      "collection and map insertion order cannot move the generation token",
+      projectInputGeneration({
+        sourceFiles: [go, second, first],
+        buildInputFiles: [missing],
+        manifest: new Map([...manifest].reverse()),
+        consumedSources: new Map([...consumedSources].reverse()),
+        providerSources: new Map([...providerSources].reverse()),
+        provenance: [...provenance].reverse(),
+      }),
+      generation,
+    );
+    TestValidator.notEquals(
+      "a provider checker generation is part of the coordinator token",
+      projectInputGeneration({
+        sourceFiles: [first, second, go],
+        buildInputFiles: [missing],
+        manifest,
+        consumedSources,
+        providerSources: new Map([
+          [
+            second,
+            {
+              checkerDigest: "a".repeat(64),
+              diskDigest: manifest.get(second)!,
+            },
+          ],
+        ]),
+        provenance,
+      }),
+      generation,
+    );
+    TestValidator.notEquals(
+      "a provider build universe is part of the coordinator token",
+      projectInputGeneration({
+        sourceFiles: [first, second, go],
+        buildInputFiles: [missing],
+        manifest,
+        consumedSources,
+        providerSources,
+        provenance: [
+          {
+            ...provenance[0]!,
+            universe: "b".repeat(64),
+          },
+        ],
+      }),
+      generation,
+    );
+    TestValidator.notEquals(
+      "generic bytes are bound independently of their file name",
+      projectInputGeneration({
+        sourceFiles: [first, second, go],
+        buildInputFiles: [missing],
+        manifest,
+        consumedSources: new Map([
+          [first, `${consumedSources.get(first)!}// different\n`],
+          [go, consumedSources.get(go)!],
+        ]),
+        providerSources,
+        provenance,
+      }),
+      generation,
+    );
+    TestValidator.notEquals(
+      "source-set and build-input roles are not collapsed into one path list",
+      projectInputGeneration({
+        sourceFiles: [first, second, go, missing],
+        buildInputFiles: [],
+        manifest,
+        consumedSources,
+        providerSources,
+        provenance,
+      }),
+      generation,
+    );
+    TestValidator.notEquals(
+      "length-prefixed fields cannot absorb an adjacent path",
+      projectInputGeneration({
+        sourceFiles: ["a", "bc"],
+        buildInputFiles: [],
+        manifest: new Map(),
+      }),
+      projectInputGeneration({
+        sourceFiles: ["ab", "c"],
+        buildInputFiles: [],
+        manifest: new Map(),
+      }),
+    );
+
     const consumed = fs.readFileSync(first, "utf8");
     TestValidator.equals(
       "an unchanged consumed source does not move",
@@ -253,6 +375,20 @@ export const test_project_input_generation_fences_every_owned_input =
       first,
     );
     fs.writeFileSync(first, consumed);
+    TestValidator.equals(
+      "consumed bytes must also match the coordinator's final manifest",
+      movedConsumedSource(
+        new Map([[first, consumed]]),
+        new Map([[first, digest(Buffer.from(`${consumed}// other\n`))]]),
+      ),
+      first,
+    );
+    const removed = path.join(root, "removed.ts");
+    TestValidator.equals(
+      "a consumed source removed before the final fence is named",
+      movedConsumedSource(new Map([[removed, "export const gone = true;\n"]])),
+      removed,
+    );
 
     const committed = await commitProjectInputGeneration(
       { cwd: root, languages: ["typescript", "go"] },
@@ -275,6 +411,52 @@ export const test_project_input_generation_fences_every_owned_input =
       "a stable generation retains the selected providers' build inputs",
       committed.buildInputs,
       providerBuildInputs(["typescript", "go"], providers, root),
+    );
+    TestValidator.predicate(
+      "a stable build publishes its complete coordinator generation token",
+      committed.inputGeneration !== undefined &&
+        /^[a-f0-9]{64}$/.test(committed.inputGeneration),
+    );
+    const repeated = await commitProjectInputGeneration(
+      { cwd: root, languages: ["typescript", "go"] },
+      providers,
+      () => ({
+        ...resultOf(root),
+        sources: new Map([
+          [first, consumed],
+          [second, fs.readFileSync(second, "utf8")],
+          [go, fs.readFileSync(go, "utf8")],
+        ]),
+      }),
+    );
+    TestValidator.equals(
+      "an unchanged project reproduces the same generation token",
+      repeated.inputGeneration,
+      committed.inputGeneration,
+    );
+    let claimsSourceAsBuildInput = false;
+    let identityAttempts = 0;
+    const movingIdentity = ProviderFixtures.provider({
+      name: "moving-input-identity",
+      languages: ["typescript"],
+      buildInputs: () => (claimsSourceAsBuildInput ? ["first.ts"] : []),
+    });
+    await commitProjectInputGeneration(
+      { cwd: root, languages: ["typescript"] },
+      [movingIdentity],
+      () => {
+        identityAttempts += 1;
+        claimsSourceAsBuildInput = true;
+        return {
+          ...resultOf(root),
+          sources: new Map([[first, fs.readFileSync(first, "utf8")]]),
+        };
+      },
+    );
+    TestValidator.equals(
+      "a build-input role change retries even when its file was already a source",
+      identityAttempts,
+      2,
     );
 
     const cleanupRoot = GraphPaths.createTempDirectory(
@@ -301,6 +483,77 @@ export const test_project_input_generation_fences_every_owned_input =
       "a stale candidate's cleanup failure is retained",
       cleanupFailure instanceof AggregateError &&
         cleanupFailure.errors[0] === closeError,
+    );
+
+    const invalidAfterRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-input-invalid-after-",
+    );
+    fs.writeFileSync(
+      path.join(invalidAfterRoot, "index.ts"),
+      "export const value = 1;\n",
+    );
+    let invalidAfterBuild = false;
+    let invalidAfterDiscards = 0;
+    let invalidAfterFailure: unknown;
+    try {
+      await commitProjectInputGeneration(
+        { cwd: invalidAfterRoot, languages: ["typescript"] },
+        [
+          ProviderFixtures.provider({
+            buildInputs: () =>
+              invalidAfterBuild ? ["../escaped.generated"] : [],
+          }),
+        ],
+        () => {
+          invalidAfterBuild = true;
+          return resultOf(invalidAfterRoot);
+        },
+        async () => {
+          invalidAfterDiscards += 1;
+          return [];
+        },
+      );
+    } catch (error) {
+      invalidAfterFailure = error;
+    }
+    TestValidator.predicate(
+      "post-build validation failure retires the unpublished candidate",
+      invalidAfterDiscards === 1 &&
+        invalidAfterFailure instanceof Error &&
+        invalidAfterFailure.message.includes(
+          "build input must be project-relative",
+        ),
+    );
+    let nonErrorAfterBuild = false;
+    let nonErrorDiscards = 0;
+    let nonErrorFailure: unknown;
+    try {
+      await commitProjectInputGeneration(
+        { cwd: invalidAfterRoot, languages: ["typescript"] },
+        [
+          ProviderFixtures.provider({
+            buildInputs: () => {
+              if (nonErrorAfterBuild) throw "non-error validation failure";
+              return [];
+            },
+          }),
+        ],
+        () => {
+          nonErrorAfterBuild = true;
+          return resultOf(invalidAfterRoot);
+        },
+        async () => {
+          nonErrorDiscards += 1;
+          return [];
+        },
+      );
+    } catch (error) {
+      nonErrorFailure = error;
+    }
+    TestValidator.predicate(
+      "non-Error validation failures still retire the unpublished candidate",
+      nonErrorDiscards === 1 &&
+        nonErrorFailure === "non-error validation failure",
     );
 
     const restlessRoot = GraphPaths.createTempDirectory(

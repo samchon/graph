@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { buildLspGraph } from "./buildLspGraph";
 import { buildStaticGraphResult } from "./buildStaticGraphResult";
+import { commitProjectInputGeneration } from "./commitProjectInputGeneration";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IIndexerResult } from "./IIndexerResult";
 import { parseGraphDump } from "./parseGraphDump";
@@ -17,7 +18,9 @@ export async function buildGraphResult(
   };
   const result =
     normalized.mode === "static"
-      ? buildStaticGraphResult(normalized)
+      ? await commitProjectInputGeneration(normalized, [], () =>
+          buildStaticGraphResult(normalized),
+        )
       : await buildLspGraph(normalized);
   return { ...result, dump: parseGraphDump(result.dump) };
 }

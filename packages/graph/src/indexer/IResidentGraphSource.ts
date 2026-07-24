@@ -46,5 +46,8 @@ export namespace IResidentGraphSource {
   export interface IObservable extends IResidentGraphSource {
     /** Latest computation mode observed from each resident strict provider. */
     modes(): ReadonlyMap<string, IBulkGraphSession.Mode>;
+
+    /** Complete input-generation token belonging to the latest loaded dump. */
+    inputGeneration(): string | undefined;
   }
 }

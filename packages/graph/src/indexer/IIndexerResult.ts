@@ -58,6 +58,16 @@ export interface IIndexerResult {
   /** Project-wide source/config/build inputs fenced around this build. */
   inputManifest?: Map<string, string>;
 
+  /**
+   * SHA-256 identity of the complete committed input generation.
+   *
+   * This binds the selected source and build-input sets, the coordinator's
+   * content manifest, generic source bytes, strict checker/disk digests, and
+   * provider build universes. It is computed only after every commit fence
+   * closes, so one value names the mixed-language generation as a whole.
+   */
+  inputGeneration?: string;
+
   /** Legacy resident field; coordinator manifests now hash every source. */
   inputManifestLanguages?: GraphLanguage[];
 

@@ -50,11 +50,11 @@ export class LspClient {
     this.process = spawn(owned.command, owned.args, {
       cwd,
       detached: ownedProcess.group(),
-      stdio: "pipe",
+      stdio: ownedProcess.stdio(owned, ["pipe", "pipe", "pipe"]),
       windowsVerbatimArguments: owned.windowsVerbatimArguments,
       windowsHide: true,
-    });
-    ownedProcess.start(this.process);
+    }) as ChildProcessWithoutNullStreams;
+    ownedProcess.start(this.process, owned);
     this.exit = ownedProcess.exit(this.process);
     this.process.stdout.on("data", (chunk: Buffer) => this.onData(chunk));
     this.process.stderr.on("data", () => {

@@ -36,9 +36,21 @@ interface IOwnedProcess {
     command: string;
     args: string[];
     windowsVerbatimArguments?: boolean;
+    windowsLaunch?: {
+      command: string;
+      args: string[];
+      windowsVerbatimArguments?: boolean;
+    };
   };
   group(): boolean;
-  start(child: ChildProcess): void;
+  stdio(
+    command: ReturnType<IOwnedProcess["command"]>,
+    standard: readonly ("ignore" | "pipe")[],
+  ): import("node:child_process").StdioOptions;
+  start(
+    child: ChildProcess,
+    command: ReturnType<IOwnedProcess["command"]>,
+  ): void;
   exit(child: ChildProcess): Promise<void>;
 }
 
@@ -119,6 +131,7 @@ export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
 
     await assertStubbornProcessTreeIsOwned(LspClient);
     await assertExitedLeaderDoesNotLeakItsProcessGroup(LspClient);
+    await assertWindowsCommandWaitsForOwnership();
     await assertWindowsOwnershipPreservesTheOriginalCommandLine();
     await assertClosedInputRejectsRequests(LspClient);
     await assertSynchronousWriteFailureRejectsRequests(LspClient);
@@ -161,17 +174,21 @@ const assertWindowsOwnershipPreservesTheOriginalCommandLine =
       payload,
     ]);
     TestValidator.equals(
-      "Windows ownership adds no interpreter or encoded command-line wrapper",
-      [owned.command, owned.args.at(-1)],
-      [process.execPath, payload],
+      "Windows ownership keeps the real long argv off the gate command line",
+      [
+        owned.command,
+        owned.args.some((argument) => argument.includes(payload)),
+        owned.windowsLaunch?.args.at(-1),
+      ],
+      [process.execPath, false, payload],
     );
     const child = spawn(owned.command, owned.args, {
       detached: ownedProcess.group(),
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ownedProcess.stdio(owned, ["ignore", "pipe", "pipe"]),
       windowsHide: true,
       windowsVerbatimArguments: owned.windowsVerbatimArguments,
     });
-    ownedProcess.start(child);
+    ownedProcess.start(child, owned);
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");
@@ -189,6 +206,41 @@ const assertWindowsOwnershipPreservesTheOriginalCommandLine =
       [0, "10000", ""],
     );
   };
+
+const assertWindowsCommandWaitsForOwnership = async (): Promise<void> => {
+  if (process.platform !== "win32") return;
+  const { ownedProcess } = await importLib<{
+    ownedProcess: IOwnedProcess;
+  }>("utils/ownedProcess.js");
+  const root = GraphPaths.createTempDirectory(
+    "samchon-graph-windows-process-gate-",
+  );
+  const marker = path.join(root, "started");
+  const owned = ownedProcess.command(process.execPath, [
+    "-e",
+    "require('node:fs').writeFileSync(process.argv[1], 'started')",
+    marker,
+  ]);
+  const child = spawn(owned.command, owned.args, {
+    detached: ownedProcess.group(),
+    stdio: ownedProcess.stdio(owned, ["ignore", "pipe", "pipe"]),
+    windowsHide: true,
+    windowsVerbatimArguments: owned.windowsVerbatimArguments,
+  });
+  await delay(100);
+  TestValidator.equals(
+    "the Windows gate cannot launch a command before Job assignment",
+    fs.existsSync(marker),
+    false,
+  );
+  ownedProcess.start(child, owned);
+  await ownedProcess.exit(child);
+  TestValidator.equals(
+    "Job assignment releases the waiting Windows command",
+    [child.exitCode, fs.readFileSync(marker, "utf8")],
+    [0, "started"],
+  );
+};
 
 const assertExitedLeaderDoesNotLeakItsProcessGroup = async (
   LspClient: LspClientConstructor,

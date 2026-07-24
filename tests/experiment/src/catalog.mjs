@@ -84,8 +84,12 @@ export const LANGUAGE_EXPERIMENTS = [
         'const samchonGraphExperiment: &str = "strict-lifecycle";\n\nfn main() { println!("{samchonGraphExperiment}"); }\n',
       createdSymbol: "samchonGraphExperiment",
       buildFile: "Cargo.toml",
-      failureSuffix: "\npub fn samchon_graph_broken(\n",
-      failurePolicy: "reject-or-diagnostic",
+      // Stock rust-analyzer's SCIP command recovers from malformed Rust and
+      // emits no diagnostics. A malformed Cargo manifest is the real strict
+      // failure boundary that the semantic-index authority can prove.
+      failureFile: "Cargo.toml",
+      failureSuffix: "\n[malformed",
+      failurePolicy: "reject",
     },
   },
   {

@@ -28,8 +28,13 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
   const createFile = path.join(lifecycleRoot, fixture.createFile);
   const renamedFile = path.join(lifecycleRoot, fixture.renamedFile);
   const buildFile = path.join(lifecycleRoot, fixture.buildFile);
+  const failureFile = path.join(
+    lifecycleRoot,
+    fixture.failureFile ?? fixture.sourceFile,
+  );
   const sourceText = fs.readFileSync(sourceFile, "utf8");
   const buildText = fs.readFileSync(buildFile, "utf8");
+  const failureText = fs.readFileSync(failureFile, "utf8");
   const rows = [];
   const resident = createResidentGraphSource({
     cwd: lifecycleRoot,
@@ -136,7 +141,7 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
     await load("build-config", CHANGED_MODES);
 
     const failedAt = performance.now();
-    fs.writeFileSync(sourceFile, sourceText + fixture.failureSuffix);
+    fs.writeFileSync(failureFile, failureText + fixture.failureSuffix);
     if (fixture.failurePolicy === "reject") {
       let failure;
       try {
@@ -146,7 +151,7 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
       }
       if (!(failure instanceof Error)) {
         throw new Error(
-          `${experiment.language}: malformed source unexpectedly published`,
+          `${experiment.language}: malformed project input unexpectedly published`,
         );
       }
       rows.push({
@@ -183,7 +188,7 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
         }
         if ((diagnosed.diagnostics?.length ?? 0) === 0) {
           throw new Error(
-            `${experiment.language}: malformed source produced neither rejection nor diagnostics`,
+            `${experiment.language}: malformed project input produced neither rejection nor diagnostics`,
           );
         }
         dump = diagnosed;
@@ -218,6 +223,7 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
       );
     }
 
+    fs.writeFileSync(failureFile, failureText);
     fs.writeFileSync(sourceFile, sourceText);
     fs.writeFileSync(buildFile, buildText);
     const retried = await load("retry", CHANGED_MODES);

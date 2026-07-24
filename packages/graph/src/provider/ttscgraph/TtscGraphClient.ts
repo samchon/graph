@@ -263,13 +263,17 @@ export class TtscGraphClient implements IBulkGraphSession {
         env: process.env,
         detached: ownedProcess.group(),
         shell: false,
-        stdio: ["pipe", "pipe", "pipe"],
+        stdio: ownedProcess.stdio(ownedCommand, [
+          "pipe",
+          "pipe",
+          "pipe",
+        ]),
         windowsVerbatimArguments:
           ownedCommand.windowsVerbatimArguments,
         windowsHide: true,
       },
-    );
-    ownedProcess.start(spawned);
+    ) as ChildProcessWithoutNullStreams;
+    ownedProcess.start(spawned, ownedCommand);
     const child: NativeChild = {
       process: spawned,
       stdoutChunks: [],

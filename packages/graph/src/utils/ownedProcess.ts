@@ -1,4 +1,5 @@
-import { ChildProcess } from "node:child_process";
+import { ChildProcess, StdioOptions } from "node:child_process";
+import path from "node:path";
 
 import { windowsJobObject } from "./windowsJobObject";
 
@@ -11,6 +12,11 @@ export namespace ownedProcess {
     command: string;
     args: string[];
     windowsVerbatimArguments?: boolean;
+    windowsLaunch?: {
+      command: string;
+      args: string[];
+      windowsVerbatimArguments?: boolean;
+    };
   }
 
   /** Spawn setting that gives one POSIX command an addressable process group. */
@@ -22,8 +28,10 @@ export namespace ownedProcess {
    * Put one command behind the platform's exact process-tree boundary.
    *
    * POSIX addresses the command's detached process group directly. Windows
-   * assigns the exact spawned process to a private Job Object through the
-   * native Win32 API; every descendant then inherits that ownership.
+   * starts one bundled Node gate, assigns that waiting process to a private
+   * Job Object, and only then sends it the real command to spawn. The gate
+   * removes the post-spawn assignment race without putting the real argv on an
+   * interpreter or encoded command line.
    */
   export function command(
     command: string,
@@ -34,22 +42,53 @@ export namespace ownedProcess {
      * so the post-spawn assignment window contains no module initialization. */
     if (process.platform === "win32") windowsJobObject.prepare();
     /* c8 ignore stop */
+    /* c8 ignore start -- each coverage host exercises one platform command
+     * description while lifecycle integration proves both. */
+    if (process.platform !== "win32") {
+      return {
+        command,
+        args: [...args],
+        windowsVerbatimArguments,
+      };
+    }
     return {
-      command,
-      args: [...args],
-      windowsVerbatimArguments,
+      command: process.execPath,
+      args: [path.join(__dirname, "windowsProcessGate.js")],
+      windowsLaunch: {
+        command,
+        args: [...args],
+        windowsVerbatimArguments,
+      },
     };
+    /* c8 ignore stop */
   }
 
   /**
-   * Assign a just-spawned Windows process to its exact native ownership set.
+   * Add the private gate channel to one command's ordinary stdio contract.
+   *
+   * The fourth descriptor is Node's IPC channel. The real child inherits only
+   * descriptors zero through two, so its stdin/stdout/stderr remain direct.
+   */
+  export function stdio(
+    command: ICommand,
+    standard: readonly ("ignore" | "pipe")[],
+  ): StdioOptions {
+    /* c8 ignore start -- the private IPC descriptor exists only on Windows. */
+    if (command.windowsLaunch === undefined) return [...standard];
+    return [...standard, "ipc"];
+    /* c8 ignore stop */
+  }
+
+  /**
+   * Assign a just-spawned Windows gate to its exact native ownership set, then
+   * release the real command.
    *
    * The native API is already loaded by {@link command}, so this happens
-   * synchronously in the same turn as `spawn()` without an interpreter or
-   * module initialization in between. The command keeps its original
-   * CreateProcess length budget.
+   * synchronously in the same turn as `spawn()` without module initialization
+   * in between. The gate cannot spawn the real command until the IPC message
+   * sent after assignment arrives.
    */
-  export function start(child: ChildProcess): void {
+  export function start(child: ChildProcess, command: ICommand): void {
     /* c8 ignore start -- Windows-only native Job Object attachment. */
     if (process.platform !== "win32") return;
     let job: windowsJobObject.IJob | undefined;
@@ -60,7 +99,14 @@ export namespace ownedProcess {
       if (child.pid === undefined) return;
       job = windowsJobObject.create(child.pid);
       WINDOWS_JOBS.set(child, job);
+      if (command.windowsLaunch === undefined || !child.connected) {
+        throw new Error(
+          "@samchon/graph: Windows process gate has no launch channel",
+        );
+      }
+      child.send(command.windowsLaunch);
     } catch (error) {
+      WINDOWS_JOBS.delete(child);
       if (job !== undefined) windowsJobObject.close(job);
       try {
         child.kill("SIGKILL");
@@ -79,6 +125,7 @@ export namespace ownedProcess {
         child.off("error", settled);
         child.off("exit", settled);
         child.off("close", settled);
+        /* c8 ignore start -- Windows alone associates a native Job here. */
         const job = WINDOWS_JOBS.get(child);
         if (job === undefined) {
           resolve();
@@ -86,6 +133,7 @@ export namespace ownedProcess {
         }
         WINDOWS_JOBS.delete(child);
         void windowsJobObject.retire(job).then(resolve).catch(reject);
+        /* c8 ignore stop */
       };
       child.once("error", settled);
       child.once("exit", settled);

@@ -546,6 +546,50 @@ function assertIndexValidation(): void {
     [["caller"], 0, 1],
   );
 
+  // The twin that separates counting listed symbols from counting lost
+  // references. This `local 4` *is* declared by its document, so it resolves
+  // normally and nothing is omitted; a counter that fired on the external
+  // listing would report a declaration that exists as having none.
+  const declaredLocal = adaptScipIndex({
+    index: parseScipIndex({
+      metadata: { projectRoot: "file:///r" },
+      documents: [
+        {
+          relativePath: "a.py",
+          symbols: [
+            {
+              symbol: "scip-python python click v1 `a`/caller().",
+              displayName: "caller",
+              kind: "Function",
+            },
+            { symbol: "local 4", displayName: "held", kind: "Variable" },
+          ],
+          occurrences: [
+            {
+              range: [0, 0, 6],
+              symbol: "scip-python python click v1 `a`/caller().",
+              symbolRoles: 0x1,
+            },
+            { range: [1, 2, 6], symbol: "local 4", symbolRoles: 0x1 },
+            { range: [2, 2, 6], symbol: "local 4" },
+          ],
+        },
+      ],
+      externalSymbols: [{ symbol: "local 4", displayName: "leaked" }],
+    }),
+    root: "/r",
+    provider: "scip-python",
+    languages: ["python"],
+    languageOf: () => "python",
+  });
+  TestValidator.equals(
+    "a local its own document declares is not reported as undeclared",
+    declaredLocal.warnings.filter((warning) =>
+      warning.includes("document-scoped local"),
+    ),
+    [],
+  );
+
   const symbolLessAdapted = adaptScipIndex({
     index: parseScipIndex(
       withDocument({

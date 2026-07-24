@@ -400,6 +400,15 @@ switch (experiment.language) {
   case "python":
     await installScipPython();
     await installScip();
+    // The interpreter decides what the index means and now decides the
+    // provider's published `compilerVersion`, so the result has to name the one
+    // this run used rather than leave it to the runner image.
+    record({
+      tool: "python3",
+      version: "unpinned",
+      source: "ubuntu-latest runner image",
+      digest: "unpinned",
+    });
     break;
   case "ruby":
     // The runner ships ruby but not bundler, which both the fixture's

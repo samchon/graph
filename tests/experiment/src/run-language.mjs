@@ -104,6 +104,10 @@ if (
     provenance.producer.tool !== experiment.strictTool ||
     provenance.producer.version === "" ||
     provenance.producer.compiler === "" ||
+    // A resolved-but-absent tool answers the shape of the question and not the
+    // question, and a row that accepted it would go green on a provenance
+    // saying nothing about which runtime resolved its facts.
+    provenance.producer.compiler.endsWith("=unavailable") ||
     experiment.requiredCapabilities.some(
       (capability) => !provenance.capabilities.includes(capability),
     ))

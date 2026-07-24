@@ -96,10 +96,11 @@ export const test_standard_providers_execute_their_exact_contracts =
         }
         TestValidator.predicate(
           `${provider.name} records indexer, decoder, and toolchain versions`,
-          provider.configuration?.(root, process.env).length === 3 &&
-            provider.configuration(root, process.env).every((row) =>
-              row.endsWith("v1.0.0"),
-            ),
+          sameArray(provider.configuration?.(root, process.env), [
+            `${provider.name}=${provider.name} v1.0.0`,
+            "scip=scip v1.0.0",
+            `${toolchainOf(provider.name)}=${toolchainOf(provider.name)} v1.0.0`,
+          ]),
         );
         TestValidator.predicate(
           `${provider.name} watches source and build inputs`,
@@ -120,7 +121,8 @@ export const test_standard_providers_execute_their_exact_contracts =
         // the provenance as incomplete.
         TestValidator.predicate(
           `${provider.name} publishes the toolchain its facts describe`,
-          refreshed.snapshot.provenance.compilerVersion.endsWith("v1.0.0"),
+          refreshed.snapshot.provenance.compilerVersion ===
+            `${toolchainOf(provider.name)}=${toolchainOf(provider.name)} v1.0.0`,
         );
         TestValidator.predicate(
           `${provider.name} publishes the shared strict-fixture corpus`,
@@ -654,4 +656,38 @@ function emptyPath(): NodeJS.ProcessEnv {
     PATHEXT: ".EXE;.CMD;.BAT",
     SystemRoot: process.env.SystemRoot,
   };
+}
+
+/**
+ * The toolchain a SCIP entry describes, as the registry declares it.
+ *
+ * Named here rather than matched loosely, because the fixture prints the same
+ * `<producer> v1.0.0` for every shim: a check that only looked at the suffix
+ * would pass if `compilerVersion` were wired to the indexer instead, which is
+ * the one thing these cases exist to distinguish.
+ */
+function toolchainOf(provider: string): string {
+  const toolchains: Record<string, string> = {
+    "scip-clang": "clang",
+    "scip-java": "java",
+    "scip-dotnet": "dotnet",
+    "scip-python": "python3",
+    "scip-ruby": "ruby",
+  };
+  const toolchain = toolchains[provider];
+  if (toolchain === undefined) {
+    throw new Error(`${provider}: fixture declares no toolchain`);
+  }
+  return toolchain;
+}
+
+function sameArray(
+  left: readonly string[] | undefined,
+  right: readonly string[],
+): boolean {
+  return (
+    left !== undefined &&
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }

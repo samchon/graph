@@ -165,10 +165,18 @@ function createScipProvider(
         override: props.override,
       });
       const decoder = resolveScipDecoder(root, env);
+      // The toolchain is required, not merely reported. A snapshot states which
+      // language version resolved its facts, and a provider that cannot answer
+      // that would publish `python3=unavailable` into the field a consumer
+      // degrades against — which is worse than declining, because a fallback at
+      // least says so. `rust-analyzer-scip` refuses without `rustc` and `cargo`
+      // for the same reason.
+      const compiler = resolveProviderCommand(root, env, props.compiler);
       const resolvedArgs = props.resolveArgs?.(root);
       if (
         indexer === undefined ||
         decoder === undefined ||
+        compiler === undefined ||
         (props.resolveArgs !== undefined && resolvedArgs === undefined)
       ) {
         return undefined;

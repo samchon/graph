@@ -11,8 +11,8 @@ export const LANGUAGE_EXPERIMENTS = [
     repository: "https://github.com/nestjs/typescript-starter.git",
     commit: "c4d9330f5513eda0fb5df594f6b34a11fde1a934",
     strictProvider: "ttscgraph",
-    // This pinned starter has no construction expression; `instantiates` is
-    // proved by the strict conformance fixture rather than invented here.
+    // The pinned starter has no construction expression. The lifecycle below
+    // creates one and checks the real ttscgraph generation that contains it.
     semanticEdges: ["calls", "type_ref"],
     requiredCapabilities: [
       "universe",
@@ -27,8 +27,13 @@ export const LANGUAGE_EXPERIMENTS = [
       createFile: "src/samchon_graph_experiment.ts",
       renamedFile: "src/samchon_graph_experiment_renamed.ts",
       createText:
-        "export const samchonGraphExperiment = 'strict-lifecycle';\n",
+        "export class SamchonGraphExperiment {}\n\nexport function samchonGraphExperiment() {\n  return new SamchonGraphExperiment();\n}\n",
       createdSymbol: "samchonGraphExperiment",
+      createdEdge: {
+        kind: "instantiates",
+        from: "samchonGraphExperiment",
+        to: "SamchonGraphExperiment",
+      },
       buildFile: "tsconfig.json",
       failureSuffix: "\nexport const = ;\n",
       failurePolicy: "diagnostic",

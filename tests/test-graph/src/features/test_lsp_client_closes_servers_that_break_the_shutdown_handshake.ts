@@ -103,6 +103,7 @@ export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
     await stubborn.close();
 
     await assertStubbornProcessTreeIsOwned(LspClient);
+    await assertExitedLeaderDoesNotLeakItsProcessGroup(LspClient);
     await assertClosedInputRejectsRequests(LspClient);
     await assertSynchronousWriteFailureRejectsRequests(LspClient);
     await assertStdinStreamErrorRejectsRequests(LspClient);
@@ -130,6 +131,35 @@ export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
     );
     await cancelled.close();
   };
+
+const assertExitedLeaderDoesNotLeakItsProcessGroup = async (
+  LspClient: LspClientConstructor,
+): Promise<void> => {
+  if (process.platform === "win32") return;
+  const root = GraphPaths.createTempDirectory(
+    "samchon-graph-exited-lsp-leader-",
+  );
+  const pidFile = path.join(root, "descendant.pid");
+  const client = new LspClient(process.execPath, [
+    GraphPaths.fakeLspServer,
+    `--stubborn-descendant=${pidFile}`,
+  ]);
+  let pid: number | undefined;
+  try {
+    await client.request("initialize", {});
+    await waitForFile(pidFile);
+    pid = Number(fs.readFileSync(pidFile, "utf8"));
+    await settleWithin(client.close(), 5_000, () => terminate(pid!));
+    TestValidator.equals(
+      "close waits for a process group after its cooperative leader exits",
+      isProcessAlive(pid),
+      false,
+    );
+  } finally {
+    if (pid !== undefined) terminate(pid);
+    await Promise.allSettled([client.close()]);
+  }
+};
 
 const assertOversizedFrameTerminatesTransport = async (
   LspClient: LspClientConstructor,

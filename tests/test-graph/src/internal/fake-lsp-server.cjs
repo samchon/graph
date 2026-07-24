@@ -1,4 +1,5 @@
 const fs = require("node:fs");
+const { spawn } = require("node:child_process");
 
 let buffer = Buffer.alloc(0);
 const failLanguages = new Set();
@@ -79,6 +80,7 @@ let lateProgressLifecycleMs = 0;
 let referenceProgressLifecycleStarted = false;
 let referenceProgressLifecycleReady = false;
 let documentVersionLog;
+let stubbornDescendantPidFile;
 const documentVersionEvents = [];
 // Answer the first N references (enough to let the warmup succeed) and then go
 // silent — models a warm server that still times out on a few later targets.
@@ -193,12 +195,26 @@ for (const arg of process.argv.slice(2)) {
     oversizedHeader = "terminated";
   } else if (arg.startsWith("--document-version-log=")) {
     documentVersionLog = arg.slice("--document-version-log=".length);
+  } else if (arg.startsWith("--stubborn-descendant=")) {
+    stubbornDescendantPidFile = arg.slice("--stubborn-descendant=".length);
   } else if (arg.startsWith("--diagnostic-severities=")) {
     diagnosticSeverities = arg
       .slice("--diagnostic-severities=".length)
       .split(",")
       .map((value) => Number(value));
   }
+}
+if (stubbornDescendantPidFile !== undefined && process.platform !== "win32") {
+  const descendant = spawn(
+    process.execPath,
+    [
+      "-e",
+      'process.on("SIGTERM", () => undefined); setInterval(() => undefined, 1_000);',
+    ],
+    { stdio: "ignore" },
+  );
+  fs.writeFileSync(stubbornDescendantPidFile, String(descendant.pid));
+  descendant.unref();
 }
 if (options.ignoreTermination && process.platform !== "win32") {
   // A signal-resistant server holds its own work: it does not exit when the

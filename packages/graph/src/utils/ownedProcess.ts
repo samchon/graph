@@ -48,10 +48,7 @@ export namespace ownedProcess {
       !child.stdin.destroyed
     ) {
       child.stdin.end();
-      if (
-        (await waitForExit(exit, TERMINATION_GRACE_MS)) &&
-        !isOwnedProcessGroupRunning(child)
-      ) {
+      if (await waitForOwnedTreeExit(child, exit, TERMINATION_GRACE_MS)) {
         return;
       }
     }
@@ -72,9 +69,9 @@ export namespace ownedProcess {
       );
     }
     signalOwnedProcessGroup(child, "SIGTERM");
-    if (await waitForExit(exit, TERMINATION_GRACE_MS)) return;
+    if (await waitForOwnedTreeExit(child, exit, TERMINATION_GRACE_MS)) return;
     signalOwnedProcessGroup(child, "SIGKILL");
-    if (!(await waitForExit(exit, FORCED_EXIT_GRACE_MS))) {
+    if (!(await waitForOwnedTreeExit(child, exit, FORCED_EXIT_GRACE_MS))) {
       throw new Error(
         `${owner}: owned process tree did not exit after forced termination`,
       );
@@ -168,3 +165,35 @@ function waitForExit(exit: Promise<void>, timeoutMs: number): Promise<boolean> {
     void exit.then(() => finish(true));
   });
 }
+
+/**
+ * A POSIX process group can outlive its leader. Waiting for the child handle
+ * alone would report success as soon as the leader exits even when a descendant
+ * ignored SIGTERM, so forced termination must wait for both facts.
+ */
+/* c8 ignore start -- POSIX-only process-group polling; lifecycle integration
+ * exercises it on Linux and macOS while Windows uses taskkill above. */
+async function waitForOwnedTreeExit(
+  child: ChildProcess,
+  exit: Promise<void>,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (process.platform === "win32") return waitForExit(exit, timeoutMs);
+  let rootExited = false;
+  void exit.then(() => {
+    rootExited = true;
+  });
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (rootExited && !isOwnedProcessGroupRunning(child)) return true;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return false;
+    // Keep this bounded cleanup alive after the group leader has exited. An
+    // unref'd timer plus an orphaned detached descendant could let Node quit
+    // before the promised process-tree cleanup finishes.
+    await new Promise<undefined>((resolve) => {
+      setTimeout(() => resolve(undefined), Math.min(25, remaining));
+    });
+  }
+}
+/* c8 ignore stop */

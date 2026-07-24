@@ -108,6 +108,7 @@ function assertSourceManifest(
       const relative = file.slice("bundled:///".length);
       if (
         relative === "" ||
+        relative.includes("\\") ||
         path.posix.normalize(relative) !== relative ||
         relative
           .split("/")

@@ -17,6 +17,7 @@ export function spawnableCommand(
   ) {
     return { command: executable, args: [...args] };
   }
+  /* c8 ignore start -- Windows-only command-processor construction. */
   const doubleEscape =
     /[\\/]node_modules[\\/]\.bin[\\/][^\\/]+\.cmd$/i.test(executable);
   const shellCommand = [
@@ -29,6 +30,7 @@ export function spawnableCommand(
     windowsVerbatimArguments: true,
     windowsDoubleEscapeArguments: doubleEscape,
   };
+  /* c8 ignore stop */
 }
 
 export namespace spawnableCommand {
@@ -60,6 +62,7 @@ export namespace spawnableCommand {
     if (command.windowsVerbatimArguments !== true) {
       return { ...command, args: [...command.args, ...trailing] };
     }
+    /* c8 ignore start -- Windows-only command-processor append path. */
     const shell = command.args.at(-1);
     if (
       command.args.length !== 5 ||
@@ -84,6 +87,7 @@ export namespace spawnableCommand {
         `${shell.slice(0, -1)} ${appended}"`,
       ],
     };
+    /* c8 ignore stop */
   }
   /* c8 ignore start -- declaration merging emits an unreachable namespace
    * creation arm after the function object already exists. */
@@ -92,6 +96,7 @@ export namespace spawnableCommand {
 
 const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
 
+/* c8 ignore start -- Windows-only cmd.exe quoting helpers. */
 function escapeCommand(value: string): string {
   return value.replace(CMD_META, "^$1");
 }
@@ -110,3 +115,4 @@ function escapeArgument(value: string, doubleEscape: boolean): string {
   escaped = `"${escaped}"`.replace(CMD_META, "^$1");
   return doubleEscape ? escaped.replace(CMD_META, "^$1") : escaped;
 }
+/* c8 ignore stop */

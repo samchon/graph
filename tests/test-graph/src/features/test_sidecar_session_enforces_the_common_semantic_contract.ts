@@ -84,6 +84,9 @@ export const test_sidecar_session_enforces_the_common_semantic_contract =
       await invalid(root, payload, "another project root is refused", {
         projectRoot: path.join(root, "other"),
       });
+      await invalid(root, payload, "an empty project root is refused", {
+        projectRoot: "",
+      });
       await invalid(root, payload, "duplicate languages are refused", {
         languages: ["go", "go"],
       });

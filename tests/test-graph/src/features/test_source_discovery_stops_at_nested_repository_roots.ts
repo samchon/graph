@@ -211,6 +211,11 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     );
     write(
       extendsRoot,
+      "configs/tsconfig.base.json",
+      '{"compilerOptions":{"outDir":"../dotted-output"}}',
+    );
+    write(
+      extendsRoot,
       "configs/directory/tsconfig.json",
       '{"compilerOptions":{"declarationDir":"../../directory-output"}}',
     );
@@ -275,6 +280,11 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     );
     write(
       extendsRoot,
+      "apps/dotted-extension/tsconfig.json",
+      '{"extends":"../../configs/tsconfig.base"}',
+    );
+    write(
+      extendsRoot,
       "apps/directory/tsconfig.json",
       '{"extends":"../../configs/directory"}',
     );
@@ -316,6 +326,7 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     for (const output of [
       "direct-output",
       "extension-output",
+      "dotted-output",
       "directory-output",
       "cycle-output",
     ]) {

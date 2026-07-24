@@ -126,6 +126,9 @@ export const test_graph_dump_parser_closes_every_public_trust_boundary =
     await rejected("non-canonical bundled graph paths", (candidate) => {
       record(candidate.nodes[1]!).file = "bundled:///go/../builtin";
     });
+    await rejected("backslashed bundled graph paths", (candidate) => {
+      record(candidate.nodes[1]!).file = "bundled:///go\\..\\escape";
+    });
     await rejected("invalid source ranges", (candidate) => {
       candidate.nodes[0]!.evidence!.endLine = 0;
     });

@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { languageOf } from "../../indexer/languageOf";
@@ -32,6 +34,11 @@ export const rustScipProvider = Object.assign(
     // rust-analyzer writes the protobuf default empty string for every
     // document, not a copy of the source bytes it analyzed.
     sourceText: false,
+    // Stock rust-analyzer omits the protobuf-default project_root. The session
+    // invokes `rust-analyzer scip .` with the project root as its exact cwd and
+    // an isolated output artifact, so that cwd is the missing root evidence; an
+    // explicit different root still fails the common check.
+    projectRootFromInvocation: true,
     languageOf,
   }),
   {
@@ -143,6 +150,22 @@ function rustScipConfiguration(
       )
       .sort(([left], [right]) => compareOrdinal(left, right))
       .map(([key, value]) => `${key}=${value ?? ""}`),
+    ...Object.entries(env)
+      .filter(
+        ([key]) =>
+          key.startsWith("CARGO_") &&
+          !RUST_ENVIRONMENT_KEY_SET.has(key) &&
+          !key.startsWith("CARGO_CFG_") &&
+          !key.startsWith("CARGO_FEATURE_"),
+      )
+      .sort(([left], [right]) => compareOrdinal(left, right))
+      .map(
+        ([key, value]) =>
+          `${key}=sha256:${createHash("sha256")
+            .update(value ?? "", "utf8")
+            .digest("hex")}`,
+      ),
+    ...cargoConfigurationSnapshot(root, env),
     toolVersion(
       root,
       env,
@@ -154,6 +177,45 @@ function rustScipConfiguration(
     toolVersion(root, env, "rustc", "SAMCHON_GRAPH_RUSTC", ["-vV"]),
     toolVersion(root, env, "cargo", "SAMCHON_GRAPH_CARGO", ["-V"]),
   ];
+}
+
+function cargoConfigurationSnapshot(
+  root: string,
+  env: NodeJS.ProcessEnv,
+): string[] {
+  const candidates = new Set<string>();
+  let current = path.resolve(root);
+  for (;;) {
+    for (const name of ["config", "config.toml"]) {
+      candidates.add(path.join(current, ".cargo", name));
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  const cargoHome =
+    env.CARGO_HOME === undefined || env.CARGO_HOME === ""
+      ? path.join(os.homedir(), ".cargo")
+      : path.resolve(root, env.CARGO_HOME);
+  for (const name of ["config", "config.toml"]) {
+    candidates.add(path.join(cargoHome, name));
+  }
+  return [...candidates]
+    .sort(compareOrdinal)
+    .map((file) => `cargo-config:${portablePath(file)}:${fileDigest(file)}`);
+}
+
+function fileDigest(file: string): string {
+  try {
+    return createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+    /* c8 ignore next 2 -- missing candidates are the expected negative state. */
+  } catch {
+    return "missing";
+  }
+}
+
+function portablePath(file: string): string {
+  return path.resolve(file).replaceAll("\\", "/");
 }
 
 function rustCompilerVersion(root: string): string {
@@ -254,3 +316,4 @@ const RUST_ENVIRONMENT_KEYS: readonly string[] = [
   "SAMCHON_GRAPH_RUSTC",
   "SAMCHON_GRAPH_SCIP",
 ];
+const RUST_ENVIRONMENT_KEY_SET = new Set<string>(RUST_ENVIRONMENT_KEYS);

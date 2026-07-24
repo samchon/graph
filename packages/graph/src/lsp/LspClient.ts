@@ -153,10 +153,12 @@ export class LspClient {
         }
       }
       /* c8 ignore stop */
-      if (await waitForExit(this.exit, SHUTDOWN_GRACE_MS)) return;
+      await waitForExit(this.exit, SHUTDOWN_GRACE_MS);
     }
-    if (this.termination !== undefined) await this.termination;
-    else if (!this.exited) await this.terminate();
+    // The group may outlive a server that exited cooperatively or crashed.
+    // terminate() is a cheap liveness check when the whole tree is already gone
+    // and the only path that can retire a descendant after its leader exits.
+    await this.terminate();
   }
 
   private write(payload: unknown): void {

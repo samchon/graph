@@ -140,6 +140,11 @@ export class SidecarSession implements IBulkGraphSession {
   }
 
   private assertProjectRoot(projectRoot: string): void {
+    if (projectRoot === "") {
+      throw new Error(
+        `${this.options.provider}: the snapshot has no project root`,
+      );
+    }
     const declared = projectRoot.startsWith("file://")
       ? fileFromUri(projectRoot)
       : projectRoot;

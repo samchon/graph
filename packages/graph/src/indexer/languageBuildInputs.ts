@@ -2,6 +2,7 @@ import { providerInputFiles } from "../provider/providerInputFiles";
 import { GraphLanguage } from "../typings";
 import { normalizePath } from "../utils/normalizePath";
 import path from "node:path";
+import { dartPackageConfigInputs } from "./dartPackageConfigInputs";
 
 /**
  * Build-universe inputs that apply even when a language uses generic LSP or
@@ -21,6 +22,9 @@ export function languageBuildInputs(
   }
   const existing = providerInputFiles(root, [], [...names], [...extensions]);
   const candidates = new Set(existing);
+  if (languages.includes("dart")) {
+    for (const file of dartPackageConfigInputs(root)) candidates.add(file);
+  }
   const resolved = path.resolve(root);
   const sourceFiles = providerInputFiles(root, languages, []);
   const directories = new Set<string>([resolved]);
@@ -155,7 +159,6 @@ const BUILD_INPUTS: Record<GraphLanguage, readonly string[]> = {
     "pubspec.yaml",
     "pubspec.lock",
     "analysis_options.yaml",
-    "package_config.json",
   ],
   unknown: [],
 };

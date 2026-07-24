@@ -274,7 +274,6 @@ export class TtscGraphClient implements IBulkGraphSession {
     this.child = child;
     this.childHasSnapshot = false;
     this.ownedChildren.add(child);
-    void child.exit.then(() => this.ownedChildren.delete(child));
     spawned.stdout.setEncoding("utf8");
     spawned.stderr.setEncoding("utf8");
     spawned.stdout.on("data", (chunk: string) => this.consume(child, chunk));
@@ -302,7 +301,6 @@ export class TtscGraphClient implements IBulkGraphSession {
         new Error(
           `ttscgraph: process exited (${status})${stderrSuffix(child)}`,
         ),
-        false,
       );
     });
     return child;
@@ -377,13 +375,21 @@ export class TtscGraphClient implements IBulkGraphSession {
   private failChild(
     child: NativeChild,
     error: Error,
-    terminate = true,
   ): void {
     if (this.child !== child) return;
     this.child = undefined;
     this.childHasSnapshot = false;
     this.failPending(error, child);
-    if (terminate) void this.terminate(child);
+    this.retire(child);
+  }
+
+  private retire(child: NativeChild): void {
+    const termination = this.terminate(child);
+    void termination
+      .then(() => {
+        this.ownedChildren.delete(child);
+      })
+      .catch(() => undefined);
   }
 
   private terminate(child: NativeChild): Promise<void> {

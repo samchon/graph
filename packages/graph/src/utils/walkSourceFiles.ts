@@ -200,7 +200,7 @@ function resolveExtendedConfig(
   if (base === undefined) return undefined;
   for (const candidate of [
     base,
-    path.extname(base) === "" ? `${base}.json` : base,
+    base.toLowerCase().endsWith(".json") ? base : `${base}.json`,
     path.join(base, "tsconfig.json"),
   ]) {
     try {

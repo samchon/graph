@@ -47,6 +47,10 @@ if (mode === "fail") {
   process.exit(3);
 }
 
+if (mode === "silent-fail") {
+  process.exit(3);
+}
+
 if (mode === "silent") {
   // Exits cleanly having written nothing. The session must notice the missing
   // artifact rather than decoding whatever was there before.
@@ -83,9 +87,11 @@ function indexOf(generation) {
   const bare = options.has("no-tool-info");
   return {
     metadata: {
-      projectRoot: plainRoot
-        ? root
-        : `file://${root.startsWith("/") ? "" : "/"}${root.replace(/\\/g, "/")}`,
+      projectRoot: options.has("empty-root")
+        ? ""
+        : plainRoot
+          ? root
+          : `file://${root.startsWith("/") ? "" : "/"}${root.replace(/\\/g, "/")}`,
       ...(bare ? {} : { toolInfo: { name: "fake-scip", version: "1.2.3" } }),
     },
     documents: [
@@ -98,6 +104,28 @@ function indexOf(generation) {
         symbols: [{ symbol, displayName: name, kind: "Function" }],
         occurrences: [{ range: [0, 5, 10], symbol, symbolRoles: 1 }],
       },
+      ...(options.has("partial-text")
+        ? [
+            {
+              language: "Go",
+              relativePath: "other.go",
+              symbols: [
+                {
+                  symbol: "scip-fake fake example v1 `pkg`/other().",
+                  displayName: "other",
+                  kind: "Function",
+                },
+              ],
+              occurrences: [
+                {
+                  range: [0, 5, 10],
+                  symbol: "scip-fake fake example v1 `pkg`/other().",
+                  symbolRoles: 1,
+                },
+              ],
+            },
+          ]
+        : []),
     ],
   };
 }

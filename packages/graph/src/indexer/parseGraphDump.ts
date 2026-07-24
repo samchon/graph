@@ -205,6 +205,7 @@ function validateGraphPath(file: string, label: string): void {
     const relative = file.slice("bundled:///".length);
     if (
       relative === "" ||
+      relative.includes("\\") ||
       path.posix.normalize(relative) !== relative ||
       relative.split("/").some((part) => part === "" || part === "." || part === "..")
     ) {

@@ -257,16 +257,32 @@ export class BatchGraphSession implements IBulkGraphSession {
     if (isAborted(signal)) abort();
 
     return new Promise<string>((resolve, reject) => {
+      let settled = false;
       const finish = (): void => {
         signal?.removeEventListener("abort", abort);
         this.children.delete(owned);
       };
-      child.on("error", (error) => {
+      const complete = async (code: number | null, error?: Error): Promise<void> => {
+        if (settled) return;
+        settled = true;
+        try {
+          // A one-shot producer is still an owned process tree. Its group may
+          // contain a background descendant after the exact child has closed.
+          await this.terminate(owned);
+          /* c8 ignore start -- reaching this branch requires the operating
+          system itself to refuse exact-tree termination after the child event;
+          lifecycle tests cover cooperative exit, escalation, and abort. */
+        } catch (terminationError) {
+          finish();
+          reject(terminationError);
+          return;
+        }
+        /* c8 ignore stop */
         finish();
-        reject(error);
-      });
-      child.on("close", (code) => {
-        finish();
+        if (error !== undefined) {
+          reject(error);
+          return;
+        }
         if (signal?.aborted === true) {
           reject(
             abortedProcessError(this.options.provider, command.command),
@@ -288,6 +304,12 @@ export class BatchGraphSession implements IBulkGraphSession {
             }`,
           ),
         );
+      };
+      child.on("error", (error) => {
+        void complete(null, error);
+      });
+      child.on("close", (code) => {
+        void complete(code);
       });
     });
   }

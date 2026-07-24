@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { GraphLanguage, GraphProviderAuthority } from "../../typings";
 import { fileFromUri } from "../../utils/fileFromUri";
@@ -90,7 +91,9 @@ export class ScipSession implements IBulkGraphSession {
       );
     }
     const json = await props.run(this.options.decode, [props.artifact]);
-    const index = parseScipIndex(JSON.parse(json), this.options.provider);
+    const decoded = JSON.parse(json) as unknown;
+    this.bindInvocationProjectRoot(decoded);
+    const index = parseScipIndex(decoded, this.options.provider);
     this.assertProjectRoot(index.metadata.projectRoot);
     const adapted = adaptScipIndex({
       index,
@@ -171,10 +174,21 @@ export class ScipSession implements IBulkGraphSession {
       /* c8 ignore stop */
       sources.set(absolute, { checkerDigest, diskDigest });
     }
+    if (!proven) {
+      // Capabilities apply to the whole snapshot, not selected rows. Retaining
+      // a few checker digests while omitting sourceDigests would create evidence
+      // the common contract correctly refuses as unlicensed.
+      for (const [file, source] of sources) {
+        sources.set(file, { ...source, checkerDigest: "" });
+      }
+    }
     return { sources, proven };
   }
 
   private assertProjectRoot(projectRoot: string): void {
+    if (projectRoot === "") {
+      throw new Error(`${this.options.provider}: the index has no project root`);
+    }
     const declared = projectRoot.startsWith("file://")
       ? fileFromUri(projectRoot)
       : projectRoot;
@@ -183,6 +197,32 @@ export class ScipSession implements IBulkGraphSession {
         `${this.options.provider}: the index was produced for ${declared}, not ${this.root}`,
       );
     }
+  }
+
+  private bindInvocationProjectRoot(decoded: unknown): void {
+    if (
+      this.options.projectRootFromInvocation !== true ||
+      typeof decoded !== "object" ||
+      decoded === null ||
+      Array.isArray(decoded)
+    ) {
+      return;
+    }
+    const metadata = (decoded as Record<string, unknown>).metadata;
+    if (
+      typeof metadata !== "object" ||
+      metadata === null ||
+      Array.isArray(metadata) ||
+      (metadata as Record<string, unknown>).projectRoot !== undefined
+    ) {
+      return;
+    }
+    // Some stock indexers serialize protobuf defaults by omission. This is
+    // allowed only for providers whose isolated invocation itself fixes the
+    // root: an explicit producer value is still parsed and checked unchanged.
+    (metadata as Record<string, unknown>).projectRoot = pathToFileURL(
+      this.root,
+    ).href;
   }
 }
 
@@ -199,6 +239,7 @@ export namespace ScipSession {
     configuration?: () => readonly string[];
     compilerVersion?: () => string;
     sourceText?: boolean;
+    projectRootFromInvocation?: boolean;
     languageOf: (file: string) => GraphLanguage;
     maxStdoutBytes?: number;
     maxArtifactBytes?: number;

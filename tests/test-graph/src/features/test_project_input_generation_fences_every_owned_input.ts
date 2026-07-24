@@ -146,6 +146,47 @@ export const test_project_input_generation_fences_every_owned_input =
       providerBuildInputs(["go"], [dynamic], root).includes("nested/go.mod"),
     );
 
+    const dartRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-dart-package-input-",
+    );
+    fs.writeFileSync(path.join(dartRoot, "pubspec.yaml"), "name: fixture\n");
+    fs.writeFileSync(path.join(dartRoot, "main.dart"), "void main() {}\n");
+    const packageConfig = path.join(
+      dartRoot,
+      ".dart_tool",
+      "package_config.json",
+    );
+    TestValidator.predicate(
+      "a missing generated Dart package config is already a build input",
+      providerBuildInputs(["dart"], [], dartRoot).includes(
+        ".dart_tool/package_config.json",
+      ),
+    );
+    let dartAttempts = 0;
+    const dartCommitted = await commitProjectInputGeneration(
+      { cwd: dartRoot, languages: ["dart"] },
+      [],
+      () => {
+        dartAttempts += 1;
+        if (!fs.existsSync(packageConfig)) {
+          fs.mkdirSync(path.dirname(packageConfig), { recursive: true });
+          fs.writeFileSync(packageConfig, '{"configVersion":2}\n');
+        }
+        return resultOf(dartRoot);
+      },
+    );
+    TestValidator.equals(
+      "creating package_config.json during preparation retries the generation",
+      [
+        dartAttempts,
+        dartCommitted.buildInputs?.includes(
+          ".dart_tool/package_config.json",
+        ),
+        dartCommitted.inputManifest?.get(packageConfig) === "missing",
+      ],
+      [2, true, false],
+    );
+
     const manifest = projectInputManifest(
       root,
       { languages: ["typescript", "go"] },

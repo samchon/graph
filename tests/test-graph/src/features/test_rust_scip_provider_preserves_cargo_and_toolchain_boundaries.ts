@@ -83,15 +83,50 @@ export const test_rust_scip_provider_preserves_cargo_and_toolchain_boundaries =
 
       const configuration = rustScipProvider.effectiveConfiguration(root, {
         ...environment,
+        CARGO_HOME: "cargo-home",
         CARGO_CFG_TARGET_OS: "fixture",
         CARGO_FEATURE_EXPERIMENTAL: "1",
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: "fixture-linker",
+        CARGO_UNDEFINED_FIXTURE: undefined,
         RUSTFLAGS: "--cfg fixture",
       });
       TestValidator.predicate(
         "Cargo cfg and feature settings are generation inputs",
         configuration.includes("CARGO_CFG_TARGET_OS=fixture") &&
           configuration.includes("CARGO_FEATURE_EXPERIMENTAL=1") &&
+          configuration.some((row) =>
+            row.startsWith(
+              "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=sha256:",
+            ),
+          ) &&
+          configuration.some((row) =>
+            row.startsWith("CARGO_UNDEFINED_FIXTURE=sha256:"),
+          ) &&
           configuration.includes("RUSTFLAGS=--cfg fixture"),
+      );
+      const cargoHome = path.join(root, "cargo-home");
+      fs.mkdirSync(cargoHome);
+      const cargoHomeConfig = path.join(cargoHome, "config.toml");
+      fs.writeFileSync(cargoHomeConfig, "[build]\ntarget = \"fixture\"\n");
+      const configuredHome = rustScipProvider.effectiveConfiguration(root, {
+        ...environment,
+        CARGO_HOME: cargoHome,
+      });
+      fs.writeFileSync(cargoHomeConfig, "[build]\ntarget = \"changed\"\n");
+      TestValidator.predicate(
+        "Cargo home and ancestor configuration contents invalidate the provider",
+        configuredHome.some((row) =>
+          row.startsWith(
+            `cargo-config:${cargoHomeConfig.replaceAll("\\", "/")}:`,
+          ),
+        ) &&
+          configuredHome.join("\n") !==
+            rustScipProvider
+              .effectiveConfiguration(root, {
+                ...environment,
+                CARGO_HOME: cargoHome,
+              })
+              .join("\n"),
       );
       TestValidator.equals(
         "the selected Rust toolchain versions are captured",
@@ -144,10 +179,11 @@ async function assertProviderSnapshot(root: string): Promise<void> {
       '"use strict";',
       'const fs = require("node:fs");',
       'const output = process.argv[process.argv.indexOf("--output") + 1];',
-      'const root = process.cwd().replaceAll("\\\\", "/");',
-      'const projectRoot = root.startsWith("/") ? "file://" + root : "file:///" + root;',
       "fs.writeFileSync(output, JSON.stringify({",
-      "  metadata: { projectRoot, toolInfo: { name: \"rust-analyzer\", version: \"fixture\" } },",
+      "  metadata: {",
+      '    ...(process.argv.includes("--explicit-root") ? { projectRoot: process.cwd() } : {}),',
+      '    toolInfo: { name: "rust-analyzer", version: "fixture" },',
+      "  },",
       "  documents: [{",
       "    language: \"rust\",",
       "    relativePath: \"src/main.rs\",",
@@ -190,6 +226,25 @@ async function assertProviderSnapshot(root: string): Promise<void> {
     );
   } finally {
     await session.close();
+  }
+
+  const explicit = rustScipProvider.open({
+    root,
+    command: {
+      command: process.execPath,
+      args: [indexer, "--explicit-root"],
+    },
+    languages: ["rust"],
+    options: {},
+  });
+  try {
+    TestValidator.equals(
+      "an explicit producer root is preserved and checked",
+      (await explicit.refresh()).snapshot.nodes.map((node) => node.name),
+      ["main"],
+    );
+  } finally {
+    await explicit.close();
   }
 }
 

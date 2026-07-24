@@ -96,6 +96,12 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
         ...(props.sourceText === undefined
           ? {}
           : { sourceText: props.sourceText }),
+        ...(props.projectRootFromInvocation === undefined
+          ? {}
+          : {
+              projectRootFromInvocation:
+                props.projectRootFromInvocation,
+            }),
         languageOf: props.languageOf,
       }),
   };
@@ -148,6 +154,9 @@ export namespace scipProvider {
 
     /** Whether this producer's document text is exact source evidence. */
     sourceText?: boolean;
+
+    /** Bind an omitted protobuf project root to this isolated invocation. */
+    projectRootFromInvocation?: boolean;
 
     languageOf: (file: string) => GraphLanguage;
   }

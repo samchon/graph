@@ -1,4 +1,5 @@
 import { GraphLanguage, GraphProviderAuthority } from "../../typings";
+import { dartPackageConfigInputs } from "../../indexer/dartPackageConfigInputs";
 import { providerInputFiles } from "../providerInputFiles";
 import { resolveProviderCommand } from "../resolveProviderCommand";
 import { sidecarProvider } from "./sidecarProvider";
@@ -40,8 +41,8 @@ const dartGraphProvider = externalSidecar({
     "pubspec.yaml",
     "pubspec.lock",
     "analysis_options.yaml",
-    "package_config.json",
   ],
+  derivedInputs: dartPackageConfigInputs,
 });
 
 /** External analyzer sidecars in deterministic registry order. */
@@ -58,6 +59,7 @@ interface IExternalSidecar {
   authority: GraphProviderAuthority;
   buildFiles: readonly string[];
   buildExtensions?: readonly string[];
+  derivedInputs?: (root: string) => readonly string[];
 }
 
 function externalSidecar(props: IExternalSidecar) {
@@ -82,11 +84,14 @@ function externalSidecar(props: IExternalSidecar) {
       "references",
     ],
     buildInputs: (root) =>
-      providerInputFiles(
-        root,
-        [],
-        props.buildFiles,
-        props.buildExtensions,
+      mergeInputs(
+        providerInputFiles(
+          root,
+          [],
+          props.buildFiles,
+          props.buildExtensions,
+        ),
+        props.derivedInputs?.(root) ?? [],
       ),
     resolve: (root, env) =>
       resolveProviderCommand(root, env, {
@@ -95,11 +100,26 @@ function externalSidecar(props: IExternalSidecar) {
       }),
     indexArgs: (artifact) => [`--output=${artifact}`, "--project=."],
     inputs: (root, languages) =>
-      providerInputFiles(
-        root,
-        languages,
-        props.buildFiles,
-        props.buildExtensions,
+      mergeInputs(
+        providerInputFiles(
+          root,
+          languages,
+          props.buildFiles,
+          props.buildExtensions,
+        ),
+        props.derivedInputs?.(root) ?? [],
       ),
   });
+}
+
+function mergeInputs(
+  left: readonly string[],
+  right: readonly string[],
+): string[] {
+  return [...new Set([...left, ...right])].sort(compareOrdinal);
+}
+
+function compareOrdinal(left: string, right: string): number {
+  /* c8 ignore next 2 -- merged input identities are distinct set members. */
+  return left < right ? -1 : left > right ? 1 : 0;
 }

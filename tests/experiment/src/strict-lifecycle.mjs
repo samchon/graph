@@ -112,6 +112,7 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
       experiment.language,
       fixture.createFile,
     );
+    assertCreatedEdge(created, fixture, experiment.language);
 
     fs.renameSync(createFile, renamedFile);
     const renamed = await load("rename", CHANGED_MODES);
@@ -121,6 +122,7 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
       experiment.language,
       fixture.renamedFile,
     );
+    assertCreatedEdge(renamed, fixture, experiment.language);
 
     fs.rmSync(renamedFile);
     const deleted = await load("delete", CHANGED_MODES);
@@ -250,6 +252,25 @@ function assertCreatedSymbol(dump, fixture, language, expectedFile) {
   if (created === undefined || created.file !== expectedFile) {
     throw new Error(
       `${language}: lifecycle declaration was not published from ${expectedFile}`,
+    );
+  }
+}
+
+function assertCreatedEdge(dump, fixture, language) {
+  if (fixture.createdEdge === undefined) return;
+  const nodes = new Map(dump.nodes.map((node) => [node.id, node]));
+  const found = dump.edges.some((edge) => {
+    const from = nodes.get(edge.from);
+    const to = nodes.get(edge.to);
+    return (
+      edge.kind === fixture.createdEdge.kind &&
+      from?.name === fixture.createdEdge.from &&
+      to?.name === fixture.createdEdge.to
+    );
+  });
+  if (!found) {
+    throw new Error(
+      `${language}: lifecycle lost ${fixture.createdEdge.kind} ${fixture.createdEdge.from} -> ${fixture.createdEdge.to}`,
     );
   }
 }

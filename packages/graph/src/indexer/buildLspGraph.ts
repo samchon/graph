@@ -129,6 +129,7 @@ async function buildLspGraphAttempt(
   const providers = new Map<GraphLanguage, IGraphProvider>();
   const servedLanguages = new Set<GraphLanguage>();
   let compileCommandsDir: string | undefined;
+  let compileCommandsOwner: TemporaryDirectoryOwner | undefined;
   let pubPrepared = false;
   let semanticSliceCount = 0;
   try {
@@ -256,6 +257,11 @@ async function buildLspGraphAttempt(
           root,
           options.cmakeCommand,
         );
+        if (compileCommandsDir !== undefined) {
+          compileCommandsOwner = new TemporaryDirectoryOwner(
+            compileCommandsDir,
+          );
+        }
       }
       if (language === "dart" && !pubPrepared) {
         ensurePubDeps(root, options.pubCommand);
@@ -303,6 +309,9 @@ async function buildLspGraphAttempt(
             options,
             spawnable.windowsVerbatimArguments,
           );
+        if (options.keepAlive && compileCommandsOwner !== undefined) {
+          compileCommandsOwner.attach(session.client);
+        }
         if (result.nodes.length === 0) {
           warnings.push(
             `${language}: LSP returned no symbols; using static fallback.`,
@@ -418,9 +427,7 @@ async function buildLspGraphAttempt(
    * itself runs on both the success and failure tests above. */
   } finally {
   /* c8 ignore stop */
-    if (compileCommandsDir !== undefined) {
-      fs.rmSync(compileCommandsDir, { recursive: true, force: true });
-    }
+    compileCommandsOwner?.seal();
   }
 }
 
@@ -572,6 +579,45 @@ function appendSources(
   source: ReadonlyMap<string, string>,
 ): void {
   for (const [file, text] of source) target.set(file, text);
+}
+
+/**
+ * Retain a generated compilation database until every clangd using it closes.
+ *
+ * clangd's global compilation database caches and refreshes this directory
+ * throughout a resident session, and its background index lives beside it.
+ * Deleting the directory after the first scan silently downgrades later edits.
+ */
+class TemporaryDirectoryOwner {
+  private leases = 0;
+  private sealed = false;
+  private cleaned = false;
+
+  public constructor(private readonly directory: string) {}
+
+  public attach(client: ILspSession["client"]): void {
+    this.leases += 1;
+    const close = client.close.bind(client);
+    let closing: Promise<void> | undefined;
+    client.close = () => {
+      closing ??= close().finally(() => {
+        this.leases -= 1;
+        this.cleanupIfReleased();
+      });
+      return closing;
+    };
+  }
+
+  public seal(): void {
+    this.sealed = true;
+    this.cleanupIfReleased();
+  }
+
+  private cleanupIfReleased(): void {
+    if (!this.sealed || this.leases !== 0 || this.cleaned) return;
+    this.cleaned = true;
+    fs.rmSync(this.directory, { recursive: true, force: true });
+  }
 }
 
 // Opens a fresh LSP connection and hands back BOTH the extracted graph slice

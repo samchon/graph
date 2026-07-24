@@ -210,8 +210,10 @@ export function adaptScipIndex(
   }
   // Counted where a reference is actually lost, not where a symbol is listed:
   // a local that its own document declares resolves normally, and saying it had
-  // no defining document would be false. Only a reference that resolved to
-  // neither a definition nor an external leaf is omitted.
+  // no defining document would be false. The message says only what this walk
+  // observed — the index did not resolve it — because a local can also go
+  // unresolved through a dropped declaration above, and naming a cause this
+  // counter cannot distinguish would be the same kind of falsehood.
   let unscopedLocalReferences = 0;
 
   const externalize = (
@@ -435,7 +437,7 @@ export function adaptScipIndex(
   }
   if (unscopedLocalReferences > 0) {
     warnings.push(
-      `${props.provider}: ${String(unscopedLocalReferences)} reference(s) named a document-scoped local that their own document does not declare, so they are omitted rather than attached to an invented declaration`,
+      `${props.provider}: ${String(unscopedLocalReferences)} reference(s) named a document-scoped local this index does not resolve, so they are omitted rather than attached to an invented declaration`,
     );
   }
 

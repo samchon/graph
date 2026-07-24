@@ -54,6 +54,7 @@ export class LspClient {
       windowsVerbatimArguments: owned.windowsVerbatimArguments,
       windowsHide: true,
     });
+    ownedProcess.start(this.process);
     this.exit = ownedProcess.exit(this.process);
     this.process.stdout.on("data", (chunk: Buffer) => this.onData(chunk));
     this.process.stderr.on("data", () => {

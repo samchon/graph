@@ -417,22 +417,6 @@ function assertIndexValidation(): void {
       }),
     ],
     [
-      "an enclosing range that does not enclose the occurrence",
-      withOccurrence({
-        range: [2, 0, 3],
-        symbol: "s",
-        enclosingRange: [0, 0, 1, 0],
-      }),
-    ],
-    [
-      "an enclosing range that starts after the occurrence",
-      withOccurrence({
-        range: [0, 0, 3],
-        symbol: "s",
-        enclosingRange: [1, 0, 2, 0],
-      }),
-    ],
-    [
       "a non-integer role mask",
       withOccurrence({ range: [0, 0, 1], symbol: "s", symbolRoles: "1" }),
     ],
@@ -592,6 +576,30 @@ function assertIndexValidation(): void {
     "a typed enclosing range is normalized",
     typedMultiLine.enclosingRange,
     [1, 0, 5, 9],
+  );
+  const rustAnalyzerReference = parseScipIndex(
+    withOccurrence({
+      range: [8, 4, 10],
+      symbol: "rust-analyzer cargo example 1.0.0 `main`/run().",
+      enclosingRange: [1, 0, 5, 1],
+    }),
+  ).documents[0]!.occurrences![0]!;
+  TestValidator.equals(
+    "a non-definition occurrence does not inherit its target definition body as a scope",
+    [rustAnalyzerReference.range, rustAnalyzerReference.enclosingRange],
+    [[8, 4, 10], undefined],
+  );
+  TestValidator.error(
+    "a definition whose enclosing range does not enclose it is refused",
+    () =>
+      parseScipIndex(
+        withOccurrence({
+          range: [8, 4, 10],
+          symbol: "s",
+          symbolRoles: 1,
+          enclosingRange: [1, 0, 5, 1],
+        }),
+      ),
   );
   // Optional records the graph does not read are still validated, because a
   // malformed one is evidence the index was not produced the way it claims.

@@ -8,7 +8,11 @@ import { IScipIndex } from "./IScipIndex";
  * index is the failure mode worth avoiding: the missing facts are silent, so a
  * consumer cannot distinguish "this symbol has no references" from "the record
  * carrying them was malformed and dropped", and the audit riding on the result
- * asserts the first.
+ * asserts the first. The one producer-compatibility exception is an enclosing
+ * range on a non-definition occurrence: graph never consumes that field, and
+ * stock rust-analyzer writes the referenced definition's body there. Such a
+ * range is validated structurally and then omitted when it cannot enclose the
+ * occurrence; definition scopes remain strict.
  */
 export function parseScipIndex(value: unknown, label = "scip"): IScipIndex {
   const index = objectOf(value, label);
@@ -186,27 +190,33 @@ function occurrenceOf(value: unknown, label: string): IScipIndex.IOccurrence {
     "syntax_kind",
     label,
   );
-  if (enclosingRange !== undefined && !rangeContains(enclosingRange, range)) {
+  const parsedSymbolRoles =
+    symbolRoles === undefined
+      ? undefined
+      : roleMaskOf(symbolRoles, `${label}.symbolRoles`);
+  const invalidEnclosingRange =
+    enclosingRange !== undefined && !rangeContains(enclosingRange, range);
+  if (
+    invalidEnclosingRange &&
+    ((parsedSymbolRoles ?? 0) & IScipIndex.SymbolRole.Definition) !== 0
+  ) {
     throw new Error(`scip: ${label}.enclosingRange does not enclose its range`);
   }
   return {
     range,
     ...optionalString(occurrence.symbol, `${label}.symbol`, "symbol"),
-    ...(symbolRoles === undefined
+    ...(parsedSymbolRoles === undefined
       ? {}
-      : {
-          symbolRoles: roleMaskOf(
-            symbolRoles,
-            `${label}.symbolRoles`,
-          ),
-        }),
+      : { symbolRoles: parsedSymbolRoles }),
     ...optionalEnumName(
       syntaxKind,
       `${label}.syntaxKind`,
       "syntaxKind",
       SYNTAX_KINDS,
     ),
-    ...(enclosingRange === undefined ? {} : { enclosingRange }),
+    ...(enclosingRange === undefined || invalidEnclosingRange
+      ? {}
+      : { enclosingRange }),
     // Kept, because this is where a diagnostic gets a position. Dropping it
     // left the adapter with nothing but document-level findings, every one of
     // which it then had to report at the top of the file.

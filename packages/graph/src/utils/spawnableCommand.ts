@@ -11,14 +11,15 @@ export function spawnableCommand(
   args: readonly string[] = [],
   env: NodeJS.ProcessEnv = process.env,
 ): spawnableCommand.IResult {
+  /* c8 ignore start -- the Windows-only suffix arm is short-circuited on
+   * POSIX coverage hosts. */
   if (
     process.platform !== "win32" ||
-    /* c8 ignore next -- the Windows-only suffix probe is short-circuited on
-     * POSIX coverage hosts. */
     !/\.(?:cmd|bat)$/i.test(executable)
   ) {
     return { command: executable, args: [...args] };
   }
+  /* c8 ignore stop */
   /* c8 ignore start -- Windows-only command-processor construction. */
   const doubleEscape =
     /[\\/]node_modules[\\/]\.bin[\\/][^\\/]+\.cmd$/i.test(executable);

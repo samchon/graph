@@ -269,6 +269,7 @@ export class TtscGraphClient implements IBulkGraphSession {
         windowsHide: true,
       },
     );
+    ownedProcess.start(spawned);
     const child: NativeChild = {
       process: spawned,
       stdoutChunks: [],

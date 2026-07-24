@@ -229,6 +229,7 @@ export class BatchGraphSession implements IBulkGraphSession {
         ownedCommand.windowsVerbatimArguments,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    ownedProcess.start(child);
     const owned: ISpawned = { process: child, exit: ownedProcess.exit(child) };
     this.children.add(owned);
 

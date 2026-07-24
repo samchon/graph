@@ -27,6 +27,21 @@ interface ILspClientInternals {
   };
 }
 
+interface IOwnedProcess {
+  command(
+    command: string,
+    args: readonly string[],
+    windowsVerbatimArguments?: boolean,
+  ): {
+    command: string;
+    args: string[];
+    windowsVerbatimArguments?: boolean;
+  };
+  group(): boolean;
+  start(child: ChildProcess): void;
+  exit(child: ChildProcess): Promise<void>;
+}
+
 type LspClientConstructor = new (
   command: string,
   args: readonly string[],
@@ -104,6 +119,7 @@ export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
 
     await assertStubbornProcessTreeIsOwned(LspClient);
     await assertExitedLeaderDoesNotLeakItsProcessGroup(LspClient);
+    await assertWindowsOwnershipPreservesTheOriginalCommandLine();
     await assertClosedInputRejectsRequests(LspClient);
     await assertSynchronousWriteFailureRejectsRequests(LspClient);
     await assertStdinStreamErrorRejectsRequests(LspClient);
@@ -130,6 +146,48 @@ export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
       "AbortError",
     );
     await cancelled.close();
+  };
+
+const assertWindowsOwnershipPreservesTheOriginalCommandLine =
+  async (): Promise<void> => {
+    if (process.platform !== "win32") return;
+    const { ownedProcess } = await importLib<{
+      ownedProcess: IOwnedProcess;
+    }>("utils/ownedProcess.js");
+    const payload = "x".repeat(10_000);
+    const owned = ownedProcess.command(process.execPath, [
+      "-e",
+      "process.stdout.write(String(process.argv[1].length))",
+      payload,
+    ]);
+    TestValidator.equals(
+      "Windows ownership adds no interpreter or encoded command-line wrapper",
+      [owned.command, owned.args.at(-1)],
+      [process.execPath, payload],
+    );
+    const child = spawn(owned.command, owned.args, {
+      detached: ownedProcess.group(),
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+      windowsVerbatimArguments: owned.windowsVerbatimArguments,
+    });
+    ownedProcess.start(child);
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    await ownedProcess.exit(child);
+    TestValidator.equals(
+      "Windows Job ownership preserves a long argv that direct spawn accepts",
+      [child.exitCode, stdout, stderr],
+      [0, "10000", ""],
+    );
   };
 
 const assertExitedLeaderDoesNotLeakItsProcessGroup = async (

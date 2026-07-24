@@ -159,6 +159,11 @@ const installScip = async () => {
   fs.symlinkSync(binary, link);
 };
 
+// The published tarball is a webpack bundle whose only runtime `require`s are
+// Node built-ins, so extracting the integrity-verified archive installs exactly
+// the bytes the digest covers. `npm install` would instead resolve the package's
+// eight caret-ranged dependencies against the live registry on every setup —
+// a closure no digest pins and that this tool never loads.
 const installScipPython = async () => {
   const archive = path.join(toolsRoot, "scip-python-0.6.6.tgz");
   const target = path.join(toolsRoot, "scip-python-0.6.6");
@@ -172,32 +177,13 @@ const installScipPython = async () => {
   );
   fs.rmSync(target, { force: true, recursive: true });
   ensureDir(target);
-  run("npm", [
-    "install",
-    "--prefix",
-    target,
-    "--no-save",
-    "--no-package-lock",
-    "--ignore-scripts",
-    "--no-audit",
-    "--no-fund",
-    archive,
-  ]);
-  const launcher = path.join(
-    target,
-    "node_modules",
-    ".bin",
-    process.platform === "win32" ? "scip-python.cmd" : "scip-python",
-  );
+  run("tar", ["-xzf", archive, "-C", target, "--strip-components", "1"]);
+  const launcher = path.join(target, "index.js");
   if (!fs.existsSync(launcher)) {
-    throw new Error(
-      "scip-python launcher not found after isolated installation",
-    );
+    throw new Error("scip-python launcher not found after extraction");
   }
-  const link = path.join(
-    binRoot,
-    process.platform === "win32" ? "scip-python.cmd" : "scip-python",
-  );
+  fs.chmodSync(launcher, 0o755);
+  const link = path.join(binRoot, "scip-python");
   fs.rmSync(link, { force: true });
   fs.symlinkSync(launcher, link);
 };

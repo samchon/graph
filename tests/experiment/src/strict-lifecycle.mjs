@@ -161,6 +161,54 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
         elapsedMs: Math.round(performance.now() - failedAt),
         error: failure.message,
       });
+    } else if (fixture.failurePolicy === "tolerated") {
+      // Some producers genuinely do not fail on this input class, and asserting
+      // a rejection they never make would only prove the harness can be made to
+      // agree with itself. What is still worth proving is that the graph did not
+      // quietly serve the previous generation across a changed build input: the
+      // producer answers again, the snapshot passes the same strict contract,
+      // and provenance moves. The limitation is published rather than hidden.
+      if (typeof fixture.failureLimitation !== "string") {
+        throw new Error(
+          `${experiment.language}: a tolerated failure must publish the limitation it accepts`,
+        );
+      }
+      const priorIdentity = previousIdentity;
+      let tolerated;
+      try {
+        tolerated = await resident.load();
+      } catch (error) {
+        throw new Error(
+          `${experiment.language}: the catalog records this input as tolerated, but the provider rejected it: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      const provenance = strictProvenance(tolerated, experiment);
+      const mode = resident.modes().get(experiment.strictProvider);
+      if (!CHANGED_MODES.includes(mode)) {
+        throw new Error(
+          `${experiment.language}: tolerated failure reported ${String(mode)}`,
+        );
+      }
+      const identity = [
+        provenance.manifest,
+        provenance.content,
+        provenance.universe,
+      ].join(":");
+      if (identity === priorIdentity) {
+        throw new Error(
+          `${experiment.language}: tolerated failure did not move strict provenance`,
+        );
+      }
+      dump = tolerated;
+      previousIdentity = identity;
+      rows.push({
+        name: "failure",
+        status: "tolerated",
+        mode,
+        elapsedMs: Math.round(performance.now() - failedAt),
+        diagnosticCount: tolerated.diagnostics?.length ?? 0,
+        limitation: fixture.failureLimitation,
+      });
     } else if (
       fixture.failurePolicy === "diagnostic" ||
       fixture.failurePolicy === "reject-or-diagnostic"

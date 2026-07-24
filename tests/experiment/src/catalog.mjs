@@ -184,7 +184,16 @@ export const LANGUAGE_EXPERIMENTS = [
       buildFile: "pyproject.toml",
       failureFile: "pyproject.toml",
       failureSuffix: "\n[malformed",
-      failurePolicy: "reject",
+      // scip-python 0.6.6 reads `pyproject.toml` through Pyright's
+      // `_attemptParseFile`, which retries the parse six times, logs
+      // `Config file "..." could not be parsed`, and returns `undefined`.
+      // Configuration then falls through to defaults and the index is written
+      // and published with exit code 0. The bundle constructs no SCIP
+      // `Diagnostic` either, so neither `reject` nor `diagnostic` describes
+      // this producer; claiming one would pin the harness to a fiction.
+      failurePolicy: "tolerated",
+      failureLimitation:
+        "scip-python 0.6.6 recovers from a malformed pyproject.toml and publishes an index; a broken Python build configuration is not a fail-closed boundary for this producer",
     },
   },
   {

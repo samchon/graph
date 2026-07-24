@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { createResidentGraphSource } from "@samchon/graph";
 
-import { ensureDir, shell, workRoot } from "./process.mjs";
+import { isolateCorpus, shell } from "./process.mjs";
 
 /** Measure one strict provider without ever editing the pinned corpus clone. */
 export const runStrictLifecycle = async (experiment, pinnedRoot) => {
@@ -12,13 +12,7 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
       `${experiment.language}: strict experiment has no lifecycle fixture`,
     );
   }
-  const lifecycleRoot = path.join(workRoot, "lifecycle", experiment.language);
-  fs.rmSync(lifecycleRoot, { force: true, recursive: true });
-  ensureDir(path.dirname(lifecycleRoot));
-  fs.cpSync(pinnedRoot, lifecycleRoot, {
-    recursive: true,
-    filter: (source) => path.basename(source) !== ".git",
-  });
+  const lifecycleRoot = isolateCorpus(experiment, pinnedRoot, "lifecycle");
   if (experiment.prepare !== undefined) {
     shell(experiment.prepare, { cwd: lifecycleRoot });
   }

@@ -11,9 +11,12 @@ export const LANGUAGE_EXPERIMENTS = [
     repository: "https://github.com/nestjs/typescript-starter.git",
     commit: "c4d9330f5513eda0fb5df594f6b34a11fde1a934",
     strictProvider: "ttscgraph",
+    strictAuthority: "compiler",
+    strictTool: "ttscgraph",
     // The pinned starter has no construction expression. The lifecycle below
     // creates one and checks the real ttscgraph generation that contains it.
     semanticEdges: ["calls", "type_ref"],
+    crossFileEdge: "calls",
     requiredCapabilities: [
       "universe",
       "sourceDigests",
@@ -44,6 +47,9 @@ export const LANGUAGE_EXPERIMENTS = [
     repository: "https://github.com/gorilla/mux.git",
     commit: "db9d1d0073d27a0a2d9a8c1bc52aa0af4374d265",
     strictProvider: "samchon-graph-go",
+    strictAuthority: "compiler",
+    strictTool: "samchon-graph-go",
+    crossFileEdge: "calls",
     requiredCapabilities: ["universe", "sourceDigests", "fullRebuild"],
     semanticEdges: [
       "imports",

@@ -384,6 +384,13 @@ function assertTheAdditiveBoundary(): void {
     "a registry entry cannot name one provider language twice",
     throws(() => ScipEnrichment.assert(calls, ["go", "go"])),
   );
+  // The capability string is what a snapshot publishes about which contract
+  // ran, so formatting one from a declaration nothing validated would put an
+  // unchecked name and version into the provenance a reader degrades against.
+  TestValidator.predicate(
+    "an unvalidated contract cannot name itself in a published capability",
+    throws(() => ScipEnrichment.capability(enrichment({ name: "Go Calls" }))),
+  );
   // The only inputs on which registration and session validation disagree.
   // Equality is what keeps a provider from leaving part of its own entry
   // unenriched, and nothing else in this file exercises a length mismatch.

@@ -18,7 +18,7 @@
  * exotic objects: freezing fixes which getter runs and never what it returns, so
  * a value that recomputes itself on every read is precisely the channel this
  * seal exists to close. A caller that needs one of those shapes converts it at
- * the boundary; {@link sealedMap} is how the source manifest does it.
+ * the boundary; `sealedMap` is how the source manifest does it.
  *
  * The walk is iterative and remembers what it sealed, so a cycle terminates, a
  * shared subtree is walked once, and a tree already sealed upstream — the common

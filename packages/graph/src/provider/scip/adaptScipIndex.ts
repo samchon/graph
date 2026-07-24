@@ -202,16 +202,17 @@ export function adaptScipIndex(
   // materializing the leaf anyway would invent an endpoint the index never
   // proved — so the reference is dropped and the omission is reported.
   const pendingExternals = new Map<string, IScipIndex.ISymbolInformation>();
-  let unscopedExternals = 0;
   for (const symbol of props.index.externalSymbols ?? []) {
     const parsed = scipSymbol(symbol.symbol);
     if (parsed === undefined || definitions.has(parsed.key)) continue;
-    if (parsed.stability === "generation") {
-      unscopedExternals += 1;
-      continue;
-    }
+    if (parsed.stability === "generation") continue;
     pendingExternals.set(parsed.key, symbol);
   }
+  // Counted where a reference is actually lost, not where a symbol is listed:
+  // a local that its own document declares resolves normally, and saying it had
+  // no defining document would be false. Only a reference that resolved to
+  // neither a definition nor an external leaf is omitted.
+  let unscopedLocalReferences = 0;
 
   const externalize = (
     key: string,
@@ -333,7 +334,10 @@ export function adaptScipIndex(
       const target =
         resolve(definitions, parsed, file) ??
         externalize(parsed.key, language);
-      if (target === undefined) continue;
+      if (target === undefined) {
+        if (parsed.stability === "generation") unscopedLocalReferences += 1;
+        continue;
+      }
       const owner = scopes.find((scope) => contains(scope.range, occurrence.range));
       if (owner === undefined) continue;
       if (owner.id === target.id) continue;
@@ -429,9 +433,9 @@ export function adaptScipIndex(
       `${props.provider}: ${String(derivedKinds)} node kind(s) were derived from generic SCIP descriptor suffixes because the producer supplied no mapped SymbolInformation.kind; language enrichment is required for a more specific kind`,
     );
   }
-  if (unscopedExternals > 0) {
+  if (unscopedLocalReferences > 0) {
     warnings.push(
-      `${props.provider}: ${String(unscopedExternals)} external symbol(s) were document-scoped locals with no defining document in this index, so references to them are omitted rather than attached to an invented declaration`,
+      `${props.provider}: ${String(unscopedLocalReferences)} reference(s) named a document-scoped local that their own document does not declare, so they are omitted rather than attached to an invented declaration`,
     );
   }
 

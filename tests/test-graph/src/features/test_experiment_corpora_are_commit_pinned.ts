@@ -42,7 +42,11 @@ export const test_experiment_corpora_are_commit_pinned = () => {
     "a failure boundary the producer does not have is published as a limitation",
     python.includes('failurePolicy: "tolerated"') &&
       /failureLimitation:\s*"?[^",]/.test(python) &&
-      lifecycle.includes('fixture.failurePolicy === "tolerated"'),
+      lifecycle.includes('fixture.failurePolicy === "tolerated"') &&
+      lifecycle.includes('fixture.failureLimitation === ""') &&
+      lifecycle.includes("provenance.universe === prior.universe") &&
+      lifecycle.includes("provenance.content !== prior.content") &&
+      lifecycle.includes("diagnosticCount !== previousDiagnostics"),
   );
 
   TestValidator.predicate(

@@ -540,7 +540,7 @@ function assertIndexValidation(): void {
       unscopedLocal.nodes.map((node) => node.name),
       unscopedLocal.edges.filter((edge) => edge.kind !== "contains").length,
       unscopedLocal.warnings.filter((warning) =>
-        warning.includes("document-scoped locals"),
+        warning.includes("document-scoped local"),
       ).length,
     ],
     [["caller"], 0, 1],

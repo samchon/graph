@@ -171,10 +171,8 @@ export class BatchGraphSession implements IBulkGraphSession {
       // provider nor the field. The published object is this one from here on,
       // so a reference the producer kept cannot reach the generation either.
       const subject = `the ${this.options.provider} snapshot`;
-      const published: IBulkGraphSession.ISnapshot = {
-        ...snapshot,
-        sources: sealedMap(snapshot.sources, subject),
-      };
+      const sources = sealedMap(snapshot.sources, subject);
+      const published: IBulkGraphSession.ISnapshot = { ...snapshot, sources };
       freezeDeep(published, subject);
       this.options.validate?.(published);
       const after = this.fingerprint();

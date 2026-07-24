@@ -36,6 +36,10 @@ export const test_standard_providers_execute_their_exact_contracts =
       const bin = path.join(root, ".samchon-graph", "bin");
       fs.mkdirSync(bin, { recursive: true });
 
+      // The toolchain shims matter as much as the indexer ones: a
+      // `semantic-index` provider still has to say which language version
+      // resolved its facts, and reading that off whatever the host happens to
+      // have installed would make this suite's answer depend on the machine.
       const names = [
         "scip-clang",
         "scip-java",
@@ -43,6 +47,11 @@ export const test_standard_providers_execute_their_exact_contracts =
         "scip-python",
         "scip-ruby",
         "scip",
+        "clang",
+        "java",
+        "dotnet",
+        "python3",
+        "ruby",
         "samchon-graph-swift",
         "samchon-graph-zig",
         "samchon-graph-php",
@@ -60,6 +69,11 @@ export const test_standard_providers_execute_their_exact_contracts =
         SAMCHON_GRAPH_SCIP_PYTHON: platformExecutable(bin, "scip-python"),
         SAMCHON_GRAPH_SCIP_RUBY: platformExecutable(bin, "scip-ruby"),
         SAMCHON_GRAPH_SCIP: platformExecutable(bin, "scip"),
+        SAMCHON_GRAPH_CLANG: platformExecutable(bin, "clang"),
+        SAMCHON_GRAPH_JAVA: platformExecutable(bin, "java"),
+        SAMCHON_GRAPH_DOTNET: platformExecutable(bin, "dotnet"),
+        SAMCHON_GRAPH_PYTHON: platformExecutable(bin, "python3"),
+        SAMCHON_GRAPH_RUBY: platformExecutable(bin, "ruby"),
         SAMCHON_GRAPH_SWIFT: platformExecutable(bin, "samchon-graph-swift"),
         SAMCHON_GRAPH_ZIG: platformExecutable(bin, "samchon-graph-zig"),
         SAMCHON_GRAPH_PHP: platformExecutable(bin, "samchon-graph-php"),
@@ -81,10 +95,11 @@ export const test_standard_providers_execute_their_exact_contracts =
           throw new Error(`${provider.name}: fixture command did not resolve`);
         }
         TestValidator.predicate(
-          `${provider.name} records both executable versions`,
-          provider.configuration?.(root, process.env).every(
-            (row) => row.endsWith("v1.0.0"),
-          ) === true,
+          `${provider.name} records indexer, decoder, and toolchain versions`,
+          provider.configuration?.(root, process.env).length === 3 &&
+            provider.configuration(root, process.env).every((row) =>
+              row.endsWith("v1.0.0"),
+            ),
         );
         TestValidator.predicate(
           `${provider.name} watches source and build inputs`,
@@ -99,6 +114,14 @@ export const test_standard_providers_execute_their_exact_contracts =
         const refreshed = await session.refresh();
         const unchanged = await session.refresh();
         const independent = await indexOnce(provider, command, root);
+        // A `semantic-index` snapshot still has to say which toolchain resolved
+        // its facts. Without it a consumer cannot tell one program indexed twice
+        // from two runtimes indexed once, and the strict experiment lane rejects
+        // the provenance as incomplete.
+        TestValidator.predicate(
+          `${provider.name} publishes the toolchain its facts describe`,
+          refreshed.snapshot.provenance.compilerVersion.endsWith("v1.0.0"),
+        );
         TestValidator.predicate(
           `${provider.name} publishes the shared strict-fixture corpus`,
           refreshed.mode === "initial" &&

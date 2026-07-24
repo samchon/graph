@@ -58,6 +58,11 @@ export namespace IBulkGraphSession {
    * The fields stay writable in the type because building one requires that;
    * writing through a published snapshot throws. A provider that publishes
    * without going through either owner owes its consumers the same guarantee.
+   *
+   * Hand one over as a plain object with own data properties. The publication
+   * boundary copies what it was given into the envelope it publishes, so a
+   * field reachable only through a prototype accessor is not carried, and the
+   * contract gate rejects the result rather than publishing a partial slice.
    */
   export interface ISnapshot {
     /** Every language this slice replaces atomically. Never empty. */

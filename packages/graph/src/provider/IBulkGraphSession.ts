@@ -47,13 +47,17 @@ export namespace IBulkGraphSession {
    * A complete strict fact slice from one compiler snapshot.
    *
    * A producer builds one of these and hands it over; from that moment it is
-   * evidence, and the publication boundary freezes it — arrays, nested spans,
-   * provenance, and the source manifest included — before any contract gate or
-   * reader sees it. The fields stay writable in the type because that is what
-   * building one requires, but writing through a published snapshot throws.
-   * Evidence a later caller can edit is not evidence: a validator that kept its
-   * argument could otherwise append an unclaimed edge after the generation was
-   * published, and nothing would revalidate it.
+   * evidence. Evidence a later caller can edit is not evidence: a validator that
+   * kept its argument could otherwise append an unclaimed edge after the
+   * generation was published, and nothing would revalidate it. So the two
+   * publication owners in this package — {@link BatchGraphSession}, which every
+   * SCIP and sidecar provider builds on, and `TtscGraphClient` — freeze the
+   * whole tree before any contract gate or reader sees it, and replace
+   * {@link sources} with a view that has no writer at all.
+   *
+   * The fields stay writable in the type because building one requires that;
+   * writing through a published snapshot throws. A provider that publishes
+   * without going through either owner owes its consumers the same guarantee.
    */
   export interface ISnapshot {
     /** Every language this slice replaces atomically. Never empty. */
@@ -88,7 +92,7 @@ export namespace IBulkGraphSession {
      * inlining a body: it is what lets a reader prove byte-identity against
      * text it read itself, without this package ever carrying that text.
      */
-    sources: Map<string, ISourceDigest>;
+    sources: ReadonlyMap<string, ISourceDigest>;
 
     /** Which program produced everything above, and what it can prove. */
     provenance: IProvenance;

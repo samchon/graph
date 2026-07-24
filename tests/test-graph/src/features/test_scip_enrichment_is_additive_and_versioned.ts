@@ -266,6 +266,47 @@ function assertTheAdditiveBoundary(): void {
       ),
     ),
   );
+  // `Object.freeze` seals an object's own properties and nothing else, so a
+  // `Map`, `Set`, or `Date` would be reported sealed while every mutator kept
+  // working. Published evidence is plain data, and anything else is refused
+  // where a caller can still act on the message.
+  for (const [label, exotic] of [
+    ["a Map", new Map()],
+    ["a Set", new Set()],
+    ["a Date", new Date(0)],
+    ["a class instance", new (class Evidence {})()],
+  ] as const) {
+    TestValidator.predicate(
+      `${label} cannot enter a sealed enrichment input`,
+      throws(() =>
+        apply(
+          {
+            ...common,
+            nodes: [
+              { ...common.nodes[0]!, evidence: exotic as never },
+              common.nodes[1]!,
+            ],
+          },
+          enrichment(),
+        ),
+      ),
+    );
+  }
+  TestValidator.equals(
+    "a null inside a sealed input is data, not a value to walk",
+    apply(
+      {
+        ...common,
+        nodes: [
+          { ...common.nodes[0]!, evidence: null as never },
+          common.nodes[1]!,
+        ],
+      },
+      enrichment(),
+    ).edges,
+    common.edges,
+  );
+
   const sharedSpan = { file: "src/main.go", startLine: 1, startCol: 1 };
   const cyclic = indexOf() as ReturnType<typeof indexOf> & { self?: unknown };
   cyclic.self = cyclic;
@@ -676,13 +717,25 @@ async function assertTheSessionFence(): Promise<void> {
       throws(() => {
         (held.provenance as { provider: string }).provider = "another-provider";
       }),
+      // Not `held.sources.set(...)`: shadowing an instance method would only
+      // block that spelling. The published manifest is not a `Map` at all, so
+      // the prototype writers have no receiver they can operate on.
       throws(() =>
-        held.sources.set("/unproven.go", {
+        (held.sources as Map<string, IBulkGraphSession.ISourceDigest>).set(
+          "/unproven.go",
+          { checkerDigest: "", diskDigest: "" },
+        ),
+      ),
+      throws(() =>
+        Map.prototype.set.call(held.sources, "/unproven.go", {
           checkerDigest: "",
           diskDigest: "",
         }),
       ),
-      throws(() => held.sources.clear()),
+      throws(() => Map.prototype.delete.call(held.sources, "/unproven.go")),
+      throws(() => Map.prototype.clear.call(held.sources)),
+      [...held.sources.keys()].length,
+      [...held.sources.entries()].length,
       retaining.current === published.snapshot,
       retaining.current!.edges.length,
       retaining.current!.sources.size,
@@ -696,9 +749,32 @@ async function assertTheSessionFence(): Promise<void> {
       true,
       true,
       true,
+      true,
+      published.snapshot.sources.size,
+      published.snapshot.sources.size,
+      true,
       published.snapshot.edges.length,
       published.snapshot.sources.size,
     ],
+  );
+  // A published manifest still has to read like the map it replaced.
+  const manifest = new Map<string, IBulkGraphSession.ISourceDigest>();
+  held.sources.forEach((digest, file, map) => {
+    manifest.set(file, digest);
+    if (map !== held.sources) throw new Error("the view leaked its backing map");
+  });
+  TestValidator.equals(
+    "a sealed manifest still reads like the map it replaced",
+    [
+      manifest.size,
+      [...held.sources].length,
+      [...held.sources.values()].every(
+        (digest) => Object.isFrozen(digest) && typeof digest.diskDigest === "string",
+      ),
+      held.sources.has([...held.sources.keys()][0]!),
+      held.sources.get([...held.sources.keys()][0]!) !== undefined,
+    ],
+    [held.sources.size, held.sources.size, true, true, true],
   );
   await retaining.close();
 
@@ -730,6 +806,7 @@ async function assertTheSessionFence(): Promise<void> {
   );
   await driftingSession.close();
 
+  let gatedBeforeTheContract = false;
   const malformed = sessionOf(
     root,
     enrichment({
@@ -748,12 +825,20 @@ async function assertTheSessionFence(): Promise<void> {
         ],
       }),
     }),
+    false,
+    () => {
+      gatedBeforeTheContract = true;
+    },
   );
   await rejects(malformed.refresh());
+  // The seal makes a validator unable to change what it gates, so the ordering
+  // of the two gates is no longer observable through a mutation. It is still
+  // observable here: a candidate the mandatory contract refuses would never
+  // reach a caller-supplied validator that ran second.
   TestValidator.equals(
     "a direct SCIP session validates enrichment before publication",
-    [malformed.generation, malformed.current],
-    [0, undefined],
+    [malformed.generation, malformed.current, gatedBeforeTheContract],
+    [0, undefined, true],
   );
   await malformed.close();
 

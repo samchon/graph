@@ -1,6 +1,7 @@
 import { ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 
 import { freezeDeep } from "../../utils/freezeDeep";
+import { sealedMap } from "../../utils/sealedMap";
 import { ownedProcess } from "../../utils/ownedProcess";
 import { spawnableCommand } from "../../utils/spawnableCommand";
 import { IBulkGraphSession } from "../IBulkGraphSession";
@@ -150,6 +151,7 @@ export class TtscGraphClient implements IBulkGraphSession {
           provenance,
           warnings: adapted.warnings,
         };
+        next.sources = sealedMap(next.sources, "the ttscgraph snapshot");
         freezeDeep(next, "the ttscgraph snapshot");
         this.validate(next);
         this.snapshot = next;

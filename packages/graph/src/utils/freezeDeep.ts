@@ -6,37 +6,43 @@
  * and the check that passed no longer describes what the graph publishes. This
  * closes that by freezing the tree rather than copying it. A copy would fence
  * the same reference just as well, but a whole-workspace snapshot is exactly the
- * value that must not be duplicated once per publication, and the walk here
- * allocates nothing but its own visited set.
+ * value that must not be duplicated once per publication.
  *
- * It is iterative and remembers what it visited, so a cycle terminates and a
- * shared subtree is walked once instead of once per parent. An accessor is
- * rejected rather than frozen, because `Object.freeze` fixes which getter runs
- * and not what the getter returns — a value that recomputes itself on every read
- * is the very channel this seal exists to close. `Map` is unsealed by freezing
- * for the same reason and is handled explicitly; no other exotic collection
- * appears in the contracts this guards, so none is given a silent pass here.
+ * Published evidence must be plain data, and anything else is refused rather
+ * than waved through. `Object.freeze` only fixes an object's own properties: on
+ * a `Map`, `Set`, or `Date` it leaves every mutator working, and on a typed
+ * array it throws something that names neither the value nor the field. An
+ * accessor is refused for the same reason — freezing fixes which getter runs and
+ * never what it returns, so a value that recomputes itself on every read is
+ * precisely the channel this seal exists to close. A caller that needs one of
+ * those shapes converts it at the boundary; {@link sealedMap} is how the source
+ * manifest does it.
+ *
+ * The walk is iterative and remembers what it sealed, so a cycle terminates, a
+ * shared subtree is walked once, and a tree already sealed upstream — the common
+ * SCIP slice, which is sealed for the enrichment contract and then published —
+ * costs one lookup instead of a second full traversal. Objects join that record
+ * only after the whole walk succeeds, so a refused tree never leaves a partial
+ * seal behind that a later call would trust.
  */
 export function freezeDeep<T>(value: T, subject: string): T {
-  const seen = new WeakSet<object>();
-  const pending: unknown[] = [value];
+  const walked = new Set<object>();
+  const pending: object[] = [];
+  enqueue(pending, value);
   while (pending.length > 0) {
-    const current = pending.pop();
-    if (current === null || typeof current !== "object") continue;
-    const target: object = current;
-    if (seen.has(target)) continue;
-    seen.add(target);
-    if (target instanceof Map) {
-      for (const mutator of MAP_MUTATORS) {
-        Object.defineProperty(target, mutator, {
-          value: refuseMutation,
-          writable: false,
-          enumerable: false,
-          configurable: false,
-        });
-      }
-      for (const [key, entry] of target) pending.push(key, entry);
+    const target = pending.pop()!;
+    if (SEALED.has(target) || walked.has(target)) continue;
+    const prototype = Object.getPrototypeOf(target) as object | null;
+    if (
+      prototype !== Object.prototype &&
+      prototype !== Array.prototype &&
+      prototype !== null
+    ) {
+      throw new TypeError(
+        `@samchon/graph: ${subject} must be plain data, but carries ${Object.prototype.toString.call(target)}`,
+      );
     }
+    walked.add(target);
     for (const key of Reflect.ownKeys(target)) {
       const descriptor = Object.getOwnPropertyDescriptor(target, key)!;
       if (!("value" in descriptor)) {
@@ -44,17 +50,16 @@ export function freezeDeep<T>(value: T, subject: string): T {
           `@samchon/graph: ${subject} cannot expose an accessor property`,
         );
       }
-      pending.push(descriptor.value);
+      enqueue(pending, descriptor.value);
     }
     Object.freeze(target);
   }
+  for (const target of walked) SEALED.add(target);
   return value;
 }
 
-function refuseMutation(): never {
-  throw new TypeError(
-    "@samchon/graph: a sealed collection cannot be modified",
-  );
+function enqueue(pending: object[], value: unknown): void {
+  if (typeof value === "object" && value !== null) pending.push(value);
 }
 
-const MAP_MUTATORS: readonly string[] = ["set", "delete", "clear"];
+const SEALED = new WeakSet<object>();

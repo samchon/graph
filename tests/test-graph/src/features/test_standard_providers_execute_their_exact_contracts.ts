@@ -116,6 +116,7 @@ export const test_standard_providers_execute_their_exact_contracts =
                 provider.languages,
                 root,
               ),
+              Conformance.published(refreshed.snapshot),
               Conformance.deterministic(
                 refreshed.snapshot,
                 independent,
@@ -166,6 +167,7 @@ export const test_standard_providers_execute_their_exact_contracts =
                 provider.languages,
                 root,
               ),
+              Conformance.published(refreshed.snapshot),
               Conformance.deterministic(
                 refreshed.snapshot,
                 independent,
@@ -485,6 +487,7 @@ async function assertRegisteredFixture(
             provider.languages,
             root,
           ),
+          Conformance.published(refreshed.snapshot),
           Conformance.deterministic(refreshed.snapshot, independent),
         ).length === 0,
     );

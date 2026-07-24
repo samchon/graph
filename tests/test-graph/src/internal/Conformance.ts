@@ -282,6 +282,50 @@ export namespace Conformance {
     return { failures };
   }
 
+  /**
+   * What a session owes its consumers the moment it publishes.
+   *
+   * Separate from {@link structure} because this is not a property of a
+   * snapshot's shape: a hand-built fixture is structurally valid and was never
+   * published, while a published generation is evidence, and evidence a later
+   * caller can edit is not evidence. Asking it here rather than trusting the
+   * two publication owners is what makes it a registry contract — a provider
+   * that publishes its own way owes its consumers the same guarantee.
+   */
+  export function published(snapshot: IBulkGraphSession.ISnapshot): IReport {
+    const failures: string[] = [];
+    const sealed = (value: unknown): boolean =>
+      typeof value !== "object" || value === null || Object.isFrozen(value);
+    for (const [label, value] of [
+      ["snapshot", snapshot],
+      ["language list", snapshot.languages],
+      ["node list", snapshot.nodes],
+      ["edge list", snapshot.edges],
+      ["diagnostic list", snapshot.diagnostics],
+      ["warning list", snapshot.warnings],
+      ["provenance", snapshot.provenance],
+      ["fact list", snapshot.provenance.facts],
+      ["capability list", snapshot.provenance.capabilities],
+      ["first node", snapshot.nodes[0]],
+      ["first edge", snapshot.edges[0]],
+    ] as const) {
+      if (!sealed(value)) {
+        failures.push(`published a ${label} a later caller can still edit`);
+      }
+    }
+    // Read rather than attempted: proving the writer is gone by calling it
+    // would corrupt the very snapshot under test when the check fails.
+    if (typeof (snapshot.sources as { set?: unknown }).set === "function") {
+      failures.push("published a source manifest that still has a writer");
+    }
+    for (const [file, digest] of snapshot.sources) {
+      if (Object.isFrozen(digest)) continue;
+      failures.push(`published a source digest for ${file} that can be edited`);
+      break;
+    }
+    return { failures };
+  }
+
   /** A slice is byte-identical to itself when nothing moved. */
   export function deterministic(
     left: IBulkGraphSession.ISnapshot,

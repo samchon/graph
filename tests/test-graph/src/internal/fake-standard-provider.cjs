@@ -95,7 +95,7 @@ if (sidecarLanguages.has(sidecarLanguage)) {
   const file = files[sidecarLanguage];
   const text = fs.readFileSync(path.join(process.cwd(), file), "utf8");
   const digest = sha256(text);
-  const semantic = sidecarCorpus(sidecarLanguage, file);
+  const semantic = sidecarCorpus(sidecarLanguage, file, text);
   write(output, {
     schemaVersion: 1,
     projectRoot: fileUri(process.cwd()),
@@ -206,8 +206,19 @@ function comparePosition(left, right) {
   return left[0] - right[0] || left[1] - right[1];
 }
 
-function sidecarCorpus(language, file) {
+function sidecarCorpus(language, file, text) {
   const id = (name) => `${file}#${name}:function`;
+  const callerRange = wordRanges(text, "caller")[0];
+  const calleeRanges = wordRanges(text, "callee");
+  const calleeDefinition = calleeRanges.at(-1);
+  const calleeReference = calleeRanges.at(-2);
+  if (
+    callerRange === undefined ||
+    calleeDefinition === undefined ||
+    calleeReference === undefined
+  ) {
+    throw new Error("fake standard provider: invalid sidecar source fixture");
+  }
   const nodes = [
     {
       id: id("caller"),
@@ -216,6 +227,7 @@ function sidecarCorpus(language, file) {
       name: "caller",
       file,
       external: false,
+      evidence: evidenceOf(file, callerRange),
     },
     {
       id: id("callee"),
@@ -224,10 +236,16 @@ function sidecarCorpus(language, file) {
       name: "callee",
       file,
       external: false,
+      evidence: evidenceOf(file, calleeDefinition),
     },
   ];
   const edges = [
-    { kind: "references", from: id("caller"), to: id("callee") },
+    {
+      kind: "references",
+      from: id("caller"),
+      to: id("callee"),
+      evidence: evidenceOf(file, calleeReference),
+    },
   ];
   if (heuristic) {
     nodes.push({
@@ -245,6 +263,16 @@ function sidecarCorpus(language, file) {
     });
   }
   return { nodes, edges };
+}
+
+function evidenceOf(file, range) {
+  return {
+    file,
+    startLine: range[0] + 1,
+    startCol: range[1] + 1,
+    endLine: range[2] + 1,
+    endCol: range[3] + 1,
+  };
 }
 
 function valueOf(values, prefix) {

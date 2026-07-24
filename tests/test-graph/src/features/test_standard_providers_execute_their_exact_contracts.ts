@@ -3,6 +3,7 @@ import {
   GRAPH_PROVIDERS,
   type GraphLanguage,
   type GraphEdgeKind,
+  type IBulkGraphSession,
   type IGraphProvider,
   goGraphProvider,
   rustScipProvider,
@@ -25,6 +26,11 @@ export const test_standard_providers_execute_their_exact_contracts =
     const root = GraphPaths.createTempDirectory("graph-standard-providers-");
     const previous = new Map<string, string | undefined>();
     try {
+      previous.set(
+        "SAMCHON_GRAPH_FIXTURE_MODE",
+        process.env.SAMCHON_GRAPH_FIXTURE_MODE,
+      );
+      delete process.env.SAMCHON_GRAPH_FIXTURE_MODE;
       writeProject(root);
       assertFixtureRegistryCoverage();
       const bin = path.join(root, ".samchon-graph", "bin");
@@ -92,6 +98,7 @@ export const test_standard_providers_execute_their_exact_contracts =
         });
         const refreshed = await session.refresh();
         const unchanged = await session.refresh();
+        const independent = await indexOnce(provider, command, root);
         TestValidator.predicate(
           `${provider.name} publishes the shared strict-fixture corpus`,
           refreshed.mode === "initial" &&
@@ -101,7 +108,7 @@ export const test_standard_providers_execute_their_exact_contracts =
             Conformance.failures(
               Conformance.check(
                 refreshed.snapshot,
-                expectationsOf(provider.languages),
+                expectationsOf(root, provider.languages),
               ),
               Conformance.structure(
                 refreshed.snapshot,
@@ -111,7 +118,7 @@ export const test_standard_providers_execute_their_exact_contracts =
               ),
               Conformance.deterministic(
                 refreshed.snapshot,
-                unchanged.snapshot,
+                independent,
               ),
             ).length === 0,
         );
@@ -140,6 +147,7 @@ export const test_standard_providers_execute_their_exact_contracts =
         });
         const refreshed = await session.refresh();
         const unchanged = await session.refresh();
+        const independent = await indexOnce(provider, command, root);
         TestValidator.predicate(
           `${provider.name} publishes the shared strict-fixture corpus`,
           refreshed.mode === "initial" &&
@@ -150,7 +158,7 @@ export const test_standard_providers_execute_their_exact_contracts =
             Conformance.failures(
               Conformance.check(
                 refreshed.snapshot,
-                expectationsOf(provider.languages),
+                expectationsOf(root, provider.languages),
               ),
               Conformance.structure(
                 refreshed.snapshot,
@@ -160,7 +168,7 @@ export const test_standard_providers_execute_their_exact_contracts =
               ),
               Conformance.deterministic(
                 refreshed.snapshot,
-                unchanged.snapshot,
+                independent,
               ),
             ).length === 0,
         );
@@ -332,7 +340,7 @@ async function assertHeuristicTwinFails(
     const refreshed = await session.refresh();
     const failures = Conformance.check(
       refreshed.snapshot,
-      expectationsOf(provider.languages),
+      expectationsOf(root, provider.languages),
     ).failures;
     TestValidator.predicate(
       `${provider.name} rejects only the common comment-only semantic negative twin`,
@@ -350,45 +358,71 @@ async function assertHeuristicTwinFails(
 }
 
 function expectationsOf(
+  root: string,
   languages: readonly GraphLanguage[],
   relationship: GraphEdgeKind = "references",
 ): readonly Conformance.IExpectation[] {
-  return languages.flatMap((language) => [
-    {
-      reason: "the strict fixture resolves the caller declaration",
-      node: { name: "caller", kind: "function", language },
-    },
-    {
-      reason: "the strict fixture resolves the referenced callee declaration",
-      node: { name: "callee", kind: "function", language },
-    },
-    {
-      reason: "a name occurring only in prose is not a declaration",
-      node: {
-        name: "mentionedInComment",
-        kind: "function",
-        language,
-        present: false,
+  return languages.flatMap((language) => {
+    const file = SOURCE_FILES[language];
+    const caller = sourceSpans(root, file, "caller")[0]!;
+    const callee = sourceSpans(root, file, "callee");
+    const calleeDefinition = callee.at(-1)!;
+    const calleeReference = callee.at(-2)!;
+    return [
+      {
+        reason: "the strict fixture resolves the caller declaration",
+        node: {
+          name: "caller",
+          kind: "function",
+          language,
+          file,
+          evidence: caller,
+        },
       },
-    },
-    {
-      reason: "a resolved occurrence is published as a reference",
-      edge: {
-        kind: relationship,
-        from: { name: "caller", kind: "function", language },
-        to: { name: "callee", kind: "function", language },
+      {
+        reason: "the strict fixture resolves the referenced callee declaration",
+        node: {
+          name: "callee",
+          kind: "function",
+          language,
+          file,
+          evidence: calleeDefinition,
+        },
       },
-    },
-    {
-      reason: "a prose occurrence is never promoted to a reference",
-      edge: {
-        kind: relationship,
-        from: { name: "caller", kind: "function", language },
-        to: { name: "mentionedInComment", kind: "function", language },
-        present: false,
+      {
+        reason: "a name occurring only in prose is not a declaration",
+        node: {
+          name: "mentionedInComment",
+          kind: "function",
+          language,
+          present: false,
+        },
       },
-    },
-  ]);
+      {
+        reason: "a resolved occurrence is published as a reference",
+        edge: {
+          kind: relationship,
+          from: { name: "caller", kind: "function", language, file },
+          to: { name: "callee", kind: "function", language, file },
+          evidence: calleeReference,
+        },
+      },
+      {
+        reason: "a prose occurrence is never promoted to a reference",
+        edge: {
+          kind: relationship,
+          from: { name: "caller", kind: "function", language, file },
+          to: {
+            name: "mentionedInComment",
+            kind: "function",
+            language,
+            file,
+          },
+          present: false,
+        },
+      },
+    ];
+  });
 }
 
 async function assertRemainingRegisteredFixtures(root: string): Promise<void> {
@@ -433,6 +467,7 @@ async function assertRegisteredFixture(
   try {
     const refreshed = await session.refresh();
     const unchanged = await session.refresh();
+    const independent = await indexOnce(provider, command, root);
     TestValidator.predicate(
       `${provider.name} executes the shared registered-provider corpus`,
       refreshed.mode === "initial" &&
@@ -442,7 +477,7 @@ async function assertRegisteredFixture(
         Conformance.failures(
           Conformance.check(
             refreshed.snapshot,
-            expectationsOf(provider.languages, relationship),
+            expectationsOf(root, provider.languages, relationship),
           ),
           Conformance.structure(
             refreshed.snapshot,
@@ -450,10 +485,7 @@ async function assertRegisteredFixture(
             provider.languages,
             root,
           ),
-          Conformance.deterministic(
-            refreshed.snapshot,
-            unchanged.snapshot,
-          ),
+          Conformance.deterministic(refreshed.snapshot, independent),
         ).length === 0,
     );
   } finally {
@@ -479,7 +511,7 @@ async function assertTtscHeuristicTwinFails(root: string): Promise<void> {
     const refreshed = await session.refresh();
     const failures = Conformance.check(
       refreshed.snapshot,
-      expectationsOf(["typescript"], "calls"),
+      expectationsOf(root, ["typescript"], "calls"),
     ).failures;
     TestValidator.predicate(
       "ttscgraph rejects only the common comment-only semantic negative twin",
@@ -490,6 +522,68 @@ async function assertTtscHeuristicTwinFails(root: string): Promise<void> {
     await session.close();
   }
 }
+
+async function indexOnce(
+  provider: IGraphProvider,
+  command: IGraphProvider.ICommand,
+  root: string,
+): Promise<IBulkGraphSession.ISnapshot> {
+  const session = provider.open({
+    root,
+    command,
+    languages: provider.languages,
+    options: { cwd: root },
+  });
+  try {
+    return (await session.refresh()).snapshot;
+  } finally {
+    await session.close();
+  }
+}
+
+function sourceSpans(
+  root: string,
+  file: string,
+  word: string,
+): Conformance.ISpanExpectation[] {
+  const text = fs.readFileSync(path.join(root, file), "utf8");
+  const output: Conformance.ISpanExpectation[] = [];
+  let offset = 0;
+  for (;;) {
+    const found = text.indexOf(word, offset);
+    if (found < 0) return output;
+    const prefix = text.slice(0, found);
+    const line = prefix.split("\n").length;
+    const column = found - prefix.lastIndexOf("\n");
+    output.push({
+      file,
+      startLine: line,
+      startCol: column,
+      endLine: line,
+      endCol: column + word.length,
+    });
+    offset = found + word.length;
+  }
+}
+
+const SOURCE_FILES: Record<GraphLanguage, string> = {
+  typescript: "src/core/order.ts",
+  go: "src/main.go",
+  rust: "src/lib.rs",
+  cpp: "src/main.cpp",
+  c: "src/main.c",
+  java: "src/Main.java",
+  csharp: "src/Main.cs",
+  kotlin: "src/Main.kt",
+  swift: "src/Main.swift",
+  scala: "src/Main.scala",
+  zig: "src/main.zig",
+  python: "src/main.py",
+  ruby: "src/main.rb",
+  php: "src/main.php",
+  lua: "src/main.lua",
+  dart: "src/main.dart",
+};
 
 function platformExecutable(directory: string, command: string): string {
   return path.join(

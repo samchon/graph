@@ -5,6 +5,7 @@ import {
   type IBulkGraphSession,
   type IGraphProvider,
   type ISamchonGraphEdge,
+  type ISamchonGraphEvidence,
   type ISamchonGraphNode,
 } from "@samchon/graph";
 
@@ -42,6 +43,7 @@ export namespace Conformance {
     kind: ISamchonGraphNode["kind"];
     language: ISamchonGraphNode["language"];
     file?: string;
+    evidence?: ISpanExpectation;
 
     /** `false` asserts the declaration must NOT exist. */
     present?: boolean;
@@ -51,6 +53,7 @@ export namespace Conformance {
     kind: GraphEdgeKind;
     from: IEndpointExpectation;
     to: IEndpointExpectation;
+    evidence?: ISpanExpectation;
 
     /**
      * `false` asserts the relationship must NOT exist — the negative twin.
@@ -74,6 +77,16 @@ export namespace Conformance {
     name: string;
     kind: ISamchonGraphNode["kind"];
     language: ISamchonGraphNode["language"];
+    file?: string;
+  };
+
+  /** Exact source location taken from the fixture text, never current output. */
+  export type ISpanExpectation = Required<
+    Pick<
+      ISamchonGraphEvidence,
+      "startLine" | "startCol" | "endLine" | "endCol"
+    >
+  > & {
     file?: string;
   };
 
@@ -133,9 +146,14 @@ export namespace Conformance {
             (wanted.file === undefined || node.file === wanted.file),
         );
         const shouldExist = wanted.present !== false;
-        if (shouldExist && found.length === 0) {
+        const exact = found.filter(
+          (node) =>
+            wanted.evidence === undefined ||
+            spanMatches(node.evidence, wanted.evidence),
+        );
+        if (shouldExist && exact.length === 0) {
           failures.push(
-            `missing ${wanted.kind} "${wanted.name}" (${expectation.reason})`,
+            `missing ${wanted.kind} "${wanted.name}" with its exact source span (${expectation.reason})`,
           );
         } else if (!shouldExist && found.length > 0) {
           failures.push(
@@ -165,7 +183,9 @@ export namespace Conformance {
           (edge) =>
             edge.kind === wanted.kind &&
             from.has(edge.from) &&
-            to.has(edge.to),
+            to.has(edge.to) &&
+            (wanted.evidence === undefined ||
+              spanMatches(edge.evidence, wanted.evidence)),
         );
         const shouldExist = wanted.present !== false;
         if (shouldExist && !found) {
@@ -287,4 +307,18 @@ export namespace Conformance {
 
 function edgeKey(edge: ISamchonGraphEdge): string {
   return `${edge.kind}\0${edge.from}\0${edge.to}\0${edge.evidence?.startLine ?? ""}\0${edge.evidence?.startCol ?? ""}`;
+}
+
+function spanMatches(
+  actual: ISamchonGraphEvidence | undefined,
+  expected: Conformance.ISpanExpectation,
+): boolean {
+  return (
+    actual !== undefined &&
+    (expected.file === undefined || actual.file === expected.file) &&
+    actual.startLine === expected.startLine &&
+    actual.startCol === expected.startCol &&
+    actual.endLine === expected.endLine &&
+    actual.endCol === expected.endCol
+  );
 }

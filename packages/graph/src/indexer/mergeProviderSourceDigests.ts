@@ -32,10 +32,13 @@ export function mergeProviderSourceDigests(
 }
 
 function sourceIdentity(file: string): string {
-  if (process.platform !== "win32" || file.startsWith("bundled:///")) {
-    return file;
+  /* c8 ignore start -- only Windows folds filesystem identities; the Windows
+   * lifecycle lane exercises both ordinary and virtual source names. */
+  if (process.platform === "win32" && !file.startsWith("bundled:///")) {
+    return path.normalize(file).toLowerCase();
   }
-  return path.normalize(file).toLowerCase();
+  /* c8 ignore stop */
+  return file;
 }
 
 function sameDigest(

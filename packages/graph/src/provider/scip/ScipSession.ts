@@ -36,7 +36,7 @@ export class ScipSession implements IBulkGraphSession {
     const enrichment =
       options.enrichment === undefined
         ? undefined
-        : ScipEnrichment.normalize(options.enrichment, options.languages);
+        : ScipEnrichment.slice(options.enrichment, options.languages);
     this.options = {
       ...options,
       languages: [...options.languages],

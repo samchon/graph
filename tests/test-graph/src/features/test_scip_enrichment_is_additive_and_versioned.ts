@@ -155,39 +155,68 @@ function assertTheAdditiveBoundary(): void {
   (mutable as { version: number }).version = 9;
   (mutable.languages as unknown as string[])[0] = "rust";
   (mutable.facts as GraphEdgeKind[])[0] = "tests";
-  (mutable as { enrich: ScipEnrichment.IContract["enrich"] }).enrich = () => ({
-    edges: [{ kind: "tests", from: "caller", to: "callee" }],
-  });
   TestValidator.equals(
-    "a normalized contract cannot drift after provider registration",
+    "a normalized contract keeps the declaration it registered",
     [
       normalized.name,
       normalized.version,
       normalized.languages,
       normalized.facts,
-      ScipEnrichment.apply({
-        enrichment: normalized,
-        index: indexOf(),
-        root: "/fixture",
-        provider: "scip-fixture",
-        languages: ["go"],
-        common,
-      }).edges,
       Object.isFrozen(normalized),
       Object.isFrozen(normalized.languages),
       Object.isFrozen(normalized.facts),
     ],
+    ["go-calls", 2, ["go"], ["calls"], true, true, true],
+  );
+  // Freezing the copy is not the whole boundary. The implementation keeps the
+  // original object as its receiver, so a rename after registration would let
+  // `this.name` disagree with the capability the snapshot publishes. Detecting
+  // that at run time is what makes the two inseparable.
+  TestValidator.predicate(
+    "a contract whose declaration drifted after registration cannot run",
+    throws(() => apply(common, normalized)),
+  );
+
+  const swapped = enrichment();
+  const swappedContract = ScipEnrichment.normalize(swapped, ["go"]);
+  (swapped as { enrich: ScipEnrichment.IContract["enrich"] }).enrich = () => ({
+    edges: [{ kind: "tests", from: "caller", to: "callee" }],
+  });
+  TestValidator.predicate(
+    "a contract whose implementation was replaced after registration cannot run",
+    throws(() => apply(common, swappedContract)),
+  );
+  TestValidator.equals(
+    "an untouched registered contract still runs the implementation it captured",
+    apply(common, ScipEnrichment.normalize(enrichment(), ["go"])).edges,
+    common.edges,
+  );
+
+  // A registry entry owns every language its indexer serves; one build selects
+  // only the languages that build requested. Demanding equality at open time
+  // would reject the correctly registered multi-language provider outright.
+  const shared = enrichment({ languages: ["c", "cpp"] });
+  TestValidator.equals(
+    "a session over part of a registered slice keeps the whole declaration",
     [
-      "go-calls",
-      2,
-      ["go"],
-      ["calls"],
-      common.edges,
-      true,
-      true,
-      true,
+      ScipEnrichment.slice(shared, ["c"]).languages,
+      ScipEnrichment.slice(shared, ["c", "cpp"]).languages,
+    ],
+    [
+      ["c", "cpp"],
+      ["c", "cpp"],
     ],
   );
+  for (const [label, selected] of [
+    ["a session cannot publish a language the contract never declared", ["go"]],
+    ["a session must publish at least one declared language", []],
+    ["a session cannot name one language twice", ["c", "c"]],
+  ] as const) {
+    TestValidator.predicate(
+      label,
+      throws(() => ScipEnrichment.slice(shared, selected)),
+    );
+  }
 
   TestValidator.predicate(
     "the bare common slice cannot smuggle in a language-owned fact",
@@ -209,6 +238,7 @@ function assertTheAdditiveBoundary(): void {
     ["an invalid enrichment name", { ...calls, name: "Go calls" }],
     ["a non-positive enrichment version", { ...calls, version: 0 }],
     ["a mismatched enrichment language slice", { ...calls, languages: ["rust"] }],
+    ["an empty enrichment language slice", { ...calls, languages: [] }],
     ["a duplicate enrichment language slice", { ...calls, languages: ["go", "go"] }],
     ["an empty enrichment fact declaration", { ...calls, facts: [] }],
     ["a duplicate enrichment fact declaration", { ...calls, facts: ["calls", "calls"] }],
@@ -230,6 +260,10 @@ function assertTheAdditiveBoundary(): void {
   ] as const) {
     TestValidator.predicate(label, throws(() => ScipEnrichment.assert(candidate, ["go"])));
   }
+  TestValidator.predicate(
+    "a registry entry cannot name one provider language twice",
+    throws(() => ScipEnrichment.assert(calls, ["go", "go"])),
+  );
 
   TestValidator.predicate(
     "the common SCIP slice cannot duplicate a node",
@@ -600,6 +634,46 @@ async function assertTheSessionFence(): Promise<void> {
     ["scip-enriched-fixture", "semantic-index", ["go"]],
   );
   await providerSession.close();
+
+  // One build selects only the languages it asked for, so a registry entry that
+  // owns several opens a session over a subset of them. The enrichment still
+  // has to cover the whole entry, which is what made the two checks different.
+  const sharedProvider = scipProvider({
+    name: "scip-shared-fixture",
+    languages: ["go", "rust"],
+    resolve: () => ({ command: process.execPath, args: [] }),
+    decode: () => ({
+      command: process.execPath,
+      args: [GraphPaths.fakeScipDecoder],
+    }),
+    indexArgs: (artifact) => [`--output=${artifact}`, `--root=${root}`],
+    inputs: () => ["main.go"],
+    languageOf: () => "go",
+    enrichment: enrichment({ languages: ["go", "rust"] }),
+  });
+  const sharedSession = sharedProvider.open({
+    root,
+    command: {
+      command: process.execPath,
+      args: [GraphPaths.fakeScipIndexer],
+    },
+    languages: ["go"],
+    options: {},
+  });
+  const sharedRefresh = await sharedSession.refresh();
+  TestValidator.equals(
+    "a session over one language of a shared entry publishes its enrichment",
+    [
+      sharedRefresh.snapshot.languages,
+      sharedRefresh.snapshot.provenance.capabilities.includes(
+        "scip-enrichment:go-calls@2",
+      ),
+      sharedProvider.facts,
+    ],
+    [["go"], true, ["contains", "references", "type_ref", "calls"]],
+  );
+  await sharedSession.close();
+
   const bareProvider = scipProvider({
     name: "scip-bare-fixture",
     languages: ["go"],

@@ -9,9 +9,11 @@ import {
   appendGithubPath,
   ensureDir,
   parseArgs,
+  recordTool,
   repositoryRoot,
   run,
   shell,
+  resetToolManifest,
   workRoot,
 } from "./process.mjs";
 
@@ -21,6 +23,12 @@ const toolsRoot = path.join(workRoot, "tools");
 const binRoot = path.join(toolsRoot, "bin");
 ensureDir(binRoot);
 appendGithubPath(binRoot);
+resetToolManifest(experiment.language);
+
+// Every tool this lane resolves is recorded so the published result names the
+// build that produced it. `digest: "unpinned"` is a truthful entry, not a
+// placeholder: a mutable channel is what the reader has to know about.
+const record = (tool) => recordTool(experiment.language, tool);
 
 const apt = (packages) => {
   shell("sudo apt-get update");
@@ -80,6 +88,15 @@ const verifySha256 = (file, expected) => {
   }
 };
 
+const verifySha512 = (file, expected) => {
+  const actual = createHash("sha512")
+    .update(fs.readFileSync(file))
+    .digest("base64");
+  if (actual !== expected) {
+    throw new Error(`${file} has an unexpected SHA-512 digest`);
+  }
+};
+
 // Unauthenticated requests to api.github.com share a 60/hour rate limit across
 // the whole runner IP pool; a GITHUB_TOKEN raises that to 5000/hour and is
 // never sent past api.github.com since this call never redirects elsewhere.
@@ -102,6 +119,12 @@ const installKotlinLanguageServer = async () => {
   fs.rmSync(target, { force: true, recursive: true });
   ensureDir(target);
   run("unzip", ["-q", archive, "-d", target]);
+  record({
+    tool: "kotlin-language-server",
+    version: "unpinned",
+    source: url,
+    digest: "unpinned",
+  });
   const launcher = path.join(target, "server", "bin", "kotlin-language-server");
   const link = path.join(binRoot, "kotlin-language-server");
   fs.rmSync(link, { force: true });
@@ -118,6 +141,7 @@ const installZls = async () => {
   // Recent zls tarballs extract the `zls` binary at the archive root, so no
   // `--strip-components`; locate the binary wherever it lands.
   run("tar", ["-xf", archive, "-C", target]);
+  record({ tool: "zls", version: "unpinned", source: url, digest: "unpinned" });
   const binary = findFile(target, "zls");
   if (binary === undefined) throw new Error("zls binary not found after extraction");
   fs.chmodSync(binary, 0o755);
@@ -137,6 +161,14 @@ const installScip = async () => {
     archive,
     "7bb1a566787478641a13bd9c93c2f571337556c76d659206f2225dc7d71a648b",
   );
+  record({
+    tool: "scip",
+    version: "v0.7.1",
+    source:
+      "https://github.com/scip-code/scip/releases/download/v0.7.1/scip-linux-amd64.tar.gz",
+    digest:
+      "sha256:7bb1a566787478641a13bd9c93c2f571337556c76d659206f2225dc7d71a648b",
+  });
   fs.rmSync(target, { force: true, recursive: true });
   ensureDir(target);
   run("tar", ["-xzf", archive, "-C", target]);
@@ -148,6 +180,48 @@ const installScip = async () => {
   const link = path.join(binRoot, "scip");
   fs.rmSync(link, { force: true });
   fs.symlinkSync(binary, link);
+};
+
+// The published tarball is a webpack bundle whose only runtime `require`s are
+// Node built-ins, so extracting the integrity-verified archive installs exactly
+// the bytes the digest covers. `npm install` would instead resolve the package's
+// eight caret-ranged dependencies against the live registry on every setup —
+// a closure no digest pins and that this tool never loads.
+const installScipPython = async () => {
+  const archive = path.join(toolsRoot, "scip-python-0.6.6.tgz");
+  const target = path.join(toolsRoot, "scip-python-0.6.6");
+  await downloadFile(
+    "https://registry.npmjs.org/@sourcegraph/scip-python/-/scip-python-0.6.6.tgz",
+    archive,
+  );
+  verifySha512(
+    archive,
+    "qoKL1Rggg0o5newAFbCFAKlS0AjWxG5MA+mC28BtgxOv0DhO4zdL8u7151FxEppDpXMVvm7+yXSjXotoVH9cMQ==",
+  );
+  record({
+    tool: "scip-python",
+    version: "0.6.6",
+    source:
+      "https://registry.npmjs.org/@sourcegraph/scip-python/-/scip-python-0.6.6.tgz",
+    digest:
+      "sha512:qoKL1Rggg0o5newAFbCFAKlS0AjWxG5MA+mC28BtgxOv0DhO4zdL8u7151FxEppDpXMVvm7+yXSjXotoVH9cMQ==",
+  });
+  fs.rmSync(target, { force: true, recursive: true });
+  ensureDir(target);
+  run("tar", ["-xzf", archive, "-C", target, "--strip-components", "1"]);
+  const launcher = path.join(target, "index.js");
+  if (!fs.existsSync(launcher)) {
+    throw new Error("scip-python launcher not found after extraction");
+  }
+  fs.chmodSync(launcher, 0o755);
+  const link = path.join(binRoot, "scip-python");
+  fs.rmSync(link, { force: true });
+  fs.symlinkSync(launcher, link);
+  // Extracting rather than installing rests on the bundle needing nothing but
+  // Node built-ins. Run it once here, where a missing module is one clear
+  // failure, instead of leaving it to surface as an unavailable provider that
+  // silently degrades the configuration fingerprint.
+  run(link, ["--version"]);
 };
 
 const findFile = (dir, name) => {
@@ -188,6 +262,14 @@ switch (experiment.language) {
       throw new Error("scip-go binary not found after extraction");
     }
     fs.chmodSync(scipGo, 0o755);
+    record({
+      tool: "scip-go",
+      version: "v0.2.7",
+      source:
+        "https://github.com/scip-code/scip-go/releases/download/v0.2.7/scip-go-linux-amd64.tar.gz",
+      digest:
+        "sha256:5bfe39016ca04f5b3b1cce41d1b63ea120a7d7e93b55407bfb17a6b02d18135a",
+    });
     const scipLink = path.join(binRoot, "scip-go");
     fs.rmSync(scipLink, { force: true });
     fs.symlinkSync(scipGo, scipLink);
@@ -196,17 +278,35 @@ switch (experiment.language) {
       ["build", "-trimpath", "-o", path.join(binRoot, "samchon-graph-go"), "."],
       { cwd: path.join(repositoryRoot, "sidecars", "go") },
     );
+    record({
+      tool: "samchon-graph-go",
+      version: "workspace",
+      source: "sidecars/go",
+      digest: "built-from-source",
+    });
     break;
   }
   case "rust":
     shell("curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal");
     appendGithubPath(path.join(os.homedir(), ".cargo", "bin"));
     shell(`${path.join(os.homedir(), ".cargo", "bin", "rustup")} component add rust-analyzer`);
+    record({
+      tool: "rust-analyzer",
+      version: "unpinned",
+      source: "rustup component add rust-analyzer",
+      digest: "unpinned",
+    });
     await installScip();
     break;
   case "cpp":
   case "c":
     apt(["clangd"]);
+    record({
+      tool: "clangd",
+      version: "unpinned",
+      source: "apt clangd",
+      digest: "unpinned",
+    });
     break;
   case "java": {
     // jdtls is not an apt package and requires Java 21+; install the JDK and the
@@ -231,6 +331,13 @@ switch (experiment.language) {
     ensureDir(target);
     run("tar", ["-xzf", archive, "-C", target]);
     appendGithubPath(path.join(target, "bin"));
+    record({
+      tool: "jdtls",
+      version: "unpinned",
+      source:
+        "https://download.eclipse.org/jdtls/snapshots/jdt-language-server-latest.tar.gz",
+      digest: "unpinned",
+    });
     break;
   }
   case "csharp": {
@@ -244,6 +351,18 @@ switch (experiment.language) {
     appendGithubPath(dotnetHome);
     appendGithubPath(path.join(dotnetHome, "tools"));
     shell(`"${dotnet}" tool install --global csharp-ls --version 0.26.0 || "${dotnet}" tool update --global csharp-ls --version 0.26.0`);
+    record({
+      tool: "dotnet-sdk",
+      version: "channel 10.0",
+      source: "https://dot.net/v1/dotnet-install.sh",
+      digest: "unpinned",
+    });
+    record({
+      tool: "csharp-ls",
+      version: "0.26.0",
+      source: "dotnet tool install --global csharp-ls",
+      digest: "unpinned",
+    });
     break;
   }
   case "kotlin":
@@ -254,6 +373,12 @@ switch (experiment.language) {
     // Swift step. It has no `--version` flag (that exits 64), so just confirm it
     // resolves on PATH.
     shell("command -v sourcekit-lsp");
+    record({
+      tool: "sourcekit-lsp",
+      version: "unpinned",
+      source: "swift toolchain installed by the workflow",
+      digest: "unpinned",
+    });
     break;
   case "scala":
     apt(["openjdk-17-jdk", "gzip"]);
@@ -262,20 +387,48 @@ switch (experiment.language) {
     shell(`chmod +x "${path.join(binRoot, "cs")}"`);
     run(path.join(binRoot, "cs"), ["install", "metals"]);
     appendGithubPath(path.join(os.homedir(), ".local", "share", "coursier", "bin"));
+    record({
+      tool: "metals",
+      version: "unpinned",
+      source: "coursier install metals",
+      digest: "unpinned",
+    });
     break;
   case "zig":
     await installZls();
     break;
   case "python":
-    shell("npm install -g pyright");
+    await installScipPython();
+    await installScip();
+    // The interpreter decides what the index means and now decides the
+    // provider's published `compilerVersion`, so the result has to name the one
+    // this run used rather than leave it to the runner image.
+    record({
+      tool: "python3",
+      version: "unpinned",
+      source: "ubuntu-latest runner image",
+      digest: "unpinned",
+    });
     break;
   case "ruby":
     // The runner ships ruby but not bundler, which both the fixture's
     // `bundle install` prepare step and ruby-lsp's composed bundle need.
     shell("sudo gem install bundler ruby-lsp");
+    record({
+      tool: "ruby-lsp",
+      version: "unpinned",
+      source: "gem install ruby-lsp",
+      digest: "unpinned",
+    });
     break;
   case "php":
     shell("npm install -g intelephense");
+    record({
+      tool: "intelephense",
+      version: "unpinned",
+      source: "npm install -g intelephense",
+      digest: "unpinned",
+    });
     break;
   case "lua": {
     const url = await latestAsset("LuaLS/lua-language-server", /linux-x64\.tar\.gz$/);
@@ -286,6 +439,12 @@ switch (experiment.language) {
     ensureDir(target);
     run("tar", ["-xzf", archive, "-C", target]);
     appendGithubPath(path.join(target, "bin"));
+    record({
+      tool: "lua-language-server",
+      version: "unpinned",
+      source: url,
+      digest: "unpinned",
+    });
     break;
   }
   case "dart": {
@@ -299,6 +458,13 @@ switch (experiment.language) {
     ensureDir(target);
     run("unzip", ["-q", archive, "-d", target]);
     appendGithubPath(path.join(target, "dart-sdk", "bin"));
+    record({
+      tool: "dart-sdk",
+      version: "unpinned",
+      source:
+        "https://storage.googleapis.com/dart-archive/channels/stable/release/latest/sdk/dartsdk-linux-x64-release.zip",
+      digest: "unpinned",
+    });
     break;
   }
   default:

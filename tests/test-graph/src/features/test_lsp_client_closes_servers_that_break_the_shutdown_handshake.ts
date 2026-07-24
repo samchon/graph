@@ -135,7 +135,6 @@ export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
 const assertExitedLeaderDoesNotLeakItsProcessGroup = async (
   LspClient: LspClientConstructor,
 ): Promise<void> => {
-  if (process.platform === "win32") return;
   const root = GraphPaths.createTempDirectory(
     "samchon-graph-exited-lsp-leader-",
   );

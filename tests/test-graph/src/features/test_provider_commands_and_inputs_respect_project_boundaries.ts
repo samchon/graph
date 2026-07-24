@@ -119,6 +119,21 @@ export const test_provider_commands_and_inputs_respect_project_boundaries =
           .effectiveConfiguration(root, pathEnvironment(""))
           .includes("go-env=unavailable"),
       );
+      const configuredGo = platformExecutable(root, "configured-go");
+      writeGoEnvironmentExecutable(configuredGo);
+      TestValidator.predicate(
+        "a command-shim Go toolchain is probed through its exact invocation",
+        goGraphProvider
+          .effectiveConfiguration(root, {
+            ...pathEnvironment(""),
+            SAMCHON_GRAPH_GO_TOOLCHAIN: configuredGo,
+          })
+          .some(
+            (row) =>
+              row.startsWith("go-env=") &&
+              row.includes('"GOVERSION":"go1.26-fixture"'),
+          ),
+      );
       const configuredScipGo = platformExecutable(
         root,
         "configured-scip-go",
@@ -383,6 +398,17 @@ function writeVersionedExecutable(file: string, version: string): void {
     process.platform === "win32"
       ? `@echo ${version}\r\n@exit /b 0\r\n`
       : `#!/bin/sh\nprintf '%s\\n' '${version}'\n`,
+  );
+  fs.chmodSync(file, 0o755);
+}
+
+function writeGoEnvironmentExecutable(file: string): void {
+  const body = '{"GOVERSION":"go1.26-fixture"}';
+  fs.writeFileSync(
+    file,
+    process.platform === "win32"
+      ? `@echo ${body}\r\n@exit /b 0\r\n`
+      : `#!/bin/sh\nprintf '%s\\n' '${body}'\n`,
   );
   fs.chmodSync(file, 0o755);
 }

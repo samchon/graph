@@ -381,6 +381,17 @@ async function assertFailuresRetainTheGeneration(): Promise<void> {
   const root = GraphPaths.createTempDirectory("samchon-graph-scip-failure-");
   fs.writeFileSync(path.join(root, "main.go"), "package main\n");
 
+  const goJson = sessionOf(root, {
+    goJson: true,
+    projectRootFromInvocation: true,
+  });
+  TestValidator.equals(
+    "an explicit snake_case project root survives invocation-root binding",
+    (await goJson.refresh()).snapshot.nodes.map((node) => node.name),
+    ["first"],
+  );
+  await goJson.close();
+
   // An indexer that exits non-zero.
   await rejects(
     sessionOf(root, { mode: "fail" }).refresh(),
@@ -414,6 +425,13 @@ async function assertFailuresRetainTheGeneration(): Promise<void> {
   await rejects(
     sessionOf(root, { decodeMode: "garbage" }).refresh(),
     "an undecodable answer rejects",
+  );
+  await rejects(
+    sessionOf(root, {
+      decodeMode: "invalid-metadata",
+      projectRootFromInvocation: true,
+    }).refresh(),
+    "invocation-root binding refuses a malformed metadata block",
   );
 
   // An index produced for another checkout describes another program.
@@ -700,6 +718,8 @@ interface IFixtureOptions {
   language?: "go" | "rust";
   languages?: ("go" | "rust")[];
   mutateInput?: string;
+  goJson?: boolean;
+  projectRootFromInvocation?: boolean;
   maxStdoutBytes?: number;
   maxArtifactBytes?: number;
   onIndexArgs?: () => void;
@@ -735,6 +755,7 @@ function sessionOf(root: string, options: IFixtureOptions = {}): ScipSession {
         ...(options.emptyRoot === true ? ["--empty-root"] : []),
         ...(options.bare === true ? ["--no-tool-info"] : []),
         ...(options.plainRoot === true ? ["--plain-root"] : []),
+        ...(options.goJson === true ? ["--go-json"] : []),
         ...(options.state === undefined ? [] : [`--state=${options.state}`]),
         ...(options.mutateInput === undefined
           ? []
@@ -747,6 +768,9 @@ function sessionOf(root: string, options: IFixtureOptions = {}): ScipSession {
         .readdirSync(root)
         .filter((entry) => entry.endsWith(".go") || entry === "go.mod"),
     languageOf: () => "go",
+    ...(options.projectRootFromInvocation === true
+      ? { projectRootFromInvocation: true }
+      : {}),
     ...(options.maxStdoutBytes === undefined
       ? {}
       : { maxStdoutBytes: options.maxStdoutBytes }),

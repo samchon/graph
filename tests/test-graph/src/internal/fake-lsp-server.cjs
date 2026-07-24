@@ -204,14 +204,22 @@ for (const arg of process.argv.slice(2)) {
       .map((value) => Number(value));
   }
 }
-if (stubbornDescendantPidFile !== undefined && process.platform !== "win32") {
+if (stubbornDescendantPidFile !== undefined) {
   const descendant = spawn(
     process.execPath,
     [
       "-e",
-      'process.on("SIGTERM", () => undefined); setInterval(() => undefined, 1_000);',
+      process.platform === "win32"
+        ? "setInterval(() => undefined, 1_000);"
+        : 'process.on("SIGTERM", () => undefined); setInterval(() => undefined, 1_000);',
     ],
-    { stdio: "ignore" },
+    {
+      // A POSIX detached child deliberately leaves its parent's process group,
+      // which would stop testing group ownership. Windows detachment creates a
+      // new process group but still inherits the private Job Object.
+      detached: process.platform === "win32",
+      stdio: "ignore",
+    },
   );
   fs.writeFileSync(stubbornDescendantPidFile, String(descendant.pid));
   descendant.unref();

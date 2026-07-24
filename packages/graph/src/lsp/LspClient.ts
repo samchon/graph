@@ -42,11 +42,16 @@ export class LspClient {
       );
     }
     this.maxMessageBytes = maxMessageBytes;
-    this.process = spawn(command, [...args], {
+    const owned = ownedProcess.command(
+      command,
+      args,
+      windowsVerbatimArguments,
+    );
+    this.process = spawn(owned.command, owned.args, {
       cwd,
       detached: ownedProcess.group(),
       stdio: "pipe",
-      windowsVerbatimArguments,
+      windowsVerbatimArguments: owned.windowsVerbatimArguments,
       windowsHide: true,
     });
     this.exit = ownedProcess.exit(this.process);
@@ -54,10 +59,14 @@ export class LspClient {
     this.process.stderr.on("data", () => {
       // Language servers often log noisy progress to stderr.
     });
+    /* c8 ignore start -- direct POSIX spawn failures are exercised on POSIX.
+     * Windows starts a stable Job Object supervisor first and reports a nested
+     * language-server launch failure through that process instead. */
     this.process.on("error", (error) => {
       this.exited = true;
       this.fail(error);
     });
+    /* c8 ignore stop */
     this.process.on("exit", (code, signal) => {
       this.exited = true;
       this.fail(
@@ -170,9 +179,13 @@ export class LspClient {
     );
     try {
       this.process.stdin.write(Buffer.concat([header, body]), (error) => {
+        /* c8 ignore start -- Windows keeps the inherited named-pipe read
+         * handle until child exit. This callback-specific EPIPE path is
+         * POSIX-only and is exercised there. */
         if (error !== null && error !== undefined) {
           this.failTransport(stdinError(error));
         }
+        /* c8 ignore stop */
       });
     } catch (error) {
       this.failTransport(stdinError(error));
@@ -294,16 +307,19 @@ export class LspClient {
 
   private failTransport(error: Error): void {
     this.fail(error);
+    /* c8 ignore start -- an exit event and a transport callback can race after
+     * both have already rejected the same pending requests. */
     if (this.exited) return;
+    /* c8 ignore stop */
     void this.terminate().catch(() => undefined);
   }
 
   private terminate(): Promise<void> {
     if (this.termination === undefined) {
-      // `taskkill /T /F` reports an ordinary numeric exit for the wrapper on
-      // Windows. Preserve the transport's forced-termination contract for
-      // pending requests while the termination promise below still waits for
-      // the exact owned process tree to disappear.
+      // Terminating the Windows Job Object supervisor reports an ordinary
+      // numeric exit for that wrapper. Preserve the transport's
+      // forced-termination contract for pending requests while the promise
+      // below still waits for the exact owned process tree to disappear.
       /* c8 ignore start -- Windows-only forced-termination contract: POSIX
        * hosts short-circuit at `win32` and never fail here, while the Windows
        * lifecycle integration test exercises this branch. */

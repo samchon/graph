@@ -217,12 +217,19 @@ function goConfiguration(
     command: "go",
     override: "SAMCHON_GRAPH_GO_TOOLCHAIN",
   });
-  const probed =
+  const probe =
     go === undefined
       ? undefined
+      : spawnableCommand.append(
+          { ...go, args: [...go.args] },
+          ["env", "-json", ...GO_PROBED_ENVIRONMENT_KEYS],
+        );
+  const probed =
+    probe === undefined
+      ? undefined
       : spawnSync(
-          go.command,
-          [...go.args, "env", "-json", ...GO_PROBED_ENVIRONMENT_KEYS],
+          probe.command,
+          probe.args,
           {
             cwd: root,
             env,
@@ -230,6 +237,8 @@ function goConfiguration(
             maxBuffer: 1024 * 1024,
             timeout: 10_000,
             windowsHide: true,
+            windowsVerbatimArguments:
+              probe.windowsVerbatimArguments,
           },
         );
   return [

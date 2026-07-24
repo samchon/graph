@@ -15,9 +15,9 @@
  * inferred from source punctuation. A `(` after a name is not evidence of a
  * call — it is evidence of a `(`.
  *
- * Field names follow protobuf's JSON mapping (lowerCamelCase), which is what
- * the `scip` CLI emits. Enums arrive as their names, not their numbers, except
- * {@link IOccurrence.symbolRoles}, which is a bitmask and stays numeric.
+ * The parser normalizes both protobuf JSON (lowerCamelCase with named enums)
+ * and the Go-struct JSON emitted by `scip print --json` (snake_case with
+ * numeric enums) into this one lowerCamelCase, named-enum representation.
  */
 export interface IScipIndex {
   metadata: IScipIndex.IMetadata;

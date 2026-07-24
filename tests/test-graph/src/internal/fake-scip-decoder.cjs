@@ -21,5 +21,9 @@ if (mode === "fail") {
 }
 
 process.stdout.write(
-  mode === "garbage" ? "{ not json" : fs.readFileSync(artifact, "utf8"),
+  mode === "garbage"
+    ? "{ not json"
+    : mode === "invalid-metadata"
+      ? '{"metadata":null,"documents":[]}'
+      : fs.readFileSync(artifact, "utf8"),
 );

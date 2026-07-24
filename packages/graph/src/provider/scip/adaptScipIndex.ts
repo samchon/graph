@@ -110,8 +110,7 @@ export function adaptScipIndex(
     // there. Spans are display evidence rather than identity, so this reports
     // rather than rejects; what it must not do is say nothing, because the
     // resulting column is wrong in exactly the cases nobody tests.
-    const encoding =
-      document.positionEncoding ?? props.index.metadata.textDocumentEncoding;
+    const encoding = document.positionEncoding;
     if (encoding !== undefined && encoding !== UTF16_POSITION_ENCODING) {
       warnings.push(
         `${props.provider}: ${file} reports ${encoding} positions, but graph columns are UTF-16 code units; columns on lines with non-ASCII characters may be off`,

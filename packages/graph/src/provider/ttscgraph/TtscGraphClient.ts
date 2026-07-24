@@ -216,11 +216,11 @@ export class TtscGraphClient implements IBulkGraphSession {
         return;
       }
       child.process.stdin.write(`${JSON.stringify({ id })}\n`, (error) => {
-        if (error === null || error === undefined) return;
-        if (this.pending.get(id) !== pending) return;
         /* c8 ignore start -- Windows keeps the inherited named-pipe read
          * handle until child exit. This callback-specific EPIPE path is
          * POSIX-only and is exercised there. */
+        if (error === null || error === undefined) return;
+        if (this.pending.get(id) !== pending) return;
         this.failChild(
           child,
           new Error(`ttscgraph: could not request snapshot: ${error.message}`),
@@ -250,9 +250,14 @@ export class TtscGraphClient implements IBulkGraphSession {
       },
       ["serve", "--cwd", this.root],
     );
-    const spawned = spawn(
+    const ownedCommand = ownedProcess.command(
       spawnable.command,
       spawnable.args,
+      spawnable.windowsVerbatimArguments,
+    );
+    const spawned = spawn(
+      ownedCommand.command,
+      ownedCommand.args,
       {
         cwd: this.root,
         env: process.env,
@@ -260,7 +265,7 @@ export class TtscGraphClient implements IBulkGraphSession {
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
         windowsVerbatimArguments:
-          spawnable.windowsVerbatimArguments,
+          ownedCommand.windowsVerbatimArguments,
         windowsHide: true,
       },
     );
@@ -280,12 +285,16 @@ export class TtscGraphClient implements IBulkGraphSession {
     spawned.stderr.on("data", (chunk: string) => {
       child.stderr = (child.stderr + chunk).slice(-64 * 1024);
     });
+    /* c8 ignore start -- direct POSIX spawn failures are exercised on POSIX.
+     * Windows starts a stable Job Object supervisor first and reports a nested
+     * command launch failure through that process instead. */
     spawned.on("error", (error) =>
       this.failChild(
         child,
         new Error(`ttscgraph: process failed: ${error.message}`),
       ),
     );
+    /* c8 ignore stop */
     /* c8 ignore start */
     spawned.stdin.on("error", (error) =>
       this.failChild(

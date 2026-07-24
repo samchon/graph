@@ -212,17 +212,18 @@ export class ScipSession implements IBulkGraphSession {
     if (
       typeof metadata !== "object" ||
       metadata === null ||
-      Array.isArray(metadata) ||
-      (metadata as Record<string, unknown>).projectRoot !== undefined
+      Array.isArray(metadata)
     ) {
+      return;
+    }
+    const record = metadata as Record<string, unknown>;
+    if (record.projectRoot !== undefined || record.project_root !== undefined) {
       return;
     }
     // Some stock indexers serialize protobuf defaults by omission. This is
     // allowed only for providers whose isolated invocation itself fixes the
     // root: an explicit producer value is still parsed and checked unchanged.
-    (metadata as Record<string, unknown>).projectRoot = pathToFileURL(
-      this.root,
-    ).href;
+    record.projectRoot = pathToFileURL(this.root).href;
   }
 }
 

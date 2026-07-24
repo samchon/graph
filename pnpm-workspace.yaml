@@ -23,3 +23,5 @@ catalogs:
 overrides:
   "@hono/node-server": 2.0.11
   fast-uri: 3.1.4
+  "giget@1.2.5>tar": 7.5.21
+  "minimatch@9.0.9>brace-expansion": 2.1.2

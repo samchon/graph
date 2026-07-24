@@ -13,6 +13,8 @@ export function spawnableCommand(
 ): spawnableCommand.IResult {
   if (
     process.platform !== "win32" ||
+    /* c8 ignore next -- the Windows-only suffix probe is short-circuited on
+     * POSIX coverage hosts. */
     !/\.(?:cmd|bat)$/i.test(executable)
   ) {
     return { command: executable, args: [...args] };
@@ -30,8 +32,8 @@ export function spawnableCommand(
     windowsVerbatimArguments: true,
     windowsDoubleEscapeArguments: doubleEscape,
   };
-  /* c8 ignore stop */
 }
+/* c8 ignore stop */
 
 export namespace spawnableCommand {
   export interface IResult {
@@ -87,8 +89,8 @@ export namespace spawnableCommand {
         `${shell.slice(0, -1)} ${appended}"`,
       ],
     };
-    /* c8 ignore stop */
   }
+  /* c8 ignore stop */
   /* c8 ignore start -- declaration merging emits an unreachable namespace
    * creation arm after the function object already exists. */
 }

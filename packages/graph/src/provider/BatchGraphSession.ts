@@ -216,12 +216,17 @@ export class BatchGraphSession implements IBulkGraphSession {
         abortedProcessError(this.options.provider, command.command),
       );
     }
-    const child = spawn(spawnable.command, spawnable.args, {
+    const ownedCommand = ownedProcess.command(
+      spawnable.command,
+      spawnable.args,
+      spawnable.windowsVerbatimArguments,
+    );
+    const child = spawn(ownedCommand.command, ownedCommand.args, {
       cwd: this.root,
       detached: ownedProcess.group(),
       windowsHide: true,
       windowsVerbatimArguments:
-        spawnable.windowsVerbatimArguments,
+        ownedCommand.windowsVerbatimArguments,
       stdio: ["ignore", "pipe", "pipe"],
     });
     const owned: ISpawned = { process: child, exit: ownedProcess.exit(child) };
@@ -263,7 +268,10 @@ export class BatchGraphSession implements IBulkGraphSession {
         this.children.delete(owned);
       };
       const complete = async (code: number | null, error?: Error): Promise<void> => {
+        /* c8 ignore start -- a direct spawn error and its following close event
+         * can both attempt to settle the same one-shot producer. */
         if (settled) return;
+        /* c8 ignore stop */
         settled = true;
         try {
           // A one-shot producer is still an owned process tree. Its group may
@@ -279,10 +287,14 @@ export class BatchGraphSession implements IBulkGraphSession {
         }
         /* c8 ignore stop */
         finish();
+        /* c8 ignore start -- direct POSIX spawn failures are exercised on
+         * POSIX. Windows starts a stable Job Object supervisor first and
+         * reports a nested command launch failure through its exit instead. */
         if (error !== undefined) {
           reject(error);
           return;
         }
+        /* c8 ignore stop */
         if (signal?.aborted === true) {
           reject(
             abortedProcessError(this.options.provider, command.command),
@@ -305,9 +317,12 @@ export class BatchGraphSession implements IBulkGraphSession {
           ),
         );
       };
+      /* c8 ignore start -- see the platform boundary on the direct spawn
+       * error branch above. */
       child.on("error", (error) => {
         void complete(null, error);
       });
+      /* c8 ignore stop */
       child.on("close", (code) => {
         void complete(code);
       });

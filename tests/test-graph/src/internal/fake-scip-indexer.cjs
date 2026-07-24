@@ -63,7 +63,11 @@ if (mode === "hang") {
   setInterval(() => {}, 1_000);
 } else {
   fs.mkdirSync(path.dirname(output), { recursive: true });
-  fs.writeFileSync(output, JSON.stringify(indexOf(generation)));
+  const index = indexOf(generation);
+  fs.writeFileSync(
+    output,
+    JSON.stringify(options.has("go-json") ? goStructJsonOf(index) : index),
+  );
   const mutate = options.get("mutate");
   if (mutate !== undefined) {
     fs.appendFileSync(path.join(options.get("root") ?? "/", mutate), "// moved\n");
@@ -127,5 +131,34 @@ function indexOf(generation) {
           ]
         : []),
     ],
+  };
+}
+
+/** The exact field and enum representation used by `scip print --json`. */
+function goStructJsonOf(index) {
+  return {
+    metadata: {
+      project_root: index.metadata.projectRoot,
+      ...(index.metadata.toolInfo === undefined
+        ? {}
+        : { tool_info: index.metadata.toolInfo }),
+    },
+    documents: index.documents.map((document) => ({
+      language: document.language,
+      relative_path: document.relativePath,
+      ...(document.text === undefined ? {} : { text: document.text }),
+      symbols: document.symbols.map((symbol) => ({
+        symbol: symbol.symbol,
+        display_name: symbol.displayName,
+        kind: symbol.kind === "Function" ? 17 : 0,
+      })),
+      occurrences: document.occurrences.map((occurrence) => ({
+        range: occurrence.range,
+        symbol: occurrence.symbol,
+        symbol_roles: occurrence.symbolRoles,
+        TypedRange: null,
+        TypedEnclosingRange: null,
+      })),
+    })),
   };
 }

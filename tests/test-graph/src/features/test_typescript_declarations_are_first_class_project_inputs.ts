@@ -33,7 +33,7 @@ export const test_typescript_declarations_are_first_class_project_inputs =
     const declaration = path.join(root, "index.d.ts");
     fs.writeFileSync(declaration, declarationSource("publicApi"));
 
-    const expected = ["Augmented", "Window", "publicApi"];
+    const expected = ["Augmented", "Color", "Window", "publicApi"];
     const automatic = buildStaticGraphResult({ cwd: root });
     const explicit = buildStaticGraphResult({
       cwd: root,
@@ -214,6 +214,7 @@ function declarationNodes(files: readonly string[]): ISamchonGraphNode[] {
   if (file === undefined) return [];
   return [
     declarationNode(file, "publicApi", "function"),
+    declarationNode(file, "Color", "enum"),
     declarationNode(file, "Window", "interface"),
     declarationNode(file, "Augmented", "interface"),
   ];
@@ -222,7 +223,7 @@ function declarationNodes(files: readonly string[]): ISamchonGraphNode[] {
 function declarationNode(
   file: string,
   name: string,
-  kind: "function" | "interface",
+  kind: "enum" | "function" | "interface",
 ): ISamchonGraphNode {
   return {
     id: `${file}#${name}:${kind}`,
@@ -238,6 +239,7 @@ function declarationNode(
 function declarationSource(api: string): string {
   return [
     `export declare function ${api}(input: string): string;`,
+    "export declare const enum Color { Red, Blue }",
     "declare global {",
     "  interface Window { graphReady: boolean; }",
     "}",
@@ -254,6 +256,8 @@ function namesOf(
   return nodes
     .filter((node) => node.language === undefined || node.language === "typescript")
     .map((node) => node.name)
-    .filter((name) => ["Augmented", "Window", "publicApi"].includes(name))
+    .filter((name) =>
+      ["Augmented", "Color", "Window", "publicApi"].includes(name),
+    )
     .sort();
 }

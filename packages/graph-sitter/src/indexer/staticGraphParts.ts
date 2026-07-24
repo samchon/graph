@@ -1151,7 +1151,9 @@ function parseDeclaration(
   }
   const declarationText =
     language === "typescript"
-      ? text.replace(/^(export\s+)?declare\s+/, "$1")
+      ? text
+          .replace(/^(export\s+)?declare\s+/, "$1")
+          .replace(/^(export\s+)?const\s+enum\s+/, "$1enum ")
       : text;
   const generic = /^(?:export\s+)?(?:(?:public|private|protected|internal|static|abstract|final|open|override|async|pub|pub\(crate\))\s+)*(class|interface|struct|enum|trait|type|namespace|module|object|protocol|extension|func|fn|function|def|fun|method|const|let|var)\s+([A-Za-z_$][\w$]*)/.exec(
     declarationText,

@@ -50,6 +50,8 @@ async function assertTheRegistryEntryItBuilds(): Promise<void> {
     }),
     indexArgs: (artifact) => [`--output=${artifact}`, `--root=${root}`],
     inputs: () => ["main.go"],
+    configuration: () => ["GOOS=fixture"],
+    compilerVersion: () => "rustc fixture; cargo fixture",
     languageOf: () => "go",
   });
 
@@ -108,10 +110,34 @@ async function assertTheRegistryEntryItBuilds(): Promise<void> {
   );
   TestValidator.equals(
     "the snapshot is attributed to the registered entry",
-    refresh.snapshot.provenance.provider,
-    "scip-fake",
+    [
+      refresh.snapshot.provenance.provider,
+      refresh.snapshot.provenance.compilerVersion,
+    ],
+    ["scip-fake", "rustc fixture; cargo fixture"],
   );
   await session.close();
+
+  const unconfigured = scipProvider({
+    name: "scip-unconfigured",
+    languages: ["go"],
+    resolve: provider.resolve,
+    decode: () => ({
+      command: process.execPath,
+      args: [GraphPaths.fakeScipDecoder],
+    }),
+    indexArgs: (artifact) => [`--output=${artifact}`, `--root=${root}`],
+    inputs: () => ["main.go"],
+    languageOf: () => "go",
+  });
+  const unconfiguredSession = unconfigured.open({
+    root,
+    command: unconfigured.resolve(root, process.env)!,
+    languages: ["go"],
+    options: {},
+  });
+  await unconfiguredSession.refresh();
+  await unconfiguredSession.close();
 
   // An entry whose project needs preparing declines with the reason rather
   // than failing the build.
@@ -250,6 +276,29 @@ async function assertGenerations(): Promise<void> {
   );
   await emptyTextual.close();
 
+  const partialRoot = GraphPaths.createTempDirectory(
+    "samchon-graph-scip-partial-text-",
+  );
+  fs.writeFileSync(path.join(partialRoot, "main.go"), "package main\n");
+  fs.writeFileSync(path.join(partialRoot, "other.go"), "package main\n");
+  const partialTextual = sessionOf(partialRoot, {
+    withText: true,
+    partialText: true,
+  });
+  const partial = await partialTextual.refresh();
+  TestValidator.equals(
+    "partial document text licenses no row as producer-byte evidence",
+    [
+      ...partial.snapshot.sources.values(),
+    ].map((source) => source.checkerDigest),
+    ["", ""],
+  );
+  TestValidator.predicate(
+    "partial document text omits the whole-snapshot source capability",
+    !partial.snapshot.provenance.capabilities.includes("sourceDigests"),
+  );
+  await partialTextual.close();
+
   // A provider may retain and reuse its input list. The session needs a sorted
   // view for a stable fingerprint, but sorting that returned array changes the
   // provider's own declaration of its build inputs behind its back.
@@ -332,11 +381,34 @@ async function assertFailuresRetainTheGeneration(): Promise<void> {
   const root = GraphPaths.createTempDirectory("samchon-graph-scip-failure-");
   fs.writeFileSync(path.join(root, "main.go"), "package main\n");
 
+  const goJson = sessionOf(root, {
+    goJson: true,
+    projectRootFromInvocation: true,
+  });
+  TestValidator.equals(
+    "an explicit snake_case project root survives invocation-root binding",
+    (await goJson.refresh()).snapshot.nodes.map((node) => node.name),
+    ["first"],
+  );
+  await goJson.close();
+
   // An indexer that exits non-zero.
   await rejects(
     sessionOf(root, { mode: "fail" }).refresh(),
     "a non-zero indexer exit rejects",
   );
+  const silentFailure = sessionOf(root, { mode: "silent-fail" });
+  let silentFailureMessage = "";
+  try {
+    await silentFailure.refresh();
+  } catch (error) {
+    silentFailureMessage = (error as Error).message;
+  }
+  TestValidator.predicate(
+    "a silent non-zero exit has no invented stderr suffix",
+    silentFailureMessage.endsWith("exited with code 3"),
+  );
+  await silentFailure.close();
 
   // An indexer that exits cleanly having written nothing. Decoding whatever
   // happened to be at that path would publish another run's facts.
@@ -354,12 +426,25 @@ async function assertFailuresRetainTheGeneration(): Promise<void> {
     sessionOf(root, { decodeMode: "garbage" }).refresh(),
     "an undecodable answer rejects",
   );
+  await rejects(
+    sessionOf(root, {
+      decodeMode: "invalid-metadata",
+      projectRootFromInvocation: true,
+    }).refresh(),
+    "invocation-root binding refuses a malformed metadata block",
+  );
 
   // An index produced for another checkout describes another program.
   await rejects(
     sessionOf(root, { indexRoot: "/somewhere/else" }).refresh(),
     "an index built for another project rejects",
   );
+  const emptyRoot = sessionOf(root, { emptyRoot: true });
+  await rejects(
+    emptyRoot.refresh(),
+    "an index with an explicit empty project root rejects",
+  );
+  await emptyRoot.close();
 
   // A document in a language this session does not own.
   const foreign = sessionOf(root, { language: "rust" });
@@ -420,6 +505,12 @@ async function assertCloseOwnsItsChildren(): Promise<void> {
   TestValidator.error("a fractional output bound is refused", () =>
     sessionOf(root, { maxStdoutBytes: 1.5 }),
   );
+  TestValidator.error("a zero artifact bound is refused", () =>
+    sessionOf(root, { maxArtifactBytes: 0 }),
+  );
+  TestValidator.error("a fractional artifact bound is refused", () =>
+    sessionOf(root, { maxArtifactBytes: 1.5 }),
+  );
 
   // An executable that is not there fails to spawn rather than exiting.
   const missing = new ScipSession({
@@ -447,6 +538,18 @@ async function assertCloseOwnsItsChildren(): Promise<void> {
     [0, undefined],
   );
   await bounded.close();
+
+  const artifactBounded = sessionOf(root, { maxArtifactBytes: 1 });
+  await rejects(
+    artifactBounded.refresh(),
+    "a SCIP artifact larger than the configured bound is refused before decoding",
+  );
+  TestValidator.equals(
+    "an oversized artifact publishes no generation",
+    [artifactBounded.generation, artifactBounded.current],
+    [0, undefined],
+  );
+  await artifactBounded.close();
 
   // A signal can already be cancelled before a refresh reaches the session.
   // Starting a child in that state is wrong on its own, and a hanging indexer
@@ -607,13 +710,18 @@ interface IFixtureOptions {
   decodeMode?: string;
   indexRoot?: string;
   withText?: boolean;
+  partialText?: boolean;
+  emptyRoot?: boolean;
   inputs?: string[];
   bare?: boolean;
   plainRoot?: boolean;
   language?: "go" | "rust";
   languages?: ("go" | "rust")[];
   mutateInput?: string;
+  goJson?: boolean;
+  projectRootFromInvocation?: boolean;
   maxStdoutBytes?: number;
+  maxArtifactBytes?: number;
   onIndexArgs?: () => void;
 }
 
@@ -643,8 +751,11 @@ function sessionOf(root: string, options: IFixtureOptions = {}): ScipSession {
         `--root=${options.indexRoot ?? root}`,
         ...(options.mode === undefined ? [] : [`--mode=${options.mode}`]),
         ...(options.withText === true ? ["--with-text"] : []),
+        ...(options.partialText === true ? ["--partial-text"] : []),
+        ...(options.emptyRoot === true ? ["--empty-root"] : []),
         ...(options.bare === true ? ["--no-tool-info"] : []),
         ...(options.plainRoot === true ? ["--plain-root"] : []),
+        ...(options.goJson === true ? ["--go-json"] : []),
         ...(options.state === undefined ? [] : [`--state=${options.state}`]),
         ...(options.mutateInput === undefined
           ? []
@@ -657,9 +768,15 @@ function sessionOf(root: string, options: IFixtureOptions = {}): ScipSession {
         .readdirSync(root)
         .filter((entry) => entry.endsWith(".go") || entry === "go.mod"),
     languageOf: () => "go",
+    ...(options.projectRootFromInvocation === true
+      ? { projectRootFromInvocation: true }
+      : {}),
     ...(options.maxStdoutBytes === undefined
       ? {}
       : { maxStdoutBytes: options.maxStdoutBytes }),
+    ...(options.maxArtifactBytes === undefined
+      ? {}
+      : { maxArtifactBytes: options.maxArtifactBytes }),
   });
 }
 

@@ -75,13 +75,13 @@ export const test_viewer_reduce_preserves_the_reference_contract = () => {
     ],
   }, { keepExternal: true });
   TestValidator.equals(
-    "a disjoint absolute set falls back to portable basenames",
+    "a disjoint absolute set preserves non-colliding identities",
     splitRoots.nodes.map((entry) => entry.file),
     [
-      "a.ts",
-      "b.ts",
+      "C:/one/a.ts",
+      "D:/two/b.ts",
       "node_modules/pkg/x.d.ts",
-      "y.ts",
+      "E:/outside/y.ts",
     ],
   );
   TestValidator.predicate(
@@ -107,8 +107,10 @@ export const test_viewer_reduce_preserves_the_reference_contract = () => {
     outsideRoot.nodes.some((entry) => entry.file === "node_modules/pkg/x.d.ts"),
   );
   TestValidator.predicate(
-    "other outside-root paths fall back to a basename",
-    outsideRoot.nodes.some((entry) => entry.file === "y.ts"),
+    "other outside-root paths preserve their complete identity",
+    outsideRoot.nodes.some(
+      (entry) => entry.file === "C:/vendor/generated/y.ts",
+    ),
   );
 
   const slashlessOutside = reduce({
@@ -183,17 +185,24 @@ export const test_viewer_reduce_preserves_the_reference_contract = () => {
 
   const mixedPathForms = mixedPathReduction(false);
   TestValidator.equals(
-    "a relative-first current dump preserves its project path and sanitizes its absolute sibling",
+    "a relative-first current dump preserves every schema coordinate",
     pathCoordinates(mixedPathForms),
+    [
+      ["Local", "src/local.ts", "src/local.ts"],
+      [
+        "Sibling",
+        "/workspace-sibling/sibling.ts",
+        "/workspace-sibling/sibling.ts",
+      ],
+    ],
+  );
+  TestValidator.equals(
+    "an absolute-first legacy projection reroots only its absolute identities",
+    pathCoordinates(mixedPathReduction(true)),
     [
       ["Local", "src/local.ts", "src/local.ts"],
       ["Sibling", "sibling.ts", "sibling.ts"],
     ],
-  );
-  TestValidator.equals(
-    "mixed current path reduction is independent of node order",
-    pathCoordinates(mixedPathReduction(true)),
-    pathCoordinates(mixedPathForms),
   );
 
   const unc = reduce({
@@ -232,6 +241,59 @@ export const test_viewer_reduce_preserves_the_reference_contract = () => {
     edges: [{ from: "plain-a", to: "plain-b", kind: "type_ref" }],
   });
   TestValidator.equals("hashless ids pass through", hashless.nodes.map((entry) => entry.id), ["plain-a", "plain-b"]);
+
+  const escaped = reduce({
+    nodes: [
+      node("C:/work/hash#dir/a.ts", "A#part", "class"),
+      node("C:/work/hash#dir/b.ts", "B", "class"),
+    ],
+    edges: [
+      edge(
+        "C:/work/hash#dir/a.ts",
+        "A#part",
+        "class",
+        "C:/work/hash#dir/b.ts",
+        "B",
+        "class",
+        "calls",
+      ),
+    ],
+  });
+  TestValidator.equals(
+    "escaped node-id components are decoded, rerooted, and re-encoded",
+    escaped.nodes.map((entry) => entry.id),
+    ["a.ts#A\\#part:class", "b.ts#B:class"],
+  );
+
+  const ignored = reduce({
+    nodes: [
+      node("src/a.ts", "A", "class"),
+      node("src/b.ts", "B", "class"),
+      node("generated/client.ts", "Client", "class", false, true),
+    ],
+    edges: [
+      edge("src/a.ts", "A", "class", "src/b.ts", "B", "class", "calls"),
+      edge(
+        "src/a.ts",
+        "A",
+        "class",
+        "generated/client.ts",
+        "Client",
+        "class",
+        "calls",
+      ),
+    ],
+  });
+  TestValidator.equals(
+    "ignored generated code is dropped before degree capping",
+    ignored.nodes.map((entry) => entry.name),
+    ["A", "B"],
+  );
+  TestValidator.equals(
+    "ignored drops are reported independently",
+    ignored.counts.droppedIgnored,
+    1,
+  );
 
   const orphan = reduce({ nodes: [node("single.ts", "Only", "class")], edges: [] });
   TestValidator.equals("orphans are pruned", orphan.counts.nodes, 0);
@@ -285,13 +347,23 @@ const pathCoordinates = (
     )
     .sort(([left], [right]) => left.localeCompare(right));
 
-const id = (file: string, name: string, kind: string) => `${file}#${name}:${kind}`;
-const node = (file: string, name: string, kind: string, external = false) => ({
+const escapeIdPart = (value: string): string =>
+  value.replaceAll("\\", "\\\\").replaceAll("#", "\\#");
+const id = (file: string, name: string, kind: string) =>
+  `${escapeIdPart(file)}#${escapeIdPart(name)}:${kind}`;
+const node = (
+  file: string,
+  name: string,
+  kind: string,
+  external = false,
+  ignored = false,
+) => ({
   id: id(file, name, kind),
   name,
   kind,
   file,
   ...(external ? { external: true } : {}),
+  ...(ignored ? { ignored: true } : {}),
 });
 const edge = (
   fromFile: string,

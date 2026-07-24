@@ -1,0 +1,351 @@
+import { TestValidator } from "@nestia/e2e";
+import { parseGraphDump, semanticGraphNodeId } from "@samchon/graph";
+import path from "node:path";
+
+const valid = () => ({
+  project: path.resolve("fixture"),
+  languages: ["go"] as const,
+  indexer: "lsp" as const,
+  nodes: [
+    {
+      id: semanticGraphNodeId(
+        {
+          version: 2,
+          language: "go",
+          symbol: "example.Run",
+          role: "function",
+          scope: { document: "src/run.go" },
+          stability: "persistent",
+        },
+        "example.Run",
+      ),
+      kind: "function" as const,
+      language: "go" as const,
+      name: "Run",
+      qualifiedName: "example.Run",
+      file: "src/run.go",
+      external: false,
+      evidence: { startLine: 1, startCol: 1, endLine: 2, endCol: 2 },
+    },
+    {
+      id: "src/other.go#Other:function",
+      kind: "function" as const,
+      language: "go" as const,
+      name: "Other",
+      file: "src/other.go",
+      external: false,
+    },
+  ],
+  edges: [] as Array<{
+    from: string;
+    to: string;
+    kind: "calls";
+  }>,
+});
+
+export const test_graph_dump_parser_closes_every_public_trust_boundary =
+  async () => {
+    const dump = valid();
+    dump.edges.push({
+      from: dump.nodes[0]!.id,
+      to: dump.nodes[1]!.id,
+      kind: "calls",
+    });
+    TestValidator.equals(
+      "a structurally and semantically closed dump parses",
+      parseGraphDump(dump).nodes.length,
+      2,
+    );
+    const portable = withEdge();
+    portable.diagnostics = [
+      {
+        file: "bundled:///go/builtin",
+        line: 1,
+        column: 1,
+        code: "fixture",
+        message: "portable",
+      },
+    ];
+    portable.edges[0]!.to = "../shared/contract.go";
+    TestValidator.equals(
+      "canonical bundled paths and sibling file endpoints remain portable",
+      parseGraphDump(portable).diagnostics?.[0]?.file,
+      "bundled:///go/builtin",
+    );
+    const external = withEdge();
+    Object.assign(record(external.nodes[1]!), {
+      id: "stdlib.external",
+      kind: "external_symbol",
+      file: "",
+      external: true,
+    });
+    external.edges[0]!.to = "stdlib.external";
+    TestValidator.equals(
+      "fileless external symbols are the one empty-file identity",
+      parseGraphDump(external).nodes[1]?.file,
+      "",
+    );
+    const provenance = withEdge();
+    provenance.provenance = [validProvenance()];
+    TestValidator.equals(
+      "coherent provider provenance parses",
+      parseGraphDump(provenance).provenance?.[0]?.provider,
+      "scip-go",
+    );
+
+    await rejected("duplicate node identities", (candidate) => {
+      candidate.nodes.push({ ...candidate.nodes[1]! });
+    });
+    await rejected("relative project roots", (candidate) => {
+      candidate.project = "fixture";
+    });
+    await rejected("duplicate dump languages", (candidate) => {
+      record(candidate).languages = ["go", "go"];
+    });
+    await rejected("fileless ordinary nodes", (candidate) => {
+      record(candidate.nodes[1]!).file = "";
+    });
+    await rejected("node languages absent from the dump", (candidate) => {
+      record(candidate.nodes[1]!).language = "rust";
+    });
+    await rejected("legacy identities whose file moved", (candidate) => {
+      record(candidate.nodes[1]!).id = "src/moved.go#Other:function";
+    });
+    await rejected("dangling edge endpoints", (candidate) => {
+      candidate.edges[0]!.to = "src/missing.go#Missing:function";
+    });
+    await rejected("duplicate edges", (candidate) => {
+      candidate.edges.push({ ...candidate.edges[0]! });
+    });
+    await rejected("raw absolute graph paths", (candidate) => {
+      record(candidate.nodes[1]!).file = "C:/machine/other.go";
+    });
+    await rejected("terminal parent graph paths", (candidate) => {
+      record(candidate.nodes[1]!).file = "../..";
+    });
+    await rejected("non-canonical bundled graph paths", (candidate) => {
+      record(candidate.nodes[1]!).file = "bundled:///go/../builtin";
+    });
+    await rejected("backslashed bundled graph paths", (candidate) => {
+      record(candidate.nodes[1]!).file = "bundled:///go\\..\\escape";
+    });
+    await rejected("invalid source ranges", (candidate) => {
+      candidate.nodes[0]!.evidence!.endLine = 0;
+    });
+    await rejected("fractional source coordinates", (candidate) => {
+      candidate.nodes[0]!.evidence!.startLine = 1.5;
+    });
+    await rejected("reversed same-line source columns", (candidate) => {
+      Object.assign(candidate.nodes[0]!.evidence!, {
+        startLine: 2,
+        startCol: 4,
+        endLine: 2,
+        endCol: 3,
+      });
+    });
+    await rejected("empty explicit span files", (candidate) => {
+      Object.assign(record(candidate.nodes[1]!), {
+        id: "stdlib.external",
+        kind: "external_symbol",
+        file: "",
+        external: true,
+        evidence: { startLine: 1 },
+      });
+    });
+    await rejected("end columns without end lines", (candidate) => {
+      record(candidate.nodes[0]!).implementation = {
+        file: "src/run.go",
+        startLine: 1,
+        endCol: 1,
+      };
+    });
+    await rejected("non-positive diagnostic lines", (candidate) => {
+      candidate.diagnostics = [
+        {
+          file: "src/run.go",
+          line: 0,
+          code: "fixture",
+          message: "invalid",
+        },
+      ];
+    });
+    const global = valid();
+    global.diagnostics = [
+      {
+        file: "",
+        line: 0,
+        column: 0,
+        code: "fixture",
+        message: "global",
+      },
+    ];
+    TestValidator.equals(
+      "a global diagnostic uses the producer's canonical zero coordinates",
+      parseGraphDump(global).diagnostics,
+      global.diagnostics,
+    );
+    await rejected("nonzero global diagnostic coordinates", (candidate) => {
+      candidate.diagnostics = [
+        {
+          file: "",
+          line: 1,
+          column: 0,
+          code: "fixture",
+          message: "invalid",
+        },
+      ];
+    });
+    await rejected("global diagnostics without their zero column", (candidate) => {
+      candidate.diagnostics = [
+        {
+          file: "",
+          line: 0,
+          code: "fixture",
+          message: "invalid",
+        },
+      ];
+    });
+    await rejected("non-positive diagnostic columns", (candidate) => {
+      candidate.diagnostics = [
+        {
+          file: "src/run.go",
+          line: 1,
+          column: 0,
+          code: "fixture",
+          message: "invalid",
+        },
+      ];
+    });
+    await rejected("fractional diagnostic coordinates", (candidate) => {
+      candidate.diagnostics = [
+        {
+          file: "src/run.go",
+          line: 1.5,
+          column: 1,
+          code: "fixture",
+          message: "invalid",
+        },
+      ];
+    });
+    await rejected("empty provenance provider names", (candidate) => {
+      candidate.provenance = [{ ...validProvenance(), provider: "" }];
+    });
+    await rejected("invalid provenance producer revisions", (candidate) => {
+      candidate.provenance = [
+        {
+          ...validProvenance(),
+          producer: {
+            ...validProvenance().producer,
+            schemaVersion: 1.5,
+          },
+        },
+      ];
+    });
+    await rejected("duplicate provenance provider names", (candidate) => {
+      candidate.provenance = [validProvenance(), validProvenance()];
+    });
+    await rejected("duplicate provenance languages", (candidate) => {
+      candidate.provenance = [
+        { ...validProvenance(), languages: ["go", "go"] },
+      ];
+    });
+    await rejected("duplicate provenance facts", (candidate) => {
+      candidate.provenance = [
+        { ...validProvenance(), facts: ["calls", "calls"] },
+      ];
+    });
+    await rejected("duplicate provenance capabilities", (candidate) => {
+      candidate.provenance = [
+        {
+          ...validProvenance(),
+          capabilities: ["universe", "sourceDigests", "sourceDigests"],
+        },
+      ];
+    });
+    await rejected("empty provenance language ownership", (candidate) => {
+      candidate.provenance = [
+        { ...validProvenance(), languages: [] },
+      ];
+    });
+    await rejected("provenance without a universe capability", (candidate) => {
+      candidate.provenance = [
+        { ...validProvenance(), capabilities: ["sourceDigests"] },
+      ];
+    });
+    await rejected("provenance languages absent from the dump", (candidate) => {
+      candidate.provenance = [
+        { ...validProvenance(), languages: ["rust"] },
+      ];
+    });
+    for (const label of ["universe", "manifest", "content"] as const) {
+      await rejected(`malformed provenance ${label} digests`, (candidate) => {
+        candidate.provenance = [{ ...validProvenance(), [label]: "bad" }];
+      });
+    }
+    await rejected("semantic display suffix mismatches", (candidate) => {
+      candidate.nodes[0]!.qualifiedName = "example.NotRun";
+    });
+    await rejected("non-canonical semantic display escapes", (candidate) => {
+      candidate.nodes[0]!.id = candidate.nodes[0]!.id.replace(
+        "example.Run",
+        "example%2eRun",
+      );
+    });
+  };
+
+type Candidate = ReturnType<typeof valid> & {
+  diagnostics?: Array<{
+    file: string;
+    line: number;
+    column?: number;
+    code: number | string;
+    message: string;
+  }>;
+  provenance?: Array<ReturnType<typeof validProvenance>>;
+};
+
+const rejected = async (
+  label: string,
+  mutate: (candidate: Candidate) => void,
+): Promise<void> => {
+  const candidate = withEdge();
+  mutate(candidate);
+  await TestValidator.error(`${label} fail closed`, () =>
+    parseGraphDump(candidate),
+  );
+};
+
+function withEdge(): Candidate {
+  const candidate = valid();
+  candidate.edges.push({
+    from: candidate.nodes[0]!.id,
+    to: candidate.nodes[1]!.id,
+    kind: "calls",
+  });
+  return candidate as Candidate;
+}
+
+function record(value: object): Record<string, unknown> {
+  return value as Record<string, unknown>;
+}
+
+function validProvenance() {
+  const digest = "a".repeat(64);
+  return {
+    provider: "scip-go",
+    languages: ["go"] as ("go" | "rust")[],
+    authority: "semantic-index" as const,
+    facts: ["calls"] as ("calls" | "contains")[],
+    capabilities: ["universe", "sourceDigests"],
+    producer: {
+      tool: "scip-go",
+      version: "1.0.0",
+      compiler: "go1.26",
+      schemaVersion: 1,
+      protocolVersion: 1,
+    },
+    universe: digest,
+    manifest: digest,
+    content: digest,
+  };
+}

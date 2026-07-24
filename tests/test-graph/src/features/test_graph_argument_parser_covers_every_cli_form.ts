@@ -1,5 +1,7 @@
 import { TestValidator } from "@nestia/e2e";
 
+import { runView } from "@samchon/graph";
+
 import { parseGraphArgs } from "../../../../packages/graph/src/parseGraphArgs";
 
 export const test_graph_argument_parser_covers_every_cli_form = async () => {
@@ -52,8 +54,26 @@ export const test_graph_argument_parser_covers_every_cli_form = async () => {
   await TestValidator.error("unknown options fail", () => parseGraphArgs(["--wat"]));
   await TestValidator.error("invalid modes fail", () => parseGraphArgs(["--mode=fast"]));
   await TestValidator.error("invalid languages fail", () => parseGraphArgs(["--language=nope"]));
+  await TestValidator.error("unknown is not an explicit language", () =>
+    parseGraphArgs(["--language=unknown"]),
+  );
   await TestValidator.error("zero integers fail", () => parseGraphArgs(["--lsp-concurrency=0"]));
+  await TestValidator.error("fractional integers fail", () =>
+    parseGraphArgs(["--lsp-concurrency=1.5"]),
+  );
   await TestValidator.error("non-numeric integers fail", () =>
     parseGraphArgs(["--lsp-ready-quiet-ms=nope"]),
+  );
+  await TestValidator.error("missing viewer values fail", () =>
+    runView(["--port"]),
+  );
+  await TestValidator.error("fractional viewer ports fail", () =>
+    runView(["--port=1.5"]),
+  );
+  await TestValidator.error("out-of-range viewer ports fail", () =>
+    runView(["--port=65536"]),
+  );
+  await TestValidator.error("non-positive viewer caps fail", () =>
+    runView(["--max-nodes=0"]),
   );
 };

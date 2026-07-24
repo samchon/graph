@@ -11,6 +11,7 @@ import {
   isSemanticGraphNodeId,
   legacyGraphNodeIds,
   semanticGraphNodeId,
+  validateSemanticGraphNode,
 } from "@samchon/graph";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -51,7 +52,14 @@ const gnode = (over: Partial<ISamchonGraphNode>): ISamchonGraphNode =>
 export const test_semantic_identity_edge_cases_stay_covered = async () => {
   // fileOfNodeId: a bare file id (no `#`) and a symbol id.
   const { fileOfNodeId } = await importLib<{
-    fileOfNodeId: (id: string) => string;
+    fileOfNodeId: ((id: string) => string) & {
+      parseLegacy(id: string): {
+        file: string;
+        name: string;
+        kind?: string;
+      } | undefined;
+      unescape(value: string): string;
+    };
   }>("utils/fileOfNodeId.js");
   const { mergeSemanticNodes } = await importLib<{
     mergeSemanticNodes: (nodes: readonly ISamchonGraphNode[]) => ISamchonGraphNode[];
@@ -75,6 +83,58 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
     "a symbol id keeps its file prefix",
     fileOfNodeId("src/a.go#Foo:class"),
     "src/a.go",
+  );
+  TestValidator.equals(
+    "an empty legacy tail is not a node identity",
+    fileOfNodeId.parseLegacy("src/a.go#"),
+    undefined,
+  );
+  TestValidator.equals(
+    "a legacy kind without a name is not an identity",
+    fileOfNodeId.parseLegacy("src/a.go#:function"),
+    undefined,
+  );
+  TestValidator.equals(
+    "a legacy name without a kind remains decodable",
+    fileOfNodeId.parseLegacy("src/a.go#run"),
+    { file: "src/a.go", name: "run" },
+  );
+  TestValidator.equals(
+    "three leading legacy slashes are not collapsed as a UNC prefix",
+    fileOfNodeId.unescape("\\\\\\server"),
+    "\\\\server",
+  );
+  TestValidator.equals(
+    "a hash after a legacy slash pair is not mistaken for a UNC host",
+    fileOfNodeId.unescape("\\\\#server"),
+    "\\#server",
+  );
+  TestValidator.error("malformed semantic display escapes fail closed", () =>
+    validateSemanticGraphNode({
+      id: `@v2/go/${"a".repeat(64)}#%ZZ:function`,
+      language: "go",
+      kind: "function",
+      name: "run",
+    }),
+  );
+
+  const duplicateId = semanticGraphNodeId(
+    identity({ symbol: "demo.run" }),
+    "demo.run",
+  );
+  const duplicate = gnode({
+    id: duplicateId,
+    name: "run",
+    qualifiedName: "demo.run",
+  });
+  TestValidator.error("duplicate semantic ids are rejected in memory", () =>
+    SamchonGraphMemory.from({
+      project: path.resolve("semantic-duplicate"),
+      languages: ["go"],
+      indexer: "lsp",
+      nodes: [duplicate, { ...duplicate }],
+      edges: [],
+    }),
   );
 
   // validateIdentity: a positional native without a structural overload, and a
@@ -258,6 +318,7 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
       "demo.Existing",
     ),
     name: "Existing",
+    qualifiedName: "demo.Existing",
     kind: "class",
   });
   assignSemanticIdentities([alreadySemantic]);
@@ -343,8 +404,8 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
   );
 
   // mergeGraphSlices: a strict slice normalizes and orders its nodes and edges.
-  const strictA = gnode({ id: semanticGraphNodeId(identity({ symbol: "demo.A", role: "class", native: { key: "a", stability: "semantic" }, overload: "" }), "demo.A"), name: "A", kind: "class", file: "src/a.go" });
-  const strictB = gnode({ id: semanticGraphNodeId(identity({ symbol: "demo.B", role: "class", native: { key: "b", stability: "semantic" }, overload: "" }), "demo.B"), name: "B", kind: "class", file: "src/b.go" });
+  const strictA = gnode({ id: semanticGraphNodeId(identity({ symbol: "demo.A", role: "class", native: { key: "a", stability: "semantic" }, overload: "" }), "demo.A"), name: "A", qualifiedName: "demo.A", kind: "class", file: "src/a.go" });
+  const strictB = gnode({ id: semanticGraphNodeId(identity({ symbol: "demo.B", role: "class", native: { key: "b", stability: "semantic" }, overload: "" }), "demo.B"), name: "B", qualifiedName: "demo.B", kind: "class", file: "src/b.go" });
   const strictEdges: ISamchonGraphEdge[] = [
     { kind: "references", from: strictB.id, to: strictA.id, evidence: { file: "src/b.go", startLine: 2 } },
     { kind: "references", from: strictA.id, to: strictB.id, evidence: { file: "src/a.go", startLine: 4 } },
@@ -450,8 +511,8 @@ export const test_semantic_identity_edge_cases_stay_covered = async () => {
     languages: ["go"],
     indexer: "static",
     nodes: [
-      gnode({ id: "src/a.go#Box:class", name: "Box", kind: "class", qualifiedName: "Box", evidence: { file: "src/a.go", startLine: 1, endLine: 4 } }),
-      gnode({ id: semanticProperty, name: "value", kind: "variable", qualifiedName: "Box.value", evidence: { file: "src/a.go", startLine: 2 } }),
+      gnode({ id: "src/a.go#Box:class", name: "Box", kind: "class", qualifiedName: "demo.Box", evidence: { file: "src/a.go", startLine: 1, endLine: 4 } }),
+      gnode({ id: semanticProperty, name: "value", kind: "variable", qualifiedName: "demo.Box.value", evidence: { file: "src/a.go", startLine: 2 } }),
     ],
     edges: [],
   } as unknown as ISamchonGraphDump);

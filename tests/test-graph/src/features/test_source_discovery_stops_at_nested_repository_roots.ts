@@ -40,7 +40,9 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     // The checkout's own source, and its own `.git` — a root is never excluded.
     fs.mkdirSync(path.join(root, ".git"), { recursive: true });
     write(root, "src/a.ts", "export const a = 1;");
+    write(root, "src/ambient.d.ts", "declare const ambient: unique symbol;");
     write(root, "src/z.ts", "export const z = 1;");
+    write(root, "lib/index.d.ts", "export declare const publicApi: string;");
 
     // A linked agent worktree: `.claude/worktrees/wt` carries a `.git` *file*.
     // It sorts ahead of `src`, so an uncut walk would fill a cap from here.
@@ -63,12 +65,13 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     TestValidator.equals(
       "a nested worktree and a vendored clone are excluded from discovery",
       bases(discovered),
-      ["a.ts", "z.ts"],
+      ["a.ts", "ambient.d.ts", "index.d.ts", "z.ts"],
     );
 
     // Capped walk: the cap is spent on real source, not on the worktree file
-    // that sorts ahead of it. `.claude` < `embedded` < `src`, so without the
-    // boundary the single slot would be `nested.ts`.
+    // that sorts ahead of it. The authored declaration under `lib` is the
+    // first legitimate file; without the repository boundary it would still
+    // lose the single slot to `nested.ts`.
     const capped = walkSourceFiles(root, {
       extensions: new Set([".ts"]),
       maxFiles: 1,
@@ -76,7 +79,7 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     TestValidator.equals(
       "a capped walk fills its slots from the requested checkout",
       bases(capped),
-      ["a.ts"],
+      ["index.d.ts"],
     );
 
     // Opt-in: an intentionally vendored repository is indexed on request, and a
@@ -88,7 +91,296 @@ export const test_source_discovery_stops_at_nested_repository_roots =
     TestValidator.equals(
       "an explicit opt-in indexes nested repositories",
       bases(withNested),
-      ["a.ts", "nested.ts", "vendored.ts", "z.ts"],
+      [
+        "a.ts",
+        "ambient.d.ts",
+        "index.d.ts",
+        "nested.ts",
+        "vendored.ts",
+        "z.ts",
+      ],
+    );
+
+    const compilerRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-compiler-output-",
+    );
+    write(
+      compilerRoot,
+      "tsconfig.json",
+      '{\n  // JSONC is the native TypeScript config format.\n  "compilerOptions": {\n    "outDir": "lib",\n    "declarationDir": "types",\n  },\n}',
+    );
+    write(compilerRoot, "jsconfig.json", "{ malformed");
+    write(compilerRoot, "null-config/tsconfig.json", "null");
+    write(
+      compilerRoot,
+      "null-config/null-source.ts",
+      "export const nullConfigSource = 'authored';",
+    );
+    write(
+      compilerRoot,
+      "lib/generated.d.ts",
+      "export declare const generated: string;",
+    );
+    write(
+      compilerRoot,
+      "src/source.ts",
+      "export const source = 'authored';",
+    );
+    write(
+      compilerRoot,
+      "types/generated.d.ts",
+      "export declare const generatedType: string;",
+    );
+    TestValidator.equals(
+      "an explicitly configured compiler output is excluded",
+      bases(
+        walkSourceFiles(compilerRoot, { extensions: new Set([".ts"]) }),
+      ),
+      ["null-source.ts", "source.ts"],
+    );
+
+    const inheritedRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-inherited-output-",
+    );
+    write(
+      inheritedRoot,
+      "config/base.json",
+      '{"compilerOptions":{"outDir":"../a-output"}}',
+    );
+    write(
+      inheritedRoot,
+      "packages/app/tsconfig.json",
+      '{"extends":"../../config/base.json"}',
+    );
+    write(
+      inheritedRoot,
+      "a-output/generated.d.ts",
+      "export declare const generated: string;",
+    );
+    write(
+      inheritedRoot,
+      "a-output/authored.go",
+      "package authored\n",
+    );
+    write(
+      inheritedRoot,
+      "packages/app/src/source.ts",
+      "export const source = 'authored';",
+    );
+    TestValidator.equals(
+      "inherited sibling outputs are known before traversal and keep polyglot source",
+      bases(
+        walkSourceFiles(inheritedRoot, {
+          extensions: new Set([".ts", ".go"]),
+        }),
+      ),
+      ["authored.go", "source.ts"],
+    );
+
+    const caseRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-output-case-",
+    );
+    write(
+      caseRoot,
+      "tsconfig.json",
+      '{"compilerOptions":{"outDir":"LIB"}}',
+    );
+    write(
+      caseRoot,
+      "lib/generated.d.ts",
+      "export declare const generated: string;",
+    );
+    TestValidator.equals(
+      "compiler output comparison follows the host filesystem's case rules",
+      bases(walkSourceFiles(caseRoot, { extensions: new Set([".ts"]) })),
+      process.platform === "win32" ? [] : ["generated.d.ts"],
+    );
+
+    const extendsRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-output-extends-forms-",
+    );
+    write(
+      extendsRoot,
+      "configs/direct.json",
+      '{"compilerOptions":{"outDir":"../direct-output"}}',
+    );
+    write(
+      extendsRoot,
+      "configs/no-extension.json",
+      '{"compilerOptions":{"outDir":"../extension-output"}}',
+    );
+    write(
+      extendsRoot,
+      "configs/tsconfig.base.json",
+      '{"compilerOptions":{"outDir":"../dotted-output"}}',
+    );
+    write(
+      extendsRoot,
+      "configs/directory/tsconfig.json",
+      '{"compilerOptions":{"declarationDir":"../../directory-output"}}',
+    );
+    write(
+      extendsRoot,
+      "configs/cycle-a.json",
+      '{"extends":"./cycle-b.json","compilerOptions":{"outDir":"../cycle-output"}}',
+    );
+    write(
+      extendsRoot,
+      "configs/cycle-b.json",
+      '{"extends":"./cycle-a.json"}',
+    );
+    write(
+      extendsRoot,
+      "node_modules/package-config/package.json",
+      '{"tsconfig":"base.json"}',
+    );
+    write(
+      extendsRoot,
+      "node_modules/package-config/base.json",
+      '{"compilerOptions":{"outDir":"' +
+        "$" +
+        '{configDir}/package-output"}}',
+    );
+    write(
+      extendsRoot,
+      "node_modules/default-config/tsconfig.json",
+      '{"compilerOptions":{"outDir":"' +
+        "$" +
+        '{configDir}/default-output"}}',
+    );
+    write(extendsRoot, "node_modules/invalid-config/package.json", "null");
+    write(
+      extendsRoot,
+      "node_modules/invalid-config/tsconfig.json",
+      '{"compilerOptions":{"outDir":"' +
+        "$" +
+        '{configDir}/invalid-output"}}',
+    );
+    write(
+      extendsRoot,
+      "node_modules/nonstring-config/package.json",
+      '{"tsconfig":7}',
+    );
+    write(
+      extendsRoot,
+      "node_modules/nonstring-config/tsconfig.json",
+      '{"compilerOptions":{"outDir":"' +
+        "$" +
+        '{configDir}/nonstring-output"}}',
+    );
+    write(
+      extendsRoot,
+      "apps/direct/tsconfig.json",
+      '{"extends":"../../configs/direct.json"}',
+    );
+    write(
+      extendsRoot,
+      "apps/no-extension/tsconfig.json",
+      '{"extends":"../../configs/no-extension"}',
+    );
+    write(
+      extendsRoot,
+      "apps/dotted-extension/tsconfig.json",
+      '{"extends":"../../configs/tsconfig.base"}',
+    );
+    write(
+      extendsRoot,
+      "apps/directory/tsconfig.json",
+      '{"extends":"../../configs/directory"}',
+    );
+    write(
+      extendsRoot,
+      "apps/mixed/tsconfig.json",
+      '{"extends":[7,"","@scope","package-config/../escape","missing-package","../../configs/missing","../../configs/cycle-a.json","../../configs/cycle-a.json"]}',
+    );
+    write(
+      extendsRoot,
+      "apps/package/tsconfig.json",
+      '{"extends":"package-config"}',
+    );
+    write(
+      extendsRoot,
+      "apps/subpath/tsconfig.json",
+      '{"extends":"package-config/base"}',
+    );
+    write(
+      extendsRoot,
+      "apps/default/tsconfig.json",
+      '{"extends":"default-config"}',
+    );
+    write(
+      extendsRoot,
+      "apps/invalid/tsconfig.json",
+      '{"extends":"invalid-config"}',
+    );
+    write(
+      extendsRoot,
+      "apps/nonstring/tsconfig.json",
+      '{"extends":"nonstring-config"}',
+    );
+    write(
+      extendsRoot,
+      "apps/self-cycle/tsconfig.json",
+      '{"extends":"./tsconfig.json"}',
+    );
+    for (const output of [
+      "direct-output",
+      "extension-output",
+      "dotted-output",
+      "directory-output",
+      "cycle-output",
+    ]) {
+      write(
+        extendsRoot,
+        `${output}/generated.js`,
+        "export const generated = true;",
+      );
+    }
+    write(
+      extendsRoot,
+      "apps/mixed/source.ts",
+      "export const source = 'authored';",
+    );
+    write(
+      extendsRoot,
+      "apps/mixed/source.js",
+      "export const source = 'authored';",
+    );
+    write(
+      extendsRoot,
+      "apps/self-cycle/self-cycle-source.ts",
+      "export const selfCycleSource = 'authored';",
+    );
+    write(
+      extendsRoot,
+      "apps/package/package-output/generated.js",
+      "export const packageGenerated = true;",
+    );
+    for (const output of [
+      "apps/subpath/package-output",
+      "apps/default/default-output",
+      "apps/invalid/invalid-output",
+      "apps/nonstring/nonstring-output",
+    ]) {
+      write(
+        extendsRoot,
+        `${output}/generated.js`,
+        "export const packageGenerated = true;",
+      );
+    }
+    TestValidator.equals(
+      "local and package extends forms, configDir, arrays, cycles, and unresolved bases stay bounded",
+      bases(
+        walkSourceFiles(extendsRoot, { extensions: new Set([".ts"]) }),
+      ),
+      ["self-cycle-source.ts", "source.ts"],
+    );
+    TestValidator.equals(
+      "resolved compiler output directories exclude emitted JavaScript",
+      bases(
+        walkSourceFiles(extendsRoot, { extensions: new Set([".js"]) }),
+      ),
+      ["source.js"],
     );
   };
 

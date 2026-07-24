@@ -187,6 +187,130 @@ function assertIndexValidation(): void {
     valid.documents.map((document) => document.relativePath),
     ["main.go"],
   );
+  const goStructJson = parseScipIndex({
+    metadata: {
+      version: 0,
+      tool_info: {
+        name: "rust-analyzer-scip",
+        version: "0.1",
+        arguments: ["index"],
+      },
+      project_root: "file:///r",
+      text_document_encoding: 1,
+    },
+    documents: [
+      {
+        language: "Rust",
+        relative_path: "src/main.rs",
+        position_encoding: 2,
+        symbols: [
+          {
+            symbol: "scip-rust cargo example v1 `crate`/run().",
+            display_name: "run",
+            kind: 17,
+            enclosing_symbol: "scip-rust cargo example v1 `crate`/Owner#",
+            relationships: [
+              {
+                symbol: "scip-rust cargo example v1 `crate`/Owner#",
+                is_reference: true,
+                is_type_definition: true,
+              },
+            ],
+          },
+        ],
+        occurrences: [
+          {
+            TypedRange: {
+              SingleLineRange: {
+                line: 4,
+                start_character: 2,
+                end_character: 5,
+              },
+            },
+            TypedEnclosingRange: {
+              MultiLineEnclosingRange: {
+                start_line: 3,
+                start_character: 0,
+                end_line: 5,
+                end_character: 1,
+              },
+            },
+            symbol: "scip-rust cargo example v1 `crate`/run().",
+            symbol_roles: 1,
+            syntax_kind: 16,
+            diagnostics: [
+              { severity: 2, code: "lint", message: "finding", tags: [2] },
+            ],
+          },
+        ],
+      },
+    ],
+    external_symbols: [
+      {
+        symbol: "scip-rust cargo dep v1 `dep`/External#",
+        display_name: "External",
+        kind: 7,
+      },
+    ],
+  });
+  TestValidator.equals(
+    "`scip print --json` Go-struct fields and enums are normalized",
+    [
+      goStructJson.metadata,
+      goStructJson.documents[0]?.relativePath,
+      goStructJson.documents[0]?.positionEncoding,
+      goStructJson.documents[0]?.symbols?.[0],
+      goStructJson.documents[0]?.occurrences?.[0],
+      goStructJson.externalSymbols?.[0],
+    ],
+    [
+      {
+        version: "UnspecifiedProtocolVersion",
+        toolInfo: {
+          name: "rust-analyzer-scip",
+          version: "0.1",
+          arguments: ["index"],
+        },
+        projectRoot: "file:///r",
+        textDocumentEncoding: "UTF8",
+      },
+      "src/main.rs",
+      "UTF16CodeUnitOffsetFromLineStart",
+      {
+        symbol: "scip-rust cargo example v1 `crate`/run().",
+        displayName: "run",
+        kind: "Function",
+        relationships: [
+          {
+            symbol: "scip-rust cargo example v1 `crate`/Owner#",
+            isReference: true,
+            isTypeDefinition: true,
+          },
+        ],
+        enclosingSymbol: "scip-rust cargo example v1 `crate`/Owner#",
+      },
+      {
+        range: [4, 2, 5],
+        symbol: "scip-rust cargo example v1 `crate`/run().",
+        symbolRoles: 1,
+        syntaxKind: "IdentifierFunctionDefinition",
+        enclosingRange: [3, 0, 5, 1],
+        diagnostics: [
+          {
+            message: "finding",
+            severity: "Warning",
+            code: "lint",
+            tags: ["Deprecated"],
+          },
+        ],
+      },
+      {
+        symbol: "scip-rust cargo dep v1 `dep`/External#",
+        displayName: "External",
+        kind: "Class",
+      },
+    ],
+  );
 
   // Every rejection below is a shape that, if accepted, would attribute facts
   // to source that never produced them.
@@ -275,19 +399,21 @@ function assertIndexValidation(): void {
       }),
     ],
     [
-      "an enclosing range that does not enclose the occurrence",
-      withOccurrence({
-        range: [2, 0, 3],
-        symbol: "s",
-        enclosingRange: [0, 0, 1, 0],
-      }),
+      "an empty Go-struct typed-range wrapper",
+      withOccurrence({ symbol: "s", TypedRange: {} }),
     ],
     [
-      "an enclosing range that starts after the occurrence",
+      "both protobuf and Go-struct typed-range encodings",
       withOccurrence({
-        range: [0, 0, 3],
         symbol: "s",
-        enclosingRange: [1, 0, 2, 0],
+        singleLineRange: { line: 0, startCharacter: 0, endCharacter: 1 },
+        TypedRange: {
+          SingleLineRange: {
+            line: 0,
+            start_character: 0,
+            end_character: 1,
+          },
+        },
       }),
     ],
     [
@@ -326,6 +452,21 @@ function assertIndexValidation(): void {
     [
       "a tool info block without a name",
       { metadata: { projectRoot: "file:///r", toolInfo: {} }, documents: [] },
+    ],
+    [
+      "a null optional record",
+      { metadata: { projectRoot: "file:///r", toolInfo: null }, documents: [] },
+    ],
+    [
+      "both protobuf and Go spellings of one field",
+      {
+        metadata: { projectRoot: "file:///r", project_root: "file:///r" },
+        documents: [],
+      },
+    ],
+    [
+      "an unknown numeric symbol kind",
+      withSymbol({ symbol: "s", kind: 83 }),
     ],
     [
       "non-array external symbols",
@@ -436,6 +577,30 @@ function assertIndexValidation(): void {
     typedMultiLine.enclosingRange,
     [1, 0, 5, 9],
   );
+  const rustAnalyzerReference = parseScipIndex(
+    withOccurrence({
+      range: [8, 4, 10],
+      symbol: "rust-analyzer cargo example 1.0.0 `main`/run().",
+      enclosingRange: [1, 0, 5, 1],
+    }),
+  ).documents[0]!.occurrences![0]!;
+  TestValidator.equals(
+    "a non-definition occurrence does not inherit its target definition body as a scope",
+    [rustAnalyzerReference.range, rustAnalyzerReference.enclosingRange],
+    [[8, 4, 10], undefined],
+  );
+  TestValidator.error(
+    "a definition whose enclosing range does not enclose it is refused",
+    () =>
+      parseScipIndex(
+        withOccurrence({
+          range: [8, 4, 10],
+          symbol: "s",
+          symbolRoles: 1,
+          enclosingRange: [1, 0, 5, 1],
+        }),
+      ),
+  );
   // Optional records the graph does not read are still validated, because a
   // malformed one is evidence the index was not produced the way it claims.
   const documented = parseScipIndex(
@@ -468,8 +633,18 @@ function assertIndexValidation(): void {
   TestValidator.error("a non-string enclosing symbol is refused", () =>
     parseScipIndex(withSymbol({ symbol: "s", enclosingSymbol: 1 })),
   );
-  TestValidator.error("a non-string position encoding is refused", () =>
-    parseScipIndex(withDocument({ relativePath: "a.go", positionEncoding: 1 })),
+  TestValidator.error("an unknown numeric position encoding is refused", () =>
+    parseScipIndex(withDocument({ relativePath: "a.go", positionEncoding: 99 })),
+  );
+  TestValidator.error("a non-enum position encoding is refused", () =>
+    parseScipIndex(
+      withDocument({ relativePath: "a.go", positionEncoding: null }),
+    ),
+  );
+  TestValidator.error("a fractional enum number is refused", () =>
+    parseScipIndex(
+      withDocument({ relativePath: "a.go", positionEncoding: 1.5 }),
+    ),
   );
   TestValidator.equals(
     "a Windows-spelled workspace-relative document is canonicalized",
@@ -477,9 +652,9 @@ function assertIndexValidation(): void {
       ?.relativePath,
     "dir/a.go",
   );
-  TestValidator.error("a non-string syntax kind is refused", () =>
+  TestValidator.error("an unknown numeric syntax kind is refused", () =>
     parseScipIndex(
-      withOccurrence({ range: [0, 0, 1], symbol: "s", syntaxKind: 1 }),
+      withOccurrence({ range: [0, 0, 1], symbol: "s", syntaxKind: 99 }),
     ),
   );
   TestValidator.error("a malformed enclosing range is refused", () =>
@@ -543,11 +718,11 @@ function assertIndexValidation(): void {
       }),
     ),
   );
-  TestValidator.error("a non-string diagnostic tag is refused", () =>
+  TestValidator.error("an unknown numeric diagnostic tag is refused", () =>
     parseScipIndex(
       withDocument({
         relativePath: "a.go",
-        diagnostics: [{ message: "finding", tags: [1] }],
+        diagnostics: [{ message: "finding", tags: [99] }],
       }),
     ),
   );
@@ -716,16 +891,19 @@ function assertMapping(): void {
   );
   const metadataUtf8 = adaptScipIndex({
     index: parseScipIndex(
-      rawIndex({}, { textDocumentEncoding: "UTF8CodeUnitOffsetFromLineStart" }),
+      rawIndex({}, { textDocumentEncoding: "UTF8" }),
     ),
     root: "/r",
     provider: "scip-go",
     languages: ["go"],
     languageOf: () => "go",
   });
-  TestValidator.predicate(
-    "the index-level position encoding applies when a document omits one",
-    metadataUtf8.warnings.some((warning) => warning.includes("UTF-16 code units")),
+  TestValidator.equals(
+    "the source-text encoding is not mistaken for a position encoding",
+    metadataUtf8.warnings.filter((warning) =>
+      warning.includes("UTF-16 code units"),
+    ),
+    [],
   );
 
   assertLongLineScopeSelection();
@@ -734,7 +912,7 @@ function assertMapping(): void {
   // A document in a language this session does not own is reported, not
   // silently absorbed.
   const foreign = adaptScipIndex({
-    index: parseScipIndex(rawIndex()),
+    index: parseScipIndex(rawIndex({ language: "rust" })),
     root: "/r",
     provider: "scip-go",
     languages: ["go"],

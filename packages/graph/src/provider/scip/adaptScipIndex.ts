@@ -83,6 +83,9 @@ export function adaptScipIndex(
   const diagnostics: ISamchonGraphDiagnostic[] = [];
   const warnings: string[] = [];
   const unsupportedRoles = new Set<string>();
+  const ownedDocuments = new Set<
+    (typeof props.index.documents)[number]
+  >();
   const files: string[] = [];
   let derivedKinds = 0;
 
@@ -92,7 +95,8 @@ export function adaptScipIndex(
   const definitions = new Map<string, IDefinition>();
   for (const document of props.index.documents) {
     const file = normalizeFile(document.relativePath);
-    const language = props.languageOf(file);
+    const language =
+      languageFromScip(document.language) ?? props.languageOf(file);
     if (!owned.has(language)) {
       warnings.push(
         `${props.provider}: ignoring ${file}, whose ${language} facts this provider does not own`,
@@ -106,13 +110,13 @@ export function adaptScipIndex(
     // there. Spans are display evidence rather than identity, so this reports
     // rather than rejects; what it must not do is say nothing, because the
     // resulting column is wrong in exactly the cases nobody tests.
-    const encoding =
-      document.positionEncoding ?? props.index.metadata.textDocumentEncoding;
+    const encoding = document.positionEncoding;
     if (encoding !== undefined && encoding !== UTF16_POSITION_ENCODING) {
       warnings.push(
         `${props.provider}: ${file} reports ${encoding} positions, but graph columns are UTF-16 code units; columns on lines with non-ASCII characters may be off`,
       );
     }
+    ownedDocuments.add(document);
     files.push(file);
     for (const symbol of document.symbols ?? []) {
       const parsed = scipSymbol(symbol.symbol);
@@ -231,7 +235,7 @@ export function adaptScipIndex(
   const forwardDefinitions = new Set<string>();
   for (const document of props.index.documents) {
     const file = normalizeFile(document.relativePath);
-    if (!files.includes(file)) continue;
+    if (!ownedDocuments.has(document)) continue;
     for (const occurrence of document.occurrences ?? []) {
       if (!hasRole(occurrence, IScipIndex.SymbolRole.ForwardDefinition)) {
         continue;
@@ -247,7 +251,9 @@ export function adaptScipIndex(
 
   for (const document of props.index.documents) {
     const file = normalizeFile(document.relativePath);
-    if (!files.includes(file)) continue;
+    if (!ownedDocuments.has(document)) continue;
+    const language =
+      languageFromScip(document.language) ?? props.languageOf(file);
     const occurrences = document.occurrences ?? [];
 
     // A definition occurrence carries the span the declaration occupies, and
@@ -313,7 +319,7 @@ export function adaptScipIndex(
       if (parsed === undefined) continue;
       const target =
         resolve(definitions, parsed, file) ??
-        externalize(parsed.key, props.languageOf(file));
+        externalize(parsed.key, language);
       if (target === undefined) continue;
       const owner = scopes.find((scope) => contains(scope.range, occurrence.range));
       if (owner === undefined) continue;
@@ -424,6 +430,34 @@ export function adaptScipIndex(
     warnings,
     files,
   };
+}
+
+function languageFromScip(
+  language: string | undefined,
+): GraphLanguage | undefined {
+  if (language === undefined) return undefined;
+  const normalized = language.toLowerCase().replaceAll(/[^a-z+#]/g, "");
+  const mapped: Record<string, GraphLanguage> = {
+    c: "c",
+    "c++": "cpp",
+    cpp: "cpp",
+    csharp: "csharp",
+    "c#": "csharp",
+    dart: "dart",
+    go: "go",
+    java: "java",
+    kotlin: "kotlin",
+    lua: "lua",
+    php: "php",
+    python: "python",
+    ruby: "ruby",
+    rust: "rust",
+    scala: "scala",
+    swift: "swift",
+    typescript: "typescript",
+    zig: "zig",
+  };
+  return mapped[normalized];
 }
 
 /** One edge per kind and endpoint pair, keeping the first evidence seen. */

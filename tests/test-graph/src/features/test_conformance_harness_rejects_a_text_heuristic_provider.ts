@@ -5,6 +5,7 @@ import type {
   ISamchonGraphEdge,
   ISamchonGraphNode,
 } from "@samchon/graph";
+import path from "node:path";
 
 import { Conformance } from "../internal/Conformance";
 import { ProviderFixtures } from "../internal/ProviderFixtures";
@@ -139,7 +140,10 @@ export const test_conformance_harness_rejects_a_text_heuristic_provider =
       Conformance.structure(
         snapshotOf({
           sources: new Map([
-            ["a.ts", { checkerDigest: "", diskDigest: "abc" }],
+            [
+              path.resolve("a.ts"),
+              { checkerDigest: "", diskDigest: "" },
+            ],
           ]),
           capabilities: ["sourceDigests"],
         }),
@@ -152,8 +156,12 @@ export const test_conformance_harness_rejects_a_text_heuristic_provider =
       Conformance.structure(
         snapshotOf({
           sources: new Map([
-            ["a.ts", { checkerDigest: "", diskDigest: "abc" }],
+            [
+              path.resolve("a.ts"),
+              { checkerDigest: "", diskDigest: "" },
+            ],
           ]),
+          capabilities: ["universe"],
         }),
         provider,
         ["typescript"],
@@ -300,7 +308,7 @@ function snapshotOf(props: {
     facts: ["calls", "references", "exports"] as GraphEdgeKind[],
     nodes: props.nodes ?? [],
     edges: props.edges ?? [],
-    sources: props.sources ?? new Map(),
+    ...(props.sources === undefined ? {} : { sources: props.sources }),
     capabilities: props.capabilities,
   });
 }
@@ -310,7 +318,7 @@ function declaration(
   kind: ISamchonGraphNode["kind"],
 ): ISamchonGraphNode {
   return {
-    id: id(name),
+    id: id(name, kind),
     kind,
     language: "typescript",
     name,
@@ -320,6 +328,11 @@ function declaration(
   };
 }
 
-function id(name: string): string {
-  return `a.ts#${name}`;
+function id(
+  name: string,
+  kind: ISamchonGraphNode["kind"] = name === "unrelatedHelper"
+    ? "method"
+    : "function",
+): string {
+  return `a.ts#${name}:${kind}`;
 }

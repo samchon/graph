@@ -12,6 +12,7 @@ on:
     paths:
       - ".github/workflows/experiment.yml"
       - "packages/graph/**"
+      - "sidecars/**"
       - "tests/experiment/**"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -60,7 +61,7 @@ jobs:
 
       - name: Checkout
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Enable pnpm
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language }}
@@ -68,11 +69,18 @@ jobs:
 
       - name: Setup Node
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22.x
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Go
+        if: ${{ matrix.language == 'go' && (github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language) }}
+        uses: actions/setup-go@v7
+        with:
+          go-version: 1.26.5
+          cache-dependency-path: sidecars/go/go.sum
 
       - name: Setup Swift
         if: ${{ matrix.language == 'swift' && (github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language) }}
@@ -100,7 +108,7 @@ jobs:
 
       - name: Upload result
         if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.language == 'all' || inputs.language == matrix.language) }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: graph-lsp-${{ matrix.language }}
           path: tests/experiment/results/${{ matrix.language }}.json

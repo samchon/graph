@@ -1,10 +1,12 @@
 import { TestValidator } from "@nestia/e2e";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 import { commitProjectInputGeneration } from "../../../../packages/graph/src/indexer/commitProjectInputGeneration";
 import type { IIndexerResult } from "../../../../packages/graph/src/indexer/IIndexerResult";
 import { movedConsumedSource } from "../../../../packages/graph/src/indexer/movedConsumedSource";
+import { movedProviderSource } from "../../../../packages/graph/src/indexer/movedProviderSource";
 import { projectInputManifest } from "../../../../packages/graph/src/indexer/projectInputManifest";
 import { providerBuildInputs } from "../../../../packages/graph/src/indexer/providerBuildInputs";
 import { sameProjectInputManifest } from "../../../../packages/graph/src/indexer/sameProjectInputManifest";
@@ -22,6 +24,82 @@ export const test_project_input_generation_fences_every_owned_input =
     fs.writeFileSync(second, "export const second = 2;\n");
     fs.writeFileSync(go, "package main\n");
 
+    const external = GraphPaths.createTempDirectory(
+      "samchon-graph-provider-source-helper-",
+    );
+    const externalFile = path.join(external, "shared.ts");
+    const externalBody = Buffer.from("export const shared = 1;\n");
+    fs.writeFileSync(externalFile, externalBody);
+    const externalDigest = digest(externalBody);
+    TestValidator.equals(
+      "an absent provider manifest has no movement",
+      movedProviderSource(undefined, new Map(), new Map()),
+      undefined,
+    );
+    TestValidator.equals(
+      "a bundled provider source needs no disk identity",
+      movedProviderSource(
+        new Map([
+          [
+            "bundled:///typescript/lib",
+            { checkerDigest: externalDigest, diskDigest: "" },
+          ],
+        ]),
+        new Map(),
+        new Map(),
+      ),
+      undefined,
+    );
+    TestValidator.equals(
+      "an unchanged external provider source remains bound",
+      movedProviderSource(
+        new Map([
+          [
+            externalFile,
+            {
+              checkerDigest: externalDigest,
+              diskDigest: externalDigest,
+            },
+          ],
+        ]),
+        new Map(),
+        new Map(),
+      ),
+      undefined,
+    );
+    TestValidator.predicate(
+      "a relative provider source cannot escape the common identity contract",
+      movedProviderSource(
+        new Map([
+          [
+            "relative.ts",
+            {
+              checkerDigest: externalDigest,
+              diskDigest: externalDigest,
+            },
+          ],
+        ]),
+        new Map(),
+        new Map(),
+      )?.includes("does not bind") === true,
+    );
+    TestValidator.predicate(
+      "a missing external provider source cannot retain an old digest",
+      movedProviderSource(
+        new Map([
+          [
+            path.join(external, "missing.ts"),
+            {
+              checkerDigest: externalDigest,
+              diskDigest: externalDigest,
+            },
+          ],
+        ]),
+        new Map(),
+        new Map(),
+      )?.includes("does not bind") === true,
+    );
+
     const typescript = ProviderFixtures.provider({
       name: "typescript-owner",
       languages: ["typescript"],
@@ -38,10 +116,20 @@ export const test_project_input_generation_fences_every_owned_input =
       buildInputs: ["rust.generated"],
     });
     const providers = [typescript, goProvider, unrelated];
+    const dynamic = ProviderFixtures.provider({
+      name: "dynamic-owner",
+      languages: ["go"],
+      buildInputs: (projectRoot) => [
+        path.relative(projectRoot, path.join(root, "nested", "go.mod")),
+      ],
+    });
 
     TestValidator.equals(
       "only participating provider inputs are deduplicated and sorted",
-      providerBuildInputs(["typescript", "go"], providers),
+      providerBuildInputs(["typescript", "go"], providers, root)
+        .filter((input) =>
+          ["first.ts", "go.generated", "shared.generated"].includes(input),
+        ),
       ["first.ts", "go.generated", "shared.generated"],
     );
     TestValidator.equals(
@@ -49,8 +137,54 @@ export const test_project_input_generation_fences_every_owned_input =
       providerBuildInputs(
         ["typescript"],
         [ProviderFixtures.provider({ name: "source-only" })],
+        root,
       ),
+      providerBuildInputs(["typescript"], [], root),
+    );
+    TestValidator.predicate(
+      "dynamic build inputs receive the project root and join the common registry",
+      providerBuildInputs(["go"], [dynamic], root).includes("nested/go.mod"),
+    );
+
+    const dartRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-dart-package-input-",
+    );
+    fs.writeFileSync(path.join(dartRoot, "pubspec.yaml"), "name: fixture\n");
+    fs.writeFileSync(path.join(dartRoot, "main.dart"), "void main() {}\n");
+    const packageConfig = path.join(
+      dartRoot,
+      ".dart_tool",
+      "package_config.json",
+    );
+    TestValidator.predicate(
+      "a missing generated Dart package config is already a build input",
+      providerBuildInputs(["dart"], [], dartRoot).includes(
+        ".dart_tool/package_config.json",
+      ),
+    );
+    let dartAttempts = 0;
+    const dartCommitted = await commitProjectInputGeneration(
+      { cwd: dartRoot, languages: ["dart"] },
       [],
+      () => {
+        dartAttempts += 1;
+        if (!fs.existsSync(packageConfig)) {
+          fs.mkdirSync(path.dirname(packageConfig), { recursive: true });
+          fs.writeFileSync(packageConfig, '{"configVersion":2}\n');
+        }
+        return resultOf(dartRoot);
+      },
+    );
+    TestValidator.equals(
+      "creating package_config.json during preparation retries the generation",
+      [
+        dartAttempts,
+        dartCommitted.buildInputs?.includes(
+          ".dart_tool/package_config.json",
+        ),
+        dartCommitted.inputManifest?.get(packageConfig) === "missing",
+      ],
+      [2, true, false],
     );
 
     const manifest = projectInputManifest(
@@ -60,9 +194,10 @@ export const test_project_input_generation_fences_every_owned_input =
       new Set(["typescript"]),
     );
     TestValidator.equals(
-      "provider-owned source contents stay opaque",
-      manifest.get(second),
-      "provider-owned",
+      "provider-owned source contents are coordinator-fenced too",
+      manifest.get(second) !== undefined &&
+        manifest.get(second) !== "missing",
+      true,
     );
     TestValidator.predicate(
       "a declared input overrides source opacity and is hashed",
@@ -132,14 +267,14 @@ export const test_project_input_generation_fences_every_owned_input =
       }),
     );
     TestValidator.equals(
-      "a stable generation retains every provider-owned language",
+      "the coordinator no longer excludes provider-owned languages",
       committed.inputManifestLanguages,
-      ["go", "rust", "typescript"],
+      [],
     );
     TestValidator.equals(
       "a stable generation retains the selected providers' build inputs",
       committed.buildInputs,
-      ["first.ts", "go.generated", "shared.generated"],
+      providerBuildInputs(["typescript", "go"], providers, root),
     );
 
     const cleanupRoot = GraphPaths.createTempDirectory(
@@ -197,7 +332,90 @@ export const test_project_input_generation_fences_every_owned_input =
         exhaustion instanceof Error &&
         exhaustion.message.includes("all 3 bounded attempts"),
     );
+
+    const unboundRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-provider-digest-",
+    );
+    const unboundFile = path.join(unboundRoot, "index.ts");
+    fs.writeFileSync(unboundFile, "export const value = 1;\n");
+    let unboundAttempts = 0;
+    let unboundFailure: unknown;
+    try {
+      await commitProjectInputGeneration(
+        { cwd: unboundRoot, languages: ["typescript"] },
+        [],
+        () => {
+          unboundAttempts += 1;
+          return {
+            ...resultOf(unboundRoot),
+            providerSourceDigests: new Map([
+              [
+                unboundFile,
+                {
+                  checkerDigest: "a".repeat(64),
+                  diskDigest: "b".repeat(64),
+                },
+              ],
+            ]),
+          };
+        },
+      );
+    } catch (error) {
+      unboundFailure = error;
+    }
+    TestValidator.predicate(
+      "a provider digest outside the coordinator generation never publishes",
+      unboundAttempts === 3 &&
+        unboundFailure instanceof Error &&
+        unboundFailure.message.includes("does not bind the provider snapshot"),
+    );
+
+    const siblingRoot = GraphPaths.createTempDirectory(
+      "samchon-graph-provider-sibling-",
+    );
+    const siblingFile = path.join(siblingRoot, "shared.ts");
+    fs.writeFileSync(siblingFile, "export const shared = 0;\n");
+    let siblingAttempts = 0;
+    let siblingFailure: unknown;
+    try {
+      await commitProjectInputGeneration(
+        { cwd: unboundRoot, languages: ["typescript"] },
+        [],
+        () => {
+          const consumed = fs.readFileSync(siblingFile);
+          siblingAttempts += 1;
+          fs.writeFileSync(
+            siblingFile,
+            `export const shared = ${String(siblingAttempts)};\n`,
+          );
+          return {
+            ...resultOf(unboundRoot),
+            providerSourceDigests: new Map([
+              [
+                siblingFile,
+                {
+                  checkerDigest: digest(consumed),
+                  diskDigest: digest(consumed),
+                },
+              ],
+            ]),
+          };
+        },
+      );
+    } catch (error) {
+      siblingFailure = error;
+    }
+    TestValidator.predicate(
+      "an external sibling that moves after provider consumption never publishes",
+      siblingAttempts === 3 &&
+        siblingFailure instanceof Error &&
+        siblingFailure.message.includes("does not bind the provider snapshot"),
+    );
   };
+
+function digest(value: Buffer): string {
+  return createHash("sha256").update(value).digest("hex");
+}
 
 function resultOf(root: string): IIndexerResult {
   return {

@@ -10,14 +10,19 @@ import { GraphPaths } from "../internal/GraphPaths";
 export const test_ttscgraph_native_requests_recover_from_stalls = async () => {
   const root = fixture();
   const marker = path.join(root, "first-child.txt");
-  const client = create(root, marker, 1_000);
+  // The Windows Job Object supervisor must initialize before the native
+  // server can read its first request. Keep the deliberate stall comfortably
+  // beyond cold PowerShell startup so this proves the request deadline rather
+  // than timing the host's process-launch load.
+  const stallTimeoutMs = 5_000;
+  const client = create(root, marker, stallTimeoutMs);
   try {
     const first = client.refresh();
     const queued = client.refresh();
     const error = await rejectionOf(first);
     TestValidator.predicate(
       "a silent native request times out precisely",
-      error.message.includes("timed out after 1000 ms"),
+      error.message.includes(`timed out after ${String(stallTimeoutMs)} ms`),
     );
     const recovered = await queued;
     TestValidator.equals(

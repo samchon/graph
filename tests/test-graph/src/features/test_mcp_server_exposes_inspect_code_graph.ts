@@ -17,6 +17,11 @@ const overview = async (args: string[]) => {
   });
   await client.connect(transport);
   try {
+    TestValidator.equals(
+      "the handshake names the exact graph package release",
+      client.getServerVersion(),
+      { name: "samchon-graph", version: "0.2.0" },
+    );
     // Coverage instrumentation adds real overhead to every spawned child
     // process; the SDK's 60s default has been observed to trip under a
     // fully-instrumented suite run even though the call itself is fast.

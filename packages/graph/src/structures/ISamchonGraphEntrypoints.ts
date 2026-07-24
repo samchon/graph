@@ -63,7 +63,7 @@ export namespace ISamchonGraphEntrypoints {
     /** Declaration kind (`class`, `method`, `function`, ...). */
     kind: string;
 
-    /** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */
+    /** Schema-v6 declaration identity: project-relative (including `../`) or `bundled:///`. */
     file: string;
 
     /** 1-based declaration line, when known. */
@@ -114,7 +114,7 @@ export namespace ISamchonGraphEntrypoints {
     /** Neighbor declaration kind. */
     kind: string;
 
-    /** Neighbor identity: project-relative, normalized absolute, or `bundled:///`. */
+    /** Schema-v6 neighbor identity: project-relative (including `../`) or `bundled:///`. */
     file: string;
 
     /** 1-based declaration line, when known. */

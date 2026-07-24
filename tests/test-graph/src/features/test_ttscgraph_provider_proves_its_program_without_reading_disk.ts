@@ -55,6 +55,7 @@ export const test_ttscgraph_provider_proves_its_program_without_reading_disk =
           path.join(root, "src", "core", "order.ts"),
           path.join(root, "src", "empty.ts"),
           path.join(root, "src", "index.ts"),
+          path.join(root, "tsconfig.json"),
         ].sort(),
       );
       TestValidator.equals(
@@ -159,8 +160,8 @@ async function assertUniverseDriftRefused(root: string): Promise<void> {
       error instanceof Error,
     );
     TestValidator.predicate(
-      "a contradicted mode clears the untrusted child generation",
-      client.current === undefined && client.generation === 1,
+      "a contradicted mode preserves the previous trusted generation",
+      client.current !== undefined && client.generation === 1,
     );
   } finally {
     await client.close();

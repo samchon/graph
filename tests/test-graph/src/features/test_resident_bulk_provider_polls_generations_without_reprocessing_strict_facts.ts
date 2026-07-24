@@ -77,6 +77,9 @@ export const test_resident_bulk_provider_polls_generations_without_reprocessing_
     const resident = createResidentGraphSource(
       { cwd: root, languages: ["typescript"] },
       {
+        // Keep this hand-written legacy result independent of whichever
+        // optional strict tools the coverage runner exposes through PATH.
+        providers: [],
         buildLspGraph: async () => {
           builds += 1;
           return {
@@ -86,16 +89,34 @@ export const test_resident_bulk_provider_polls_generations_without_reprocessing_
             // The session must remain authoritative even before it has exposed
             // a source-text snapshot.
             sources: new Map(),
+            modes: new Map<string, IBulkGraphSession.Mode>([
+              ["ttscgraph", "initial"],
+            ]),
           } as IIndexerResult;
         },
       },
     );
 
+    TestValidator.equals(
+      "resident modes are empty before the first generation",
+      [...resident.modes()],
+      [],
+    );
     const loaded = await resident.load();
+    TestValidator.equals(
+      "the cold provider mode is observable",
+      [...resident.modes()],
+      [["ttscgraph", "initial"]],
+    );
     const unchanged = await resident.load();
     TestValidator.predicate(
       "an unchanged bulk generation reuses the resident dump object",
       unchanged === loaded,
+    );
+    TestValidator.equals(
+      "an unchanged poll reports reuse independently of dump identity",
+      [...resident.modes()],
+      [["ttscgraph", "unchanged"]],
     );
     const changed = await resident.load();
     TestValidator.predicate(
@@ -106,11 +127,21 @@ export const test_resident_bulk_provider_polls_generations_without_reprocessing_
         changed.nodes[0]?.ignored === true &&
         changed.nodes[0]?.closure === true,
     );
+    TestValidator.equals(
+      "a changed provider exposes its actual computation mode",
+      [...resident.modes()],
+      [["ttscgraph", "incremental"]],
+    );
     await rejects(resident.load(), "a provider poll failure is surfaced");
     const recovered = await resident.load();
     TestValidator.predicate(
       "the last published generation survives a failed provider poll",
       recovered === changed && recovered.nodes[0]?.name === "second",
+    );
+    TestValidator.equals(
+      "the recovered unchanged poll is measured without replacing the dump",
+      [...resident.modes()],
+      [["ttscgraph", "unchanged"]],
     );
     TestValidator.equals(
       "an empty dump language list cannot misclassify or replace its strict session",
@@ -151,9 +182,9 @@ function snapshot(
       provider: "ttscgraph",
       authority: "compiler",
       facts: ["exports", "calls"],
-      schemaVersion: 5,
+      schemaVersion: 6,
       tool: "ttscgraph",
-      toolVersion: "0.19.3-21-g2b724664e",
+      toolVersion: "0.20.1",
       compilerVersion: "5.9.0",
       protocolVersion: 1,
       universe: createHash("sha256").update("universe").digest("hex"),

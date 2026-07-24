@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+
 import {
   type GraphEdgeKind,
   type GraphLanguage,
@@ -34,6 +38,7 @@ export namespace ProviderFixtures {
     diagnostics?: ISamchonGraphDiagnostic[];
     sources?: Map<string, IBulkGraphSession.ISourceDigest>;
     warnings?: string[];
+    root?: string;
     provider?: string;
     authority?: GraphProviderAuthority;
     facts?: readonly GraphEdgeKind[];
@@ -46,26 +51,84 @@ export namespace ProviderFixtures {
     props: ISnapshotProps = {},
   ): IBulkGraphSession.ISnapshot {
     const languages = props.languages ?? ["typescript"];
+    const nodes = props.nodes ?? [];
+    const capabilities = props.capabilities ?? [
+      "universe",
+      "sourceDigests",
+      "diskDigests",
+    ];
+    const provesSources = capabilities.includes("sourceDigests");
+    const provesDisk = capabilities.includes("diskDigests");
+    const sources =
+      props.sources ??
+      new Map(
+        [
+          ...new Set(
+            nodes.flatMap((node) =>
+              node.file === ""
+                ? []
+                : [
+                    node.file.startsWith("bundled:///")
+                      ? node.file
+                      : path.resolve(props.root ?? process.cwd(), node.file),
+                  ],
+            ),
+          ),
+        ].map((file) => {
+          if (file.startsWith("bundled:///")) {
+            return [
+              file,
+              {
+                checkerDigest: provesSources ? sha256(file) : "",
+                diskDigest: "",
+              },
+            ];
+          }
+          let diskDigest = "";
+          try {
+            diskDigest = sha256(fs.readFileSync(file));
+          } catch {
+            // A deliberately synthetic fixture can name a file without
+            // materializing it; tests that commit a resident generation create
+            // the file and therefore receive an exact disk binding.
+          }
+          return [
+            file,
+            {
+              checkerDigest: provesSources
+                ? diskDigest === ""
+                  ? sha256(file)
+                  : diskDigest
+                : "",
+              diskDigest: provesDisk ? diskDigest : "",
+            },
+          ];
+        }),
+      );
     return {
       languages,
-      nodes: props.nodes ?? [],
+      nodes,
       edges: props.edges ?? [],
       diagnostics: props.diagnostics ?? [],
-      sources: props.sources ?? new Map(),
+      sources,
       provenance: {
         provider: props.provider ?? "fake",
         authority: props.authority ?? "compiler",
         facts: [...(props.facts ?? DEFAULT_FACTS)],
-        schemaVersion: 5,
+        schemaVersion: 6,
         tool: "fake-provider",
         toolVersion: "1.0.0",
         compilerVersion: "1.0.0",
         protocolVersion: 1,
-        universe: props.universe ?? "universe-1",
-        capabilities: props.capabilities ?? [],
+        universe: sha256(props.universe ?? "universe-1"),
+        capabilities,
       },
       warnings: props.warnings ?? [],
     };
+  }
+
+  function sha256(value: string | Buffer): string {
+    return createHash("sha256").update(value).digest("hex");
   }
 
   export interface ISessionProps {
@@ -135,7 +198,7 @@ export namespace ProviderFixtures {
     languages?: GraphLanguage[];
     authority?: GraphProviderAuthority;
     facts?: readonly GraphEdgeKind[];
-    buildInputs?: readonly string[];
+    buildInputs?: IGraphProvider["buildInputs"];
     refuse?: IGraphProvider["refuse"];
     resolve?: IGraphProvider["resolve"];
     prepare?: IGraphProvider["prepare"];

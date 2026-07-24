@@ -32,6 +32,7 @@ export * from "./markIgnored";
 export * from "./normalizeRequestedLanguages";
 export * from "./normalizeGraphNodeKinds";
 export * from "./overrideEdges";
+export * from "./parseGraphDump";
 export * from "./reexportsOf";
 export * from "./refreshLanguageSession";
 export * from "./resolveModuleFile";

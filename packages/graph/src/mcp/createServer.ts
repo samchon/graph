@@ -33,7 +33,6 @@ export function createServer(
   version: string,
   languages: readonly GraphLanguage[] = [],
 ): McpServer {
-  void version;
   const controller: ILlmController<ISamchonGraphApplication> = {
     protocol: "class",
     name: "samchon-graph",
@@ -43,7 +42,7 @@ export function createServer(
     ),
     execute: new SamchonGraphApplication(graph),
   };
-  return createMcpServer(controller);
+  return createMcpServer(controller, { version });
 }
 
 // The description text embeds a `__LANG__` placeholder (see

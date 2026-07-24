@@ -3,8 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { GraphLanguage } from "../typings";
+import { confinedProjectInput } from "./confinedProjectInput";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
-import { languageOf } from "./languageOf";
 import { selectGraphSources } from "./selectGraphSources";
 
 /**
@@ -18,26 +18,19 @@ export function projectInputManifest(
   root: string,
   options: IBuildGraphOptions,
   buildInputs: readonly string[],
-  opaqueLanguages: ReadonlySet<GraphLanguage> = new Set(),
+  _opaqueLanguages: ReadonlySet<GraphLanguage> = new Set(),
 ): Map<string, string> {
-  const files = new Map<string, boolean>();
+  const files = new Set<string>();
   for (const file of selectGraphSources(root, options).files) {
-    const absolute = path.resolve(file);
-    files.set(absolute, opaqueLanguages.has(languageOf(absolute)));
+    files.add(path.resolve(file));
   }
   // Declared build inputs are coordinator-owned even if an unusual extension
   // makes one look like source. Their content decides the project universe and
   // must therefore be hashed, not hidden behind the provider-owned sentinel.
-  for (const input of buildInputs) files.set(path.resolve(root, input), false);
+  for (const input of buildInputs) files.add(confinedProjectInput(root, input));
 
   const manifest = new Map<string, string>();
-  for (const [file, opaque] of [...files].sort(([left], [right]) =>
-    compareOrdinal(left, right),
-  )) {
-    if (opaque) {
-      manifest.set(file, "provider-owned");
-      continue;
-    }
+  for (const file of [...files].sort(compareOrdinal)) {
     try {
       manifest.set(
         file,

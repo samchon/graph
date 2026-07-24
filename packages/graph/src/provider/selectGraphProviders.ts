@@ -16,6 +16,7 @@ export function selectGraphProviders(
   options: IBuildGraphOptions,
   env: NodeJS.ProcessEnv = process.env,
   registry: readonly IGraphProvider[] = GRAPH_PROVIDERS,
+  prepare = true,
 ): selectGraphProviders.IResult {
   assertOneOwnerPerLanguage(registry);
   const requested = new Set(languages);
@@ -42,7 +43,7 @@ export function selectGraphProviders(
       continue;
     }
 
-    if (provider.prepare !== undefined) {
+    if (prepare && provider.prepare !== undefined) {
       try {
         provider.prepare(root, options);
       } catch (error) {

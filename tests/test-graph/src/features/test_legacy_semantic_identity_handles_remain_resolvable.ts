@@ -20,8 +20,8 @@ export const test_legacy_semantic_identity_handles_remain_resolvable =
         candidates?: ISamchonGraphDump.INode[];
       };
     }>("operations/resolveGraphHandle.js");
-    const stringId = callableId("java.lang.String");
-    const integerId = callableId("java.lang.Integer");
+    const stringId = callableId("String");
+    const integerId = callableId("Integer");
     const partialId = semanticGraphNodeId(
       {
         version: 2,

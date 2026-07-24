@@ -11,6 +11,7 @@ import {
   ISamchonGraphEvidence,
   ISamchonGraphNode,
 } from "../structures";
+import { fileOfNodeId } from "../utils/fileOfNodeId";
 
 /**
  * Give best-effort generic declarations intrinsic ids before dedupe.
@@ -44,6 +45,21 @@ export function assignSemanticIdentities(
       node.language === "typescript" &&
       idCounts.get(node.id) === 1
     ) {
+      const parsed = fileOfNodeId.parseLegacy(node.id);
+      if (
+        parsed !== undefined &&
+        parsed.file === node.file &&
+        parsed.kind !== undefined &&
+        parsed.kind !== node.kind
+      ) {
+        const oldId = node.id;
+        node.id = fileOfNodeId.write(
+          node.file,
+          parsed.name,
+          node.kind,
+        );
+        push(remap, oldId, { node, id: node.id });
+      }
       continue;
     }
     const identity = genericIdentityOf(node);
@@ -77,7 +93,7 @@ export function assignSemanticIdentities(
           }
         : candidate.identity;
       const { node } = candidate;
-    const oldId = node.id;
+      const oldId = node.id;
       node.id = semanticGraphNodeId(identity, node.qualifiedName ?? node.name);
       push(remap, oldId, { node, id: node.id });
     }

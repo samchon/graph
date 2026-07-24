@@ -68,9 +68,9 @@ export const test_ttscgraph_bulk_session_stays_alive_when_kept = async () => {
   }
 
   TestValidator.equals(
-    "strict source identities are not reopened after the compiler publishes them",
-    reopened,
-    [],
+    "the transaction fences every compiler-published source before and after the build",
+    reopened.sort(),
+    [...strictFiles, ...strictFiles].sort(),
   );
 
   TestValidator.equals(
@@ -93,8 +93,8 @@ export const test_ttscgraph_bulk_session_stays_alive_when_kept = async () => {
   // bulk provider, which the assertion above already proved this is).
   if (session !== undefined && "close" in session) await session.close();
   TestValidator.equals(
-    "closing does not trust the owned process to acknowledge termination",
+    "closing reaches the owned process before its tree is terminated",
     fs.existsSync(marker),
-    false,
+    true,
   );
 };

@@ -1,11 +1,10 @@
 import path from "node:path";
-import typia from "typia";
 
-import { ISamchonGraphDump } from "../structures";
 import { buildLspGraph } from "./buildLspGraph";
 import { buildStaticGraphResult } from "./buildStaticGraphResult";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { IIndexerResult } from "./IIndexerResult";
+import { parseGraphDump } from "./parseGraphDump";
 
 /** Internal one-shot result that keeps source evidence beside its dump. */
 export async function buildGraphResult(
@@ -20,9 +19,5 @@ export async function buildGraphResult(
     normalized.mode === "static"
       ? buildStaticGraphResult(normalized)
       : await buildLspGraph(normalized);
-  return { ...result, dump: validateDump(result.dump) };
-}
-
-function validateDump(dump: ISamchonGraphDump): ISamchonGraphDump {
-  return typia.assert<ISamchonGraphDump>(dump);
+  return { ...result, dump: parseGraphDump(result.dump) };
 }

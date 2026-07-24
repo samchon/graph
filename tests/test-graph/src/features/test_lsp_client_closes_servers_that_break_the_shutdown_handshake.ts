@@ -27,11 +27,39 @@ interface ILspClientInternals {
   };
 }
 
+interface IOwnedProcess {
+  command(
+    command: string,
+    args: readonly string[],
+    windowsVerbatimArguments?: boolean,
+  ): {
+    command: string;
+    args: string[];
+    windowsVerbatimArguments?: boolean;
+    windowsLaunch?: {
+      command: string;
+      args: string[];
+      windowsVerbatimArguments?: boolean;
+    };
+  };
+  group(): boolean;
+  stdio(
+    command: ReturnType<IOwnedProcess["command"]>,
+    standard: readonly ("ignore" | "pipe")[],
+  ): import("node:child_process").StdioOptions;
+  start(
+    child: ChildProcess,
+    command: ReturnType<IOwnedProcess["command"]>,
+  ): void;
+  exit(child: ChildProcess): Promise<void>;
+}
+
 type LspClientConstructor = new (
   command: string,
   args: readonly string[],
   timeoutMs?: number,
   cwd?: string,
+  maxMessageBytes?: number,
 ) => ILspClient;
 
 /** `LspClient` is internal transport, reached through the shipped artifact. */
@@ -102,10 +130,15 @@ export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
     await stubborn.close();
 
     await assertStubbornProcessTreeIsOwned(LspClient);
+    await assertExitedLeaderDoesNotLeakItsProcessGroup(LspClient);
+    await assertWindowsCommandWaitsForOwnership();
+    await assertWindowsOwnershipPreservesTheOriginalCommandLine();
     await assertClosedInputRejectsRequests(LspClient);
     await assertSynchronousWriteFailureRejectsRequests(LspClient);
     await assertStdinStreamErrorRejectsRequests(LspClient);
     await assertPerRequestDeadlineCleansUpTheTransport(LspClient);
+    await assertOversizedFrameTerminatesTransport(LspClient);
+    await assertOversizedHeadersTerminateTransport(LspClient);
 
     // An already-cancelled request never enters the wire or waits for the
     // otherwise-unlimited default deadline. The client still owns its child and
@@ -127,6 +160,174 @@ export const test_lsp_client_closes_servers_that_break_the_shutdown_handshake =
     );
     await cancelled.close();
   };
+
+const assertWindowsOwnershipPreservesTheOriginalCommandLine =
+  async (): Promise<void> => {
+    if (process.platform !== "win32") return;
+    const { ownedProcess } = await importLib<{
+      ownedProcess: IOwnedProcess;
+    }>("utils/ownedProcess.js");
+    const payload = "x".repeat(10_000);
+    const owned = ownedProcess.command(process.execPath, [
+      "-e",
+      "process.stdout.write(String(process.argv[1].length))",
+      payload,
+    ]);
+    TestValidator.equals(
+      "Windows ownership keeps the real long argv off the gate command line",
+      [
+        owned.command,
+        owned.args.some((argument) => argument.includes(payload)),
+        owned.windowsLaunch?.args.at(-1),
+      ],
+      [process.execPath, false, payload],
+    );
+    const child = spawn(owned.command, owned.args, {
+      detached: ownedProcess.group(),
+      stdio: ownedProcess.stdio(owned, ["ignore", "pipe", "pipe"]),
+      windowsHide: true,
+      windowsVerbatimArguments: owned.windowsVerbatimArguments,
+    });
+    ownedProcess.start(child, owned);
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    await ownedProcess.exit(child);
+    TestValidator.equals(
+      "Windows Job ownership preserves a long argv that direct spawn accepts",
+      [child.exitCode, stdout, stderr],
+      [0, "10000", ""],
+    );
+  };
+
+const assertWindowsCommandWaitsForOwnership = async (): Promise<void> => {
+  if (process.platform !== "win32") return;
+  const { ownedProcess } = await importLib<{
+    ownedProcess: IOwnedProcess;
+  }>("utils/ownedProcess.js");
+  const root = GraphPaths.createTempDirectory(
+    "samchon-graph-windows-process-gate-",
+  );
+  const marker = path.join(root, "started");
+  const owned = ownedProcess.command(process.execPath, [
+    "-e",
+    "require('node:fs').writeFileSync(process.argv[1], 'started')",
+    marker,
+  ]);
+  const child = spawn(owned.command, owned.args, {
+    detached: ownedProcess.group(),
+    stdio: ownedProcess.stdio(owned, ["ignore", "pipe", "pipe"]),
+    windowsHide: true,
+    windowsVerbatimArguments: owned.windowsVerbatimArguments,
+  });
+  await delay(100);
+  TestValidator.equals(
+    "the Windows gate cannot launch a command before Job assignment",
+    fs.existsSync(marker),
+    false,
+  );
+  ownedProcess.start(child, owned);
+  await ownedProcess.exit(child);
+  TestValidator.equals(
+    "Job assignment releases the waiting Windows command",
+    [child.exitCode, fs.readFileSync(marker, "utf8")],
+    [0, "started"],
+  );
+};
+
+const assertExitedLeaderDoesNotLeakItsProcessGroup = async (
+  LspClient: LspClientConstructor,
+): Promise<void> => {
+  const root = GraphPaths.createTempDirectory(
+    "samchon-graph-exited-lsp-leader-",
+  );
+  const pidFile = path.join(root, "descendant.pid");
+  const client = new LspClient(process.execPath, [
+    GraphPaths.fakeLspServer,
+    `--stubborn-descendant=${pidFile}`,
+  ]);
+  let pid: number | undefined;
+  try {
+    await client.request("initialize", {});
+    await waitForFile(pidFile);
+    pid = Number(fs.readFileSync(pidFile, "utf8"));
+    await settleWithin(client.close(), 5_000, () => terminate(pid!));
+    TestValidator.equals(
+      "close waits for a process group after its cooperative leader exits",
+      isProcessAlive(pid),
+      false,
+    );
+  } finally {
+    if (pid !== undefined) terminate(pid);
+    await Promise.allSettled([client.close()]);
+  }
+};
+
+const assertOversizedFrameTerminatesTransport = async (
+  LspClient: LspClientConstructor,
+): Promise<void> => {
+  TestValidator.error(
+    "an unsafe LSP message limit is rejected before spawn",
+    () =>
+      new LspClient(
+        process.execPath,
+        [GraphPaths.fakeLspServer],
+        undefined,
+        undefined,
+        Number.MAX_SAFE_INTEGER + 1,
+      ),
+  );
+  const client = new LspClient(
+    process.execPath,
+    [GraphPaths.fakeLspServer, "--oversized-frame=4096"],
+    undefined,
+    undefined,
+    128,
+  );
+  try {
+    const rejection = await rejectionWithin(
+      client.request("initialize", {}),
+      2_000,
+    );
+    TestValidator.predicate(
+      "a declared oversized frame rejects the pending request promptly",
+      rejection.message.includes("oversized LSP frame") &&
+        rejection.message.includes("4096"),
+    );
+  } finally {
+    await settleWithin(client.close(), 5_000, () => undefined);
+  }
+};
+
+const assertOversizedHeadersTerminateTransport = async (
+  LspClient: LspClientConstructor,
+): Promise<void> => {
+  for (const mode of ["unterminated", "terminated"] as const) {
+    const client = new LspClient(process.execPath, [
+      GraphPaths.fakeLspServer,
+      `--oversized-header=${mode}`,
+    ]);
+    try {
+      const rejection = await rejectionWithin(
+        client.request("initialize", {}),
+        2_000,
+      );
+      TestValidator.predicate(
+        `an ${mode} oversized LSP header retires the transport`,
+        rejection.message.includes("LSP header limit"),
+      );
+    } finally {
+      await settleWithin(client.close(), 5_000, () => undefined);
+    }
+  }
+};
 
 const assertStubbornProcessTreeIsOwned = async (
   LspClient: LspClientConstructor,

@@ -38,7 +38,10 @@ for (const directory of fs
   }
   inspected.add(tarball);
 
-  const entries = execFileSync("tar", ["-tzf", tarball], { encoding: "utf8" })
+  const entries = execFileSync("tar", ["-tzf", path.basename(tarball)], {
+    cwd: path.dirname(tarball),
+    encoding: "utf8",
+  })
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line !== "" && !line.endsWith("/"));

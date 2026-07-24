@@ -1,4 +1,5 @@
 const fs = require("node:fs");
+const { spawn } = require("node:child_process");
 
 let buffer = Buffer.alloc(0);
 const failLanguages = new Set();
@@ -52,6 +53,8 @@ const symbolCallCountByUri = new Map();
 let diagnosticSeverities = [2];
 let hangMethod;
 let hangRefreshMethod;
+let oversizedFrame = 0;
+let oversizedHeader = "";
 if (process.env.SAMCHON_GRAPH_FAKE_LSP_ARGS_FILE) {
   fs.writeFileSync(
     process.env.SAMCHON_GRAPH_FAKE_LSP_ARGS_FILE,
@@ -77,6 +80,7 @@ let lateProgressLifecycleMs = 0;
 let referenceProgressLifecycleStarted = false;
 let referenceProgressLifecycleReady = false;
 let documentVersionLog;
+let stubbornDescendantPidFile;
 const documentVersionEvents = [];
 // Answer the first N references (enough to let the warmup succeed) and then go
 // silent — models a warm server that still times out on a few later targets.
@@ -183,14 +187,42 @@ for (const arg of process.argv.slice(2)) {
     slowFirstReferencesMs = Number(arg.slice("--slow-first-references=".length));
   } else if (arg.startsWith("--hang-references-after=")) {
     hangReferencesAfter = Number(arg.slice("--hang-references-after=".length));
+  } else if (arg.startsWith("--oversized-frame=")) {
+    oversizedFrame = Number(arg.slice("--oversized-frame=".length));
+  } else if (arg === "--oversized-header=unterminated") {
+    oversizedHeader = "unterminated";
+  } else if (arg === "--oversized-header=terminated") {
+    oversizedHeader = "terminated";
   } else if (arg.startsWith("--document-version-log=")) {
     documentVersionLog = arg.slice("--document-version-log=".length);
+  } else if (arg.startsWith("--stubborn-descendant=")) {
+    stubbornDescendantPidFile = arg.slice("--stubborn-descendant=".length);
   } else if (arg.startsWith("--diagnostic-severities=")) {
     diagnosticSeverities = arg
       .slice("--diagnostic-severities=".length)
       .split(",")
       .map((value) => Number(value));
   }
+}
+if (stubbornDescendantPidFile !== undefined) {
+  const descendant = spawn(
+    process.execPath,
+    [
+      "-e",
+      process.platform === "win32"
+        ? "setInterval(() => undefined, 1_000);"
+        : 'process.on("SIGTERM", () => undefined); setInterval(() => undefined, 1_000);',
+    ],
+    {
+      // A POSIX detached child deliberately leaves its parent's process group,
+      // which would stop testing group ownership. Windows detachment creates a
+      // new process group but still inherits the private Job Object.
+      detached: process.platform === "win32",
+      stdio: "ignore",
+    },
+  );
+  fs.writeFileSync(stubbornDescendantPidFile, String(descendant.pid));
+  descendant.unref();
 }
 if (options.ignoreTermination && process.platform !== "win32") {
   // A signal-resistant server holds its own work: it does not exit when the
@@ -252,6 +284,20 @@ function handle(message) {
   }
   if (message.method === "initialize") {
     if (options.exitOnInitialize) process.exit(7);
+    if (oversizedHeader !== "") {
+      process.stdout.write(
+        `${"X".repeat(70 * 1024)}${
+          oversizedHeader === "terminated" ? "\r\n\r\n" : ""
+        }`,
+      );
+      setInterval(() => undefined, 1_000);
+      return;
+    }
+    if (oversizedFrame > 0) {
+      process.stdout.write(`Content-Length: ${oversizedFrame}\r\n\r\n`);
+      setInterval(() => undefined, 1_000);
+      return;
+    }
     if (options.stderr) process.stderr.write("fake-lsp progress\n");
     if (options.badHeader) process.stdout.write("Missing-Length\r\n\r\n");
     if (options.badJson) {

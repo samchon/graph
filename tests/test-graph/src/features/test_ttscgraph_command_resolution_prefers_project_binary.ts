@@ -5,6 +5,7 @@ import path from "node:path";
 // `resolveTtscGraphCommand` is internal to the package, so it is reached by path
 // rather than through the public barrel.
 import { resolveTtscGraphCommand } from "../../../../packages/graph/src/provider/ttscgraph/resolveTtscGraphCommand";
+import { spawnableCommand } from "../../../../packages/graph/src/utils/spawnableCommand";
 import { GraphPaths } from "../internal/GraphPaths";
 import { NodeResolution } from "../internal/NodeResolution";
 
@@ -80,7 +81,12 @@ export const test_ttscgraph_command_resolution_prefers_project_binary =
           ...env(emptyPath),
           TTSC_GRAPH_BINARY: shim,
         })?.command,
-        "cmd.exe",
+        process.platform === "win32"
+          ? spawnableCommand.windowsSystem("cmd.exe", {
+              ...env(emptyPath),
+              TTSC_GRAPH_BINARY: shim,
+            })
+          : shim,
       );
 
       // The project has `ttsc` installed but no compatible platform binary: the

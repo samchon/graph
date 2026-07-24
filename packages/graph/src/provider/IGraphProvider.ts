@@ -103,7 +103,15 @@ export interface IGraphProvider {
    * set that no `.cpp` or `.go` edit touched, and a freshness check that
    * watched only source extensions would call that project unchanged.
    */
-  readonly buildInputs?: readonly string[];
+  readonly buildInputs?:
+    | readonly string[]
+    | ((root: string) => readonly string[]);
+
+  /** Non-file effective settings used to detect resident authority changes. */
+  readonly configuration?: (
+    root: string,
+    env: NodeJS.ProcessEnv,
+  ) => readonly string[];
 
   /**
    * Bring the project to the state this provider needs before it can answer —
@@ -122,7 +130,11 @@ export namespace IGraphProvider {
   /** A resolved executable and the arguments that precede the provider's own. */
   export interface ICommand {
     command: string;
-    args: string[];
+    args: readonly string[];
+    /** Arguments are already quoted for cmd.exe and must reach it verbatim. */
+    windowsVerbatimArguments?: boolean;
+    /** npm command shims reparse forwarded arguments through a second cmd. */
+    windowsDoubleEscapeArguments?: boolean;
   }
 
   /** Everything a session needs that only the coordinator knows. */

@@ -11,6 +11,7 @@ import { SamchonGraphSourceReader } from "../SamchonGraphSourceReader";
 import { assertGraphSnapshotContract } from "../provider/assertGraphSnapshotContract";
 import { dumpProvenanceOf } from "../provider/dumpProvenanceOf";
 import { IGraphProvider } from "../provider/IGraphProvider";
+import { GRAPH_PROVIDERS } from "../provider/GRAPH_PROVIDERS";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { isBulkGraphSession } from "../provider/isBulkGraphSession";
 import { mergeGraphSlices } from "../provider/mergeGraphSlices";
@@ -24,7 +25,9 @@ import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { ILspSession } from "./ILspSession";
 import { IResidentGraphSource } from "./IResidentGraphSource";
 import { languageOf } from "./languageOf";
+import { mergeProviderSourceDigests } from "./mergeProviderSourceDigests";
 import { movedConsumedSource } from "./movedConsumedSource";
+import { movedProviderSource } from "./movedProviderSource";
 import { refreshLanguageSession } from "./refreshLanguageSession";
 import { IGraphSourceSelection } from "./IGraphSourceSelection";
 import { selectGraphSources } from "./selectGraphSources";
@@ -32,6 +35,7 @@ import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
 import { projectInputManifest } from "./projectInputManifest";
 import { sameProjectInputManifest } from "./sameProjectInputManifest";
+import { providerTopology } from "../provider/providerTopology";
 
 /**
  * How many times one `load` may prepare a candidate before giving up on the
@@ -58,11 +62,15 @@ interface IResidentState {
   inputManifest: Map<string, string>;
   inputManifestLanguages: GraphLanguage[];
   buildInputs: string[];
+  providerTopology: string;
+  /** An available strict candidate fell back while this state was built. */
+  providerFallback: boolean;
 }
 
 interface IResidentDependencies {
   buildLspGraph: typeof buildLspGraph;
   buildStaticGraphResult?: typeof buildStaticGraphResult;
+  providers?: readonly IGraphProvider[];
 
   /**
    * The static lane's parse, substitutable so the commit fence can be proved.
@@ -81,6 +89,7 @@ interface IResidentDependencies {
 const DEFAULT_DEPENDENCIES: IResidentDependencies = {
   buildLspGraph,
   buildStaticGraphResult,
+  providers: GRAPH_PROVIDERS,
 };
 
 // Languages that fell back to static parsing (no LSP session to hold) are
@@ -89,7 +98,7 @@ const DEFAULT_DEPENDENCIES: IResidentDependencies = {
 export function createResidentGraphSource(
   options: IBuildGraphOptions = {},
   dependencies: IResidentDependencies = DEFAULT_DEPENDENCIES,
-): IResidentGraphSource {
+): IResidentGraphSource.IObservable {
   const root = path.resolve(options.cwd ?? process.cwd());
   let state: IResidentState | undefined;
   let queue: Promise<void> = Promise.resolve();
@@ -125,6 +134,14 @@ export function createResidentGraphSource(
       const buildInputs = result.buildInputs ?? [];
       const inputManifestLanguages =
         result.inputManifestLanguages ?? [...bulkLanguagesOf(sessions)];
+      const selected = selectGraphSources(root, options);
+      const availableTopology = providerTopology.available(
+        root,
+        selected.presentLanguages,
+        options,
+        process.env,
+        dependencies.providers ?? [],
+      );
       return {
         dump: result.dump,
         sessions,
@@ -148,6 +165,14 @@ export function createResidentGraphSource(
           ),
         inputManifestLanguages,
         buildInputs,
+        providerTopology: providerTopology.serialize(availableTopology),
+        providerFallback: availableTopology.some((row) =>
+          row.languages.some(
+            (language) =>
+              (result.providers ?? new Map()).get(language)?.name !==
+              row.provider,
+          ),
+        ),
       };
     } catch (error) {
       // Once the build hands its sessions to this source, every later failure
@@ -211,6 +236,7 @@ export function createResidentGraphSource(
             refresh.snapshot,
             provider,
             session.languages,
+            root,
           );
         }
         strictNodes.push(...refresh.snapshot.nodes);
@@ -320,6 +346,17 @@ export function createResidentGraphSource(
         "@samchon/graph: the project source/config/build input manifest changed while this refresh was preparing, so none of its language slices may be published",
       );
     }
+    const providerSources = providerSourcesOf([...merged.values()]);
+    const providerMovement = movedProviderSource(
+      providerSources,
+      inputManifest,
+      committedInputs,
+    );
+    if (providerMovement !== undefined) {
+      throw new StaleCandidateError(
+        `@samchon/graph: ${providerMovement}, so no slice of that generation may be published`,
+      );
+    }
 
     // Written out rather than spread from the previous dump, because a spread
     // carries forward whatever this refresh did not replace — and `provenance`
@@ -391,12 +428,37 @@ export function createResidentGraphSource(
     signal: AbortSignal,
   ): Promise<void> {
     for (let attempt = 1; ; attempt++) {
+      const selected = selectGraphSources(root, options);
+      const liveTopology = providerTopology.serialize(
+        providerTopology.available(
+          root,
+          selected.presentLanguages,
+          options,
+          process.env,
+          dependencies.providers ?? [],
+        ),
+      );
+      if (liveTopology !== current.providerTopology) {
+        await replaceLanguages(current, signal);
+        return;
+      }
       const inputManifest = projectInputManifest(
         root,
         options,
         current.buildInputs,
         new Set(current.inputManifestLanguages),
       );
+      if (
+        current.providerFallback &&
+        !sameProjectInputManifest(current.inputManifest, inputManifest)
+      ) {
+        // A stable failed candidate must not rebuild on every unchanged load,
+        // but an input generation change is exactly when the reason it failed
+        // may have been repaired. Re-run selection and preparation rather than
+        // pinning the resident to fallback for its entire lifetime.
+        await replaceLanguages(current, signal);
+        return;
+      }
       const prefetched = await refreshBulkSessions(current.sessions, signal);
       const bulkChanged = [...prefetched].some(
         ([language, refresh]) =>
@@ -407,12 +469,23 @@ export function createResidentGraphSource(
         prefetched,
         current.providers,
       );
+      const providerMovement = movedProviderSource(
+        providerSourcesOf(
+          [...new Set(prefetched.values())].map(
+            (refresh) => refresh.snapshot,
+          ),
+        ),
+        current.inputManifest,
+        inputManifest,
+      );
       if (
         !bulkChanged &&
         !bulkSliceLanguagesChanged &&
+        providerMovement === undefined &&
         sameProjectInputManifest(current.inputManifest, inputManifest) &&
         !isStale(current.hashes, root, options, bulkLanguagesOf(current.sessions))
       ) {
+        current.modes = bulkModesOf(prefetched);
         return;
       }
       const discovered = discoverLanguages(root, options);
@@ -468,6 +541,9 @@ export function createResidentGraphSource(
     },
     source(): SamchonGraphSourceReader | undefined {
       return state?.source;
+    },
+    modes(): ReadonlyMap<string, IBulkGraphSession.Mode> {
+      return new Map(state?.modes ?? []);
     },
     close(): Promise<void> {
       if (closing !== undefined) return closing;
@@ -530,6 +606,26 @@ export function createResidentGraphSource(
   }
 }
 
+function bulkModesOf(
+  refreshed: ReadonlyMap<GraphLanguage, IBulkGraphSession.IRefresh>,
+): Map<string, IBulkGraphSession.Mode> {
+  const modes = new Map<string, IBulkGraphSession.Mode>();
+  for (const refresh of refreshed.values()) {
+    modes.set(refresh.snapshot.provenance.provider, refresh.mode);
+  }
+  return modes;
+}
+
+function providerSourcesOf(
+  snapshots: readonly IBulkGraphSession.ISnapshot[],
+): Map<string, IBulkGraphSession.ISourceDigest> {
+  const sources = new Map<string, IBulkGraphSession.ISourceDigest>();
+  for (const snapshot of snapshots) {
+    mergeProviderSourceDigests(sources, snapshot.sources);
+  }
+  return sources;
+}
+
 function sourceReaderOf(
   root: string,
   texts: ReadonlyMap<string, string>,
@@ -538,8 +634,8 @@ function sourceReaderOf(
   const digests = new Map<string, IBulkGraphSession.ISourceDigest>();
   for (const session of sessions.values()) {
     if (!isBulkGraphSession(session)) continue;
-    for (const [file, digest] of session.current?.sources ?? []) {
-      digests.set(file, digest);
+    if (session.current !== undefined) {
+      mergeProviderSourceDigests(digests, session.current.sources);
     }
   }
   return new SamchonGraphSourceReader(root, { texts, digests });
@@ -682,7 +778,12 @@ function sameBulkSliceLanguages(
     const refresh = prefetched.get(languages[0]!)!;
     const provider = providers.get(languages[0]!);
     if (provider !== undefined) {
-      assertGraphSnapshotContract(refresh.snapshot, provider, session.languages);
+      assertGraphSnapshotContract(
+        refresh.snapshot,
+        provider,
+        session.languages,
+        session.root,
+      );
     }
     if (!sameLanguages(languages, refresh.snapshot.languages)) return false;
   }

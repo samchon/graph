@@ -7,9 +7,8 @@
  */
 export interface ISamchonGraphEvidence {
   /**
-   * Graph file identity of the span: normally project-relative, but normalized
-   * absolute for a compiler-loaded out-of-root file or `bundled:///` for a
-   * virtual library.
+   * Schema-v6 graph file identity of the span, relative to the dump project
+   * (including `../` siblings) or `bundled:///` for a virtual library.
    */
   file: string;
 

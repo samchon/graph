@@ -38,10 +38,9 @@ export interface ISamchonGraphTrace {
    * Nothing calls across the gap because in an event-driven codebase nothing
    * does: a handler registers a listener on an emitter, the emitter's `emit()`
    * runs whatever a registration put in an array, and no call edge crosses that
-   * array. But both ends touch the emitter, and that is an edge, not a guess —
-   * Excalidraw's pointer handler and its store's emit both reference
-   * `Store.onDurableIncrementEmitter`, which is exactly the seam the call graph
-   * cannot walk.
+   * array. But both ends touch the emitter, and that is an edge, not a guess:
+   * a request handler and a state store's emit both reference
+   * `StateStore.onCommit`, which is exactly the seam the call graph cannot walk.
    *
    * A junction is not a path. It is the symbol to look at next, and the edges
    * that say why.
@@ -63,7 +62,7 @@ export namespace ISamchonGraphTrace {
     /** Declaration kind (`variable`, `method`, `class`, ...). */
     kind: string;
 
-    /** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */
+    /** Schema-v6 declaration identity: project-relative (including `../`) or `bundled:///`. */
     file: string;
 
     /** 1-based declaration line, when known. */
@@ -187,7 +186,7 @@ export namespace ISamchonGraphTrace {
     /** Declaration kind (`class`, `method`, `function`, ...). */
     kind: string;
 
-    /** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */
+    /** Schema-v6 declaration identity: project-relative (including `../`) or `bundled:///`. */
     file: string;
 
     /** 1-based declaration line, when known. */

@@ -12,10 +12,26 @@ export const test_view_command_serves_the_bundled_reference_viewer = async () =>
   await fs.writeFile(
     graphFile,
     JSON.stringify({
-      project: "fixture",
+      project: root,
+      languages: ["typescript"],
+      indexer: "static",
       nodes: [
-        { id: "a.ts#A:class", name: "A", kind: "class", file: "a.ts" },
-        { id: "b.ts#B:function", name: "B", kind: "function", file: "b.ts" },
+        {
+          id: "a.ts#A:class",
+          name: "A",
+          kind: "class",
+          language: "typescript",
+          file: "a.ts",
+          external: false,
+        },
+        {
+          id: "b.ts#B:function",
+          name: "B",
+          kind: "function",
+          language: "typescript",
+          file: "b.ts",
+          external: false,
+        },
       ],
       edges: [{ from: "a.ts#A:class", to: "b.ts#B:function", kind: "calls" }],
     }),
@@ -44,6 +60,7 @@ export const test_view_command_serves_the_bundled_reference_viewer = async () =>
       nodes: 2,
       links: 1,
       droppedExternal: 0,
+      droppedIgnored: 0,
       droppedByCap: 0,
     });
     TestValidator.equals("the view names the requested cwd", graph.project, path.basename(root));

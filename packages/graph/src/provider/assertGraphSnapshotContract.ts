@@ -1,4 +1,8 @@
+import path from "node:path";
+
+import { parseGraphDump } from "../indexer/parseGraphDump";
 import { GraphLanguage } from "../typings";
+import { dumpProvenanceOf } from "./dumpProvenanceOf";
 import { IBulkGraphSession } from "./IBulkGraphSession";
 import { IGraphProvider } from "./IGraphProvider";
 
@@ -22,17 +26,21 @@ export function assertGraphSnapshotContract(
   snapshot: IBulkGraphSession.ISnapshot,
   provider: IGraphProvider,
   languages: readonly GraphLanguage[],
+  root: string = process.cwd(),
 ): void {
   const label = `@samchon/graph: provider "${provider.name}"`;
-  if (snapshot.languages.length === 0) {
-    throw new Error(`${label} published a snapshot owning no language`);
-  }
-  if (new Set(snapshot.languages).size !== snapshot.languages.length) {
-    throw new Error(
-      `${label} published a snapshot owning one language more than once`,
-    );
-  }
-
+  const project = path.resolve(root);
+  assertProvenance(snapshot, label);
+  parseGraphDump({
+    project,
+    languages: snapshot.languages,
+    indexer: "lsp",
+    nodes: snapshot.nodes,
+    edges: snapshot.edges,
+    diagnostics: snapshot.diagnostics,
+    warnings: snapshot.warnings,
+    provenance: [dumpProvenanceOf(snapshot)],
+  });
   const claimed = new Set(languages);
   for (const language of snapshot.languages) {
     if (!claimed.has(language)) {
@@ -45,17 +53,23 @@ export function assertGraphSnapshotContract(
   // A slice replaces its languages whole. A node in a language the slice does
   // not name would be published by this generation and deleted by no later one,
   // because nothing that refreshes this session is responsible for it.
-  const owned = new Set(snapshot.languages);
+  const nodeIds = new Set<string>();
+  const files = new Set<string>();
   for (const node of snapshot.nodes) {
-    if (!owned.has(node.language)) {
-      throw new Error(
-        `${label} published a ${node.language} node in a slice that owns only ${snapshot.languages.join(", ")}: ${node.id}`,
-      );
-    }
+    nodeIds.add(node.id);
+    if (node.file !== "") files.add(node.file);
   }
 
   const provable = new Set(provider.facts);
   for (const edge of snapshot.edges) {
+    if (
+      (!nodeIds.has(edge.from) && !files.has(edge.from)) ||
+      (!nodeIds.has(edge.to) && !files.has(edge.to))
+    ) {
+      throw new Error(
+        `${label} published an edge with an absent endpoint: ${edge.from} -> ${edge.to}`,
+      );
+    }
     if (!provable.has(edge.kind)) {
       throw new Error(
         `${label} published a "${edge.kind}" edge although it is not registered to prove that family: ${edge.from} -> ${edge.to}`,
@@ -79,18 +93,127 @@ export function assertGraphSnapshotContract(
       `${label} published provenance claiming fact families [${provenance.facts.join(", ")}] although it is registered to prove [${provider.facts.join(", ")}]`,
     );
   }
+
+  assertSourceManifest(snapshot, project, label, files);
 }
+
+function assertSourceManifest(
+  snapshot: IBulkGraphSession.ISnapshot,
+  root: string,
+  label: string,
+  nodeFiles: ReadonlySet<string>,
+): void {
+  for (const file of snapshot.sources.keys()) {
+    if (file.startsWith("bundled:///")) {
+      const relative = file.slice("bundled:///".length);
+      if (
+        relative === "" ||
+        relative.includes("\\") ||
+        path.posix.normalize(relative) !== relative ||
+        relative
+          .split("/")
+          .some((part) => part === "" || part === "." || part === "..")
+      ) {
+        throw new Error(
+          `${label} published a non-canonical bundled source identity: ${file}`,
+        );
+      }
+    } else if (!path.isAbsolute(file) || path.normalize(file) !== file) {
+      throw new Error(
+        `${label} published a source identity that is not normalized and absolute: ${file}`,
+      );
+    }
+  }
+
+  const required = new Set<string>();
+  for (const file of nodeFiles) requireHostSource(required, file);
+  for (const node of snapshot.nodes) {
+    if (node.evidence?.file !== undefined) {
+      requireHostSource(required, node.evidence.file);
+    }
+    if (node.implementation?.file !== undefined) {
+      requireHostSource(required, node.implementation.file);
+    }
+  }
+  for (const edge of snapshot.edges) {
+    if (edge.evidence?.file !== undefined) {
+      requireHostSource(required, edge.evidence.file);
+    }
+  }
+  for (const diagnostic of snapshot.diagnostics) {
+    if (diagnostic.file !== "") requireHostSource(required, diagnostic.file);
+  }
+
+  for (const file of required) {
+    const source = path.resolve(root, file);
+    if (!snapshot.sources.has(source)) {
+      throw new Error(
+        `${label} published facts for ${file} without binding that file to its source manifest`,
+      );
+    }
+  }
+}
+
+function requireHostSource(required: Set<string>, file: string): void {
+  // A bundled identity is versioned with its provider/toolchain and has no
+  // coordinator-readable host file. Requiring it in the host source manifest
+  // rejects valid compiler builtins (Go universe nodes, TypeScript lib files)
+  // without adding a byte fence the coordinator could reproduce.
+  if (!file.startsWith("bundled:///")) required.add(file);
+}
+
+function assertProvenance(
+  snapshot: IBulkGraphSession.ISnapshot,
+  label: string,
+): void {
+  const provenance = snapshot.provenance;
+  if (
+    !Number.isSafeInteger(provenance.schemaVersion) ||
+    provenance.schemaVersion < 1 ||
+    !Number.isSafeInteger(provenance.protocolVersion) ||
+    provenance.protocolVersion < 0 ||
+    provenance.tool === "" ||
+    !SHA256.test(provenance.universe)
+  ) {
+    throw new Error(`${label} published an invalid provenance envelope`);
+  }
+  const capabilities = new Set(provenance.capabilities);
+  if (
+    capabilities.size !== provenance.capabilities.length ||
+    provenance.capabilities.some((capability) => capability === "") ||
+    !capabilities.has("universe")
+  ) {
+    throw new Error(
+      `${label} published duplicate, empty, or unproven provenance capabilities`,
+    );
+  }
+  const sourceDigests = capabilities.has("sourceDigests");
+  const diskDigests = capabilities.has("diskDigests");
+  for (const [file, digest] of snapshot.sources) {
+    if (
+      (sourceDigests && !SHA256.test(digest.checkerDigest)) ||
+      (!sourceDigests && digest.checkerDigest !== "") ||
+      (digest.diskDigest !== "" &&
+        (!diskDigests || !SHA256.test(digest.diskDigest)))
+    ) {
+      throw new Error(
+        `${label} published a source digest that contradicts its capabilities: ${file}`,
+      );
+    }
+  }
+}
+
+const SHA256 = /^[0-9a-f]{64}$/;
 
 function sameFacts(
   left: readonly string[],
   right: readonly string[],
 ): boolean {
   if (left.length !== right.length) return false;
-  // These are fact families, so a repeated member is not a second fact. Without
-  // rejecting it, ["calls", "calls"] could replace ["calls", "imports"]:
-  // the old membership-only check saw two entries that each appeared in the
-  // registry and missed the family the provider had silently stopped claiming.
-  if (new Set(left).size !== left.length) return false;
+  // parseGraphDump has already established that the published family list is
+  // unique. The registry is trusted coordinator configuration, but still
+  // reject a duplicated entry there: it must not make a distinct published
+  // family set appear equivalent by length and membership alone.
   const expected = new Set(right);
   if (expected.size !== right.length) return false;
   return left.every((fact) => expected.has(fact));

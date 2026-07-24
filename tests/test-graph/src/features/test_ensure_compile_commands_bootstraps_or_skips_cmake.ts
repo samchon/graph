@@ -46,6 +46,9 @@ export const test_ensure_compile_commands_bootstraps_or_skips_cmake = async () =
       "a successful configure returns a directory with compile_commands.json",
       buildDir !== undefined && fs.existsSync(path.join(buildDir, "compile_commands.json")),
     );
+    if (buildDir !== undefined) {
+      fs.rmSync(buildDir, { recursive: true, force: true });
+    }
   }
 
   {

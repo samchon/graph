@@ -93,15 +93,30 @@ export function isSemanticGraphNodeId(id: string): boolean {
 }
 
 /** Fail closed when a semantic id contradicts its node's language or kind. */
-export function validateSemanticGraphNode(node: ISamchonGraphNode): void {
+export function validateSemanticGraphNode(
+  node: Pick<
+    ISamchonGraphNode,
+    "id" | "language" | "kind" | "name" | "qualifiedName"
+  >,
+): void {
   if (!isSemanticGraphNodeId(node.id)) return;
   const match = SEMANTIC_NODE_ID.exec(node.id)!;
+  let display: string;
+  try {
+    display = decodeURIComponent(match[4]!);
+  } catch {
+    throw new Error(
+      `@samchon/graph: semantic node id has an invalid display escape: ${node.id}`,
+    );
+  }
   if (
     match[2] !== node.language ||
-    match[5] !== node.kind
+    match[5] !== node.kind ||
+    encodeURIComponent(display) !== match[4] ||
+    display !== (node.qualifiedName ?? node.name)
   ) {
     throw new Error(
-      `@samchon/graph: semantic node id does not match its language and kind: ${node.id}`,
+      `@samchon/graph: semantic node id does not match its language, kind, and display: ${node.id}`,
     );
   }
 }

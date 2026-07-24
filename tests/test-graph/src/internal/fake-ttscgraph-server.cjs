@@ -58,6 +58,9 @@ const closeStdinAfterFirst = args.includes("--close-stdin-after-first");
 const lateAfterNonJson = args.includes("--late-after-nonjson");
 const reverseCapabilities = args.includes("--reverse-capabilities");
 const duplicateCapability = args.includes("--duplicate-capability");
+const oversizedResponse = args.find((arg) =>
+  arg.startsWith("--oversized-response="),
+);
 const envelopeCapabilityMismatch = args.includes(
   "--envelope-capability-mismatch",
 );
@@ -126,7 +129,7 @@ const universe = (drift) => ({
 });
 
 const provenance = (drift) => ({
-  schemaVersion: 5,
+  schemaVersion: 6,
   capabilities: CAPABILITIES,
   producer: {
     tool: "ttscgraph",
@@ -236,6 +239,11 @@ if (exitSilently) {
 // envelope parser never sees, because the client's own NDJSON reassembly is
 // what has to survive it.
 const emit = (response) => {
+  if (oversizedResponse !== undefined) {
+    const terminated = oversizedResponse === "--oversized-response=terminated";
+    process.stdout.write(`${"X".repeat(4096)}${terminated ? "\n" : ""}`);
+    return;
+  }
   if (nonJson) {
     process.stdout.write("this is not a ttscgraph frame\n", () => {
       if (lateAfterNonJson) process.stdout.write("late retired output\n");

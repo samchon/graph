@@ -1,10 +1,19 @@
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import https from "node:https";
 import os from "node:os";
 import path from "node:path";
 
 import { findExperiment } from "./catalog.mjs";
-import { appendGithubPath, ensureDir, parseArgs, run, shell, workRoot } from "./process.mjs";
+import {
+  appendGithubPath,
+  ensureDir,
+  parseArgs,
+  repositoryRoot,
+  run,
+  shell,
+  workRoot,
+} from "./process.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 const experiment = findExperiment(args.language);
@@ -64,6 +73,13 @@ const downloadFile = async (url, file) => {
   });
 };
 
+const verifySha256 = (file, expected) => {
+  const actual = createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  if (actual !== expected) {
+    throw new Error(`${file} has SHA-256 ${actual}, expected ${expected}`);
+  }
+};
+
 // Unauthenticated requests to api.github.com share a 60/hour rate limit across
 // the whole runner IP pool; a GITHUB_TOKEN raises that to 5000/hour and is
 // never sent past api.github.com since this call never redirects elsewhere.
@@ -110,6 +126,30 @@ const installZls = async () => {
   fs.symlinkSync(binary, link);
 };
 
+const installScip = async () => {
+  const archive = path.join(toolsRoot, "scip-v0.7.1-linux-amd64.tar.gz");
+  const target = path.join(toolsRoot, "scip-v0.7.1");
+  await downloadFile(
+    "https://github.com/scip-code/scip/releases/download/v0.7.1/scip-linux-amd64.tar.gz",
+    archive,
+  );
+  verifySha256(
+    archive,
+    "7bb1a566787478641a13bd9c93c2f571337556c76d659206f2225dc7d71a648b",
+  );
+  fs.rmSync(target, { force: true, recursive: true });
+  ensureDir(target);
+  run("tar", ["-xzf", archive, "-C", target]);
+  const binary = findFile(target, "scip");
+  if (binary === undefined) {
+    throw new Error("scip binary not found after extraction");
+  }
+  fs.chmodSync(binary, 0o755);
+  const link = path.join(binRoot, "scip");
+  fs.rmSync(link, { force: true });
+  fs.symlinkSync(binary, link);
+};
+
 const findFile = (dir, name) => {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const abs = path.join(dir, entry.name);
@@ -126,15 +166,43 @@ const findFile = (dir, name) => {
 switch (experiment.language) {
   case "typescript":
     break;
-  case "go":
-    apt(["golang-go"]);
-    shell("go install golang.org/x/tools/gopls@latest");
-    appendGithubPath(path.join(os.homedir(), "go", "bin"));
+  case "go": {
+    const archive = path.join(
+      toolsRoot,
+      "scip-go-v0.2.7-linux-amd64.tar.gz",
+    );
+    const extracted = path.join(toolsRoot, "scip-go-v0.2.7");
+    await downloadFile(
+      "https://github.com/scip-code/scip-go/releases/download/v0.2.7/scip-go-linux-amd64.tar.gz",
+      archive,
+    );
+    verifySha256(
+      archive,
+      "5bfe39016ca04f5b3b1cce41d1b63ea120a7d7e93b55407bfb17a6b02d18135a",
+    );
+    fs.rmSync(extracted, { force: true, recursive: true });
+    ensureDir(extracted);
+    run("tar", ["-xzf", archive, "-C", extracted]);
+    const scipGo = findFile(extracted, "scip-go");
+    if (scipGo === undefined) {
+      throw new Error("scip-go binary not found after extraction");
+    }
+    fs.chmodSync(scipGo, 0o755);
+    const scipLink = path.join(binRoot, "scip-go");
+    fs.rmSync(scipLink, { force: true });
+    fs.symlinkSync(scipGo, scipLink);
+    run(
+      "go",
+      ["build", "-trimpath", "-o", path.join(binRoot, "samchon-graph-go"), "."],
+      { cwd: path.join(repositoryRoot, "sidecars", "go") },
+    );
     break;
+  }
   case "rust":
     shell("curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal");
     appendGithubPath(path.join(os.homedir(), ".cargo", "bin"));
     shell(`${path.join(os.homedir(), ".cargo", "bin", "rustup")} component add rust-analyzer`);
+    await installScip();
     break;
   case "cpp":
   case "c":

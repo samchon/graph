@@ -57,7 +57,7 @@ export namespace ISamchonGraphOverview {
 
   /** One folder layer: its source files and export surface. */
   export interface ILayer {
-    /** Directory identity: project-relative or normalized absolute. */
+    /** Schema-v6 directory identity, relative to the dump project. */
     dir: string;
     /** Distinct source files under it. */
     files: number;
@@ -73,7 +73,7 @@ export namespace ISamchonGraphOverview {
     name: string;
     /** Its declaration kind (`class`, `interface`, `function`, ...). */
     kind: string;
-    /** Declaration identity: project-relative, normalized absolute, or `bundled:///`. */
+    /** Schema-v6 declaration identity: project-relative (including `../`) or `bundled:///`. */
     file: string;
     /** 1-based declaration line, when known. */
     line?: number;

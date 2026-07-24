@@ -407,8 +407,8 @@ function limitOf(value: number | undefined): number {
  * type position. Within a kind the source order decides, which is a stable
  * tiebreak and nothing more — so a symbol with two hundred callers used to
  * answer with whichever two happened to be written nearest the top of their
- * file, and for Excalidraw's `mutateElement` those two were a sort test and a
- * duplication test. A test is not who runs the code in production, and the tour
+ * file, and for one heavily referenced update method those two were a sort test
+ * and a duplication test. A test is not who runs the code in production, and the tour
  * already carries the tests it found in a section of their own, so a reference
  * from a test file ranks below every reference from the code under test.
  */

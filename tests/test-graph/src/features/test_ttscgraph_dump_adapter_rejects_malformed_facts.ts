@@ -19,11 +19,11 @@ const sha = (text: string): string =>
 // the proof boundary satisfied so each malformed case can reach and fail at the
 // node, edge, or span it targets.
 const provenance = (files: readonly string[] = ["src/a.ts"]) => ({
-  schemaVersion: 5,
+  schemaVersion: 6,
   capabilities: ["universe", "sourceDigests", "diskDigests", "diagnostics"],
   producer: {
     tool: "ttscgraph",
-    version: "0.19.3-21-g2b724664e",
+    version: "0.20.1",
     typescript: "5.9.0",
   },
   universe: {
@@ -113,7 +113,7 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
         project,
       ),
     "schema 3 snapshot",
-    "dump is schema v3, this client reads v5",
+    "dump is schema v3, this client reads v6",
   );
   rejectsWithMessage(
     () => {
@@ -128,9 +128,9 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
       return adaptTtscGraphDump(dump, project);
     },
     "schema 3 snapshot carrying an external fact absent from its manifest",
-    "dump is schema v3, this client reads v5",
+    "dump is schema v3, this client reads v6",
   );
-  const currentRelations = relationDump(5);
+  const currentRelations = relationDump(6);
   currentRelations.edges.push(
     {
       from: "src/a.ts#Worker.execute:method",
@@ -148,13 +148,11 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
     project,
   );
   TestValidator.predicate(
-    "schema 5 retains checker-owned member relations",
+    "schema 6 retains checker-owned member relations",
     adaptedCurrentRelations.edges.some((edge) => edge.kind === "implements") &&
       adaptedCurrentRelations.edges.some((edge) => edge.kind === "overrides"),
   );
-  const crossRootFile = path
-    .resolve(project, "..", "shared", "index.d.ts")
-    .replace(/\\/g, "/");
+  const crossRootFile = "../shared/index.d.ts";
   const crossRoot = good();
   crossRoot.provenance.universe.roots.push({
     config: "tsconfig.json",
@@ -173,15 +171,12 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
     external: false,
   });
   TestValidator.predicate(
-    "a compiler-loaded sibling workspace file keeps its canonical absolute identity",
+    "a compiler-loaded sibling workspace file keeps its portable relative identity",
     adaptTtscGraphDump(crossRoot, project).nodes.some(
       (node) => node.file === crossRootFile,
     ),
   );
   const bundledFile = "bundled:///libs/lib.es2015.collection.d.ts";
-  const uncFile = "//server/share/types/external.d.ts";
-  const posixFile = "/opt/types/external.d.ts";
-  const windowsFile = "C:/workspace/types/external.d.ts";
   const completeManifest = good();
   completeManifest.provenance.sources.push(
     {
@@ -194,34 +189,16 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
       checkerDigest: sha(`${bundledFile}:checker`),
       diskDigest: "",
     },
-    {
-      file: uncFile,
-      checkerDigest: sha(`${uncFile}:checker`),
-      diskDigest: sha(`${uncFile}:disk`),
-    },
-    {
-      file: posixFile,
-      checkerDigest: sha(`${posixFile}:checker`),
-      diskDigest: sha(`${posixFile}:disk`),
-    },
-    {
-      file: windowsFile,
-      checkerDigest: sha(`${windowsFile}:checker`),
-      diskDigest: sha(`${windowsFile}:disk`),
-    },
   );
   const completeSources = adaptTtscGraphDump(
     completeManifest,
     project,
   ).sources;
   TestValidator.predicate(
-    "the complete compiler manifest preserves every canonical file identity",
+    "the complete compiler manifest resolves every schema-v6 coordinate",
     completeSources.has(path.resolve(project, "src/a.ts")) &&
-      completeSources.has(crossRootFile) &&
-      completeSources.has(bundledFile) &&
-      completeSources.has(uncFile) &&
-      completeSources.has(posixFile) &&
-      completeSources.has(windowsFile),
+      completeSources.has(path.resolve(project, crossRootFile)) &&
+      completeSources.has(bundledFile),
   );
   TestValidator.equals(
     "a virtual bundled source keeps its checker digest",
@@ -244,7 +221,7 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
     [...adaptTtscGraphDump(ordinalManifest, project).sources.keys()].map(
       (file) => path.basename(file),
     ),
-    ["a.ts", "a\u0308.ts", "z.ts", "\u00e4.ts"],
+    ["a.ts", "a\u0308.ts", "z.ts", "\u00e4.ts", "tsconfig.json"],
   );
 
   const globalDiagnostic = good();
@@ -269,6 +246,66 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
         severity: "error",
       },
     ],
+  );
+  const configDiagnostic = good();
+  configDiagnostic.diagnostics.push({
+    file: "tsconfig.json",
+    line: 1,
+    column: 1,
+    code: 5023,
+    category: "error",
+    message: "Unknown compiler option",
+  });
+  const adaptedConfigDiagnostic = adaptTtscGraphDump(
+    configDiagnostic,
+    project,
+  );
+  TestValidator.equals(
+    "a config diagnostic is bound to its build-universe digest",
+    adaptedConfigDiagnostic.sources.get(
+      path.resolve(project, "tsconfig.json"),
+    ),
+    {
+      checkerDigest: sha("tsconfig.json"),
+      diskDigest: sha("tsconfig.json"),
+    },
+  );
+  TestValidator.equals(
+    "a config diagnostic from the same generation is retained",
+    adaptedConfigDiagnostic.diagnostics[0]?.file,
+    "tsconfig.json",
+  );
+  const checkerOnlyConfig = good();
+  checkerOnlyConfig.provenance.capabilities =
+    checkerOnlyConfig.provenance.capabilities.filter(
+      (capability) => capability !== "diskDigests",
+    );
+  for (const source of checkerOnlyConfig.provenance.sources) {
+    source.diskDigest = "";
+  }
+  TestValidator.equals(
+    "a config remains checker-bound when the producer claims no disk digest",
+    adaptTtscGraphDump(checkerOnlyConfig, project).sources.get(
+      path.resolve(project, "tsconfig.json"),
+    ),
+    {
+      checkerDigest: sha("tsconfig.json"),
+      diskDigest: "",
+    },
+  );
+  rejects(
+    () =>
+      adaptTtscGraphDump(
+        mutate((d) =>
+          d.provenance.sources.push({
+            file: "tsconfig.json",
+            checkerDigest: sha("different config"),
+            diskDigest: sha("different config"),
+          }),
+        ),
+        project,
+      ),
+    "a config digest that conflicts with the source manifest",
   );
   rejects(
     () =>
@@ -403,13 +440,29 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
       ),
     "a source identity with non-canonical backslashes",
   );
+  for (const absoluteFile of [
+    "//server/share/types/external.d.ts",
+    "/opt/types/external.d.ts",
+    "C:/workspace/types/external.d.ts",
+  ]) {
+    rejects(
+      () =>
+        adaptTtscGraphDump(
+          mutate((d) => {
+            d.provenance.sources[0]!.file = absoluteFile;
+          }),
+          project,
+        ),
+      `a schema-v6 source identity with an absolute path (${absoluteFile})`,
+    );
+  }
 
   // Structural types.
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d as { nodes: unknown }).nodes = "x")), project), "a non-array nodes field");
   rejects(
     () =>
       adaptTtscGraphDump(
-        mutate((d) => (d.provenance.schemaVersion = 6)),
+        mutate((d) => (d.provenance.schemaVersion = 7)),
         project,
       ),
     "a dump above the pinned schema",
@@ -479,6 +532,28 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   // Identity format and uniqueness.
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d.nodes[1] as { id: string }).id = "no-hash-here")), project), "a node id that does not encode its file and kind");
   rejects(() => adaptTtscGraphDump(mutate((d) => d.nodes.push({ ...(d.nodes[1] as object) })), project), "a duplicate node id");
+  const escapedIdentity = good();
+  const escapedFile = "src/hash#folder/a.ts";
+  escapedIdentity.provenance.sources.push({
+    file: escapedFile,
+    checkerDigest: sha(`${escapedFile}:checker`),
+    diskDigest: sha(`${escapedFile}:disk`),
+  });
+  escapedIdentity.nodes.push({
+    id: "src/hash\\#folder/a.ts#Hash\\#mark:function",
+    kind: "function",
+    name: "Hash#mark",
+    file: escapedFile,
+    external: false,
+  });
+  TestValidator.predicate(
+    "escaped legacy-id components preserve literal hash characters",
+    adaptTtscGraphDump(escapedIdentity, project).nodes.some(
+      (node) =>
+        node.file === escapedFile &&
+        node.id === "src/hash\\#folder/a.ts#Hash\\#mark:function",
+    ),
+  );
 
   // Edge endpoints and uniqueness.
   rejects(() => adaptTtscGraphDump(mutate((d) => ((d.edges[0] as { from: string }).from = "src/a.ts#ghost:function")), project), "an edge from an unknown endpoint");
@@ -542,6 +617,7 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
           file: "src/a.ts",
           external: false,
           qualifiedName: "pkg.foo",
+          signature: "async function foo(): Promise<void>",
           modifiers: ["export", "async"],
           decorators: [{ name: "Route", arguments: [{ literal: "path" }, {}] }],
           evidence: { startLine: 1, startCol: 1, endLine: 1, endCol: 5 },
@@ -597,6 +673,11 @@ export const test_ttscgraph_dump_adapter_rejects_malformed_facts = async () => {
   const phase = rich.nodes.find((node) => node.id === "src/a.ts#Phase:enum");
   const options = rich.nodes.find((node) => node.id === "src/a.ts#options:variable");
   TestValidator.equals("a qualified name is preserved", foo?.qualifiedName, "pkg.foo");
+  TestValidator.equals(
+    "a producer-bounded declaration signature is preserved",
+    foo?.signature,
+    "async function foo(): Promise<void>",
+  );
   TestValidator.equals("an implementation span is preserved", foo?.implementation?.startLine, 2);
   TestValidator.equals(
     "compiler-resolved literal values are preserved",

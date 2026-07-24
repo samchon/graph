@@ -165,10 +165,18 @@ export class BatchGraphSession implements IBulkGraphSession {
       // a transform, and one that kept the reference could append an unclaimed
       // edge once `refresh` had published the generation — invalidating
       // `current` behind a contract check that already passed.
+      // A fresh envelope rather than an assignment into what `load` returned:
+      // a producer is entitled to hand back an already-frozen snapshot, and
+      // writing `sources` into it would fail with a message naming neither the
+      // provider nor the field. The published object is this one from here on,
+      // so a reference the producer kept cannot reach the generation either.
       const subject = `the ${this.options.provider} snapshot`;
-      snapshot.sources = sealedMap(snapshot.sources, subject);
-      freezeDeep(snapshot, subject);
-      this.options.validate?.(snapshot);
+      const published: IBulkGraphSession.ISnapshot = {
+        ...snapshot,
+        sources: sealedMap(snapshot.sources, subject),
+      };
+      freezeDeep(published, subject);
+      this.options.validate?.(published);
       const after = this.fingerprint();
       if (after !== universe) {
         throw new Error(
@@ -176,7 +184,7 @@ export class BatchGraphSession implements IBulkGraphSession {
             "was being built, so that artifact cannot be published",
         );
       }
-      return snapshot;
+      return published;
     } finally {
       fs.rmSync(output, { recursive: true, force: true });
     }

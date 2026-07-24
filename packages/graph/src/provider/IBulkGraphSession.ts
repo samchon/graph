@@ -50,10 +50,10 @@ export namespace IBulkGraphSession {
    * evidence. Evidence a later caller can edit is not evidence: a validator that
    * kept its argument could otherwise append an unclaimed edge after the
    * generation was published, and nothing would revalidate it. So the two
-   * publication owners in this package — {@link BatchGraphSession}, which every
-   * SCIP and sidecar provider builds on, and `TtscGraphClient` — freeze the
-   * whole tree before any contract gate or reader sees it, and replace
-   * {@link sources} with a view that has no writer at all.
+   * publication owners in this package — `BatchGraphSession`, which every SCIP
+   * and sidecar provider builds on, and `TtscGraphClient` — freeze the whole
+   * tree before any contract gate or reader sees it, and publish `sources`
+   * through a view that has no writer at all.
    *
    * The fields stay writable in the type because building one requires that;
    * writing through a published snapshot throws. A provider that publishes

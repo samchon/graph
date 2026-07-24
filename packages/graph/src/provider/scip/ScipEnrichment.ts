@@ -113,7 +113,9 @@ export namespace ScipEnrichment {
   export function capability(
     enrichment: IContract,
   ): string {
-    return `scip-enrichment:${enrichment.name}@${String(enrichment.version)}`;
+    const declaration = read(enrichment);
+    assertDeclaration(declaration);
+    return `scip-enrichment:${declaration.name}@${String(declaration.version)}`;
   }
 
   /**
@@ -133,8 +135,13 @@ export namespace ScipEnrichment {
     if (enrichment === undefined) {
       return { edges: props.common.edges, warnings: [] };
     }
+    const slice = {
+      nodes: props.common.nodes,
+      edges: props.common.edges,
+      files: props.common.files,
+    };
     const nodes = new Set<string>();
-    for (const node of props.common.nodes) {
+    for (const node of slice.nodes) {
       if (nodes.has(node.id)) {
         throw new Error(
           `@samchon/graph: the common SCIP slice duplicated node ${node.id}`,
@@ -143,7 +150,7 @@ export namespace ScipEnrichment {
       nodes.add(node.id);
     }
     const files = new Set<string>();
-    for (const file of props.common.files) {
+    for (const file of slice.files) {
       if (files.has(file)) {
         throw new Error(
           `@samchon/graph: the common SCIP slice duplicated file ${file}`,
@@ -152,7 +159,7 @@ export namespace ScipEnrichment {
       files.add(file);
     }
     const commonEdges = new Set<string>();
-    for (const edge of props.common.edges) {
+    for (const edge of slice.edges) {
       if (!adaptScipIndex.EDGE_KINDS.includes(edge.kind)) {
         throw new Error(
           `@samchon/graph: the common SCIP slice published non-common ${edge.kind} facts`,
@@ -183,15 +190,11 @@ export namespace ScipEnrichment {
     const subject = "a SCIP enrichment input";
     const index = freezeDeep(props.index, subject);
     const languages = freezeDeep([...props.languages], subject);
-    const common = freezeDeep(
-      {
-        nodes: props.common.nodes,
-        edges: props.common.edges,
-        files: props.common.files,
-      },
-      subject,
-    );
-    const result = enrichment.enrich({
+    const common = freezeDeep(slice, subject);
+    // `declaration.enrich`, not `enrichment.enrich`: the second read is the one
+    // an accessor-backed contract could answer differently, and the receiver
+    // stays the original so a method implementation keeps its own state.
+    const result = declaration.enrich.call(enrichment, {
       index,
       root: props.root,
       provider: props.provider,
@@ -251,7 +254,7 @@ export namespace ScipEnrichment {
     });
     return {
       edges: [
-        ...props.common.edges,
+        ...slice.edges,
         ...[...additions.values()].sort((left, right) =>
           compareOrdinal(edgeKey(left), edgeKey(right)),
         ),

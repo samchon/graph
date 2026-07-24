@@ -8,11 +8,13 @@
  * the same reference just as well, but a whole-workspace snapshot is exactly the
  * value that must not be duplicated once per publication.
  *
- * Published evidence must be plain data, and anything else is refused rather
+ * Published evidence must be plain data, and any other object is refused rather
  * than waved through. `Object.freeze` only fixes an object's own properties: on
  * a `Map`, `Set`, or `Date` it leaves every mutator working, and on a typed
- * array it throws something that names neither the value nor the field. An
- * accessor is refused for the same reason — freezing fixes which getter runs and
+ * array it throws something that names neither the value nor the field. A
+ * function value is left alone rather than refused — it is not data, so nothing
+ * in a published tree should hold one, and freezing one would seal a shape this
+ * boundary does not own. An accessor is refused — freezing fixes which getter runs and
  * never what it returns, so a value that recomputes itself on every read is
  * precisely the channel this seal exists to close. A caller that needs one of
  * those shapes converts it at the boundary; {@link sealedMap} is how the source

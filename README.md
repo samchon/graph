@@ -67,10 +67,6 @@ TypeScript's provider is the compiler-owned `ttscgraph` snapshot. The binary is 
 
 Go's compiler-owned provider is shipped with this package and runs through Go 1.25 or newer. Its navigation corroboration is pinned to `scip-go` 0.2.7; install that exact producer with `go install github.com/scip-code/scip-go/cmd/scip-go@v0.2.7`. A project-local or `PATH` `samchon-graph-go` binary takes precedence over the bundled source runner, `SAMCHON_GRAPH_GO` can select an absolute development build, and `SAMCHON_GRAPH_SCIP_GO` can select an absolute `scip-go` binary. Without the required Go toolchain or pinned indexer, indexing reports the strict-provider decline and retains the generic `gopls` fallback.
 
-Rust, C/C++, Java, Kotlin, Scala, C#, Python, and Ruby have registered `semantic-index` providers built on their language's own SCIP indexer: `rust-analyzer scip` for Rust, then `scip-clang`, `scip-java`, `scip-dotnet`, `scip-python`, and `scip-ruby`. Each needs its indexer plus the `scip` decoder on `PATH`, and `SAMCHON_GRAPH_SCIP` and `SAMCHON_GRAPH_SCIP_<INDEXER>` can select absolute binaries. A SCIP index is a navigation skeleton, so these providers are registered to prove `contains`, `references`, and `type_ref` and nothing else — a call, a construction, a trait implementation, an override, and a dispatch are omitted rather than guessed, and a language that can prove one adds it through a versioned enrichment contract. They rebuild the whole index for any change to a source or declared build input; there is no partial mode, so a capped build declines to the language server instead. Without the indexer or the decoder, indexing reports the strict-provider decline and keeps the generic fallback for that language.
-
-Swift, Zig, PHP, Lua, and Dart resolve an `analyzer` sidecar named `samchon-graph-<language>`. No sidecar ships with this package yet, so these languages decline to their language servers until one is installed on `PATH`.
-
 JavaScript is intentionally not indexed. In an arbitrary repository, `.js`/`.jsx`/`.mjs`/`.cjs` files are as often build output or vendored bundles as handwritten source, and the graph cannot tell which without project-specific provenance.
 
 ## Benchmark
@@ -143,7 +139,7 @@ One-time cost per repository. The server re-scans only changed files after that 
 
 kotlin-language-server, jdtls, and csharp-ls are particularly slow: each resolves the whole project before answering anything.
 
-TypeScript and Go close that gap through compiler-owned snapshots, and the SCIP-backed languages close part of it: a whole-project index answers without per-symbol requests, but it proves fewer edge families. The rest use their listed language servers until their bulk providers land.
+TypeScript and Go already close that gap through compiler-owned snapshots. The remaining languages use their listed language servers until their compiler-owned bulk providers land.
 
 ### Reproduction
 

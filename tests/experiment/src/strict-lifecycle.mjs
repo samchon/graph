@@ -40,6 +40,7 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
   });
   let dump;
   let previousIdentity;
+  let previousProvenance;
 
   const load = async (name, expectedModes) => {
     const started = performance.now();
@@ -87,6 +88,7 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
     }
     dump = next;
     previousIdentity = identity;
+    previousProvenance = provenance;
     rows.push(row);
     return next;
   };
@@ -156,18 +158,23 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
         error: failure.message,
       });
     } else if (fixture.failurePolicy === "tolerated") {
-      // Some producers genuinely do not fail on this input class, and asserting
-      // a rejection they never make would only prove the harness can be made to
-      // agree with itself. What is still worth proving is that the graph did not
-      // quietly serve the previous generation across a changed build input: the
-      // producer answers again, the snapshot passes the same strict contract,
-      // and provenance moves. The limitation is published rather than hidden.
-      if (typeof fixture.failureLimitation !== "string") {
+      // Some producers genuinely do not fail on this input class. Asserting a
+      // rejection they never make would prove only that the harness agrees with
+      // itself, and so would asserting that provenance moved: this step edits a
+      // declared build input, so the build universe cannot help but move. What
+      // is worth proving is the precise claim the catalog makes about upstream —
+      // that the producer ignored the input completely. The universe moves, the
+      // facts and the source manifest do not, and the row publishes all three so
+      // a reader can see which one carried the change.
+      if (
+        typeof fixture.failureLimitation !== "string" ||
+        fixture.failureLimitation === ""
+      ) {
         throw new Error(
           `${experiment.language}: a tolerated failure must publish the limitation it accepts`,
         );
       }
-      const priorIdentity = previousIdentity;
+      const prior = previousProvenance;
       let tolerated;
       try {
         tolerated = await resident.load();
@@ -183,24 +190,46 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
           `${experiment.language}: tolerated failure reported ${String(mode)}`,
         );
       }
-      const identity = [
+      if (provenance.universe === prior.universe) {
+        throw new Error(
+          `${experiment.language}: the malformed build input left the build universe unchanged, so this step proved nothing`,
+        );
+      }
+      if (
+        provenance.content !== prior.content ||
+        provenance.manifest !== prior.manifest
+      ) {
+        throw new Error(
+          `${experiment.language}: the catalog records this input as ignored, but the published facts or source manifest changed with it`,
+        );
+      }
+      // The other half of the catalog's claim. If this producer starts
+      // reporting the malformed input, `diagnostic` becomes the truthful
+      // policy and the recorded justification stops being true.
+      const diagnosticCount = tolerated.diagnostics?.length ?? 0;
+      if (diagnosticCount !== 0) {
+        throw new Error(
+          `${experiment.language}: the catalog records this producer as emitting no diagnostics, but it reported ${String(diagnosticCount)}`,
+        );
+      }
+      dump = tolerated;
+      previousIdentity = [
         provenance.manifest,
         provenance.content,
         provenance.universe,
       ].join(":");
-      if (identity === priorIdentity) {
-        throw new Error(
-          `${experiment.language}: tolerated failure did not move strict provenance`,
-        );
-      }
-      dump = tolerated;
-      previousIdentity = identity;
+      previousProvenance = provenance;
       rows.push({
         name: "failure",
         status: "tolerated",
         mode,
         elapsedMs: Math.round(performance.now() - failedAt),
-        diagnosticCount: tolerated.diagnostics?.length ?? 0,
+        manifest: provenance.manifest,
+        content: provenance.content,
+        universe: provenance.universe,
+        nodeCount: tolerated.nodes.length,
+        edgeCount: tolerated.edges.length,
+        diagnosticCount,
         limitation: fixture.failureLimitation,
       });
     } else if (

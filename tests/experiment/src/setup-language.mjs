@@ -217,6 +217,11 @@ const installScipPython = async () => {
   const link = path.join(binRoot, "scip-python");
   fs.rmSync(link, { force: true });
   fs.symlinkSync(launcher, link);
+  // Extracting rather than installing rests on the bundle needing nothing but
+  // Node built-ins. Run it once here, where a missing module is one clear
+  // failure, instead of leaving it to surface as an unavailable provider that
+  // silently degrades the configuration fingerprint.
+  run(link, ["--version"]);
 };
 
 const findFile = (dir, name) => {

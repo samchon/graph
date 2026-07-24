@@ -495,12 +495,16 @@ async function assertRegisteredFixture(
     const refreshed = await session.refresh();
     const unchanged = await session.refresh();
     const independent = await indexOnce(provider, command, root);
-    TestValidator.predicate(
+    // Compared rather than reduced to a predicate: a conformance report names
+    // exactly which invariant a provider broke, and folding it into a boolean
+    // throws that away at the one moment it is worth having.
+    TestValidator.equals(
       `${provider.name} executes the shared registered-provider corpus`,
-      refreshed.mode === "initial" &&
-        refreshed.generation === 1 &&
-        unchanged.mode === "unchanged" &&
-        unchanged.generation === 1 &&
+      [
+        refreshed.mode,
+        refreshed.generation,
+        unchanged.mode,
+        unchanged.generation,
         Conformance.failures(
           Conformance.check(
             refreshed.snapshot,
@@ -514,7 +518,9 @@ async function assertRegisteredFixture(
           ),
           Conformance.published(refreshed.snapshot),
           Conformance.deterministic(refreshed.snapshot, independent),
-        ).length === 0,
+        ),
+      ],
+      ["initial", 1, "unchanged", 1, []],
     );
   } finally {
     await session.close();

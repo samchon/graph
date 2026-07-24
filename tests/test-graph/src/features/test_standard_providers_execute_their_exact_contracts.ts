@@ -1,20 +1,32 @@
 import { TestValidator } from "@nestia/e2e";
 import {
+  GRAPH_PROVIDERS,
+  type GraphLanguage,
+  type GraphEdgeKind,
+  type IGraphProvider,
+  goGraphProvider,
+  rustScipProvider,
   standardScipProviders,
   standardSidecarProviders,
 } from "@samchon/graph";
 import fs from "node:fs";
 import path from "node:path";
 
+import { Conformance } from "../internal/Conformance";
 import { GraphPaths } from "../internal/GraphPaths";
+import { ttscGraphProvider } from "../../../../packages/graph/src/provider/ttscgraph/ttscGraphProvider";
 
-/** Every standard registry entry executes its own discovery and wire contract. */
+/**
+ * An atomic strict provider must carry the shared semantic corpus for every
+ * language it owns; startup and a nonempty payload alone cannot prove that.
+ */
 export const test_standard_providers_execute_their_exact_contracts =
   async () => {
     const root = GraphPaths.createTempDirectory("graph-standard-providers-");
     const previous = new Map<string, string | undefined>();
     try {
       writeProject(root);
+      assertFixtureRegistryCoverage();
       const bin = path.join(root, ".samchon-graph", "bin");
       fs.mkdirSync(bin, { recursive: true });
 
@@ -79,12 +91,32 @@ export const test_standard_providers_execute_their_exact_contracts =
           options: { cwd: root },
         });
         const refreshed = await session.refresh();
-        TestValidator.equals(
-          `${provider.name} publishes one whole strict generation`,
-          [refreshed.mode, refreshed.generation, refreshed.snapshot.nodes.length],
-          ["initial", 1, 1],
+        const unchanged = await session.refresh();
+        TestValidator.predicate(
+          `${provider.name} publishes the shared strict-fixture corpus`,
+          refreshed.mode === "initial" &&
+            refreshed.generation === 1 &&
+            unchanged.mode === "unchanged" &&
+            unchanged.generation === 1 &&
+            Conformance.failures(
+              Conformance.check(
+                refreshed.snapshot,
+                expectationsOf(provider.languages),
+              ),
+              Conformance.structure(
+                refreshed.snapshot,
+                provider,
+                provider.languages,
+                root,
+              ),
+              Conformance.deterministic(
+                refreshed.snapshot,
+                unchanged.snapshot,
+              ),
+            ).length === 0,
         );
         await session.close();
+        await assertHeuristicTwinFails(provider, command, root);
       }
 
       for (const provider of standardSidecarProviders) {
@@ -107,17 +139,39 @@ export const test_standard_providers_execute_their_exact_contracts =
           options: { cwd: root },
         });
         const refreshed = await session.refresh();
-        TestValidator.equals(
-          `${provider.name} publishes one whole analyzer generation`,
-          [
-            refreshed.mode,
-            refreshed.generation,
-            refreshed.snapshot.provenance.provider,
-          ],
-          ["initial", 1, provider.name],
+        const unchanged = await session.refresh();
+        TestValidator.predicate(
+          `${provider.name} publishes the shared strict-fixture corpus`,
+          refreshed.mode === "initial" &&
+            refreshed.generation === 1 &&
+            unchanged.mode === "unchanged" &&
+            unchanged.generation === 1 &&
+            refreshed.snapshot.provenance.provider === provider.name &&
+            Conformance.failures(
+              Conformance.check(
+                refreshed.snapshot,
+                expectationsOf(provider.languages),
+              ),
+              Conformance.structure(
+                refreshed.snapshot,
+                provider,
+                provider.languages,
+                root,
+              ),
+              Conformance.deterministic(
+                refreshed.snapshot,
+                unchanged.snapshot,
+              ),
+            ).length === 0,
         );
         await session.close();
+        await assertHeuristicTwinFails(
+          provider,
+          command,
+          root,
+        );
       }
+      await assertRemainingRegisteredFixtures(root);
 
       const emptyRoot = GraphPaths.createTempDirectory(
         "graph-standard-provider-missing-",
@@ -201,6 +255,23 @@ function buildInputs(
     : (provider.buildInputs ?? []);
 }
 
+function assertFixtureRegistryCoverage(): void {
+  const exercised = [
+    ttscGraphProvider,
+    goGraphProvider,
+    rustScipProvider,
+    ...standardScipProviders,
+    ...standardSidecarProviders,
+  ]
+    .map((provider) => provider.name)
+    .sort();
+  TestValidator.equals(
+    "the semantic corpus has an exact fixture for every registered strict provider",
+    GRAPH_PROVIDERS.map((provider) => provider.name).sort(),
+    exercised,
+  );
+}
+
 function writeProject(root: string): void {
   const files: Record<string, string> = {
     "compile_commands.json": "[]\n",
@@ -214,24 +285,209 @@ function writeProject(root: string): void {
     "composer.json": "{}\n",
     ".luarc.json": "{}\n",
     "pubspec.yaml": "name: fixture\n",
-    "src/main.c": "int main(void) { return 0; }\n",
-    "src/main.cpp": "int main() { return 0; }\n",
-    "src/Main.java": "class Main {}\n",
-    "src/Main.kt": "class Main\n",
-    "src/Main.scala": "class Main\n",
-    "src/Main.cs": "class Main {}\n",
-    "src/main.py": "def main(): pass\n",
-    "src/main.rb": "def main; end\n",
-    "src/Main.swift": "func main() {}\n",
-    "src/main.zig": "pub fn main() void {}\n",
-    "src/main.php": "<?php function main() {}\n",
-    "src/main.lua": "function main() end\n",
-    "src/main.dart": "void main() {}\n",
+    "Cargo.toml": "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\n",
+    "go.mod": "module fixture\n\ngo 1.24\n",
+    "tsconfig.json": "{\"compilerOptions\":{}}\n",
+    "src/index.ts": "export { caller } from \"./core/order\";\n",
+    "src/core/order.ts": "// mentionedInComment must remain prose\nexport function caller() { return callee(); }\nexport function callee() { return 1; }\n",
+    "src/empty.ts": "export {};\n",
+    "src/lib.rs": "// mentionedInComment must remain prose\npub fn caller() { callee(); }\npub fn callee() {}\n",
+    "src/main.go": "// mentionedInComment must remain prose\npackage main\nfunc caller() { callee() }\nfunc callee() {}\n",
+    "src/main.c": "/* mentionedInComment must remain prose */\nint callee(void);\nint caller(void) { return callee(); }\nint callee(void) { return 1; }\n",
+    "src/main.cpp": "// mentionedInComment must remain prose\nint callee();\nint caller() { return callee(); }\nint callee() { return 1; }\n",
+    "src/Main.java": "// mentionedInComment must remain prose\nclass Main { static void caller() { callee(); } static void callee() {} }\n",
+    "src/Main.kt": "// mentionedInComment must remain prose\nfun caller() { callee() }\nfun callee() {}\n",
+    "src/Main.scala": "// mentionedInComment must remain prose\nobject Main { def caller(): Unit = callee(); def callee(): Unit = () }\n",
+    "src/Main.cs": "// mentionedInComment must remain prose\nclass Main { static void caller() { callee(); } static void callee() {} }\n",
+    "src/main.py": "# mentionedInComment must remain prose\ndef caller():\n    callee()\ndef callee():\n    return 1\n",
+    "src/main.rb": "# mentionedInComment must remain prose\ndef caller; callee; end\ndef callee; 1; end\n",
+    "src/Main.swift": "// mentionedInComment must remain prose\nfunc caller() { callee() }\nfunc callee() {}\n",
+    "src/main.zig": "// mentionedInComment must remain prose\nfn caller() void { callee(); }\nfn callee() void {}\n",
+    "src/main.php": "<?php\n// mentionedInComment must remain prose\nfunction caller() { callee(); }\nfunction callee() {}\n",
+    "src/main.lua": "-- mentionedInComment must remain prose\nfunction caller() callee() end\nfunction callee() end\n",
+    "src/main.dart": "// mentionedInComment must remain prose\nvoid caller() { callee(); }\nvoid callee() {}\n",
   };
   for (const [relative, contents] of Object.entries(files)) {
     const file = path.join(root, relative);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, contents);
+  }
+}
+
+async function assertHeuristicTwinFails(
+  provider: IGraphProvider,
+  command: IGraphProvider.ICommand,
+  root: string,
+): Promise<void> {
+  const prior = process.env.SAMCHON_GRAPH_FIXTURE_MODE;
+  process.env.SAMCHON_GRAPH_FIXTURE_MODE = "heuristic";
+  let session: ReturnType<IGraphProvider["open"]> | undefined;
+  try {
+    session = provider.open({
+      root,
+      command,
+      languages: provider.languages,
+      options: { cwd: root },
+    });
+    const refreshed = await session.refresh();
+    const failures = Conformance.check(
+      refreshed.snapshot,
+      expectationsOf(provider.languages),
+    ).failures;
+    TestValidator.predicate(
+      `${provider.name} rejects only the common comment-only semantic negative twin`,
+      failures.length > 0 &&
+        failures.every((failure) => failure.includes("mentionedInComment")),
+    );
+  } finally {
+    try {
+      await session?.close();
+    } finally {
+      if (prior === undefined) delete process.env.SAMCHON_GRAPH_FIXTURE_MODE;
+      else process.env.SAMCHON_GRAPH_FIXTURE_MODE = prior;
+    }
+  }
+}
+
+function expectationsOf(
+  languages: readonly GraphLanguage[],
+  relationship: GraphEdgeKind = "references",
+): readonly Conformance.IExpectation[] {
+  return languages.flatMap((language) => [
+    {
+      reason: "the strict fixture resolves the caller declaration",
+      node: { name: "caller", kind: "function", language },
+    },
+    {
+      reason: "the strict fixture resolves the referenced callee declaration",
+      node: { name: "callee", kind: "function", language },
+    },
+    {
+      reason: "a name occurring only in prose is not a declaration",
+      node: {
+        name: "mentionedInComment",
+        kind: "function",
+        language,
+        present: false,
+      },
+    },
+    {
+      reason: "a resolved occurrence is published as a reference",
+      edge: {
+        kind: relationship,
+        from: { name: "caller", kind: "function", language },
+        to: { name: "callee", kind: "function", language },
+      },
+    },
+    {
+      reason: "a prose occurrence is never promoted to a reference",
+      edge: {
+        kind: relationship,
+        from: { name: "caller", kind: "function", language },
+        to: { name: "mentionedInComment", kind: "function", language },
+        present: false,
+      },
+    },
+  ]);
+}
+
+async function assertRemainingRegisteredFixtures(root: string): Promise<void> {
+  await assertRegisteredFixture(
+    ttscGraphProvider,
+    {
+      command: process.execPath,
+      args: [GraphPaths.fakeTtscGraphServer, "--conformance"],
+    },
+    root,
+    "calls",
+  );
+  await assertTtscHeuristicTwinFails(root);
+
+  const goCommand: IGraphProvider.ICommand = {
+    command: process.execPath,
+    args: [GraphPaths.fakeStandardProvider, "--producer=samchon-graph-go"],
+  };
+  await assertRegisteredFixture(goGraphProvider, goCommand, root);
+  await assertHeuristicTwinFails(goGraphProvider, goCommand, root);
+
+  const rustCommand: IGraphProvider.ICommand = {
+    command: process.execPath,
+    args: [GraphPaths.fakeStandardProvider, "--producer=rust-analyzer"],
+  };
+  await assertRegisteredFixture(rustScipProvider, rustCommand, root);
+  await assertHeuristicTwinFails(rustScipProvider, rustCommand, root);
+}
+
+async function assertRegisteredFixture(
+  provider: IGraphProvider,
+  command: IGraphProvider.ICommand,
+  root: string,
+  relationship: GraphEdgeKind = "references",
+): Promise<void> {
+  const session = provider.open({
+    root,
+    command,
+    languages: provider.languages,
+    options: { cwd: root },
+  });
+  try {
+    const refreshed = await session.refresh();
+    const unchanged = await session.refresh();
+    TestValidator.predicate(
+      `${provider.name} executes the shared registered-provider corpus`,
+      refreshed.mode === "initial" &&
+        refreshed.generation === 1 &&
+        unchanged.mode === "unchanged" &&
+        unchanged.generation === 1 &&
+        Conformance.failures(
+          Conformance.check(
+            refreshed.snapshot,
+            expectationsOf(provider.languages, relationship),
+          ),
+          Conformance.structure(
+            refreshed.snapshot,
+            provider,
+            provider.languages,
+            root,
+          ),
+          Conformance.deterministic(
+            refreshed.snapshot,
+            unchanged.snapshot,
+          ),
+        ).length === 0,
+    );
+  } finally {
+    await session.close();
+  }
+}
+
+async function assertTtscHeuristicTwinFails(root: string): Promise<void> {
+  const session = ttscGraphProvider.open({
+    root,
+    command: {
+      command: process.execPath,
+      args: [
+        GraphPaths.fakeTtscGraphServer,
+        "--conformance",
+        "--conformance-heuristic",
+      ],
+    },
+    languages: ["typescript"],
+    options: { cwd: root },
+  });
+  try {
+    const refreshed = await session.refresh();
+    const failures = Conformance.check(
+      refreshed.snapshot,
+      expectationsOf(["typescript"], "calls"),
+    ).failures;
+    TestValidator.predicate(
+      "ttscgraph rejects only the common comment-only semantic negative twin",
+      failures.length > 0 &&
+        failures.every((failure) => failure.includes("mentionedInComment")),
+    );
+  } finally {
+    await session.close();
   }
 }
 

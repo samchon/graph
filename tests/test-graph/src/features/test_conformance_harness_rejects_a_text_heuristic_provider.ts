@@ -120,9 +120,9 @@ export const test_conformance_harness_rejects_a_text_heuristic_provider =
         failure.includes("zero-based implementation span"),
       ),
     );
-    // A fixture that reuses a display name makes every edge expectation
-    // naming it ambiguous, and an ambiguous assertion passes for the wrong
-    // reason.
+    // A bare endpoint cannot distinguish same-named declarations. Qualified
+    // endpoints in an atomic multi-language corpus can; this legacy fixture is
+    // deliberately bare so the ambiguity gate itself remains covered.
     TestValidator.predicate(
       "a golden fixture reusing a display name is caught",
       Conformance.check(
@@ -132,7 +132,16 @@ export const test_conformance_harness_rejects_a_text_heuristic_provider =
             { ...declaration("caller", "method"), id: "a.ts#caller:method" },
           ],
         }),
-        [],
+        [
+          {
+            reason: "a bare endpoint must identify exactly one declaration",
+            edge: {
+              kind: "references",
+              from: "caller",
+              to: "caller",
+            },
+          },
+        ],
       ).failures.some((failure) => failure.includes("reuses the display name")),
     );
     TestValidator.predicate(

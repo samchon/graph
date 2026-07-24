@@ -64,6 +64,12 @@ const oversizedResponse = args.find((arg) =>
 const envelopeCapabilityMismatch = args.includes(
   "--envelope-capability-mismatch",
 );
+// The registered-provider conformance fixture asks the actual client to carry
+// the same positive relationship and comment-only negative twin as every other
+// strict provider.  These flags change only the fake's graph facts; they leave
+// the protocol, source-manifest, and lifecycle fixtures below untouched.
+const conformance = args.includes("--conformance");
+const conformanceHeuristic = args.includes("--conformance-heuristic");
 let requests = 0;
 
 const CAPABILITIES = [
@@ -157,7 +163,9 @@ const graph = (name, options = {}) => ({
             message: `synthetic finding for ${name}`,
           },
         ],
-  nodes: [
+  nodes: conformance
+    ? conformanceNodes()
+    : [
     {
       id: "src/index.ts#src/index.ts:module",
       kind: "module",
@@ -201,7 +209,9 @@ const graph = (name, options = {}) => ({
       evidence: { startLine: 19, startCol: 1, endLine: 19, endCol: 14 },
     },
   ],
-  edges: [
+  edges: conformance
+    ? conformanceEdges()
+    : [
     {
       from: "src/index.ts#src/index.ts:module",
       to: `src/core/order.ts#${name}:function`,
@@ -210,6 +220,53 @@ const graph = (name, options = {}) => ({
     },
   ],
 });
+
+function conformanceNodes() {
+  const nodes = [
+    {
+      id: "src/core/order.ts#caller:function",
+      kind: "function",
+      name: "caller",
+      file: "src/core/order.ts",
+      external: false,
+    },
+    {
+      id: "src/core/order.ts#callee:function",
+      kind: "function",
+      name: "callee",
+      file: "src/core/order.ts",
+      external: false,
+    },
+  ];
+  if (conformanceHeuristic) {
+    nodes.push({
+      id: "src/core/order.ts#mentionedInComment:function",
+      kind: "function",
+      name: "mentionedInComment",
+      file: "src/core/order.ts",
+      external: false,
+    });
+  }
+  return nodes;
+}
+
+function conformanceEdges() {
+  const edges = [
+    {
+      from: "src/core/order.ts#caller:function",
+      to: "src/core/order.ts#callee:function",
+      kind: "calls",
+    },
+  ];
+  if (conformanceHeuristic) {
+    edges.push({
+      from: "src/core/order.ts#caller:function",
+      to: "src/core/order.ts#mentionedInComment:function",
+      kind: "calls",
+    });
+  }
+  return edges;
+}
 
 /** Every response owes the client these, whatever became of the request. */
 const frame = (id, rest) => ({

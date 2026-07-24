@@ -1,8 +1,8 @@
 import { GraphLanguage, GraphProviderAuthority } from "../../typings";
-import { assertGraphSnapshotContract } from "../assertGraphSnapshotContract";
 import { IGraphProvider } from "../IGraphProvider";
 import { adaptScipIndex } from "./adaptScipIndex";
 import { ScipSession } from "./ScipSession";
+import { ScipEnrichment } from "./ScipEnrichment";
 
 /**
  * Build a registry entry for one language-owned SCIP indexer.
@@ -22,11 +22,20 @@ import { ScipSession } from "./ScipSession";
 export function scipProvider(props: scipProvider.IProps): IGraphProvider {
   const configuration = props.configuration;
   const compilerVersion = props.compilerVersion;
+  const languages = Object.freeze([...props.languages]);
+  const enrichment =
+    props.enrichment === undefined
+      ? undefined
+      : ScipEnrichment.normalize(props.enrichment, languages);
+  const facts = Object.freeze([
+    ...adaptScipIndex.EDGE_KINDS,
+    ...(enrichment?.facts ?? []),
+  ]);
   const provider: IGraphProvider = {
     name: props.name,
-    languages: props.languages,
+    languages,
     authority: props.authority ?? "semantic-index",
-    facts: adaptScipIndex.EDGE_KINDS,
+    facts,
     ...(props.buildInputs === undefined
       ? {}
       : { buildInputs: props.buildInputs }),
@@ -34,7 +43,7 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
       ? {}
       : {
           configuration: (root, env) =>
-            configuration(root, props.languages, env),
+            configuration(root, languages, env),
         }),
 
     // A SCIP indexer answers with a whole-workspace artifact and has no
@@ -55,7 +64,7 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
       // gave up, not merely which program it did not run.
       const authority = props.authority ?? "semantic-index";
       return (
-        `${props.languages.join(", ")}: the ${props.name} ${authority} provider is disabled by ${refused.join(", ")}; ` +
+        `${languages.join(", ")}: the ${props.name} ${authority} provider is disabled by ${refused.join(", ")}; ` +
         `it publishes whole-workspace indexes and has no bounded mode, so these languages fall through to the generic language-server lane. ` +
         `Drop ${refused.length === 1 ? "that option" : "those options"} for a strict index.`
       );
@@ -70,13 +79,6 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
         languages: open.languages,
         provider: props.name,
         authority: props.authority ?? "semantic-index",
-        validate: (snapshot) =>
-          assertGraphSnapshotContract(
-            snapshot,
-            provider,
-            open.languages,
-            open.root,
-          ),
         command: open.command,
         decode: props.decode(open.root),
         indexArgs: props.indexArgs,
@@ -102,6 +104,9 @@ export function scipProvider(props: scipProvider.IProps): IGraphProvider {
               projectRootFromInvocation:
                 props.projectRootFromInvocation,
             }),
+        ...(enrichment === undefined
+          ? {}
+          : { enrichment }),
         languageOf: props.languageOf,
       }),
   };
@@ -157,6 +162,9 @@ export namespace scipProvider {
 
     /** Bind an omitted protobuf project root to this isolated invocation. */
     projectRootFromInvocation?: boolean;
+
+    /** Versioned language facts added after the common SCIP adapter. */
+    enrichment?: ScipEnrichment.IContract;
 
     languageOf: (file: string) => GraphLanguage;
   }

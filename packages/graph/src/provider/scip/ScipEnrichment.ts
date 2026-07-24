@@ -69,27 +69,25 @@ export namespace ScipEnrichment {
     enrichment: IContract,
     languages: readonly GraphLanguage[],
   ): void {
-    assertContract(enrichment);
-    if (
-      new Set(languages).size !== languages.length ||
-      !sameSet(enrichment.languages, languages)
-    ) {
-      throw new TypeError(
-        `@samchon/graph: SCIP enrichment ${enrichment.name} must declare exactly its provider languages`,
-      );
-    }
+    assertExact(read(enrichment), languages);
   }
 
   /**
-   * Capture one immutable contract before a mutable caller can change its
-   * registered facts, languages, version, or implementation behind a session.
+   * Capture one contract's declaration and hold every later run to it.
+   *
+   * The frozen copy is only half of this. The implementation keeps the original
+   * object as its receiver — see {@link fence} — so the original is re-proved
+   * against this copy on every run, and a contract that changed after
+   * registration rejects the candidate instead of running under a declaration
+   * that no longer describes it.
    */
   export function normalize(
     enrichment: IContract,
     languages: readonly GraphLanguage[],
   ): IContract {
-    assert(enrichment, languages);
-    return capture(enrichment);
+    const declaration = read(enrichment);
+    assertExact(declaration, languages);
+    return fence(enrichment, declaration);
   }
 
   /**
@@ -106,8 +104,9 @@ export namespace ScipEnrichment {
     enrichment: IContract,
     languages: readonly GraphLanguage[],
   ): IContract {
-    assertSlice(enrichment, languages);
-    return capture(enrichment);
+    const declaration = read(enrichment);
+    assertServes(declaration, languages);
+    return fence(enrichment, declaration);
   }
 
   /** One provenance capability that names the enrichment contract exactly. */
@@ -124,6 +123,10 @@ export namespace ScipEnrichment {
    * its previous generation. Returning only additional edges makes a common fact
    * immutable by construction; duplicate or conflicting observations fail rather
    * than silently choosing which producer statement should win.
+   *
+   * The contract must serve every language this slice publishes; it may declare
+   * more, because a registry entry that owns several languages runs the same
+   * contract for a build that selected only some of them.
    */
   export function apply(props: IApplyProps): IApplyResult {
     const enrichment = props.enrichment;
@@ -171,7 +174,8 @@ export namespace ScipEnrichment {
       }
       commonEdges.add(key);
     }
-    assertSlice(enrichment, props.languages);
+    const declaration = read(enrichment);
+    assertServes(declaration, props.languages);
     // These are session-owned, already-validated trees. Sealing them in place
     // gives the language contract a genuinely immutable view without retaining
     // one Proxy (and one cache entry) for every object it reads from a large
@@ -200,12 +204,12 @@ export namespace ScipEnrichment {
       !Array.isArray(result.edges)
     ) {
       throw new TypeError(
-        `@samchon/graph: SCIP enrichment ${enrichment.name} returned no edge array`,
+        `@samchon/graph: SCIP enrichment ${declaration.name} returned no edge array`,
       );
     }
     if (result.warnings !== undefined && !Array.isArray(result.warnings)) {
       throw new TypeError(
-        `@samchon/graph: SCIP enrichment ${enrichment.name} returned non-array warnings`,
+        `@samchon/graph: SCIP enrichment ${declaration.name} returned non-array warnings`,
       );
     }
 
@@ -213,12 +217,12 @@ export namespace ScipEnrichment {
     for (const edge of result.edges) {
       if (edge === null || typeof edge !== "object") {
         throw new TypeError(
-          `@samchon/graph: SCIP enrichment ${enrichment.name} returned a non-object edge`,
+          `@samchon/graph: SCIP enrichment ${declaration.name} returned a non-object edge`,
         );
       }
-      if (!enrichment.facts.includes(edge.kind)) {
+      if (!declaration.facts.includes(edge.kind)) {
         throw new Error(
-          `@samchon/graph: SCIP enrichment ${enrichment.name} published undeclared ${edge.kind} facts`,
+          `@samchon/graph: SCIP enrichment ${declaration.name} published undeclared ${edge.kind} facts`,
         );
       }
       if (
@@ -226,13 +230,13 @@ export namespace ScipEnrichment {
         (!nodes.has(edge.to) && !files.has(edge.to))
       ) {
         throw new Error(
-          `@samchon/graph: SCIP enrichment ${enrichment.name} published an endpoint absent from the common slice: ${edge.from} -> ${edge.to}`,
+          `@samchon/graph: SCIP enrichment ${declaration.name} published an endpoint absent from the common slice: ${edge.from} -> ${edge.to}`,
         );
       }
       const key = edgeKey(edge);
       if (additions.has(key)) {
         throw new Error(
-          `@samchon/graph: SCIP enrichment ${enrichment.name} duplicated an edge: ${edge.from} -> ${edge.to} (${edge.kind})`,
+          `@samchon/graph: SCIP enrichment ${declaration.name} duplicated an edge: ${edge.from} -> ${edge.to} (${edge.kind})`,
         );
       }
       additions.set(key, copyEdge(edge));
@@ -240,7 +244,7 @@ export namespace ScipEnrichment {
     const warnings = (result.warnings ?? []).map((warning) => {
       if (typeof warning !== "string" || warning.trim() === "") {
         throw new TypeError(
-          `@samchon/graph: SCIP enrichment ${enrichment.name} returned an empty or non-string warning`,
+          `@samchon/graph: SCIP enrichment ${declaration.name} returned an empty or non-string warning`,
         );
       }
       return warning;
@@ -271,110 +275,160 @@ export namespace ScipEnrichment {
   }
 }
 
+/**
+ * One contract's declaration, read exactly once.
+ *
+ * Every check and every published value comes from this snapshot rather than
+ * from the contract object, because the object is the untrusted party here: an
+ * accessor that answered one way for validation and another way for the frozen
+ * copy would put a family this module had just rejected into the published
+ * declaration, and the run-time drift check would then agree with it forever.
+ */
+interface IDeclaration {
+  readonly name: string;
+  readonly version: number;
+  readonly languages: readonly GraphLanguage[];
+  readonly facts: readonly GraphEdgeKind[];
+  readonly enrich: ScipEnrichment.IContract["enrich"];
+}
+
+function read(enrichment: ScipEnrichment.IContract): IDeclaration {
+  const languages = enrichment.languages;
+  const facts = enrichment.facts;
+  return {
+    name: enrichment.name,
+    version: enrichment.version,
+    languages: Array.isArray(languages)
+      ? Object.freeze([...languages])
+      : languages,
+    facts: Array.isArray(facts) ? Object.freeze([...facts]) : facts,
+    enrich: enrichment.enrich,
+  };
+}
+
 /** Everything one contract must satisfy before any caller may run it. */
-function assertContract(enrichment: ScipEnrichment.IContract): void {
-  if (!/^[a-z][a-z0-9-]*$/.test(enrichment.name)) {
+function assertDeclaration(declaration: IDeclaration): void {
+  if (
+    typeof declaration.name !== "string" ||
+    !/^[a-z][a-z0-9-]*$/.test(declaration.name)
+  ) {
     throw new TypeError(
       "@samchon/graph: a SCIP enrichment name must be lowercase kebab-case",
     );
   }
-  if (!Number.isSafeInteger(enrichment.version) || enrichment.version < 1) {
+  if (!Number.isSafeInteger(declaration.version) || declaration.version < 1) {
     throw new TypeError(
-      `@samchon/graph: SCIP enrichment ${enrichment.name} must have a positive safe-integer version`,
+      `@samchon/graph: SCIP enrichment ${declaration.name} must have a positive safe-integer version`,
     );
   }
   if (
-    enrichment.languages.length === 0 ||
-    new Set(enrichment.languages).size !== enrichment.languages.length
+    !Array.isArray(declaration.languages) ||
+    declaration.languages.length === 0 ||
+    new Set(declaration.languages).size !== declaration.languages.length
   ) {
     throw new TypeError(
-      `@samchon/graph: SCIP enrichment ${enrichment.name} must declare each served language exactly once`,
+      `@samchon/graph: SCIP enrichment ${declaration.name} must declare each served language exactly once`,
     );
   }
   if (
-    typeof enrichment.enrich !== "function" ||
-    enrichment.facts.length === 0 ||
-    new Set(enrichment.facts).size !== enrichment.facts.length ||
-    enrichment.facts.some((fact) => !GRAPH_EDGE_KIND_SET.has(fact))
+    typeof declaration.enrich !== "function" ||
+    !Array.isArray(declaration.facts) ||
+    declaration.facts.length === 0 ||
+    new Set(declaration.facts).size !== declaration.facts.length ||
+    declaration.facts.some((fact) => !GRAPH_EDGE_KIND_SET.has(fact))
   ) {
     throw new TypeError(
-      `@samchon/graph: SCIP enrichment ${enrichment.name} must have a callable implementation and declare each valid added fact family exactly once`,
+      `@samchon/graph: SCIP enrichment ${declaration.name} must have a callable implementation and declare each valid added fact family exactly once`,
     );
   }
-  for (const fact of enrichment.facts) {
+  for (const fact of declaration.facts) {
     if (adaptScipIndex.EDGE_KINDS.includes(fact)) {
       throw new TypeError(
-        `@samchon/graph: SCIP enrichment ${enrichment.name} cannot overwrite the common ${fact} fact family`,
+        `@samchon/graph: SCIP enrichment ${declaration.name} cannot overwrite the common ${fact} fact family`,
       );
     }
   }
 }
 
-/** The contract is valid and covers every language the caller will publish. */
-function assertSlice(
-  enrichment: ScipEnrichment.IContract,
+/** The declaration is valid and is exactly the registering provider's slice. */
+function assertExact(
+  declaration: IDeclaration,
   languages: readonly GraphLanguage[],
 ): void {
-  assertContract(enrichment);
-  const declared = new Set(enrichment.languages);
+  assertDeclaration(declaration);
+  if (
+    new Set(languages).size !== languages.length ||
+    !sameSet(declaration.languages, languages)
+  ) {
+    throw new TypeError(
+      `@samchon/graph: SCIP enrichment ${declaration.name} must declare exactly its provider languages`,
+    );
+  }
+}
+
+/** The declaration is valid and covers every language the caller publishes. */
+function assertServes(
+  declaration: IDeclaration,
+  languages: readonly GraphLanguage[],
+): void {
+  assertDeclaration(declaration);
+  const declared = new Set(declaration.languages);
   if (
     languages.length === 0 ||
     new Set(languages).size !== languages.length ||
     languages.some((language) => !declared.has(language))
   ) {
     throw new TypeError(
-      `@samchon/graph: SCIP enrichment ${enrichment.name} does not serve every language this session publishes`,
+      `@samchon/graph: SCIP enrichment ${declaration.name} does not serve every language this session publishes`,
     );
   }
 }
 
 /**
- * Freeze one validated contract's declaration and fence its implementation.
+ * Publish one validated declaration and hold the original contract to it.
  *
  * Copying the declared fields is not enough on its own. A method implementation
  * receives the original object as its receiver, so a caller that renames the
  * contract after registration leaves a session whose published capability says
- * `go-calls@1` while the code that ran read `drifted` from `this`. Rebinding the
+ * `go-calls@2` while the code that ran read `drifted` from `this`. Rebinding the
  * receiver to a frozen copy would not fix it either: that severs the private
  * class state a real language contract legitimately keeps, which is why the
  * receiver stays the original object and every run instead re-proves that the
- * original still declares what this session captured. Contract mutation after
- * registration is never a legitimate operation, so the run fails closed rather
- * than publishing a generation under a declaration that no longer describes it.
+ * original still declares what this session captured.
+ *
+ * The implementation is compared too, even though the captured function is the
+ * one that runs. A caller that installs a different `enrich` believes it changed
+ * what the session does; it did not, and silently running the old one is a
+ * worse answer than saying so. Contract mutation after registration is never a
+ * legitimate operation, so either kind rejects the candidate rather than
+ * publishing a generation under a declaration that no longer describes it.
  */
-function capture(
+function fence(
   enrichment: ScipEnrichment.IContract,
+  declaration: IDeclaration,
 ): ScipEnrichment.IContract {
-  const name = enrichment.name;
-  const signature = contractSignature(enrichment);
-  const implementation = enrichment.enrich;
-  const enrich = implementation.bind(enrichment);
+  const enrich = declaration.enrich.bind(enrichment);
   return Object.freeze({
-    name,
-    version: enrichment.version,
-    languages: Object.freeze([...enrichment.languages]),
-    facts: Object.freeze([...enrichment.facts]),
+    name: declaration.name,
+    version: declaration.version,
+    languages: declaration.languages,
+    facts: declaration.facts,
     enrich: (input: ScipEnrichment.IProps) => {
+      const current = read(enrichment);
       if (
-        contractSignature(enrichment) !== signature ||
-        enrichment.enrich !== implementation
+        !Object.is(current.name, declaration.name) ||
+        !Object.is(current.version, declaration.version) ||
+        current.enrich !== declaration.enrich ||
+        !sameSet(declaration.languages, current.languages) ||
+        !sameSet(declaration.facts, current.facts)
       ) {
         throw new Error(
-          `@samchon/graph: SCIP enrichment ${name} changed its registered contract after a session captured it`,
+          `@samchon/graph: SCIP enrichment ${declaration.name} changed its registered contract after a session captured it`,
         );
       }
       return enrich(input);
     },
   });
-}
-
-function contractSignature(enrichment: ScipEnrichment.IContract): string {
-  return JSON.stringify([
-    enrichment.name,
-    enrichment.version,
-    [...enrichment.languages],
-    [...enrichment.facts],
-  ]);
 }
 
 function sameSet<T>(left: readonly T[], right: readonly T[]): boolean {

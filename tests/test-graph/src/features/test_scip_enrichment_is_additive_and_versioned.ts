@@ -153,9 +153,6 @@ function assertTheAdditiveBoundary(): void {
   const mutable = enrichment();
   const normalized = ScipEnrichment.normalize(mutable, ["go"]);
   (mutable as { name: string }).name = "changed";
-  (mutable as { version: number }).version = 9;
-  (mutable.languages as unknown as string[])[0] = "rust";
-  (mutable.facts as GraphEdgeKind[])[0] = "tests";
   TestValidator.equals(
     "a normalized contract keeps the declaration it registered",
     [
@@ -169,28 +166,56 @@ function assertTheAdditiveBoundary(): void {
     ],
     ["go-calls", 2, ["go"], ["calls"], true, true, true],
   );
+
   // Freezing the copy is not the whole boundary. The implementation keeps the
   // original object as its receiver, so a rename after registration would let
   // `this.name` disagree with the capability the snapshot publishes. Detecting
-  // that at run time is what makes the two inseparable.
-  TestValidator.predicate(
-    "a contract whose declaration drifted after registration cannot run",
-    throws(() => apply(common, normalized)),
-  );
-
-  const swapped = enrichment();
-  const swappedContract = ScipEnrichment.normalize(swapped, ["go"]);
-  (swapped as { enrich: ScipEnrichment.IContract["enrich"] }).enrich = () => ({
-    edges: [{ kind: "tests", from: "caller", to: "callee" }],
-  });
-  TestValidator.predicate(
-    "a contract whose implementation was replaced after registration cannot run",
-    throws(() => apply(common, swappedContract)),
-  );
+  // that at run time is what makes the two inseparable — and each declared field
+  // gets its own twin, because one case that moves all of them at once would
+  // still pass if the check stopped comparing any single field.
+  for (const [label, drift] of [
+    ["a renamed contract", (draft: ScipEnrichment.IContract) => {
+      (draft as { name: string }).name = "renamed";
+    }],
+    ["a reversioned contract", (draft: ScipEnrichment.IContract) => {
+      (draft as { version: number }).version = 9;
+    }],
+    ["a relanguaged contract", (draft: ScipEnrichment.IContract) => {
+      (draft.languages as unknown as string[])[0] = "rust";
+    }],
+    ["a contract that widened its languages", (draft) => {
+      (draft.languages as unknown as string[]).push("rust");
+    }],
+    ["a refacted contract", (draft: ScipEnrichment.IContract) => {
+      (draft.facts as GraphEdgeKind[])[0] = "tests";
+    }],
+    ["a contract with a replaced implementation", (draft) => {
+      (draft as { enrich: ScipEnrichment.IContract["enrich"] }).enrich = () => ({
+        edges: [{ kind: "tests", from: "caller", to: "callee" }],
+      });
+    }],
+  ] as const) {
+    const draft = enrichment({ enrich: () => ({ edges: [], warnings: ["ran"] }) });
+    const contract = ScipEnrichment.normalize(draft, ["go"]);
+    drift(draft);
+    TestValidator.predicate(
+      `${label} cannot run after registration`,
+      throws(() => apply(common, contract)),
+    );
+  }
+  // The positive twin has to publish something no other path produces. An
+  // implementation returning no edges is indistinguishable from one that never
+  // ran, so this one answers with a warning only it can emit.
   TestValidator.equals(
     "an untouched registered contract still runs the implementation it captured",
-    apply(common, ScipEnrichment.normalize(enrichment(), ["go"])).edges,
-    common.edges,
+    apply(
+      common,
+      ScipEnrichment.normalize(
+        enrichment({ enrich: () => ({ edges: [], warnings: ["captured"] }) }),
+        ["go"],
+      ),
+    ),
+    { edges: common.edges, warnings: ["captured"] },
   );
 
   // A registry entry owns every language its indexer serves; one build selects
@@ -285,6 +310,14 @@ function assertTheAdditiveBoundary(): void {
     ["a non-positive enrichment version", { ...calls, version: 0 }],
     ["a mismatched enrichment language slice", { ...calls, languages: ["rust"] }],
     ["an empty enrichment language slice", { ...calls, languages: [] }],
+    [
+      "a declaration whose languages and facts are not arrays",
+      {
+        ...calls,
+        languages: undefined as unknown as ScipEnrichment.IContract["languages"],
+        facts: undefined as unknown as ScipEnrichment.IContract["facts"],
+      },
+    ],
     ["a duplicate enrichment language slice", { ...calls, languages: ["go", "go"] }],
     ["an empty enrichment fact declaration", { ...calls, facts: [] }],
     ["a duplicate enrichment fact declaration", { ...calls, facts: ["calls", "calls"] }],
@@ -309,6 +342,27 @@ function assertTheAdditiveBoundary(): void {
   TestValidator.predicate(
     "a registry entry cannot name one provider language twice",
     throws(() => ScipEnrichment.assert(calls, ["go", "go"])),
+  );
+  // The only inputs on which registration and session validation disagree.
+  // Equality is what keeps a provider from leaving part of its own entry
+  // unenriched, and nothing else in this file exercises a length mismatch.
+  TestValidator.predicate(
+    "a contract cannot cover fewer languages than the provider registering it",
+    throws(() =>
+      ScipEnrichment.assert(enrichment({ languages: ["go"] }), ["go", "rust"]),
+    ),
+  );
+  TestValidator.predicate(
+    "a contract cannot cover more languages than the provider registering it",
+    throws(() =>
+      ScipEnrichment.assert(enrichment({ languages: ["go", "rust"] }), ["go"]),
+    ),
+  );
+  TestValidator.equals(
+    "a session may still publish part of that same wider slice",
+    ScipEnrichment.slice(enrichment({ languages: ["go", "rust"] }), ["go"])
+      .languages,
+    ["go", "rust"],
   );
 
   TestValidator.predicate(
@@ -647,6 +701,34 @@ async function assertTheSessionFence(): Promise<void> {
     ],
   );
   await retaining.close();
+
+  // The drift a resident build actually meets: one generation published, the
+  // contract changed underneath it, the next refresh asked to publish another.
+  // The whole point of failing closed is that the standing generation survives.
+  const drifting = enrichment({
+    enrich: ({ common }) => ({
+      edges: [
+        { kind: "calls", from: common.nodes[0]!.id, to: common.nodes[0]!.id },
+      ],
+    }),
+  });
+  const driftingSession = sessionOf(root, drifting);
+  const standing = await driftingSession.refresh();
+  (drifting as { version: number }).version = 99;
+  fs.appendFileSync(source, "// force a drifted candidate\n");
+  await rejects(driftingSession.refresh());
+  TestValidator.equals(
+    "a contract that drifted between refreshes cannot replace a generation",
+    [
+      driftingSession.generation,
+      driftingSession.current,
+      standing.snapshot.provenance.capabilities.includes(
+        "scip-enrichment:go-calls@2",
+      ),
+    ],
+    [1, standing.snapshot, true],
+  );
+  await driftingSession.close();
 
   const malformed = sessionOf(
     root,

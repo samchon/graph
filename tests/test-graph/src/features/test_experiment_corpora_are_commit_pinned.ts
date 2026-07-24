@@ -29,8 +29,16 @@ export const test_experiment_corpora_are_commit_pinned = () => {
     "the dynamic SCIP smoke proves a versioned Python lifecycle, not an edge count",
     python.includes('strictProvider: "scip-python"') &&
       python.includes('strictAuthority: "semantic-index"') &&
-      python.includes('semanticEdges: ["contains", "references"]') &&
+      python.includes('semanticEdges: ["references"]') &&
       !python.includes("minEdges"),
+  );
+  // Dropping a family a provider is registered to prove is the cheapest way to
+  // make a failing lane pass, so a row that claims fewer than its provider
+  // proves has to say what the producer cannot emit.
+  TestValidator.predicate(
+    "a row expecting fewer families than its provider proves states the gap",
+    /semanticLimitation:\s*"?[^",]/.test(python) &&
+      runner.includes("states no limitation explaining why"),
   );
   // scip-python 0.6.6 recovers from a malformed `pyproject.toml` and emits no
   // SCIP diagnostics, so a row claiming either boundary would assert behaviour

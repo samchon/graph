@@ -177,7 +177,15 @@ export const LANGUAGE_EXPERIMENTS = [
     strictAuthority: "semantic-index",
     strictTool: "scip-python",
     requiredCapabilities: ["universe", "diskDigests"],
-    semanticEdges: ["contains", "references"],
+    // The common adapter derives `contains` from SCIP `enclosing_symbol`, and
+    // scip-python 0.6.6 never populates it: all ten `SymbolInformation`
+    // construction sites in the pinned bundle pass `symbol`, `documentation`,
+    // and `relationships` only, and the field appears nowhere but the generated
+    // protobuf accessors. Expecting the family here would assert a fact the
+    // producer cannot emit, so the row claims what it proves and states the gap.
+    semanticEdges: ["references"],
+    semanticLimitation:
+      "scip-python 0.6.6 emits no SymbolInformation.enclosing_symbol, so symbol containment cannot be proven from its index and `contains` is omitted rather than inferred",
     crossFileEdge: "references",
     lifecycle: {
       sourceFile: "src/click/core.py",

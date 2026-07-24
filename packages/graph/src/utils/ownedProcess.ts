@@ -60,8 +60,8 @@ export namespace ownedProcess {
         windowsVerbatimArguments,
       },
     };
-    /* c8 ignore stop */
   }
+  /* c8 ignore stop */
 
   /**
    * Add the private gate channel to one command's ordinary stdio contract.
@@ -76,8 +76,8 @@ export namespace ownedProcess {
     /* c8 ignore start -- the private IPC descriptor exists only on Windows. */
     if (command.windowsLaunch === undefined) return [...standard];
     return [...standard, "ipc"];
-    /* c8 ignore stop */
   }
+  /* c8 ignore stop */
 
   /**
    * Assign a just-spawned Windows gate to its exact native ownership set, then

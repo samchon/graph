@@ -43,7 +43,18 @@ export interface IBulkGraphSession {
 }
 
 export namespace IBulkGraphSession {
-  /** A complete strict fact slice from one compiler snapshot. */
+  /**
+   * A complete strict fact slice from one compiler snapshot.
+   *
+   * A producer builds one of these and hands it over; from that moment it is
+   * evidence, and the publication boundary freezes it — arrays, nested spans,
+   * provenance, and the source manifest included — before any contract gate or
+   * reader sees it. The fields stay writable in the type because that is what
+   * building one requires, but writing through a published snapshot throws.
+   * Evidence a later caller can edit is not evidence: a validator that kept its
+   * argument could otherwise append an unclaimed edge after the generation was
+   * published, and nothing would revalidate it.
+   */
   export interface ISnapshot {
     /** Every language this slice replaces atomically. Never empty. */
     languages: GraphLanguage[];

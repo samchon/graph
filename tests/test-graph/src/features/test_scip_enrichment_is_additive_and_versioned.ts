@@ -1,6 +1,7 @@
 import { TestValidator } from "@nestia/e2e";
 import {
   type GraphEdgeKind,
+  type IBulkGraphSession,
   ScipEnrichment,
   ScipSession,
   graphSnapshotDigests,
@@ -217,6 +218,51 @@ function assertTheAdditiveBoundary(): void {
       throws(() => ScipEnrichment.slice(shared, selected)),
     );
   }
+
+  // `Object.freeze` fixes which getter runs, never what the getter returns, so
+  // an accessor left in an input would stay the live channel the seal exists to
+  // close. A cycle and a shared subtree prove the walk terminates on both.
+  TestValidator.predicate(
+    "an accessor cannot hide mutable state inside an enrichment input",
+    throws(() =>
+      apply(
+        {
+          ...common,
+          nodes: [
+            Object.defineProperty({ ...common.nodes[0]! }, "name", {
+              get: () => "recomputed",
+              enumerable: true,
+              configurable: true,
+            }),
+            common.nodes[1]!,
+          ],
+        },
+        enrichment(),
+      ),
+    ),
+  );
+  const sharedSpan = { file: "src/main.go", startLine: 1, startCol: 1 };
+  const cyclic = indexOf() as ReturnType<typeof indexOf> & { self?: unknown };
+  cyclic.self = cyclic;
+  TestValidator.equals(
+    "a cyclic or shared input tree is sealed once rather than walked forever",
+    ScipEnrichment.apply({
+      enrichment: enrichment(),
+      index: cyclic,
+      root: "/fixture",
+      provider: "scip-fixture",
+      languages: ["go"],
+      common: {
+        ...common,
+        nodes: common.nodes.map((node) => ({ ...node, evidence: sharedSpan })),
+      },
+    }).edges,
+    common.edges,
+  );
+  TestValidator.predicate(
+    "sealing a shared span reaches it through every parent that holds it",
+    Object.isFrozen(sharedSpan) && Object.isFrozen(cyclic),
+  );
 
   TestValidator.predicate(
     "the bare common slice cannot smuggle in a language-owned fact",
@@ -545,11 +591,62 @@ async function assertTheSessionFence(): Promise<void> {
   );
   await rejects(mutatingValidator.refresh());
   TestValidator.equals(
-    "mandatory validation runs after a caller-supplied validator",
+    "a caller-supplied validator cannot rewrite the candidate it gates",
     [mutatingValidator.generation, mutatingValidator.current],
     [0, undefined],
   );
   await mutatingValidator.close();
+
+  // Ordering the two validators is not enough on its own: a validator that
+  // keeps its argument can wait until `refresh` has published the generation
+  // and change `current` with no contract check left to run.
+  let retained: IBulkGraphSession.ISnapshot | undefined;
+  const retaining = sessionOf(root, enrichment(), false, (snapshot) => {
+    retained = snapshot;
+  });
+  const published = await retaining.refresh();
+  const held = retained!;
+  TestValidator.equals(
+    "a retained snapshot cannot be changed after its generation is published",
+    [
+      held === published.snapshot,
+      throws(() =>
+        held.edges.push({
+          kind: "tests",
+          from: held.nodes[0]!.id,
+          to: held.nodes[0]!.id,
+        }),
+      ),
+      throws(() => held.warnings.push("an unproven claim")),
+      throws(() => held.provenance.capabilities.push("sourceDigests")),
+      throws(() => {
+        (held.provenance as { provider: string }).provider = "another-provider";
+      }),
+      throws(() =>
+        held.sources.set("/unproven.go", {
+          checkerDigest: "",
+          diskDigest: "",
+        }),
+      ),
+      throws(() => held.sources.clear()),
+      retaining.current === published.snapshot,
+      retaining.current!.edges.length,
+      retaining.current!.sources.size,
+    ],
+    [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      published.snapshot.edges.length,
+      published.snapshot.sources.size,
+    ],
+  );
+  await retaining.close();
 
   const malformed = sessionOf(
     root,

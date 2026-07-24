@@ -6,6 +6,7 @@ import path from "node:path";
 
 import { GraphLanguage } from "../typings";
 import { confinedProjectInput } from "../indexer/confinedProjectInput";
+import { freezeDeep } from "../utils/freezeDeep";
 import { ownedProcess } from "../utils/ownedProcess";
 import { spawnableCommand } from "../utils/spawnableCommand";
 import { IBulkGraphSession } from "./IBulkGraphSession";
@@ -159,6 +160,11 @@ export class BatchGraphSession implements IBulkGraphSession {
         signal,
         run: (command, args) => this.run(command, args, signal),
       });
+      // Sealed before the gate rather than after it. A validator is a gate, not
+      // a transform, and one that kept the reference could append an unclaimed
+      // edge once `refresh` had published the generation — invalidating
+      // `current` behind a contract check that already passed.
+      freezeDeep(snapshot, `the ${this.options.provider} snapshot`);
       this.options.validate?.(snapshot);
       const after = this.fingerprint();
       if (after !== universe) {

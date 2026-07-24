@@ -3,6 +3,7 @@ import {
   ISamchonGraphNode,
 } from "../../structures";
 import { GraphEdgeKind, GraphLanguage } from "../../typings";
+import { freezeDeep } from "../../utils/freezeDeep";
 import { IScipIndex } from "./IScipIndex";
 import { adaptScipIndex } from "./adaptScipIndex";
 
@@ -171,18 +172,21 @@ export namespace ScipEnrichment {
       commonEdges.add(key);
     }
     assertSlice(enrichment, props.languages);
-    // These are session-owned, already-validated trees. Freezing them in place
+    // These are session-owned, already-validated trees. Sealing them in place
     // gives the language contract a genuinely immutable view without retaining
     // one Proxy (and one cache entry) for every object it reads from a large
-    // index. The parser and common adapter produce bounded-depth acyclic trees,
-    // so this walk has constant auxiliary space rather than a second graph.
-    const index = freezeTree(props.index);
-    const languages = freezeTree([...props.languages]);
-    const common = freezeTree({
-      nodes: props.common.nodes,
-      edges: props.common.edges,
-      files: props.common.files,
-    });
+    // index.
+    const subject = "a SCIP enrichment input";
+    const index = freezeDeep(props.index, subject);
+    const languages = freezeDeep([...props.languages], subject);
+    const common = freezeDeep(
+      {
+        nodes: props.common.nodes,
+        edges: props.common.edges,
+        files: props.common.files,
+      },
+      subject,
+    );
     const result = enrichment.enrich({
       index,
       root: props.root,
@@ -386,36 +390,6 @@ function edgeKey(edge: Pick<ISamchonGraphEdge, "kind" | "from" | "to">): string 
 
 function copyEdge(edge: ISamchonGraphEdge): ISamchonGraphEdge {
   return structuredClone(edge);
-}
-
-function freezeTree<T>(value: T): T {
-  if (value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) {
-    Object.freeze(value);
-    for (let index = 0; index < value.length; index += 1) {
-      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-      if (descriptor === undefined) continue;
-      if (!("value" in descriptor)) {
-        throw new TypeError(
-          "@samchon/graph: a SCIP enrichment input cannot contain accessors",
-        );
-      }
-      freezeTree(descriptor.value);
-    }
-    return value;
-  }
-  const keys = Object.keys(value);
-  Object.freeze(value);
-  for (const key of keys) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
-    if (!("value" in descriptor)) {
-      throw new TypeError(
-        "@samchon/graph: a SCIP enrichment input cannot contain accessors",
-      );
-    }
-    freezeTree(descriptor.value);
-  }
-  return value;
 }
 
 function compareOrdinal(left: string, right: string): number {

@@ -14,11 +14,11 @@
  * array it throws something that names neither the value nor the field. A
  * function value is left alone rather than refused — it is not data, so nothing
  * in a published tree should hold one, and freezing one would seal a shape this
- * boundary does not own. An accessor is refused — freezing fixes which getter runs and
- * never what it returns, so a value that recomputes itself on every read is
- * precisely the channel this seal exists to close. A caller that needs one of
- * those shapes converts it at the boundary; {@link sealedMap} is how the source
- * manifest does it.
+ * boundary does not own. An accessor is refused for the same reason as the
+ * exotic objects: freezing fixes which getter runs and never what it returns, so
+ * a value that recomputes itself on every read is precisely the channel this
+ * seal exists to close. A caller that needs one of those shapes converts it at
+ * the boundary; {@link sealedMap} is how the source manifest does it.
  *
  * The walk is iterative and remembers what it sealed, so a cycle terminates, a
  * shared subtree is walked once, and a tree already sealed upstream — the common

@@ -23,6 +23,29 @@ const pinned = cloneRepository(experiment, { refresh: args.refresh === "true" })
 // ruby-lsp, for one, composes a bundle from the project's Gemfile. That runs in
 // a copy for both lanes, so the clone keeps proving which revision was measured.
 const strict = experiment.strictProvider !== undefined;
+
+// Read before anything is indexed: a row that cannot be satisfied should
+// fail in seconds rather than after a full real-server build.
+//
+// A default here would let a row inherit a claim it never made. "The compiler
+// resolved this" and "an index built from a navigation skeleton reports this"
+// are different grades of evidence, and a row that does not say which one it
+// expects cannot detect a provider that silently changed grade.
+if (strict) {
+  for (const field of [
+    "strictAuthority",
+    "strictTool",
+    "requiredCapabilities",
+    "semanticEdges",
+    "crossFileEdge",
+  ]) {
+    if (experiment[field] === undefined) {
+      throw new Error(
+        `${experiment.language}: a strict row must state its expected ${field}`,
+      );
+    }
+  }
+}
 let dump;
 let elapsedMs;
 let lifecycle;
@@ -74,25 +97,6 @@ if (strict && provenance === undefined) {
   throw new Error(
     `${experiment.language}: strict provider ${experiment.strictProvider} did not publish provenance: ${warnings.join("; ")}`,
   );
-}
-// A default here would let a row inherit a claim it never made. "The compiler
-// resolved this" and "an index built from a navigation skeleton reports this"
-// are different grades of evidence, and a row that does not say which one it
-// expects cannot detect a provider that silently changed grade.
-if (strict) {
-  for (const field of [
-    "strictAuthority",
-    "strictTool",
-    "requiredCapabilities",
-    "semanticEdges",
-    "crossFileEdge",
-  ]) {
-    if (experiment[field] === undefined) {
-      throw new Error(
-        `${experiment.language}: a strict row must state its expected ${field}`,
-      );
-    }
-  }
 }
 if (
   provenance !== undefined &&

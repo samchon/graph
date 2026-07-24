@@ -41,6 +41,7 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
   let dump;
   let previousIdentity;
   let previousProvenance;
+  let previousDiagnostics = 0;
 
   const load = async (name, expectedModes) => {
     const started = performance.now();
@@ -89,6 +90,7 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
     dump = next;
     previousIdentity = identity;
     previousProvenance = provenance;
+    previousDiagnostics = row.diagnosticCount;
     rows.push(row);
     return next;
   };
@@ -190,26 +192,37 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
           `${experiment.language}: tolerated failure reported ${String(mode)}`,
         );
       }
+      // Not a claim about the producer: it proves the row aimed its failure at
+      // a file the provider actually declares as a build input. A `failureFile`
+      // outside that set would leave every check below comparing a generation
+      // to itself.
       if (provenance.universe === prior.universe) {
         throw new Error(
-          `${experiment.language}: the malformed build input left the build universe unchanged, so this step proved nothing`,
+          `${experiment.language}: ${fixture.failureFile ?? fixture.sourceFile} is not a declared build input, so this step compared a generation to itself`,
         );
       }
+      // The claim itself. Content and manifest cover the facts and the source
+      // evidence; capabilities and warnings are the rest of what a reader can
+      // observe, and a producer that quietly gave up a capability under the
+      // malformed input has not ignored it.
       if (
         provenance.content !== prior.content ||
-        provenance.manifest !== prior.manifest
+        provenance.manifest !== prior.manifest ||
+        provenance.capabilities.join(",") !== prior.capabilities.join(",") ||
+        provenance.authority !== prior.authority
       ) {
         throw new Error(
-          `${experiment.language}: the catalog records this input as ignored, but the published facts or source manifest changed with it`,
+          `${experiment.language}: the catalog records this input as ignored, but the published facts, source manifest, capabilities, or authority changed with it`,
         );
       }
-      // The other half of the catalog's claim. If this producer starts
-      // reporting the malformed input, `diagnostic` becomes the truthful
-      // policy and the recorded justification stops being true.
+      // The other half of the catalog's claim, as a delta rather than an
+      // absolute: diagnostics this corpus already had are not evidence about
+      // this input, and the dump carries every lane's diagnostics, not only
+      // this provider's slice.
       const diagnosticCount = tolerated.diagnostics?.length ?? 0;
-      if (diagnosticCount !== 0) {
+      if (diagnosticCount !== previousDiagnostics) {
         throw new Error(
-          `${experiment.language}: the catalog records this producer as emitting no diagnostics, but it reported ${String(diagnosticCount)}`,
+          `${experiment.language}: the catalog records this producer as reporting nothing about a malformed build input, but diagnostics moved from ${String(previousDiagnostics)} to ${String(diagnosticCount)}`,
         );
       }
       dump = tolerated;
@@ -219,6 +232,7 @@ export const runStrictLifecycle = async (experiment, pinnedRoot) => {
         provenance.universe,
       ].join(":");
       previousProvenance = provenance;
+      previousDiagnostics = diagnosticCount;
       rows.push({
         name: "failure",
         status: "tolerated",

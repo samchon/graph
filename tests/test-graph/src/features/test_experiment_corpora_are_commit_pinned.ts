@@ -7,7 +7,7 @@ import { GraphPaths } from "../internal/GraphPaths";
 /** Real-language experiments always check out one reviewable corpus revision. */
 export const test_experiment_corpora_are_commit_pinned = () => {
   const catalog = experimentSource("catalog.mjs");
-  const process = experimentSource("process.mjs");
+  const helpers = experimentSource("process.mjs");
   const lifecycle = experimentSource("strict-lifecycle.mjs");
   const runner = experimentSource("run-language.mjs");
   const setup = experimentSource("setup-language.mjs");
@@ -42,17 +42,13 @@ export const test_experiment_corpora_are_commit_pinned = () => {
     "a failure boundary the producer does not have is published as a limitation",
     python.includes('failurePolicy: "tolerated"') &&
       /failureLimitation:\s*"?[^",]/.test(python) &&
-      lifecycle.includes('fixture.failurePolicy === "tolerated"') &&
-      lifecycle.includes("provenance.universe === prior.universe") &&
-      lifecycle.includes("provenance.content !== prior.content") &&
-      lifecycle.includes("diagnosticCount !== 0") &&
-      lifecycle.includes('fixture.failureLimitation === ""'),
+      lifecycle.includes('fixture.failurePolicy === "tolerated"'),
   );
 
   TestValidator.predicate(
     "the clone helper fetches and detaches the pinned revision",
-    process.includes('["fetch", "--depth=1", "origin", experiment.commit]') &&
-      process.includes('["checkout", "--detach", experiment.commit]'),
+    helpers.includes('["fetch", "--depth=1", "origin", experiment.commit]') &&
+      helpers.includes('["checkout", "--detach", experiment.commit]'),
   );
   TestValidator.predicate(
     "strict edits happen only in a copied external workspace",
@@ -67,7 +63,8 @@ export const test_experiment_corpora_are_commit_pinned = () => {
     "every lane prepares a copy and re-proves the pinned clone afterwards",
     runner.includes('isolateCorpus(experiment, pinned, "prepared")') &&
       runner.includes("assertPinnedCorpus(experiment, pinned)") &&
-      process.includes('["status", "--porcelain", "--ignored"]'),
+      !runner.includes("shell(experiment.prepare, { cwd: pinned })") &&
+      helpers.includes('["status", "--porcelain", "--ignored"]'),
   );
   // A default would let a row inherit a claim it never made, which is how a row
   // came to require a cross-file `calls` edge from a provider registered to

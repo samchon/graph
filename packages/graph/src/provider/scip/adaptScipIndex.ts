@@ -193,10 +193,23 @@ export function adaptScipIndex(
   // first. The language a reference *appears in* is a fact the index does
   // state, so each external leaf is created when its first occurrence names
   // it, and inherits that document's language.
+  //
+  // A document-scoped symbol is never a candidate. `local 4` is a counter the
+  // indexer resets per document, so outside the document that defines it the
+  // string names nothing: two files each holding a `local 4` are unrelated
+  // declarations, and there is no document to scope an external leaf to. A
+  // producer that lists one here has told this graph less than it needs, and
+  // materializing the leaf anyway would invent an endpoint the index never
+  // proved — so the reference is dropped and the omission is reported.
   const pendingExternals = new Map<string, IScipIndex.ISymbolInformation>();
+  let unscopedExternals = 0;
   for (const symbol of props.index.externalSymbols ?? []) {
     const parsed = scipSymbol(symbol.symbol);
     if (parsed === undefined || definitions.has(parsed.key)) continue;
+    if (parsed.stability === "generation") {
+      unscopedExternals += 1;
+      continue;
+    }
     pendingExternals.set(parsed.key, symbol);
   }
 
@@ -414,6 +427,11 @@ export function adaptScipIndex(
   if (derivedKinds > 0) {
     warnings.push(
       `${props.provider}: ${String(derivedKinds)} node kind(s) were derived from generic SCIP descriptor suffixes because the producer supplied no mapped SymbolInformation.kind; language enrichment is required for a more specific kind`,
+    );
+  }
+  if (unscopedExternals > 0) {
+    warnings.push(
+      `${props.provider}: ${String(unscopedExternals)} external symbol(s) were document-scoped locals with no defining document in this index, so references to them are omitted rather than attached to an invented declaration`,
     );
   }
 

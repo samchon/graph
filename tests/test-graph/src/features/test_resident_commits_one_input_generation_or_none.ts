@@ -36,6 +36,8 @@ export const test_resident_commits_one_input_generation_or_none = async () => {
   await assertAHashOnlySourceMismatchRebuildsTheResidentState();
   await assertProvenanceDescribesThePublishedGeneration();
   await assertADeclaredBuildInputInvalidatesTheProject();
+  await assertAChangedBuildInputSetReplacesTheResidentState();
+  await assertARevertedGenericSourceDiscardsTheCandidate();
   await assertAMovedBuildInputDiscardsTheCandidate();
 };
 
@@ -411,6 +413,96 @@ async function assertADeclaredBuildInputInvalidatesTheProject(): Promise<void> {
   await source.close();
 }
 
+async function assertAChangedBuildInputSetReplacesTheResidentState(): Promise<void> {
+  const root = GraphPaths.createTempDirectory(
+    "samchon-graph-build-input-set-",
+  );
+  const file = path.join(root, "a.ts");
+  fs.writeFileSync(file, "export const value = 1;\n");
+  let includeGenerated = false;
+  let moveDuringRefresh = false;
+  let builds = 0;
+  let parses = 0;
+  const provider = ProviderFixtures.provider({
+    name: "dynamic-build-inputs",
+    buildInputs: () => (includeGenerated ? ["late.generated"] : []),
+    resolve: () => undefined,
+  });
+  const source = createResidentGraphSource(
+    { cwd: root },
+    {
+      providers: [provider],
+      buildLspGraph: async () => {
+        builds += 1;
+        return resultOf(root, file, fs.readFileSync(file, "utf8"));
+      },
+      staticGraphParts: (options, files) => {
+        parses += 1;
+        const parts = realStaticGraphParts(options, files);
+        if (moveDuringRefresh) {
+          includeGenerated = true;
+          fs.writeFileSync(path.join(root, "late.generated"), "generated\n");
+        }
+        return parts;
+      },
+    },
+  );
+  await source.load();
+  const firstGeneration = source.inputGeneration();
+  fs.writeFileSync(file, "export const value = 2;\n");
+  moveDuringRefresh = true;
+  await source.load();
+  moveDuringRefresh = false;
+  const secondGeneration = source.inputGeneration();
+  await source.load();
+  TestValidator.predicate(
+    "a provider build-input set that moves mid-refresh replaces once and becomes the new fence",
+    builds === 2 &&
+      parses === 1 &&
+      firstGeneration !== secondGeneration &&
+      secondGeneration === source.inputGeneration(),
+  );
+  await source.close();
+}
+
+async function assertARevertedGenericSourceDiscardsTheCandidate(): Promise<void> {
+  const root = GraphPaths.createTempDirectory(
+    "samchon-graph-consumed-source-revert-",
+  );
+  const file = path.join(root, "a.ts");
+  const config = path.join(root, "project.generated");
+  const original = "export const value = 1;\n";
+  fs.writeFileSync(file, original);
+  fs.writeFileSync(config, "first\n");
+  let parses = 0;
+  const source = createResidentGraphSource(
+    { cwd: root },
+    {
+      buildLspGraph: async () => ({
+        ...resultOf(root, file, fs.readFileSync(file, "utf8")),
+        buildInputs: ["project.generated"],
+      }),
+      staticGraphParts: (options, files) => {
+        parses += 1;
+        if (parses !== 1) return realStaticGraphParts(options, files);
+        fs.writeFileSync(file, "export const value = 2;\n");
+        const parts = realStaticGraphParts(options, files);
+        fs.writeFileSync(file, original);
+        return parts;
+      },
+    },
+  );
+  await source.load();
+  const firstGeneration = source.inputGeneration();
+  fs.writeFileSync(config, "second\n");
+  await source.load();
+  TestValidator.predicate(
+    "generic bytes from a change-then-revert candidate never publish",
+    parses === 2 && source.inputGeneration() !== firstGeneration,
+  );
+  await source.close();
+}
+
 async function assertAMovedBuildInputDiscardsTheCandidate(): Promise<void> {
   const root = GraphPaths.createTempDirectory(
     "samchon-graph-build-input-fence-",
@@ -510,10 +602,15 @@ async function assertProvenanceDescribesThePublishedGeneration(): Promise<void> 
   await source.load();
   const first = await source.load();
   const before = first.provenance?.[0]?.manifest;
+  const firstGeneration = source.inputGeneration();
   TestValidator.equals(
     "the first bulk generation publishes its own manifest digest",
     before,
     graphSnapshotDigests.manifestOf(firstSnapshot),
+  );
+  TestValidator.predicate(
+    "the resident exposes the complete generation belonging to its dump",
+    firstGeneration !== undefined && /^[a-f0-9]{64}$/.test(firstGeneration),
   );
 
   fs.writeFileSync(file, "export const value = 2;\n");
@@ -522,6 +619,18 @@ async function assertProvenanceDescribesThePublishedGeneration(): Promise<void> 
     "a later generation publishes its own manifest digest, not the one before",
     second.provenance?.[0]?.manifest,
     graphSnapshotDigests.manifestOf(secondSnapshot),
+  );
+  TestValidator.notEquals(
+    "provider checker and disk movement replaces the project generation token",
+    source.inputGeneration(),
+    firstGeneration,
+  );
+  const stableGeneration = source.inputGeneration();
+  await source.load();
+  TestValidator.equals(
+    "an unchanged resident load retains the exact generation token",
+    source.inputGeneration(),
+    stableGeneration,
   );
   await source.close();
 }

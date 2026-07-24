@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { GraphLanguage } from "../typings";
 import { confinedProjectInput } from "./confinedProjectInput";
 import { IBuildGraphOptions } from "./IBuildGraphOptions";
 import { selectGraphSources } from "./selectGraphSources";
@@ -18,10 +17,10 @@ export function projectInputManifest(
   root: string,
   options: IBuildGraphOptions,
   buildInputs: readonly string[],
-  _opaqueLanguages: ReadonlySet<GraphLanguage> = new Set(),
+  sourceFiles: readonly string[] = selectGraphSources(root, options).files,
 ): Map<string, string> {
   const files = new Set<string>();
-  for (const file of selectGraphSources(root, options).files) {
+  for (const file of sourceFiles) {
     files.add(path.resolve(file));
   }
   // Declared build inputs are coordinator-owned even if an unusual extension

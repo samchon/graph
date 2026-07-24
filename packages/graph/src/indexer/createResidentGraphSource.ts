@@ -15,6 +15,7 @@ import { GRAPH_PROVIDERS } from "../provider/GRAPH_PROVIDERS";
 import { IBulkGraphSession } from "../provider/IBulkGraphSession";
 import { isBulkGraphSession } from "../provider/isBulkGraphSession";
 import { mergeGraphSlices } from "../provider/mergeGraphSlices";
+import { providerTopology } from "../provider/providerTopology";
 import { readText } from "../utils/fs";
 import { buildLspGraph } from "./buildLspGraph";
 import { buildStaticGraphResult } from "./buildStaticGraphResult";
@@ -28,6 +29,7 @@ import { languageOf } from "./languageOf";
 import { mergeProviderSourceDigests } from "./mergeProviderSourceDigests";
 import { movedConsumedSource } from "./movedConsumedSource";
 import { movedProviderSource } from "./movedProviderSource";
+import { providerBuildInputs } from "./providerBuildInputs";
 import { refreshLanguageSession } from "./refreshLanguageSession";
 import { IGraphSourceSelection } from "./IGraphSourceSelection";
 import { selectGraphSources } from "./selectGraphSources";
@@ -35,7 +37,7 @@ import { wireEdges } from "./wireEdges";
 import { wireNodes } from "./wireNodes";
 import { projectInputManifest } from "./projectInputManifest";
 import { sameProjectInputManifest } from "./sameProjectInputManifest";
-import { providerTopology } from "../provider/providerTopology";
+import { projectInputGeneration } from "./projectInputGeneration";
 
 /**
  * How many times one `load` may prepare a candidate before giving up on the
@@ -60,7 +62,7 @@ interface IResidentState {
 
   /** Source/config/build inputs that fenced the published dump. */
   inputManifest: Map<string, string>;
-  inputManifestLanguages: GraphLanguage[];
+  inputGeneration: string;
   buildInputs: string[];
   providerTopology: string;
   /** An available strict candidate fell back while this state was built. */
@@ -130,11 +132,25 @@ export function createResidentGraphSource(
           });
     const sessions = result.sessions ?? new Map();
     try {
-      const texts = result.sources ?? new Map<string, string>();
-      const buildInputs = result.buildInputs ?? [];
-      const inputManifestLanguages =
-        result.inputManifestLanguages ?? [...bulkLanguagesOf(sessions)];
       const selected = selectGraphSources(root, options);
+      const texts = result.sources ?? new Map<string, string>();
+      const buildInputs =
+        result.buildInputs ??
+        residentBuildInputs(selected.languages, dependencies.providers) ??
+        [];
+      const inputManifest =
+        result.inputManifest ??
+        projectInputManifest(
+          root,
+          options,
+          buildInputs,
+          selected.files,
+        );
+      const providerSnapshots = [...new Set(sessions.values())]
+        .filter(isBulkGraphSession)
+        .flatMap((session) =>
+          session.current === undefined ? [] : [session.current],
+        );
       const availableTopology = providerTopology.available(
         root,
         selected.presentLanguages,
@@ -155,15 +171,21 @@ export function createResidentGraphSource(
         source: result.source ?? sourceReaderOf(root, texts, sessions),
         modes: result.modes ?? new Map(),
         providers: result.providers ?? new Map(),
-        inputManifest:
-          result.inputManifest ??
-          projectInputManifest(
-            root,
-            options,
-            buildInputs,
-            new Set(inputManifestLanguages),
-          ),
-        inputManifestLanguages,
+        inputManifest,
+        inputGeneration:
+          result.inputGeneration ??
+          projectInputGeneration({
+            sourceFiles: selected.files,
+            buildInputFiles: buildInputs.map((input) =>
+              path.resolve(root, input),
+            ),
+            manifest: inputManifest,
+            consumedSources: texts,
+            providerSources: providerSourcesOf(providerSnapshots),
+            provenance:
+              result.dump.provenance ??
+              providerSnapshots.map(dumpProvenanceOf),
+          }),
         buildInputs,
         providerTopology: providerTopology.serialize(availableTopology),
         providerFallback: availableTopology.some((row) =>
@@ -304,24 +326,11 @@ export function createResidentGraphSource(
     // the compiler's export and the static parse produces a dump whose halves
     // describe two different checkouts, and the audit riding on it claims one.
     //
-    // So the exact texts the generic lanes consumed are compared against disk
-    // now, after preparation and before publication. A candidate built over
-    // source that has since moved is discarded whole rather than committed in
-    // part; the caller retries, and until one attempt closes the fence the
-    // previously published dump stands untouched.
-    //
     // Bulk slices are not re-read here, and must not be: a provider's manifest
     // is the provider's statement about the program it resolved, and opening
     // its files behind its back answers a different question with bytes the
     // checker never saw. Their revision token is the manifest digest each
     // candidate carries.
-    const moved = movedConsumedSource(sources);
-    if (moved !== undefined) {
-      throw new StaleCandidateError(
-        `@samchon/graph: ${moved} changed while this refresh was preparing, so no slice of it may be published`,
-      );
-    }
-
     // …but the token has to be checked, or naming it is just a sentence. A
     // provider polled at the start of this transaction can have rebuilt while
     // the generic lanes were still reading, and its candidate would then be one
@@ -335,15 +344,35 @@ export function createResidentGraphSource(
       );
     }
 
+    const committedSelection = selectGraphSources(root, options);
+    const committedBuildInputs = residentBuildInputs(
+      committedSelection.languages,
+      dependencies.providers,
+    ) ?? current.buildInputs;
+    if (!sameStringArray(current.buildInputs, committedBuildInputs)) {
+      throw new StaleCandidateError(
+        "@samchon/graph: the project build-input set changed while this refresh was preparing, so none of its language slices may be published",
+      );
+    }
     const committedInputs = projectInputManifest(
       root,
       options,
-      current.buildInputs,
-      new Set(current.inputManifestLanguages),
+      committedBuildInputs,
+      committedSelection.files,
     );
     if (!sameProjectInputManifest(inputManifest, committedInputs)) {
       throw new StaleCandidateError(
         "@samchon/graph: the project source/config/build input manifest changed while this refresh was preparing, so none of its language slices may be published",
+      );
+    }
+    // Compare the exact generic bytes to the final coordinator digest as well
+    // as to one last disk read. Without the manifest relation, a source could
+    // change after the generic lane consumed it and revert before publication:
+    // equal outer manifests would then fence A around facts computed from B.
+    const moved = movedConsumedSource(sources, committedInputs);
+    if (moved !== undefined) {
+      throw new StaleCandidateError(
+        `@samchon/graph: ${moved} changed while this refresh was preparing, so no slice of it may be published`,
       );
     }
     const providerSources = providerSourcesOf([...merged.values()]);
@@ -357,6 +386,16 @@ export function createResidentGraphSource(
         `@samchon/graph: ${providerMovement}, so no slice of that generation may be published`,
       );
     }
+    const inputGeneration = projectInputGeneration({
+      sourceFiles: committedSelection.files,
+      buildInputFiles: committedBuildInputs.map((input) =>
+        path.resolve(root, input),
+      ),
+      manifest: committedInputs,
+      consumedSources: sources,
+      providerSources,
+      provenance,
+    });
 
     // Written out rather than spread from the previous dump, because a spread
     // carries forward whatever this refresh did not replace — and `provenance`
@@ -388,6 +427,7 @@ export function createResidentGraphSource(
     current.modes = modes;
     current.source = sourceReaderOf(root, sources, current.sessions);
     current.inputManifest = committedInputs;
+    current.inputGeneration = inputGeneration;
   }
 
   async function replaceLanguages(
@@ -429,6 +469,10 @@ export function createResidentGraphSource(
   ): Promise<void> {
     for (let attempt = 1; ; attempt++) {
       const selected = selectGraphSources(root, options);
+      const liveBuildInputs = residentBuildInputs(
+        selected.languages,
+        dependencies.providers,
+      ) ?? current.buildInputs;
       const liveTopology = providerTopology.serialize(
         providerTopology.available(
           root,
@@ -442,11 +486,15 @@ export function createResidentGraphSource(
         await replaceLanguages(current, signal);
         return;
       }
+      if (!sameStringArray(current.buildInputs, liveBuildInputs)) {
+        await replaceLanguages(current, signal);
+        return;
+      }
       const inputManifest = projectInputManifest(
         root,
         options,
-        current.buildInputs,
-        new Set(current.inputManifestLanguages),
+        liveBuildInputs,
+        selected.files,
       );
       if (
         current.providerFallback &&
@@ -545,6 +593,9 @@ export function createResidentGraphSource(
     modes(): ReadonlyMap<string, IBulkGraphSession.Mode> {
       return new Map(state?.modes ?? []);
     },
+    inputGeneration(): string | undefined {
+      return state?.inputGeneration;
+    },
     close(): Promise<void> {
       if (closing !== undefined) return closing;
       // Flip the bit synchronously. A load already inside an await observes it
@@ -581,6 +632,17 @@ export function createResidentGraphSource(
     },
   };
 
+  function residentBuildInputs(
+    languages: readonly GraphLanguage[],
+    providers: readonly IGraphProvider[] | undefined,
+  ): string[] | undefined {
+    if (options.mode === "static") {
+      return providerBuildInputs(languages, [], root);
+    }
+    if (providers === undefined) return undefined;
+    return providerBuildInputs(languages, providers, root);
+  }
+
   /** One queue lane per public call, without caching a rejected lane. */
   function enqueue<T>(task: () => Promise<T>): Promise<T> {
     let resolveResult!: (value: T) => void;
@@ -604,6 +666,16 @@ export function createResidentGraphSource(
   function assertOpen(): void {
     if (closed) throw closedError();
   }
+}
+
+function sameStringArray(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
 function bulkModesOf(
